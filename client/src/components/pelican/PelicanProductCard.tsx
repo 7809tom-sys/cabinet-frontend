@@ -8,7 +8,7 @@ import { ShoppingCart, Star } from "lucide-react";
 import { toast } from "sonner";
 import { usePreferredProducts } from "@/contexts/PreferredProductsContext";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
-import { pelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
+import { pelicanSinkCatalogDescription, pelicanSinkCatalogFactLine, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
 
 export type PelicanCardProduct = {
   id: number;
@@ -30,8 +30,9 @@ export type PelicanCardProduct = {
 
 export function PelicanProductCard({ product, affiliateSlug }: { product: PelicanCardProduct; affiliateSlug?: string }) {
   const gradient = CATEGORY_GRADIENT[product.category] ?? "linear-gradient(135deg,#e5e7eb,#cbd5e1)";
-  const displayName = pelicanDisplayName(product);
+  const displayName = pelicanSinkCatalogName(product.pelicanCode) ?? pelicanDisplayName(product);
   const catalogDescription = pelicanSinkCatalogDescription(product.pelicanCode);
+  const catalogFactLine = pelicanSinkCatalogFactLine(product.pelicanCode);
   const productType = pelicanProductType(product);
   const { addItem, setStorefrontSlug } = useCart();
   const [, navigate] = useLocation();
@@ -125,6 +126,9 @@ export function PelicanProductCard({ product, affiliateSlug }: { product: Pelica
           <div className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug">
             {displayName}
           </div>
+          {catalogFactLine && (
+            <div className="text-[11px] font-medium text-muted-foreground">{catalogFactLine}</div>
+          )}
           {product.size && (
             <div className="text-xs text-muted-foreground">{product.size}</div>
           )}

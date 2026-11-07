@@ -23,7 +23,7 @@ import { ArrowLeft, DollarSign, Minus, PencilRuler, Plus, ShoppingCart, Star, Wa
 import { toast } from "sonner";
 import { ShippingQuoteBox } from "@/components/shipping/ShippingQuoteBox";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
-import { pelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
+import { pelicanSinkCatalogDescription, pelicanSinkCatalogFactLine, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
 
 export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string; affiliateSlug?: string }) {
   const [, navigate] = useLocation();
@@ -33,7 +33,8 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
   const { isPreferred, togglePreferred } = usePreferredProducts();
   const [qty, setQty] = useState(1);
   const catalogDescription = data ? pelicanSinkCatalogDescription(data.pelicanCode) ?? data.description : null;
-  const displayName = data ? pelicanDisplayName(data) : "Product";
+  const catalogFactLine = data ? pelicanSinkCatalogFactLine(data.pelicanCode) : null;
+  const displayName = data ? pelicanSinkCatalogName(data.pelicanCode) ?? pelicanDisplayName(data) : "Product";
   const productType = data ? pelicanProductType(data) : "Pelican Product";
 
   useSeo({
@@ -230,6 +231,9 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
 
           {data.size && (
             <div className="mt-3 text-sm text-muted-foreground">Size: {data.size}</div>
+          )}
+          {catalogFactLine && (
+            <div data-testid="product-catalog-facts" className="mt-1 text-sm text-muted-foreground">{catalogFactLine}</div>
           )}
           <FlooringCartonFacts product={data} testId="product-flooring-carton-facts" className="mt-3 text-sm" />
 

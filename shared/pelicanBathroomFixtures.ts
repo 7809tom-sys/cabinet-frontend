@@ -375,3 +375,42 @@ export function pelicanVanityFaucetMountLabel(profile: PelicanVanityFaucet): str
   if (profile.mount === "centerset-4") return 'Three hole · 4" centerset';
   return 'Three hole · 8" widespread';
 }
+
+const VANITY_SINK_MOUNT_TITLE: Record<PelicanVanitySinkMount, string> = {
+  undermount: "Porcelain Undermount Sink",
+  "drop-in": "Porcelain Drop-In Sink",
+  vessel: "Porcelain Vessel Sink",
+  integrated: "Integrated Vanity Top",
+};
+
+/** 20.875 -> 20 7/8; 16 -> 16. Source measurements are published to 1/8 inch. */
+function vanitySinkInches(value: number): string {
+  const eighths = Math.round(value * 8);
+  const whole = Math.floor(eighths / 8);
+  const fraction = eighths % 8;
+  const glyph = ["", "⅛", "¼", "⅜", "½", "⅝", "¾", "⅞"][fraction];
+  return glyph ? `${whole} ${glyph}` : String(whole);
+}
+
+/**
+ * Shopper-facing name built from Pelican's own series and installation data.
+ *
+ * The imported StoneCreek rename called every "PL-3xxx" row a farmhouse apron
+ * sink, so Pelican's Pearl and Sandbar undermount basins were sold on this site
+ * as farmhouse sinks. Pelican tags those exact models "Undermount", and their
+ * sheets measure 17–24 inches: a vanity basin, not a 30-inch apron front.
+ */
+export function pelicanVanitySinkCatalogTitle(
+  code: string | null | undefined,
+  brand = "",
+): { title: string; series: string; mountLabel: string; sizeLabel: string } | null {
+  const profile = pelicanVanitySinkProfile(code);
+  if (!profile) return null;
+  const prefix = brand.trim() ? `${brand.trim()} ` : "";
+  return {
+    title: `${prefix}${profile.series} ${VANITY_SINK_MOUNT_TITLE[profile.mount]}`,
+    series: profile.series,
+    mountLabel: pelicanVanitySinkMountLabel(profile),
+    sizeLabel: `${vanitySinkInches(profile.widthIn)}" × ${vanitySinkInches(profile.depthIn)}"`,
+  };
+}

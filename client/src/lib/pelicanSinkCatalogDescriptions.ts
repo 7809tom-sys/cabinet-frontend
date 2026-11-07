@@ -1,9 +1,21 @@
 /**
- * Pelican's own bathroom-sink catalog copy (buildpelican.com bathroom sinks,
- * undermount collection). These replace the generic fireclay sentences stored
- * on the same SKUs.
+ * Pelican's own bathroom-basin names and catalog copy.
+ *
+ * The imported StoneCreek rename called every "PL-3xxx" row a farmhouse apron
+ * sink and gave every basin the same fireclay sentence. Pelican's tags and
+ * specification sheets call the 17–24 inch Pearl and Sandbar models undermount
+ * vanity basins. This module is the presentation layer for that correction; the
+ * stored rows and their SKUs are untouched.
  */
+import {
+  pelicanVanitySinkCatalogTitle,
+  pelicanVanitySinkProfile,
+} from "@shared/pelicanBathroomFixtures";
 
+/**
+ * Pelican's own bathroom-sink catalog copy (buildpelican.com bathroom sinks,
+ * undermount collection).
+ */
 const PELICAN_SINK_CATALOG_DESCRIPTIONS: Record<string, string> = {
   "PL-1647": "The Sandbar Series porcelain sinks are crafted with a modern look, featuring vertical sides resulting in more useable bowl space. The undermount installation gives a seamless, sleek look. Sandbar Series Sinks are ADA compliant.",
   "PL-1646": "The Sandbar Series porcelain sinks are crafted with a modern look, featuring vertical sides resulting in more useable bowl space. The undermount installation gives a seamless, sleek look. Sandbar Series Sinks are ADA compliant.",
@@ -27,6 +39,31 @@ function sinkModelCode(pelicanCode: string | null | undefined): string | null {
   return match ? match[1].toUpperCase() : null;
 }
 
+/**
+ * Finish / packaging name Pelican sells for this exact SKU. Pelican's own
+ * variant titles are the source: "Bone", "White", "Matte Black", "Matte Grey",
+ * "Black", and "White (Foam Lined Box)" for the individually packed carton.
+ */
+const SINK_FINISH_BY_SUFFIX: Record<string, string> = {
+  bone: "Bone White",
+  white: "White",
+  "matte black": "Matte Black",
+  "matte grey": "Matte Grey",
+  "matte gray": "Matte Grey",
+  "gloss black": "Gloss Black",
+  black: "Gloss Black",
+  "individually packed": "White (Foam Lined Box)",
+};
+
+export function pelicanSinkFinishLabel(pelicanCode: string | null | undefined): string | null {
+  const code = (pelicanCode ?? "").trim();
+  const model = sinkModelCode(code);
+  if (!model) return null;
+  const suffix = code.slice(model.length).trim().toLowerCase();
+  if (!suffix) return null;
+  return SINK_FINISH_BY_SUFFIX[suffix] ?? null;
+}
+
 /** Pelican catalog description for a sink SKU, including finish variants. */
 export function pelicanSinkCatalogDescription(pelicanCode: string | null | undefined): string | null {
   const model = sinkModelCode(pelicanCode);
@@ -38,4 +75,46 @@ export function withPelicanSinkCatalogDescription<T extends { pelicanCode?: stri
   const catalog = pelicanSinkCatalogDescription(product.pelicanCode);
   if (!catalog || product.description === catalog) return product;
   return { ...product, description: catalog };
+}
+
+/**
+ * Pelican's model name for a vanity basin, replacing the imported "Farmhouse
+ * Apron-Front" wording that the source does not support.
+ *
+ * Returns null for anything that is not a verified vanity basin, so kitchen
+ * farmhouse sinks and unknown rows keep their own names.
+ */
+export function pelicanSinkCatalogName(pelicanCode: string | null | undefined): string | null {
+  const base = pelicanVanitySinkCatalogTitle(pelicanCode, "StoneCreek")?.title;
+  if (!base) return null;
+  const finish = pelicanSinkFinishLabel(pelicanCode);
+  return finish ? `${base} — ${finish}` : base;
+}
+
+/** Series, mount, and source-size line for a vanity basin, e.g. "Pearl Series · Undermount basin · 20 7/8\" × 15 5/8\"". */
+export function pelicanSinkCatalogFactLine(pelicanCode: string | null | undefined): string | null {
+  const details = pelicanVanitySinkCatalogTitle(pelicanCode);
+  if (!details) return null;
+  return `${details.series} · ${details.mountLabel} · ${details.sizeLabel}`;
+}
+
+/** "Pearl Series" style label for grouping a basin under its real Pelican series. */
+export function pelicanSinkSeriesLabel(pelicanCode: string | null | undefined): string | null {
+  return pelicanVanitySinkCatalogTitle(pelicanCode)?.series ?? null;
+}
+
+export function withPelicanSinkCatalogName<T extends { pelicanCode?: string | null; name: string }>(product: T): T {
+  const name = pelicanSinkCatalogName(product.pelicanCode);
+  if (!name || product.name === name) return product;
+  return { ...product, name };
+}
+
+/** Replaces a basin's stored name and description in one pass. */
+export function withPelicanSinkCatalogCopy<T extends { pelicanCode?: string | null; name: string; description?: string | null }>(product: T): T {
+  return withPelicanSinkCatalogDescription(withPelicanSinkCatalogName(product));
+}
+
+/** True when this SKU is a verified vanity basin whose title we can state from Pelican data. */
+export function hasPelicanSinkCatalogName(pelicanCode: string | null | undefined): boolean {
+  return Boolean(pelicanVanitySinkProfile(pelicanCode));
 }

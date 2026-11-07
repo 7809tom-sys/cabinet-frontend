@@ -57,7 +57,7 @@ import {
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { PelicanVariantSelect } from "./PelicanVariantSelect";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
-import { pelicanSinkCatalogDescription, withPelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
+import { pelicanSinkCatalogDescription, withPelicanSinkCatalogCopy } from "@/lib/pelicanSinkCatalogDescriptions";
 import {
   concatCatalogPages,
   designerMaterialRenderReady,
@@ -442,7 +442,7 @@ export function SurfacesPickerDialog({
     : category === "Preferred"
       ? preferredItems
       : categoryItems).map((item) => (
-    withPelicanSinkCatalogDescription(isBathroom
+    withPelicanSinkCatalogCopy(isBathroom
       ? { ...item, imageUrl: bathroomFixtureCardImage(item.pelicanCode, item.imageUrl) }
       : item)
   ));
