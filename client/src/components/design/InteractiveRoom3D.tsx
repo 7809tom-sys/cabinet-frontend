@@ -3149,6 +3149,7 @@ export function threeDUsesCatalogFrontVisual(input: {
   customProfile?: string | null;
 }) {
   if (isCornerDrawerBaseCabinet(input) || input.specialtyKind === "corner-drawer") return false;
+  if (isFillerItem({ masterCode: input.masterCode, description: input.description })) return false;
   return input.hasCatalogFrontVisual
     && input.specialtyKind !== "base-angle-end"
     && !input.hasDoorSample
@@ -11196,10 +11197,18 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
   const effectiveWindowConstructionStyle = opening.windowConstructionStyle ?? "picture";
   const effectiveWindowGridStyle = opening.windowGridStyle ?? "scene-default";
   const trimMaterial = new THREE.MeshStandardMaterial({ color: windowFrameColor(effectiveWindowFrameStyle), roughness: effectiveWindowFrameStyle === "wood" ? 0.62 : 0.5, metalness: effectiveWindowFrameStyle === "black" ? 0.08 : 0 });
-  const openingDepth = 0.12;
+  const isWindow = opening.kind === "window";
+  // openingTransform places the group 0.06 inches into the room. Window trim
+  // is measured from the finished wall face behind that inset.
+  const windowWallFaceZ = -0.06 * INCH;
+  const windowTrimProjection = 0.5 * INCH;
+  const openingDepth = isWindow ? windowTrimProjection : 0.12;
+  const trimCenterZ = isWindow ? windowWallFaceZ + windowTrimProjection / 2 : openingDepth / 2;
   const trimWidth = Math.min(0.12, Math.max(0.055, width * 0.075));
   const backingMaterial = isDoor ? new THREE.MeshStandardMaterial({ color: appearance.color, roughness: 0.5, transparent: true, opacity: 0, depthWrite: false }) : trimMaterial;
-  const backing = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2, height + trimWidth * 2, 0.07), backingMaterial);
+  const backingDepth = isWindow ? 0.04 : 0.07;
+  const backing = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2, height + trimWidth * 2, backingDepth), backingMaterial);
+  backing.position.z = isWindow ? windowWallFaceZ - 0.75 * INCH : 0;
   backing.userData = { architecturalOpeningBacking: true };
   // A reach-in bi-fold is a room aperture, not a blank white wall behind its leaves.
   if (!isBifold) group.add(backing);
@@ -11211,11 +11220,10 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
   ] as const;
   for (const [pieceWidth, pieceHeight, pieceX, pieceY] of trimPieces) {
     const trim = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, openingDepth), trimMaterial);
-    trim.position.set(pieceX, pieceY, openingDepth / 2);
+    trim.position.set(pieceX, pieceY, trimCenterZ);
     trim.userData = { architecturalOpeningTrim: true, openingKind: opening.kind };
     group.add(trim);
   }
-  const isWindow = opening.kind === "window";
   if (isBifold) {
     // Generic room-door reference only: four leaves across the nominal opening.
     // This is not a MasterTrac SKU, hinge/swing specification, or rough-opening cut list.
@@ -11232,8 +11240,11 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
   const paneMaterial = isWindow && windowTexture
     ? new THREE.MeshBasicMaterial({ map: windowTexture, side: THREE.DoubleSide })
     : new THREE.MeshStandardMaterial({ color: isWindow ? "#dbe8e4" : isDoor ? appearance.color : "#4a3528", roughness: 0.28, metalness: isWindow ? 0.12 : 0, ...(isDoor ? { transparent: true, opacity: appearance.opacity, depthWrite: false } : {}) });
-  const pane = new THREE.Mesh(new THREE.BoxGeometry(width - 0.08, height - 0.08, 0.08), paneMaterial);
-  pane.position.z = 0.01;
+  const windowSashDepth = 1.5 * INCH;
+  const windowSashRoomFace = windowWallFaceZ - 0.25 * INCH;
+  const windowSashCenter = windowSashRoomFace - windowSashDepth / 2;
+  const pane = new THREE.Mesh(new THREE.BoxGeometry(width - 0.08, height - 0.08, isWindow ? 0.012 : 0.08), paneMaterial);
+  pane.position.z = isWindow ? windowSashCenter : 0.01;
   if (isDoor) pane.userData = { architecturalDoorSlab: true, planningOpacity: appearance.opacity };
   group.add(pane);
   if (isWindow) {
@@ -11243,14 +11254,14 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
     const resolvedGrid = { columns: Math.max(grid.columns, constructionGrid.columns), rows: Math.max(grid.rows, constructionGrid.rows) };
     const mullions: THREE.Mesh[] = [];
     for (let column = 1; column <= resolvedGrid.columns; column += 1) {
-      const vertical = new THREE.Mesh(new THREE.BoxGeometry(0.035, height - 0.05, 0.09), muntin);
-      vertical.position.x = -width / 2 + (width * column) / (resolvedGrid.columns + 1);
+      const vertical = new THREE.Mesh(new THREE.BoxGeometry(0.035, height - 0.05, 0.04), muntin);
+      vertical.position.set(-width / 2 + (width * column) / (resolvedGrid.columns + 1), 0, windowSashCenter);
       vertical.userData = { windowMuntin: "vertical", windowMuntinIndex: column };
       mullions.push(vertical);
     }
     for (let row = 1; row <= resolvedGrid.rows; row += 1) {
-      const horizontal = new THREE.Mesh(new THREE.BoxGeometry(width - 0.05, 0.035, 0.09), muntin);
-      horizontal.position.y = -height / 2 + (height * row) / (resolvedGrid.rows + 1);
+      const horizontal = new THREE.Mesh(new THREE.BoxGeometry(width - 0.05, 0.035, 0.04), muntin);
+      horizontal.position.set(0, -height / 2 + (height * row) / (resolvedGrid.rows + 1), windowSashCenter);
       horizontal.userData = { windowMuntin: "horizontal", windowMuntinIndex: row };
       mullions.push(horizontal);
     }
@@ -11258,17 +11269,17 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
       new THREE.BoxGeometry(width - 0.08, height - 0.08, 0.018),
       new THREE.MeshPhysicalMaterial({ color: "#d9f0f2", transparent: true, opacity: 0.16, roughness: 0.055, metalness: 0.08, transmission: 0.12, ior: 1.46, thickness: 0.04, depthWrite: false, side: THREE.DoubleSide }),
     );
-    glass.position.z = 0.062;
+    glass.position.z = windowSashCenter;
     glass.userData = { windowGlassReflection: true, windowSceneKind: effectiveWindowSceneKind, windowConstructionStyle: effectiveWindowConstructionStyle, windowGridStyle: effectiveWindowGridStyle, realPhotograph: Boolean(windowSceneAssetUrl(effectiveWindowSceneKind)) };
     const reflection = new THREE.Mesh(
       new THREE.PlaneGeometry(Math.max(0.08, width * 0.16), height * 0.88),
       new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.075, depthWrite: false, side: THREE.DoubleSide }),
     );
-    reflection.position.set(-width * 0.22, height * 0.02, 0.075);
+    reflection.position.set(-width * 0.22, height * 0.02, windowSashCenter + 0.012);
     reflection.rotation.z = -0.28;
     reflection.userData = { windowGlassHighlight: true, windowSceneKind: effectiveWindowSceneKind };
-    const sill = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2.7, trimWidth * 1.5, 0.2), trimMaterial);
-    sill.position.set(0, -height / 2 - trimWidth * 0.85, 0.12);
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2.7, trimWidth * 1.5, windowTrimProjection), trimMaterial);
+    sill.position.set(0, -height / 2 - trimWidth * 0.85, trimCenterZ);
     sill.userData = { architecturalWindowSill: true };
     group.add(...mullions, glass, reflection, sill);
   } else {

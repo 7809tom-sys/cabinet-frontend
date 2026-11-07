@@ -59,7 +59,7 @@ describe("deck faucet placement around windows", () => {
     expect(placement.renderFaucet).toBe(true);
     expect(placement.anchored).toBe(true);
     expect(placement.inFrontOfWindow).toBe(true);
-    expect(placement.conflict).toBe("window-frame");
+    expect(placement.conflict).toBeNull();
     // Kept on the deck behind the basin, never pushed into the wall.
     expect(placement.centerFromWallIn).toBeLessThanOrEqual(2.5);
     expect(placement.centerFromWallIn).toBeGreaterThan(0);
@@ -104,9 +104,10 @@ describe("deck faucet placement around windows", () => {
 
     expect(placement.warning).toBeNull();
     expect(placement.renderFaucet).toBe(true);
-    expect(placement.offsetIn).toBeLessThan(1.25);
+    expect(placement.offsetIn).toBeCloseTo(1.25, 5);
     expect(placement.offsetIn).toBeGreaterThanOrEqual(0);
     expect(placement.centerFromWallIn).toBeLessThanOrEqual(placed.y);
+    expect(frame.intoRoomIn).toBe(0.5);
     expect(placement.centerFromWallIn - 1.14).toBeGreaterThan(frame.intoRoomIn);
     expect(placement.onCountertop).toBe(true);
   });

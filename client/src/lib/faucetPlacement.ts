@@ -26,10 +26,8 @@ export const FAUCET_FRAME_GAP_IN = 0.2;
 /** Handle sits about 0.145 ft to the side of the base. */
 export const FAUCET_LATERAL_REACH_IN = 0.145 * 12;
 
-const WINDOW_GROUP_INSET_IN = 0.06;
-const WINDOW_TRIM_DEPTH_IN = 0.12 * 12;
-const WINDOW_SILL_DEPTH_IN = 0.2 * 12;
-const WINDOW_SILL_CENTER_IN = 0.12 * 12;
+/** Casing and sill nose, measured from the finished wall face. */
+export const WINDOW_TRIM_PROJECTION_IN = 0.5;
 const AGAINST_WALL_IN = COUNTERTOP_DEPTH_IN + 3;
 const EPS = 0.05;
 
@@ -109,12 +107,10 @@ export function windowTrimWidthIn(openingWidthIn: number): number {
 export function windowFrameObstacle(opening: Pick<WallOpening, "kind" | "offset" | "width" | "height" | "sill">) {
   if (opening.kind !== "window") return null;
   const trimIn = windowTrimWidthIn(opening.width);
-  const intoRoomIn = WINDOW_GROUP_INSET_IN + WINDOW_SILL_CENTER_IN + WINDOW_SILL_DEPTH_IN / 2;
-  const trimFrontIn = WINDOW_GROUP_INSET_IN + WINDOW_TRIM_DEPTH_IN;
   return {
     alongStart: opening.offset - trimIn * 1.35,
     alongEnd: opening.offset + opening.width + trimIn * 1.35,
-    intoRoomIn: Math.max(intoRoomIn, trimFrontIn),
+    intoRoomIn: WINDOW_TRIM_PROJECTION_IN,
     bottomIn: opening.sill - trimIn * 1.6,
     topIn: opening.sill + opening.height + trimIn,
   };
@@ -325,7 +321,7 @@ export function resolveDeckFaucetPlacement(
     if (needed <= anchor.rearEdge + EPS) {
       // The deck is deep enough: forward enough to clear the sill, window untouched.
       center = Math.max(center, needed);
-      inFrontOfWindow = hitting.some((opening) => faucetHitsWindow(center, anchor.along, heightIn, opening));
+      inFrontOfWindow = true;
     } else {
       // The deck cannot clear the sill. Keep the forward-most point that is still on
       // the deck behind the basin and draw the faucet in front of the glazing — which

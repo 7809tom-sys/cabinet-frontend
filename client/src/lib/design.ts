@@ -307,18 +307,34 @@ export function normalizeWallOpenShelfPlacement(cabinet: PlacedCabinet): PlacedC
   };
 }
 
-/** True for physical filler strips, including compact catalog codes such as F342. */
+/** True for physical filler strips, including compact catalog codes such as F342, BF3, and scribe stock. */
 export function isFillerItem(c: {
   masterCode?: string | null;
   description?: string | null;
+  category?: string | null;
   subCategory?: string | null;
+  fillerForCabinetUid?: string | null;
+  fillerPieceGroupId?: string | null;
 }) {
-  const code = `${c.masterCode ?? ""}`.trim().toUpperCase();
-  const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
-  return /^F(?:ILL)?[-_]?\d/.test(code) || /\bfiller\b/.test(hay);
+  if (c.fillerForCabinetUid || c.fillerPieceGroupId) return true;
+  const code = `${c.masterCode ?? ""}`.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const hay = `${c.category ?? ""} ${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
+  // End panels and skins are finished boards, not filler strips.
+  if (/^(?:REP|REPV|BEP|WEP|TEP|DEP|IEP)/.test(code)) return false;
+  if (/\b(?:panel|skin|veneer)\b/.test(hay) && !/\bfiller\b/.test(hay)) return false;
+  return /^F(?:ILL)?\d/.test(code)
+    || /^(?:BF|WF|TF|FF|OF)\d/.test(code)
+    || /\bfiller\b|\bscribe\b/.test(hay);
 }
 
-const FILLER_ADJACENCY_TOLERANCE_IN = 0.25;
+/** A filler still belongs to the cabinet it butts when the seam is a scribe gap or a slight overlap. */
+const FILLER_ADJACENCY_TOLERANCE_IN = 1.5;
+
+function runIntervalSeparation(startA: number, endA: number, startB: number, endB: number): number {
+  if (endA < startB) return startB - endA;
+  if (endB < startA) return startA - endB;
+  return 0;
+}
 
 function fillerLayer(placement: Placement): "wall" | "floor" | null {
   if (placement === "wall") return "wall";
@@ -347,19 +363,43 @@ export function adjacentCabinetForFiller(
   const wall = cabinetWall(filler, room);
   const fillerStart = wallRunOffset(filler, wall, room);
   const fillerEnd = fillerStart + wallRunSpan(filler, wall, room);
+  const fillerElevation = elevationBox(filler, room);
   return placed
     .filter((item) => item.uid !== filler.uid && !isFillerItem(item))
     .filter((item) => fillerLayer(item.placement) === layer && cabinetWall(item, room) === wall)
     .map((item) => {
       const start = wallRunOffset(item, wall, room);
       const end = start + wallRunSpan(item, wall, room);
-      return { item, edgeGap: Math.min(Math.abs(fillerStart - end), Math.abs(fillerEnd - start)) };
+      const elevation = elevationBox(item, room);
+      const verticalOverlap = Math.min(fillerElevation.bottom + fillerElevation.height, elevation.bottom + elevation.height)
+        - Math.max(fillerElevation.bottom, elevation.bottom);
+      return {
+        item,
+        separation: runIntervalSeparation(fillerStart, fillerEnd, start, end),
+        samePlacement: item.placement === filler.placement ? 0 : 1,
+        verticalOverlap,
+      };
     })
-    .filter(({ edgeGap }) => edgeGap <= FILLER_ADJACENCY_TOLERANCE_IN)
-    .sort((left, right) => {
-      const placementPriority = (left.item.placement === "appliance" ? 1 : 0) - (right.item.placement === "appliance" ? 1 : 0);
-      return placementPriority || left.edgeGap - right.edgeGap;
-    })[0]?.item ?? null;
+    .filter(({ separation }) => separation <= FILLER_ADJACENCY_TOLERANCE_IN)
+    .sort((left, right) => left.samePlacement - right.samePlacement
+      || right.verticalOverlap - left.verticalOverlap
+      || left.separation - right.separation
+      || (left.item.placement === "appliance" ? 1 : 0) - (right.item.placement === "appliance" ? 1 : 0))[0]?.item ?? null;
+}
+
+/**
+ * The finish a filler renders and prices with: the cabinet it butts, including
+ * when that cabinet inherits the design color. A filler's own stored style is
+ * only a fallback when it does not touch a cabinet.
+ */
+export function fillerRenderStyleId(
+  filler: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  defaultStyleId: number | null,
+): number | null {
+  const owner = adjacentCabinetForFiller(filler, placed, room);
+  return effectiveStyleId(owner ?? filler, defaultStyleId);
 }
 
 /**
@@ -381,10 +421,10 @@ function refrigeratorAdjacentToFiller(
     .map((item) => {
       const start = wallRunOffset(item, wall, room);
       const end = start + wallRunSpan(item, wall, room);
-      return { item, edgeGap: Math.min(Math.abs(fillerStart - end), Math.abs(fillerEnd - start)) };
+      return { item, separation: runIntervalSeparation(fillerStart, fillerEnd, start, end) };
     })
-    .filter(({ edgeGap }) => edgeGap <= FILLER_ADJACENCY_TOLERANCE_IN)
-    .sort((left, right) => left.edgeGap - right.edgeGap)[0]?.item ?? null;
+    .filter(({ separation }) => separation <= FILLER_ADJACENCY_TOLERANCE_IN)
+    .sort((left, right) => left.separation - right.separation)[0]?.item ?? null;
 }
 
 /**
