@@ -2786,7 +2786,13 @@ export function threeDCountertopDepthIn(cabinetDepthIn: number) {
   return cabinetDepthIn + 1.5;
 }
 
-/** Installed base fillers continue the adjacent 24-inch base countertop and its 1½-inch front edge instead of using their shallow stock depth. */
+/**
+ * Installed base fillers continue the countertop of the cabinet they butt.
+ * A shallow 3/4-inch stock record still stands in for a standard 24-inch base.
+ * A filler already matched to its cabinet (a 21-inch vanity, for example) keeps
+ * that depth plus the same 1½-inch front overhang, so the top cannot step out
+ * past the filler or the rest of the run.
+ */
 export function threeDSceneCountertopDepthIn(
   item: Pick<SceneSku, "fillerPieceGroupId" | "fillerTotalWidth" | "fillerPlacementMode">,
   cabinetDepthIn: number,
@@ -2797,7 +2803,8 @@ export function threeDSceneCountertopDepthIn(
     Number.isFinite(Number(item.fillerTotalWidth)) &&
     Number(item.fillerTotalWidth) > 0,
   );
-  return threeDCountertopDepthIn(installedFiller ? BASE_DEPTH : cabinetDepthIn);
+  const runDepth = installedFiller && cabinetDepthIn < 12 ? BASE_DEPTH : cabinetDepthIn;
+  return threeDCountertopDepthIn(runDepth);
 }
 
 export function rangeOvenFrontLayout(bodyHeight: number) {

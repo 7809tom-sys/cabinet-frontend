@@ -7550,6 +7550,7 @@ describe("interactive 3D room scene helpers", () => {
       fillerPlacementMode: "right" as const,
     };
     expect(threeDSceneCountertopDepthIn(filler, 0.75)).toBe(25.5);
+    expect(threeDSceneCountertopDepthIn(filler, 21)).toBe(22.5);
 
     const root = new THREE.Group();
     addCabinet(root, {

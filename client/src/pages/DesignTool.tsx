@@ -91,8 +91,9 @@ import {
 } from "@/lib/pelicanAutoPlace";
 import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
-import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate } from "@/lib/bathroomPlanning";
-import { bathroomTubWallParallelPlacement, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
+import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
+import { fixtureFloorCabinets, resolveFurnitureMove } from "@/lib/floorOccupancy";
+import { withFloorObstacles } from "@/lib/floorOccupancyState";
 import { VanitySinkFacts } from "@/components/design/VanityFixtureFacts";
 import {
   bathroomVanityFaucetMatchNote,
@@ -1875,23 +1876,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return;
     }
     const tubFillerProfile = verifiedPelicanBathroomFixtureProfile(draft.pelicanCode);
+    const floorCabinets = placedRef.current;
     const tubFillerPlacement = tubFillerProfile?.kind === "floor-tub-filler"
-      ? bathroomTubFillerPlacement(draft, bathroomFurnitureRef.current, room) : null;
+      ? bathroomTubFillerPlacement(draft, bathroomFurnitureRef.current, room, floorCabinets) : null;
     if (tubFillerProfile?.kind === "floor-tub-filler" && !tubFillerPlacement) {
       toast.error("No non-overlapping visual position is available beside the tub. Move the tub or another fixture first.");
       return;
     }
-    const freePlacement = bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room);
-    // Fixtures drop into the first open spot. The wall-parallel default is only a
-    // fallback for a room too crowded for the free search, so a freshly placed
-    // fixture never lands on top of another one.
-    const fixture = tubFillerPlacement ?? (freePlacement
-      ? { ...draft, ...freePlacement }
-      : bathroomTubWallParallelPlacement({
-          ...draft,
-          x: Math.max(0, (room.width - definition.w) / 2),
-          y: Math.max(0, (room.depth - definition.d) / 2),
-        }, room));
+    const freePlacement = bathroomFixtureFreePlacement(draft, bathroomFurnitureRef.current, room, floorCabinets);
+    // A click lands in the nearest open floor footprint. If every spot intersects
+    // a tub, toilet, vanity, or other floor item, nothing is added.
+    if (!tubFillerPlacement && !freePlacement) {
+      toast.error(`No open floor space is left for ${item.name}. Move another item, then place it again.`);
+      return;
+    }
+    const fixture = tubFillerPlacement ?? { ...draft, ...freePlacement! };
     setSelectedSurfaces((previous) => previous.some((surface) => surface.id === item.id) ? previous : [...previous, item]);
     setFurniture((previous) => {
       const next = [...previous, fixture];
@@ -2531,8 +2530,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [selectedFurnUid, setSelectedFurnUid] = useState<string | null>(null);
   const rotateFurniture = useCallback((uid: string) => {
     if (layoutLocked) return;
-    setFurniture((previous) => previous.map((item) => item.uid === uid ? rotateBathroomFurniture(item, room) : item));
-  }, [layoutLocked, room.width, room.depth]);
+    setFurniture((previous) => previous.map((item) => {
+      if (item.uid !== uid) return item;
+      const rotated = rotateBathroomFurniture(item, room, { furniture: previous, cabinets: placedRef.current });
+      if (rotated.rotation === item.rotation && rotated.x === item.x && rotated.y === item.y) {
+        toast.error("That turn would overlap another item on the floor.");
+      }
+      return rotated;
+    }));
+  }, [layoutLocked, room]);
+  const moveFurnitureOnFloor = useCallback((uid: string, x: number, y: number) => {
+    setFurniture((previous) => previous.map((item) => {
+      if (item.uid !== uid) return item;
+      return resolveFurnitureMove(item, x, y, room, previous, placedRef.current) ?? item;
+    }));
+  }, [room]);
   const selectedBathroomPlanningGuidance = useMemo(() => {
     const selected = selectedFurnUid ? furniture.find((item) => item.uid === selectedFurnUid) ?? null : null;
     const definition = selected ? FURNITURE_CATALOG.find((item) => item.id === selected.defId) ?? null : null;
@@ -2961,8 +2973,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // settles. A legacy foreign override must never produce a cross-distributor
   // price lookup, a pending line, or a zero-value total.
   const pricingStyleIdFor = useCallback(
-    (cabinet: PlacedCabinet) => pricingStyleId(cabinet, styleId, lockedDistributorId, styleDistributorIdById),
-    [styleId, lockedDistributorId, styleDistributorIdById],
+    (cabinet: PlacedCabinet) => {
+      const owner = isFillerItem(cabinet) ? adjacentCabinetForFiller(cabinet, placed, room) : null;
+      return pricingStyleId(owner ?? cabinet, styleId, lockedDistributorId, styleDistributorIdById);
+    },
+    [placed, room, styleId, lockedDistributorId, styleDistributorIdById],
   );
   // Neutral, customer-safe distributor labels (white-label safe) used to group the
   // door-style picker by supply line. Never carries the hidden supplier brand.
@@ -4174,7 +4189,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // as W362324 that the surround query omits.
     lastFaucetWindowNotesRef.current = [];
     autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection);
-    const run = runAutoDesignLayout({
+    const run = withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => runAutoDesignLayout({
       input: {
         ...input,
         tallCabinets: autoDesignTallPicks.map((product) => ({
@@ -4204,7 +4219,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       preExistingPlacements,
       styleId: styleIdRef.current ?? null,
       makeUid,
-    });
+    }));
     if (!run.ok) return fail(run.message);
     if (run.sinks[0]) {
       const remembered = rememberAutoDesignSink(run.sinks[0], run.openings);
@@ -6105,8 +6120,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return m;
   }, [doorStyles, withAccepted]);
   const displayStyleIdForCab = useCallback(
-    (cab: PlacedCabinet) => effectiveStyleId(cab, styleId),
-    [styleId],
+    (cab: PlacedCabinet) => {
+      // A filler is finished with the cabinet it touches. Reading that cabinet
+      // here, not the filler's own saved style, keeps the color live when the
+      // door style or a per-cabinet color changes.
+      const owner = isFillerItem(cab) ? adjacentCabinetForFiller(cab, placed, room) : null;
+      return effectiveStyleId(owner ?? cab, styleId);
+    },
+    [placed, room, styleId],
   );
   const finishForCab = useCallback(
     (cab: PlacedCabinet) => {
@@ -7516,7 +7537,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [openings, room]);
 
   const addCabinet = useCallback(
-    (c: DesignCabinet, x?: number, y?: number, forceAccessory = false, rotation = 0, strictDropTarget = false, targetCabinetUid?: string | null, targetIslandFace?: IslandFace | null, forceBackDepthAdjustment = false, resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide }, blindPullOverride?: number, attachedFillerChoice?: AttachedFillerChoice) => {
+    (c: DesignCabinet, x?: number, y?: number, forceAccessory = false, rotation = 0, strictDropTarget = false, targetCabinetUid?: string | null, targetIslandFace?: IslandFace | null, forceBackDepthAdjustment = false, resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide }, blindPullOverride?: number, attachedFillerChoice?: AttachedFillerChoice) => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => {
       // Cabinets are priced and sized per supplier line, so none may enter the
       // plan before a vendor and door style/color are chosen. Every entry path
       // (room layout, Continuous Wall Builder, catalog click or drag) lands
@@ -8467,6 +8488,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (cornerRangeValidation?.reason === "missing-filler") {
         toast.info(`${finalCab.masterCode} is placeable, but a ${CORNER_RANGE_HANDLE_FILLER_IN}" filler is required beside the corner appliance so its handle clears the adjoining cabinet handle.`);
       }
+      if (isSinkBasePlacement) {
+        const floorOwnerCollision = cabinetPlacementCollisionDetail(finalCab, normalizedPrevious, room);
+        if (floorOwnerCollision?.cabinet.floorOccupancyObstacle) {
+          const message = collisionReason(finalCab, normalizedPrevious, room)
+            ?? `${finalCab.masterCode} was not added because it overlaps ${floorOwnerCollision.cabinet.description}, which already owns that floor space.`;
+          setPlacementWarning(message);
+          toast.error(message);
+          return;
+        }
+      }
       if (cabinetPlacementCollisionDetail(finalCab, normalizedPrevious, room) && !isSinkBasePlacement) {
 	        // A hood must occupy the same upper-wall span as its range. When an
 	        // existing upper cabinet is already in that exact band, do not move
@@ -8930,7 +8961,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // Close the mobile catalog sheet so it doesn't intercept dialog touch events
         setMobilePanel(null);
       }
-    },
+    }),
     [room, activeWall, openings, island, islandPlacementMode, islandFace, catalogFillers, appliancePalette, styleId, catalogDistributorScopeId, distributorNameById, rememberFailedWallFit, setSinks, setSelectedSinkUid, setCountertop, queueSmallGapFillerOpportunity]
 	  );
 	  const placeOnRecommendedWall = useCallback(() => {
@@ -12241,7 +12272,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [addCabinet, peninsulaFitRecommendation, room]);
 
 			const moveCabinet = useCallback((uid: string, x: number, y: number, rotation?: number, exactWallDrag = false, target?: { wallId?: string; wallOffset?: number }, attributePatch?: Partial<PlacedCabinet>) => {
-		    setPlaced((prev) => {
+		    setPlaced((prev) => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => {
 		      const cabinet = prev.find((p) => p.uid === uid);
 		      if (!cabinet) return prev;
 		      if (cabinet.locked) {
@@ -12386,7 +12417,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      }
 	      placedRef.current = nextPlaced;
 	      return nextPlaced;
-	    });
+	    }));
 			  }, [catalogFillers, setSinks, room, island, openings, customPlacementMode, automaticSnapping]);
 
 			  const moveCabinetToFrom3D = useCallback((uid: string, x: number, y: number, preview: CabinetWallDragPreview) => {
@@ -12471,7 +12502,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
 	  const rotateSelected = () => {
 	    if (!selectedUid) return;
-	    setPlaced((prev) =>
+	    setPlaced((prev) => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () =>
 	      prev.map((p) => {
 	        if (p.uid !== selectedUid) return p;
 	        if (p.locked) { toast.info(`${p.masterCode} is locked — unlock it before rotating.`); return p; }
@@ -12503,7 +12534,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }
         return seated;
       })
-    );
+    ));
   };
 
   // All delete entry points must release the physical cabinet run immediately.
@@ -15359,12 +15390,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // the approved door.
   const threeDStyleAssignments = useMemo(
     () => designerThreeDAssignments({
-      placed,
+      placed: placed.map((cabinet) => {
+        const owner = isFillerItem(cabinet) ? adjacentCabinetForFiller(cabinet, placed, room) : null;
+        if (!owner) return cabinet;
+        const nextStyleId = owner.styleId ?? null;
+        return (cabinet.styleId ?? null) === nextStyleId ? cabinet : { ...cabinet, styleId: nextStyleId };
+      }),
       defaultStyleId: styleId ?? null,
       doorStyles: (doorStyles ?? null) as DesignerStyleRow[] | null,
       acceptedRows: acceptedAppearance.rows,
     }),
-    [acceptedAppearance.rows, doorStyles, placed, styleId],
+    [acceptedAppearance.rows, doorStyles, placed, room, styleId],
   );
   const threeDCabinetDoorProfiles = useMemo(
     () => Object.fromEntries(threeDStyleAssignments.flatMap((assignment) => {
@@ -19444,7 +19480,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
               onSelectFurn={setSelectedFurnUid}
-              onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
+              onMoveFurn={moveFurnitureOnFloor}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
 	              flooringMaterialId={flooringMaterialId}
@@ -19741,7 +19777,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               furniture={furniture}
               selectedFurnUid={selectedFurnUid}
               onSelectFurn={setSelectedFurnUid}
-              onMoveFurn={(uid, x, y) => setFurniture(prev => prev.map(f => f.uid === uid ? { ...f, x, y } : f))}
+              onMoveFurn={moveFurnitureOnFloor}
               onDeleteFurn={(uid) => { setFurniture(prev => prev.filter(f => f.uid !== uid)); setSelectedFurnUid(null); }}
               onRotateFurn={rotateFurniture}
 	              flooringMaterialId={flooringMaterialId}
