@@ -8,6 +8,7 @@ import { ShoppingCart, Star } from "lucide-react";
 import { toast } from "sonner";
 import { usePreferredProducts } from "@/contexts/PreferredProductsContext";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
+import { pelicanSinkCatalogDescription, pelicanSinkCatalogFactLine, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
 
 export type PelicanCardProduct = {
   id: number;
@@ -29,7 +30,9 @@ export type PelicanCardProduct = {
 
 export function PelicanProductCard({ product, affiliateSlug }: { product: PelicanCardProduct; affiliateSlug?: string }) {
   const gradient = CATEGORY_GRADIENT[product.category] ?? "linear-gradient(135deg,#e5e7eb,#cbd5e1)";
-  const displayName = pelicanDisplayName(product);
+  const displayName = pelicanSinkCatalogName(product.pelicanCode) ?? pelicanDisplayName(product);
+  const catalogDescription = pelicanSinkCatalogDescription(product.pelicanCode);
+  const catalogFactLine = pelicanSinkCatalogFactLine(product.pelicanCode);
   const productType = pelicanProductType(product);
   const { addItem, setStorefrontSlug } = useCart();
   const [, navigate] = useLocation();
@@ -123,12 +126,20 @@ export function PelicanProductCard({ product, affiliateSlug }: { product: Pelica
           <div className="line-clamp-2 min-h-[2.5rem] text-sm font-semibold leading-snug">
             {displayName}
           </div>
+          {catalogFactLine && (
+            <div className="text-[11px] font-medium text-muted-foreground">{catalogFactLine}</div>
+          )}
           {product.size && (
             <div className="text-xs text-muted-foreground">{product.size}</div>
           )}
           <FlooringCartonFacts product={product} testId={`catalog-flooring-carton-facts-${product.id}`} />
           {product.pelicanCode && (
             <div className="text-[11px] font-medium text-muted-foreground">Item code: {product.pelicanCode}</div>
+          )}
+          {catalogDescription && (
+            <p data-testid={`catalog-description-${product.id}`} className="line-clamp-3 text-xs leading-snug text-muted-foreground">
+              {catalogDescription}
+            </p>
           )}
           <div className="flex items-center justify-between gap-2 pt-1">
             <div className="min-w-0">

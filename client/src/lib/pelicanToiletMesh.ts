@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 /** Match InteractiveRoom3D: one scene unit is one foot. */
 const INCH = 1 / 12;
@@ -10,7 +11,9 @@ const INCH = 1 / 12;
  * width, depth, and height. This is a visual model, not a plumbing guide.
  *
  * Distinct silhouettes, not one reused body:
- * - skirted one-piece (PL-12011, PL-12027, PL-12044, PL-12210, PL-12318, PL-12382)
+ * - skirted one-piece (PL-12011, PL-12027, PL-12044, PL-12210, PL-12318, PL-12382):
+ *   a low rounded-rectangle tank, a skirt that flares to the floor, an elongated
+ *   oval seat and lid, and a round side trapway cap
  * - pedestal one-piece with the bowl sitting above the floor (PL-12050, PL-12335)
  * - two-piece with a separate tank and exposed trapway (PL-A249)
  * - low angular smart toilet (PL-12005)
@@ -27,7 +30,7 @@ export type PelicanToiletMeshProfile = {
   toiletFlushControl?: "single-button" | "dual-button" | "touchless" | "touchless-auto";
 };
 
-type Ring = { width: number; depth: number; y: number; z: number };
+type Ring = { width: number; depth: number; y: number; z: number; radius?: number };
 type ToiletForm = "skirted-one-piece" | "pedestal-one-piece" | "two-piece" | "smart-wedge" | "smart-egg";
 
 function isMatteBlack(finish: string): boolean {
@@ -48,8 +51,9 @@ export function pelicanToiletForm(profile: Pick<PelicanToiletMeshProfile, "pelic
 }
 
 function rounderBowl(code: string): boolean {
-  const sku = baseCode(code);
-  return sku.startsWith("PL-12318") || sku.startsWith("PL-12382") || sku.startsWith("PL-12005");
+  // PL-12318 and PL-12382 are elongated skirted bowls in the catalog photos.
+  // Only the low smart body uses the rounder seat.
+  return baseCode(code).startsWith("PL-12005");
 }
 
 function roundedRectRing(width: number, depth: number, y: number, z: number, radius: number, cornerSegments = 5): THREE.Vector3[] {
@@ -81,10 +85,10 @@ function ellipseRing(width: number, depth: number, y: number, z: number, segment
 
 /** Closed loft. Ellipse rings read as a bowl; rounded rectangles read as a tank or smart body. */
 function loft(rings: Ring[], shape: "ellipse" | "rounded" = "ellipse"): THREE.BufferGeometry {
-  const segments = shape === "ellipse" ? 28 : 20;
+  const segments = shape === "ellipse" ? 32 : 24;
   const ringPoints = rings.map((ring) => shape === "ellipse"
     ? ellipseRing(ring.width, ring.depth, ring.y, ring.z, segments)
-    : roundedRectRing(ring.width, ring.depth, ring.y, ring.z, Math.min(ring.width, ring.depth) * 0.16, 5));
+    : roundedRectRing(ring.width, ring.depth, ring.y, ring.z, ring.radius ?? Math.min(ring.width, ring.depth) * 0.18, 6));
   const vertices = ringPoints.flatMap((points) => points.flatMap((point) => [point.x, point.y, point.z]));
   const ringLength = segments;
   const indices: number[] = [];
@@ -117,6 +121,27 @@ function loft(rings: Ring[], shape: "ellipse" | "rounded" = "ellipse"): THREE.Bu
 
 function ellipseLoft(rings: Ring[]): THREE.BufferGeometry {
   return loft(rings, "ellipse");
+}
+
+/** Solid elongated lid. Extrude faces outward, so the closed lid stays visible. */
+function ovalLid(radiusX: number, radiusZ: number, thickness: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, 1, 0, Math.PI * 2, false);
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: Math.max(0.012, thickness),
+    bevelEnabled: true,
+    bevelThickness: Math.max(0.006, thickness * 0.45),
+    bevelSize: Math.min(radiusX, radiusZ) * 0.08,
+    bevelSegments: 5,
+    curveSegments: 40,
+  });
+  geometry.scale(radiusX, radiusZ, 1);
+  geometry.rotateX(-Math.PI / 2);
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox;
+  if (bounds) geometry.translate(0, -bounds.min.y, 0);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 /** Shallow elliptical china lid or seat. Lathe radius is X; Z is scaled to the bowl. */
@@ -156,6 +181,54 @@ function addPart(
   return mesh;
 }
 
+/** Glossy vitreous china. White stays white; matte black stays matte. */
+function chinaMaterial(black: boolean): THREE.MeshPhysicalMaterial {
+  if (black) {
+    return new THREE.MeshPhysicalMaterial({
+      color: "#17191b",
+      roughness: 0.46,
+      metalness: 0,
+      clearcoat: 0.04,
+      clearcoatRoughness: 0.45,
+    });
+  }
+  return new THREE.MeshPhysicalMaterial({
+    color: "#ffffff",
+    emissive: "#f4f5f3",
+    emissiveIntensity: 0.22,
+    roughness: 0.04,
+    metalness: 0,
+    clearcoat: 1,
+    clearcoatRoughness: 0.06,
+    reflectivity: 0.55,
+    ior: 1.5,
+  });
+}
+
+function addRoundedBox(
+  group: THREE.Group,
+  profile: PelicanToiletMeshProfile,
+  part: string,
+  material: THREE.Material,
+  width: number,
+  height: number,
+  depth: number,
+  radius: number,
+  y: number,
+  z: number,
+): THREE.Mesh {
+  const mesh = addPart(
+    group,
+    profile,
+    part,
+    new RoundedBoxGeometry(Math.max(0.04, width), Math.max(0.02, height), Math.max(0.04, depth), 5, Math.max(0.008, radius)),
+    material,
+  );
+  mesh.position.set(0, y, z);
+  mesh.userData.tankFootprint = "rounded-rectangle";
+  return mesh;
+}
+
 function addClosedSeatAndLid(
   group: THREE.Group,
   profile: PelicanToiletMeshProfile,
@@ -165,22 +238,46 @@ function addClosedSeatAndLid(
   width: number,
   depth: number,
   squared = false,
+  placement?: { radiusX: number; radiusZ: number; centerZ: number },
 ): void {
   const round = squared || rounderBowl(profile.pelicanCode);
-  const radiusX = width * (round ? 0.40 : 0.36);
-  const radiusZ = depth * (round ? 0.20 : 0.26);
-  const centerZ = depth * (round ? 0.06 : 0.10);
-  const seat = addPart(group, profile, "toilet-seat", ovalCap(radiusX * 1.04, radiusZ * 1.04, 0.012, 0.008), seatMaterial);
+  const radiusX = placement?.radiusX ?? width * (round ? 0.40 : 0.36);
+  const radiusZ = placement?.radiusZ ?? depth * (round ? 0.24 : 0.30);
+  const centerZ = placement?.centerZ ?? depth * (round ? 0.04 : 0.08);
+  // A thin oval ring, then a low lid sitting on it. The lid covers the well
+  // so the closed toilet does not read as a disc floating over a gray bowl.
+  const seatRing = new THREE.TorusGeometry(0.5, 0.055, 12, 56);
+  seatRing.rotateX(Math.PI / 2);
+  seatRing.scale(radiusX * 1.02, 0.22, radiusZ * 1.02);
+  const seat = addPart(group, profile, "toilet-seat", seatRing, seatMaterial);
   seat.position.set(0, seatHeight, centerZ);
   seat.userData.seatProfile = round ? "closed-round-oval" : "closed-elongated-oval";
-  const lid = addPart(group, profile, "toilet-lid", ovalCap(radiusX, radiusZ, squared ? 0.018 : 0.045, 0.012), seatMaterial);
-  lid.position.set(0, seatHeight + 0.018, centerZ);
+  const lid = addPart(group, profile, "toilet-lid", ovalLid(radiusX * 1.04, radiusZ * 1.02, squared ? 0.016 : 0.028), seatMaterial);
+  lid.position.set(0, seatHeight + 0.008, centerZ);
   lid.userData.lidProfile = squared ? "flat-rounded-rectangle" : "soft-elongated-oval";
 
   const waterWell = addPart(group, profile, "toilet-bowl-water", new THREE.CircleGeometry(0.5, 28), water);
   waterWell.rotation.x = -Math.PI / 2;
-  waterWell.scale.set(radiusX * 1.15, radiusZ * 1.05, 1);
-  waterWell.position.set(0, seatHeight - 0.01, centerZ);
+  waterWell.scale.set(radiusX * 0.72, radiusZ * 0.62, 1);
+  waterWell.position.set(0, seatHeight - 0.02, centerZ);
+}
+
+function addTrapwayCap(
+  group: THREE.Group,
+  profile: PelicanToiletMeshProfile,
+  shell: THREE.Material,
+  x: number,
+  y: number,
+  z: number,
+): void {
+  const cap = addPart(group, profile, "toilet-trapway-cap", new THREE.CylinderGeometry(0.046, 0.046, 0.012, 28), shell);
+  cap.rotation.z = Math.PI / 2;
+  cap.position.set(x, y, z);
+  cap.userData.silhouette = "round-side-trapway-cap";
+  const groove = new THREE.MeshStandardMaterial({ color: "#b7bdc2", roughness: 0.55, metalness: 0 });
+  const ring = addPart(group, profile, "toilet-trapway-cap-ring", new THREE.TorusGeometry(0.05, 0.006, 8, 28), groove);
+  ring.rotation.y = Math.PI / 2;
+  ring.position.set(x + Math.sign(x || 1) * 0.004, y, z);
 }
 
 function addTopButtons(
@@ -221,6 +318,41 @@ function addSideLever(
   lever.userData.lever = "tank-side";
 }
 
+/** Plan of a skirted toilet: straight rear, semicircular bowl front. Shape Y is depth. */
+function skirtFootprint(width: number, depth: number): THREE.Shape {
+  const halfW = width / 2;
+  const back = -depth / 2;
+  const front = depth / 2;
+  const radius = Math.min(halfW, Math.max(0.05, front - back - 0.04));
+  const arcY = front - radius;
+  const shape = new THREE.Shape();
+  shape.moveTo(-halfW, back);
+  shape.lineTo(-halfW, arcY);
+  shape.absarc(0, arcY, radius, Math.PI, 0, true);
+  shape.lineTo(halfW, back);
+  shape.closePath();
+  return shape;
+}
+
+function skirtBodyGeometry(width: number, depth: number, seatHeight: number): THREE.BufferGeometry {
+  const bevel = Math.min(0.11, width * 0.08, seatHeight * 0.12);
+  const shape = skirtFootprint(Math.max(0.2, width - bevel * 2), Math.max(0.3, depth - bevel * 2));
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: Math.max(0.25, seatHeight - bevel * 1.4),
+    bevelEnabled: true,
+    bevelThickness: bevel * 0.7,
+    bevelSize: bevel,
+    bevelSegments: 8,
+    curveSegments: 28,
+  });
+  geometry.rotateX(Math.PI / 2);
+  geometry.computeBoundingBox();
+  const bounds = geometry.boundingBox;
+  if (bounds) geometry.translate(0, -bounds.min.y, 0);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function addSkirtedOnePiece(
   group: THREE.Group,
   profile: PelicanToiletMeshProfile,
@@ -233,32 +365,59 @@ function addSkirtedOnePiece(
   const width = profile.widthIn * INCH;
   const depth = profile.depthIn * INCH;
   const height = profile.heightIn * INCH;
-  const round = rounderBowl(profile.pelicanCode);
-  const base = addPart(group, profile, "toilet-ceramic-base", ellipseLoft([
-    { width: width * 0.78, depth: depth * 0.78, y: 0, z: -depth * 0.06 },
-    { width: width * 0.94, depth: depth * 0.86, y: seatHeight * 0.22, z: -depth * 0.02 },
-    { width: width * 0.82, depth: depth * 0.74, y: seatHeight * 0.58, z: depth * 0.02 },
-    { width: width * (round ? 0.78 : 0.70), depth: depth * (round ? 0.50 : 0.58), y: seatHeight * 0.96, z: depth * 0.08 },
-  ]), shell);
+  const halfD = depth / 2;
+  const back = -halfD + 0.015;
+  const tankDepth = Math.min(depth * 0.32, 0.72);
+  const tankWidth = width * 0.90;
+  const tankZ = back + tankDepth / 2;
+  const footWidth = width * 0.96;
+  const footDepth = depth * 0.96;
+
+  const base = addPart(group, profile, "toilet-ceramic-base", skirtBodyGeometry(footWidth, footDepth, seatHeight), shell);
   base.userData.silhouette = "continuous-skirted-body";
-  base.userData.bowlForm = round ? "round" : "elongated";
+  base.userData.bowlForm = "elongated";
 
-  const bowl = addPart(group, profile, "toilet-bowl-exterior", ellipseLoft([
-    { width: width * 0.50, depth: depth * 0.30, y: seatHeight * 0.62, z: depth * 0.10 },
-    { width: width * 0.72, depth: depth * (round ? 0.40 : 0.50), y: seatHeight * 0.86, z: depth * 0.10 },
-    { width: width * (round ? 0.84 : 0.76), depth: depth * (round ? 0.44 : 0.56), y: seatHeight * 0.99, z: depth * 0.09 },
-  ]), shell);
+  const rim = ovalCap(footWidth * 0.30, footDepth * 0.18, 0.008, 0.004);
+  const bowl = addPart(group, profile, "toilet-bowl-exterior", rim, shell);
+  bowl.position.set(0, seatHeight * 0.9, depth * 0.08);
   bowl.userData.continuousWithCeramicBase = true;
-  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth);
+  bowl.userData.bowlForm = "elongated";
 
-  const rear = addPart(group, profile, "toilet-integrated-rear-housing", ellipseLoft([
-    { width: width * 0.72, depth: depth * 0.40, y: seatHeight * 0.42, z: -depth * 0.16 },
-    { width: width * 0.78, depth: depth * 0.38, y: seatHeight * 0.95, z: -depth * 0.18 },
-    { width: width * 0.74, depth: depth * 0.34, y: height * 0.92, z: -depth * 0.18 },
-    { width: width * 0.70, depth: depth * 0.32, y: height - 0.02, z: -depth * 0.18 },
-  ]), shell);
-  rear.userData.silhouette = "integrated-soft-rear";
-  addTopButtons(group, profile, chrome, height - 0.012, -depth * 0.18, width);
+  const radiusX = width * 0.40;
+  const radiusZ = Math.min(depth * 0.30, radiusX * 1.35);
+  const bowlCenterZ = THREE.MathUtils.clamp(depth * 0.12, -halfD + radiusZ, halfD - radiusZ - 0.02);
+  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth, false, {
+    radiusX,
+    radiusZ,
+    centerZ: bowlCenterZ,
+  });
+
+  const tankHeight = Math.max(0.2, height - 0.05);
+  const tank = addRoundedBox(
+    group, profile, "toilet-integrated-rear-housing", shell,
+    tankWidth, tankHeight, tankDepth * 0.98, Math.min(tankWidth, tankDepth) * 0.12,
+    tankHeight / 2 + 0.008, tankZ,
+  );
+  tank.userData.silhouette = "rounded-rectangular-tank";
+  const lidThickness = 0.028;
+  const tankLid = addRoundedBox(
+    group, profile, "toilet-tank-lid", shell,
+    tankWidth * 0.98, lidThickness, tankDepth * 0.96, Math.min(tankWidth, tankDepth) * 0.14,
+    height - lidThickness / 2 - 0.006, tankZ,
+  );
+  tankLid.userData.silhouette = "rounded-rectangular-tank-lid";
+  const fillet = addPart(
+    group,
+    profile,
+    "toilet-tank-skirt-fillet",
+    new THREE.CylinderGeometry(0.055, 0.055, tankWidth * 0.86, 18, 1, false, Math.PI * 1.05, Math.PI * 0.9),
+    shell,
+  );
+  fillet.rotation.z = Math.PI / 2;
+  fillet.position.set(0, seatHeight - 0.01, tankZ + tankDepth * 0.46);
+  fillet.userData.silhouette = "tank-to-skirt-blend";
+  addTopButtons(group, profile, chrome, height - 0.01, tankZ + tankDepth * 0.28, tankWidth);
+  addTrapwayCap(group, profile, shell, -width * 0.49, seatHeight * 0.36, -depth * 0.02);
 }
 
 function addPedestalBowl(
@@ -269,18 +428,27 @@ function addPedestalBowl(
   width: number,
   depth: number,
 ): void {
-  const pedestal = addPart(group, profile, "toilet-ceramic-base", ellipseLoft([
-    { width: width * 0.62, depth: depth * 0.46, y: 0, z: -depth * 0.02 },
-    { width: width * 0.50, depth: depth * 0.36, y: seatHeight * 0.42, z: depth * 0.02 },
-    { width: width * 0.42, depth: depth * 0.30, y: seatHeight * 0.62, z: depth * 0.04 },
-  ]), shell);
+  const foot = new THREE.LatheGeometry([
+    new THREE.Vector2(width * 0.20, 0.004),
+    new THREE.Vector2(width * 0.26, seatHeight * 0.12),
+    new THREE.Vector2(width * 0.18, seatHeight * 0.48),
+    new THREE.Vector2(width * 0.14, seatHeight * 0.62),
+  ], 36);
+  foot.scale(1, 1, 1.15);
+  const pedestal = addPart(group, profile, "toilet-ceramic-base", foot, shell);
   pedestal.userData.silhouette = "exposed-pedestal";
   pedestal.userData.bowlForm = "elongated";
-  const bowl = addPart(group, profile, "toilet-bowl-exterior", ellipseLoft([
-    { width: width * 0.46, depth: depth * 0.26, y: seatHeight * 0.50, z: depth * 0.04 },
-    { width: width * 0.74, depth: depth * 0.46, y: seatHeight * 0.74, z: depth * 0.08 },
-    { width: width * 0.82, depth: depth * 0.54, y: seatHeight * 0.99, z: depth * 0.08 },
-  ]), shell);
+  const bowlGeo = new THREE.LatheGeometry([
+    new THREE.Vector2(0.02, seatHeight * 0.58),
+    new THREE.Vector2(width * 0.22, seatHeight * 0.66),
+    new THREE.Vector2(width * 0.40, seatHeight * 0.84),
+    new THREE.Vector2(width * 0.44, seatHeight * 0.98),
+    new THREE.Vector2(width * 0.30, seatHeight),
+    new THREE.Vector2(0.02, seatHeight),
+  ], 48);
+  bowlGeo.scale(1, 1, Math.min(1.45, depth / Math.max(width, 0.01)));
+  bowlGeo.translate(0, 0, depth * 0.04);
+  const bowl = addPart(group, profile, "toilet-bowl-exterior", bowlGeo, shell);
   bowl.userData.continuousWithCeramicBase = false;
   bowl.userData.bowlForm = "elongated";
 }
@@ -298,18 +466,27 @@ function addPedestalOnePiece(
   const depth = profile.depthIn * INCH;
   const height = profile.heightIn * INCH;
   addPedestalBowl(group, profile, shell, seatHeight, width, depth);
-  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth);
-  const tankHeight = Math.max(0.35, height - seatHeight * 0.72);
-  const tank = addPart(group, profile, "toilet-integrated-rear-housing", ellipseLoft([
-    { width: width * 0.70, depth: depth * 0.34, y: seatHeight * 0.78, z: -depth * 0.16 },
-    { width: width * 0.76, depth: depth * 0.32, y: seatHeight + tankHeight * 0.45, z: -depth * 0.16 },
-    { width: width * 0.72, depth: depth * 0.30, y: height - 0.03, z: -depth * 0.16 },
-  ]), shell);
-  tank.userData.silhouette = "integrated-soft-rear";
+  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth, false, {
+    radiusX: width * 0.42,
+    radiusZ: width * 0.50,
+    centerZ: depth * 0.06,
+  });
+  const tankDepth = Math.min(depth * 0.30, 0.7);
+  const tankWidth = width * 0.86;
+  const tankZ = -depth / 2 + tankDepth / 2 + 0.02;
+  const tankBottom = seatHeight * 0.55;
+  const tankHeight = Math.max(0.3, height - tankBottom - 0.04);
+  const tank = addRoundedBox(
+    group, profile, "toilet-integrated-rear-housing", shell,
+    tankWidth, tankHeight, tankDepth, Math.min(tankWidth, tankDepth) * 0.14,
+    tankBottom + tankHeight / 2, tankZ,
+  );
+  tank.userData.silhouette = "rounded-rectangular-tank";
+  addTrapwayCap(group, profile, shell, -width * 0.30, seatHeight * 0.32, depth * 0.02);
   if (baseCode(profile.pelicanCode).startsWith("PL-12335")) {
-    addSideLever(group, profile, chrome, width * 0.36, seatHeight + tankHeight * 0.55, -depth * 0.16);
+    addSideLever(group, profile, chrome, tankWidth / 2 + 0.02, tankBottom + tankHeight * 0.62, tankZ);
   } else {
-    addTopButtons(group, profile, chrome, height - 0.02, -depth * 0.16, width);
+    addTopButtons(group, profile, chrome, height - 0.016, tankZ + tankDepth * 0.08, width);
   }
 }
 
@@ -335,16 +512,25 @@ function addTwoPiece(
   trap.position.set(-width * 0.08, seatHeight * 0.38, -depth * 0.08);
   trap.userData.silhouette = "exposed-trapway";
 
-  const tankHeight = Math.min(height * 0.42, Math.max(0.42, height - seatHeight - 0.04));
-  const tank = addPart(group, profile, "toilet-tank", ellipseLoft([
-    { width: width * 0.72, depth: depth * 0.34, y: seatHeight * 0.92, z: -depth * 0.16 },
-    { width: width * 0.78, depth: depth * 0.34, y: height - tankHeight * 0.42, z: -depth * 0.16 },
-    { width: width * 0.74, depth: depth * 0.31, y: height - 0.04, z: -depth * 0.16 },
-  ]), shell);
-  tank.userData.silhouette = "soft-separate-tank";
-  const lid = addPart(group, profile, "toilet-tank-lid", ovalCap(width * 0.40, depth * 0.16, 0.02, 0.008), seatMaterial);
-  lid.position.set(0, height - 0.03, -depth * 0.16);
-  addSideLever(group, profile, chrome, width * 0.38, height - tankHeight * 0.5, -depth * 0.16);
+  const tankDepth = Math.min(depth * 0.28, 0.66);
+  const tankWidth = width * 0.78;
+  const tankZ = -depth / 2 + tankDepth / 2 + 0.03;
+  const tankBottom = seatHeight * 0.92;
+  const tankHeight = Math.max(0.36, height - tankBottom - 0.045);
+  const tank = addRoundedBox(
+    group, profile, "toilet-tank", shell,
+    tankWidth, tankHeight, tankDepth, Math.min(tankWidth, tankDepth) * 0.16,
+    tankBottom + tankHeight / 2, tankZ,
+  );
+  tank.userData.silhouette = "rounded-rectangular-tank";
+  const lidThickness = 0.03;
+  const lid = addRoundedBox(
+    group, profile, "toilet-tank-lid", seatMaterial,
+    tankWidth * 1.04, lidThickness, tankDepth * 1.06, Math.min(tankWidth, tankDepth) * 0.18,
+    height - lidThickness / 2 - 0.008, tankZ,
+  );
+  lid.userData.silhouette = "rounded-rectangular-tank-lid";
+  addSideLever(group, profile, chrome, tankWidth / 2 + 0.015, tankBottom + tankHeight * 0.62, tankZ);
 }
 
 function addSmartWedge(
@@ -448,21 +634,11 @@ export function makePelicanToiletGroup(profile: PelicanToiletMeshProfile): THREE
   const height = profile.heightIn * INCH;
   const seatHeight = Math.min(height * 0.92, Math.max(height * 0.45, (profile.seatHeightIn ?? profile.heightIn * 0.52) * INCH));
   const black = isMatteBlack(profile.finish);
-  const shell = new THREE.MeshPhysicalMaterial({
-    color: black ? "#17191b" : "#f7f8f6",
-    roughness: black ? 0.42 : 0.14,
-    metalness: 0,
-    clearcoat: black ? 0.08 : 0.62,
-    clearcoatRoughness: black ? 0.4 : 0.12,
-  });
-  const seatMaterial = new THREE.MeshPhysicalMaterial({
-    color: black ? "#101214" : "#fbfbfa",
-    roughness: black ? 0.38 : 0.16,
-    clearcoat: black ? 0.06 : 0.55,
-    clearcoatRoughness: 0.14,
-  });
-  const water = new THREE.MeshPhysicalMaterial({ color: "#d5e7ee", roughness: 0.06, metalness: 0, transmission: 0.12, transparent: true, opacity: 0.9 });
-  const chrome = new THREE.MeshStandardMaterial({ color: black ? "#2a2d30" : "#d5dbe0", roughness: 0.22, metalness: black ? 0.2 : 0.82 });
+  const shell = chinaMaterial(black);
+  const seatMaterial = chinaMaterial(black);
+  if (!black) seatMaterial.roughness = 0.05;
+  const water = new THREE.MeshPhysicalMaterial({ color: "#d7eef3", roughness: 0.04, metalness: 0, transmission: 0.2, transparent: true, opacity: 0.85 });
+  const chrome = new THREE.MeshPhysicalMaterial({ color: black ? "#2a2d30" : "#f4f7f8", roughness: black ? 0.35 : 0.12, metalness: black ? 0.25 : 1, clearcoat: black ? 0 : 0.4 });
   const dark = new THREE.MeshStandardMaterial({ color: black ? "#050607" : "#1c1f22", roughness: 0.35 });
   const form = pelicanToiletForm(profile);
 

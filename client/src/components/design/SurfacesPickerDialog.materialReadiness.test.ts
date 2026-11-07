@@ -22,13 +22,14 @@ describe("Surfaces picker 3D material readiness", () => {
     expect(source).toContain("Catalog photography never becomes a texture.");
   });
 
-  it("loads the full Tile & Mosaic storefront catalog and the designer flooring page", () => {
-    expect(source).toContain('scope: browsingTileMosaic ? "catalog" as const : "designer" as const');
+  it("loads the full storefront catalog for every category, not the pre-filtered designer scope", () => {
+    expect(source).toContain('scope: "catalog" as const');
+    expect(source).not.toContain('scope: browsingTileMosaic ? "catalog" as const : "designer" as const');
     expect(source).toContain("limit: PAGE_LIMIT");
     expect(source).toContain('limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT');
     expect(source).not.toContain("browsingFlooring");
     expect(source).toContain('data-testid="flooring-selection-availability"');
-    expect(source).toContain("Molding, trim, and underlayment stay in accessory suggestions.");
+    expect(source).toContain("Every active, source-priced flooring plank and floor tile is listed");
     expect(source).toContain("isDesignerPaletteItemVisible");
     expect(source).toContain("trpc.surfaces.byIds.useQuery");
     expect(source).not.toContain("return isMaterialRole && Boolean(item.materialImageUrl?.trim())");

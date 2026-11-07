@@ -23,6 +23,7 @@ import { ArrowLeft, DollarSign, Minus, PencilRuler, Plus, ShoppingCart, Star, Wa
 import { toast } from "sonner";
 import { ShippingQuoteBox } from "@/components/shipping/ShippingQuoteBox";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
+import { pelicanSinkCatalogDescription, pelicanSinkCatalogFactLine, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
 
 export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string; affiliateSlug?: string }) {
   const [, navigate] = useLocation();
@@ -31,14 +32,16 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
   const { user } = useAuth();
   const { isPreferred, togglePreferred } = usePreferredProducts();
   const [qty, setQty] = useState(1);
-  const displayName = data ? pelicanDisplayName(data) : "Product";
+  const catalogDescription = data ? pelicanSinkCatalogDescription(data.pelicanCode) ?? data.description : null;
+  const catalogFactLine = data ? pelicanSinkCatalogFactLine(data.pelicanCode) : null;
+  const displayName = data ? pelicanSinkCatalogName(data.pelicanCode) ?? pelicanDisplayName(data) : "Product";
   const productType = data ? pelicanProductType(data) : "Pelican Product";
 
   useSeo({
     title: data
       ? `${displayName} — Surfaces & Fixtures | CabinetDealz`
       : "Product — Surfaces & Fixtures | CabinetDealz",
-    description: data?.description?.slice(0, 160),
+    description: catalogDescription?.slice(0, 160),
     type: "product",
     image: data?.imageUrl ?? undefined,
   });
@@ -229,11 +232,14 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
           {data.size && (
             <div className="mt-3 text-sm text-muted-foreground">Size: {data.size}</div>
           )}
+          {catalogFactLine && (
+            <div data-testid="product-catalog-facts" className="mt-1 text-sm text-muted-foreground">{catalogFactLine}</div>
+          )}
           <FlooringCartonFacts product={data} testId="product-flooring-carton-facts" className="mt-3 text-sm" />
 
-          {data.description && (
+          {catalogDescription && (
             <p className="mt-5 whitespace-pre-line leading-relaxed text-foreground/80">
-              {data.description}
+              {catalogDescription}
             </p>
           )}
 

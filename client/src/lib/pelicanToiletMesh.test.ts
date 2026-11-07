@@ -85,7 +85,7 @@ describe("makePelicanToiletGroup", () => {
     const rear = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-integrated-rear-housing")!;
     expect(base.userData).toMatchObject({ silhouette: "continuous-skirted-body", pelicanFinish: "white" });
     expect(bowl.userData).toMatchObject({ continuousWithCeramicBase: true });
-    expect(rear.userData).toMatchObject({ silhouette: "integrated-soft-rear" });
+    expect(rear.userData).toMatchObject({ silhouette: "rounded-rectangular-tank", tankFootprint: "rounded-rectangle" });
     const seat = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-seat")!;
     const lid = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-lid")!;
     expect(seat.position.y).toBeCloseTo(source.seatHeightIn! * INCH, 6);
@@ -164,8 +164,49 @@ describe("makePelicanToiletGroup", () => {
     expect(partsIn(fixture)).toEqual(expect.arrayContaining(["toilet-exposed-trapway"]));
     expect(partsIn(fixture)).not.toContain("toilet-integrated-rear-housing");
     const tank = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-tank")!;
-    expect(tank.userData).toMatchObject({ silhouette: "soft-separate-tank" });
+    expect(tank.userData).toMatchObject({ silhouette: "rounded-rectangular-tank", tankFootprint: "rounded-rectangle" });
     expect(fixture.userData.toiletForm).toBe("two-piece");
+  });
+
+  it("renders PL-12318 as glossy white skirted china with an elongated seat and a rectangular tank", () => {
+    const source = profile({
+      pelicanCode: "PL-12318",
+      widthIn: 14 + 5 / 8,
+      depthIn: 25 + 5 / 8,
+      heightIn: 26 + 5 / 8,
+      seatHeightIn: 16.5,
+      toiletFlushControl: "dual-button",
+    });
+    const fixture = makePelicanToiletGroup(source);
+    assertFitsSourceEnvelope(fixture, source);
+    expect(fixture.userData.toiletForm).toBe("skirted-one-piece");
+    expect(partsIn(fixture)).toEqual(expect.arrayContaining([
+      "toilet-ceramic-base",
+      "toilet-bowl-exterior",
+      "toilet-seat",
+      "toilet-lid",
+      "toilet-integrated-rear-housing",
+      "toilet-tank-lid",
+      "toilet-trapway-cap",
+      "toilet-dual-flush-left-button",
+      "toilet-dual-flush-right-button",
+    ]));
+    const shell = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-ceramic-base")!.material as THREE.MeshPhysicalMaterial;
+    expect(shell.color.getHexString()).toBe("ffffff");
+    expect(shell.roughness).toBeLessThanOrEqual(0.08);
+    expect(shell.clearcoat).toBeGreaterThanOrEqual(0.9);
+    const seat = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-seat")!;
+    const lid = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-lid")!;
+    const tank = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-integrated-rear-housing")!;
+    expect(seat.userData.seatProfile).toBe("closed-elongated-oval");
+    expect(lid.userData.lidProfile).toBe("soft-elongated-oval");
+    expect(seat.position.y).toBeCloseTo(16.5 * INCH, 5);
+    const seatSize = new THREE.Box3().setFromObject(seat).getSize(new THREE.Vector3());
+    expect(seatSize.z).toBeGreaterThan(seatSize.x);
+    expect(tank.userData).toMatchObject({ silhouette: "rounded-rectangular-tank", tankFootprint: "rounded-rectangle" });
+    const tankSize = new THREE.Box3().setFromObject(tank).getSize(new THREE.Vector3());
+    expect(tankSize.x).toBeGreaterThan(tankSize.z * 1.4);
+    expect(new THREE.Box3().setFromObject(fixture).max.y).toBeLessThanOrEqual(source.heightIn * INCH + EPSILON);
   });
 
   it("keeps every published toilet inside its sheet envelope and on its own silhouette", () => {

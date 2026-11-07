@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
+import { pelicanSinkCatalogDescription, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
 import { concatCatalogPages, isSelectableDesignerFlooringPlank, isSelectableDesignerTileMosaic, readDesignerRenderFlags } from "@/lib/designerTileMosaicCatalog";
 import { floorCapableMosaics, isMosaicCatalogItem } from "@/lib/mosaicFloorTile";
 import { surfaceRole } from "@/lib/pelican";
@@ -69,7 +70,6 @@ export const BATHROOM_FIXTURE_RECOMMENDED_SECTIONS: {
   { role: "shower-door", label: "Shower & Tub Doors" },
   { role: "shower-surround", label: "Shower Walls" },
   { role: "shower-system", label: "Shower Systems" },
-  { role: "bathroom-accessory", label: "Other Bathroom Accessories" },
 ];
 
 /** Backward-compatible alias for callers that previously requested all bathroom cards. */
@@ -106,13 +106,13 @@ function toSurface(p: RecItem, installedAs?: "flooring"): SelectedSurface {
     id: p.id,
     pelicanCode: p.pelicanCode ?? null,
     slug: p.slug,
-    name: p.name,
+    name: pelicanSinkCatalogName(p.pelicanCode) ?? p.name,
     category: p.category,
     subCategory: p.subCategory,
     size: p.size,
     imageUrl: p.imageUrl,
     materialImageUrl: p.materialImageUrl,
-    description: p.description ?? null,
+    description: pelicanSinkCatalogDescription(p.pelicanCode) ?? p.description ?? null,
     sellPrice: p.sellPrice,
     coverageSqFt: facts?.sqFtPerBox ?? null,
     piecesPerBox: facts?.piecesPerBox ?? null,

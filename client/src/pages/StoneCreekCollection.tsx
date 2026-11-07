@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSeo } from "@/hooks/useSeo";
 import { formatPrice } from "@/lib/pelican";
+import { pelicanSinkCatalogDescription, pelicanSinkCatalogFactLine, pelicanSinkFinishLabel, pelicanSinkSeriesLabel, withPelicanSinkCatalogCopy } from "@/lib/pelicanSinkCatalogDescriptions";
 import { requestSurfaceHandoff } from "@/lib/surfaceSelection";
 import { toast } from "sonner";
 import { Droplets, ShowerHead, ChefHat, ArrowRight, Sparkles, PaintBucket, ShoppingCart } from "lucide-react";
@@ -93,6 +94,19 @@ export default function StoneCreekCollection() {
     },
     { staleTime: 60_000 }
   );
+  // The sink catalog is 294 rows and the endpoint pages at 200, so the first
+  // page alone left whole series (and most Farmhouse rows) outside this page.
+  const sinksPage2Enabled = Boolean(sinksData && (sinksData.total ?? 0) > 200);
+  const { data: sinksDataPage2, isLoading: sinksPage2Loading } = trpc.pelican.byCategory.useQuery(
+    {
+      category: "Sinks & Faucets" as any,
+      scope: "catalog",
+      subCategory: "Sinks",
+      limit: 200,
+      offset: 200,
+    },
+    { enabled: sinksPage2Enabled, staleTime: 60_000 },
+  );
 
   const allFaucets = useMemo(() => {
     if (!data?.items) return [];
@@ -101,9 +115,16 @@ export default function StoneCreekCollection() {
   }, [data]);
 
   const allSinks = useMemo(() => {
-    if (!sinksData?.items) return [];
-    return sinksData.items.filter((p: any) => p.name?.startsWith("StoneCreek"));
-  }, [sinksData]);
+    const rows = [
+      ...(sinksData?.items ?? []),
+      ...(sinksDataPage2?.items ?? []),
+    ] as any[];
+    const byId = new Map<number, any>();
+    for (const row of rows) {
+      if (!byId.has(row.id)) byId.set(row.id, withPelicanSinkCatalogCopy(row));
+    }
+    return Array.from(byId.values()).filter((p) => p.name?.startsWith("StoneCreek"));
+  }, [sinksData, sinksDataPage2]);
 
   const filtered = useMemo(() => {
     if (tab === "sinks") {
@@ -130,7 +151,7 @@ export default function StoneCreekCollection() {
   const grouped = useMemo(() => {
     const map = new Map<string, any[]>();
     for (const item of filtered) {
-      const series = seriesFromName(item.name ?? "");
+      const series = pelicanSinkSeriesLabel(item.pelicanCode) ?? seriesFromName(item.name ?? "");
       if (!map.has(series)) map.set(series, []);
       map.get(series)!.push(item);
     }
@@ -250,7 +271,7 @@ export default function StoneCreekCollection() {
       {/* Product Grid */}
       <section className="py-12">
         <div className="container">
-          {(isLoading || sinksLoading) ? (
+          {(isLoading || sinksLoading || (sinksPage2Enabled && sinksPage2Loading)) ? (
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {Array.from({ length: 8 }).map((_, i) => (
                 <Skeleton key={i} className="aspect-[3/4] rounded-xl" />
@@ -327,7 +348,11 @@ export default function StoneCreekCollection() {
 }
 
 function StoneCreekCard({ product, onAddToDesign }: { product: any; onAddToDesign: (p: any) => void }) {
-  const finish = finishFromName(product.name ?? "");
+  const catalogDescription = pelicanSinkCatalogDescription(product.pelicanCode) ?? product.description;
+  const catalogFactLine = pelicanSinkCatalogFactLine(product.pelicanCode);
+  const finish = finishFromName(product.name ?? "") !== "Other"
+    ? finishFromName(product.name ?? "")
+    : pelicanSinkFinishLabel(product.pelicanCode) ?? "Other";
   const { addItem } = useCart();
   const [, navigate] = useLocation();
 
@@ -396,9 +421,14 @@ function StoneCreekCard({ product, onAddToDesign }: { product: any; onAddToDesig
           <p className="text-sm font-medium leading-snug line-clamp-2 group-hover:text-primary transition-colors">
             {product.name?.replace("StoneCreek ", "")}
           </p>
-          {product.description && (
-            <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">
-              {product.description}
+          {catalogFactLine && (
+            <p data-testid={`stonecreek-sink-facts-${product.id}`} className="mt-1 text-[11px] font-medium text-muted-foreground">
+              {catalogFactLine}
+            </p>
+          )}
+          {catalogDescription && (
+            <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">
+              {catalogDescription}
             </p>
           )}
           <div className="mt-3 flex items-center justify-between">
