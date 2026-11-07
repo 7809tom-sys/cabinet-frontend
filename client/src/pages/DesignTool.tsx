@@ -56,8 +56,8 @@ import { publishDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import {
   browserFullscreenOwnsElement,
   canRequestBrowserFullscreen,
-  immersiveEscapePressed,
   immersiveStateAfterFullscreenChange,
+  shouldIgnoreImmersiveExitKey,
   shouldRequestBrowserFullscreen,
 } from "@/lib/designerImmersive";
 import { usePersistFn } from "@/hooks/usePersistFn";
@@ -14988,19 +14988,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     return () => window.cancelAnimationFrame(frame);
   }, [canvasOnly]);
-  // Esc always leaves canvas-only, with or without the Fullscreen API. Modifier
-  // chords are left alone so Cmd/Ctrl+Esc still reaches the browser.
+  // Esc always leaves canvas-only, with or without the Fullscreen API. Dialogs,
+  // pickers and text fields keep their own Escape handling, and modifier chords
+  // are left alone so Cmd/Ctrl+Esc still reaches the browser.
+  //
+  // Capture phase, so the Designer's own Escape shortcut (clear the selection)
+  // does not also fire: leaving canvas-only keeps the cabinet the user was
+  // looking at. That is only safe because `shouldIgnoreImmersiveExitKey` hands
+  // the key back to anything layered above the canvas.
   useEffect(() => {
     if (!canvasOnly || typeof window === "undefined") return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!immersiveEscapePressed(event)) return;
+      if (shouldIgnoreImmersiveExitKey(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
       setCanvasOnly(false);
       if (canvasImmersionRootRef.current && browserFullscreenOwnsElement(document, canvasImmersionRootRef.current)) {
         void document.exitFullscreen?.().catch(() => undefined);
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [canvasOnly, setCanvasOnly]);
   // A browser-initiated exit (the Esc that closes a real fullscreen session, or
   // the browser's own exit control) does not pass through our key handler when the

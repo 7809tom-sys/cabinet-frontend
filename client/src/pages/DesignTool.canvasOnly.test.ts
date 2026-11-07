@@ -75,8 +75,17 @@ describe("Designer canvas-only mode wiring", () => {
   });
 
   it("exits on Esc without the Fullscreen API", () => {
-    expect(designTool).toContain("if (!immersiveEscapePressed(event)) return;");
-    expect(designTool).toContain('window.addEventListener("keydown", onKeyDown)');
+    // Capture phase, so the Designer's own Escape shortcut (clear the
+    // selection) does not also fire on the way out.
+    expect(designTool).toContain("window.addEventListener(\"keydown\", onKeyDown, true)");
+    expect(designTool).toContain("shouldIgnoreImmersiveExitKey(event)");
+    const escStart = designTool.indexOf("const onKeyDown = (event: KeyboardEvent) => {");
+    const escEnd = designTool.indexOf("window.addEventListener(\"keydown\", onKeyDown, true)", escStart);
+    const handler = designTool.slice(escStart, escEnd);
+    // Claiming the key is what makes the capture phase safe for the layers above.
+    expect(handler).toContain("event.preventDefault();");
+    expect(handler).toContain("event.stopPropagation();");
+    expect(handler).toContain("setCanvasOnly(false);");
   });
 
   it("clears every bar on a browser-initiated exit, not just local state", () => {

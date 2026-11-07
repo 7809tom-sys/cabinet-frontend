@@ -47,6 +47,14 @@ export function browserFullscreenOwnsElement(documentLike: unknown, element: unk
 }
 
 /**
+ * The exit key. `Escape` is the standard name; a few engines still report
+ * `"Esc"`, and both mean the same thing to the user.
+ */
+export function isImmersiveExitKey(key: string): boolean {
+  return key === "Escape" || key === "Esc";
+}
+
+/**
  * The keyboard exit. `Esc` always leaves immersive mode, whether or not the
  * Fullscreen API was used, and modifier chords (Cmd+Esc, Ctrl+Esc) are left to
  * the browser rather than hijacked.
@@ -57,8 +65,37 @@ export function immersiveEscapePressed(event: {
   ctrlKey?: boolean;
   altKey?: boolean;
 } | null | undefined): boolean {
-  if (!event || event.key !== "Escape") return false;
+  if (!event || !isImmersiveExitKey(event.key)) return false;
   return !event.metaKey && !event.ctrlKey && !event.altKey;
+}
+
+const IMMERSIVE_EXIT_KEY_OWNERS =
+  '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+
+/**
+ * True when Esc belongs to something else on screen (an open dialog, a picker,
+ * a text field, or a handler that already consumed the key). Canvas-only mode
+ * listens in the capture phase so the Designer's own Escape shortcut does not
+ * also fire; that is only safe because every layer above the canvas keeps its
+ * keystrokes, which is what this predicate decides.
+ */
+export function shouldIgnoreImmersiveExitKey(event: {
+  key: string;
+  defaultPrevented?: boolean;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  target?: EventTarget | null;
+} | null | undefined): boolean {
+  if (!event) return true;
+  if (event.defaultPrevented) return true;
+  if (!immersiveEscapePressed(event)) return true;
+  const target = (event.target ?? null) as Element | null;
+  if (target && typeof target.closest === "function") {
+    if (target.closest(IMMERSIVE_EXIT_KEY_OWNERS)) return true;
+  }
+  const tag = (target as HTMLElement | null)?.tagName?.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select";
 }
 
 /**

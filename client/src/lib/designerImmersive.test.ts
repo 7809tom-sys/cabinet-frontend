@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
   browserFullscreenOwnsElement,
@@ -5,6 +6,8 @@ import {
   immersiveEscapePressed,
   immersiveStateAfterFullscreenChange,
   immersiveToggleLabel,
+  isImmersiveExitKey,
+  shouldIgnoreImmersiveExitKey,
   shouldRequestBrowserFullscreen,
   DESIGNER_IMMERSIVE_CHROME,
 } from "./designerImmersive";
@@ -70,7 +73,8 @@ describe("canvas-only (immersive) mode", () => {
 
   it("exits on Esc even when the Fullscreen API was never used", () => {
     expect(immersiveEscapePressed({ key: "Escape" })).toBe(true);
-    expect(immersiveEscapePressed({ key: "Esc" })).toBe(false);
+    expect(isImmersiveExitKey("Esc")).toBe(true);
+    expect(immersiveEscapePressed({ key: "Esc" })).toBe(true);
     expect(immersiveEscapePressed({ key: "Enter" })).toBe(false);
     expect(immersiveEscapePressed(null)).toBe(false);
     // Browser shortcuts that include Esc are left to the browser.
@@ -86,5 +90,45 @@ describe("canvas-only (immersive) mode", () => {
     expect(immersiveToggleLabel(true).title).toContain("Exit fullscreen");
     // The tooltip also has to say what pressing it returns to.
     expect(immersiveToggleLabel(true).title.toLowerCase()).toContain("edit mode");
+  });
+});
+
+describe("canvas-only mode Esc ownership", () => {
+  it("ignores every key that is not a plain Esc press", () => {
+    expect(shouldIgnoreImmersiveExitKey(null)).toBe(true);
+    expect(shouldIgnoreImmersiveExitKey({ key: "Enter" })).toBe(true);
+    expect(shouldIgnoreImmersiveExitKey({ key: "Escape", metaKey: true })).toBe(true);
+    // A handler below us already claimed the key.
+    expect(shouldIgnoreImmersiveExitKey({ key: "Escape", defaultPrevented: true })).toBe(true);
+    expect(shouldIgnoreImmersiveExitKey({ key: "Escape" })).toBe(false);
+    expect(shouldIgnoreImmersiveExitKey({ key: "Esc" })).toBe(false);
+  });
+
+  it("leaves Esc to an open dialog or menu layered over the canvas", () => {
+    for (const role of ["dialog", "alertdialog", "menu", "listbox"]) {
+      const layer = document.createElement("div");
+      layer.setAttribute("role", role);
+      const child = document.createElement("button");
+      layer.appendChild(child);
+      document.body.appendChild(layer);
+      expect(shouldIgnoreImmersiveExitKey({ key: "Escape", target: child })).toBe(true);
+      layer.remove();
+    }
+  });
+
+  it("leaves Esc to a text field so half-typed text is not thrown away", () => {
+    for (const tag of ["input", "textarea", "select"]) {
+      const field = document.createElement(tag);
+      document.body.appendChild(field);
+      expect(shouldIgnoreImmersiveExitKey({ key: "Escape", target: field })).toBe(true);
+      field.remove();
+    }
+  });
+
+  it("exits on Esc aimed at the canvas itself, not just at the window", () => {
+    const canvas = document.createElement("canvas");
+    document.body.appendChild(canvas);
+    expect(shouldIgnoreImmersiveExitKey({ key: "Escape", target: canvas })).toBe(false);
+    canvas.remove();
   });
 });
