@@ -28,11 +28,24 @@ describe("Sink bottom grid add-on", () => {
     });
   });
 
-  it("is offered only in the kitchen sink flow, after a sink is chosen", () => {
-    expect(designTool).toContain('setRangeTopStep(isBathroomVanity ? "faucet" : "grid")');
-    expect(designTool).toContain('Bottom grid for this sink');
-    expect(designTool).toContain("Added to the cart only, not the drawing.");
-    expect(designTool).toContain("Pelican lists no bottom grid for this sink model");
+  it("is an optional choice on the faucet step, defaulting to no grid", () => {
+    // The sink step goes straight to the faucet; the grid never blocks the flow.
+    expect(designTool).toContain('setRangeTopStep("faucet");');
+    expect(designTool).not.toContain('"grid"');
+    // Both answers are present, and "no grid" is its own selectable option.
+    expect(designTool).toContain('data-testid="sink-bottom-grid-option"');
+    expect(designTool).toContain('data-testid="sink-bottom-grid-none-option"');
+    expect(designTool).toContain("Add a bottom grid?");
+    expect(designTool).toContain("No grid — sink only");
+    // Picking nothing still adds the sink on its own.
+    expect(designTool).toContain('onClick={() => applySink(pendingSinkProduct, null)}>Skip faucet selection');
+  });
+
+  it("starts with no grid chosen and lets the shopper remove one", () => {
+    expect(designTool).toContain("useState<SinkDialogProduct | null>(null)");
+    expect(designTool).toContain('onClick={() => setPendingBottomGrid(null)}>Remove');
+    // A grid the shopper chose is only applied when it still fits the sink.
+    expect(designTool).toContain("bottomGridsForSink(sinkProduct.pelicanCode, [pendingBottomGrid])");
   });
 
   it("is written to the design's selected surfaces so the quote and cart carry it", () => {
@@ -43,5 +56,9 @@ describe("Sink bottom grid add-on", () => {
   it("drops a grid the shopper chose before switching to a different sink model", () => {
     expect(designTool).toContain("bottomGridsForSink(chosen.pelicanCode, [current])");
     expect(designTool).toContain("bottomGridsForSink(sinkProduct.pelicanCode, [pendingBottomGrid])");
+  });
+
+  it("does not offer the grid on a vanity basin", () => {
+    expect(designTool).toContain("{!isBathroomVanity && pendingSinkProduct && (");
   });
 });

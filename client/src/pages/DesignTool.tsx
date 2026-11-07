@@ -10248,7 +10248,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [sinkBaseDialog, wizardSinkQueue]);
   // Range top sub-type selection (shown after user picks "Range Top" in the sink base dialog).
   // Also used for sink/faucet steps: "sink" = sink picker, "faucet" = faucet picker.
-  const [rangeTopStep, setRangeTopStep] = useState<"choose" | "sink" | "grid" | "faucet" | "range-type" | "range-product" | "gas" | "electric" | "induction" | "smooth-top">("choose");
+  const [rangeTopStep, setRangeTopStep] = useState<"choose" | "sink" | "faucet" | "range-type" | "range-product" | "gas" | "electric" | "induction" | "smooth-top">("choose");
   // Pending sink product selected in the "sink" step, waiting for faucet selection.
   type SinkDialogProduct = { id: number; pelicanCode?: string | null; slug: string; name: string; description?: string | null; category: string; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null };
   const [pendingSinkProduct, setPendingSinkProduct] = useState<SinkDialogProduct | null>(null);
@@ -22776,12 +22776,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                           selectedIds={noSelectedPelicanIds}
                           onUse={(item) => {
                             setPendingSinkProduct(item as typeof filteredSinks[0]);
-                            // Keep a grid that fits the new basin; otherwise clear the old one.
+                            // The grid is optional. Keep one that fits the new basin;
+                            // clear it otherwise so the quote never carries the wrong part.
                             const chosen = item as typeof filteredSinks[0];
                             setPendingBottomGrid((current) => (
                               current && bottomGridsForSink(chosen.pelicanCode, [current]).length > 0 ? current : null
                             ));
-                            setRangeTopStep(isBathroomVanity ? "faucet" : "grid");
+                            setRangeTopStep("faucet");
                           }}
                           testIdPrefix="sink-dialog-card"
                           note={isBathroomVanity ? <VanitySinkFacts code={(configuration.variants[0]?.item as typeof filteredSinks[0] | undefined)?.pelicanCode} /> : undefined}
@@ -22790,74 +22791,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     </div>
                   )}
                   <button className="text-xs text-muted-foreground underline self-center" onClick={() => { setPendingSinkProduct(null); setPendingBottomGrid(null); setRangeTopStep("faucet"); }}>Skip sink selection</button>
-                </>
-              )}
-              {rangeTopStep === "grid" && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <PopupDragGrip />
-                    <button className="text-muted-foreground hover:text-foreground transition-colors" onClick={() => setRangeTopStep("sink")}>
-                      <ChevronRight className="h-4 w-4 rotate-180" />
-                    </button>
-                    <div>
-                      <h2 className="text-lg font-semibold text-foreground">Bottom grid for this sink</h2>
-                      <p className="text-sm text-muted-foreground">Protects the bowl. Added to the cart only, not the drawing.</p>
-                    </div>
-                  </div>
-                  {pendingSinkProduct && (
-                    <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs">
-                      <Droplets className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                      <span className="text-muted-foreground">Sink: </span>
-                      <span className="font-medium line-clamp-1">{pendingSinkProduct.name}</span>
-                    </div>
-                  )}
-                  {bottomGridCatalog.isLoading ? (
-                    <Skeleton className="h-24 w-full rounded-lg" />
-                  ) : pendingSinkBottomGrids.length === 0 ? (
-                    <p data-testid="sink-bottom-grid-none" className="rounded-lg border border-dashed border-border px-3 py-3 text-center text-[11px] text-muted-foreground">
-                      Pelican lists no bottom grid for this sink model, so none is offered. The sink is added without one.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {pendingSinkBottomGrids.map((gridProduct) => {
-                        const chosen = pendingBottomGrid?.id === gridProduct.id;
-                        return (
-                          <button
-                            key={gridProduct.id}
-                            type="button"
-                            data-testid={`sink-bottom-grid-${gridProduct.id}`}
-                            aria-pressed={chosen}
-                            onClick={() => setPendingBottomGrid(chosen ? null : gridProduct)}
-                            className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left transition-colors ${chosen ? "border-[#a87f33] bg-[#a87f33]/5" : "border-border hover:border-[#a87f33]/60"}`}
-                          >
-                            {gridProduct.imageUrl
-                              ? <img src={gridProduct.imageUrl} alt={gridProduct.name} className="h-14 w-14 shrink-0 rounded-md object-contain" loading="lazy" />
-                              : <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Droplets className="h-5 w-5" /></div>}
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm font-semibold">{gridProduct.name}</span>
-                              <span className="block truncate text-[11px] text-muted-foreground">{gridProduct.pelicanCode}</span>
-                              <span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Stainless steel · sits inside the bowl</span>
-                            </span>
-                            <span className="shrink-0 text-sm font-bold text-[var(--color-navy)] dark:text-foreground">{formatPrice(gridProduct.sellPrice)}</span>
-                            <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold ${chosen ? "bg-[#a87f33] text-white" : "bg-[#1a2744] text-white"}`}>
-                              {chosen ? "Added" : "Add"}
-                            </span>
-                          </button>
-                        );
-                      })}
-                      <p className="text-[11px] leading-snug text-muted-foreground">A chosen grid goes on the materials list and quote with the sink. Pelican fits these by sink model.</p>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className="w-full rounded-md bg-[#1a2744] px-3 py-2 text-sm font-semibold text-white hover:bg-[#243456]"
-                    onClick={() => setRangeTopStep("faucet")}
-                  >
-                    {pendingBottomGrid ? `Continue with ${pendingBottomGrid.pelicanCode}` : "Continue without a grid"}
-                  </button>
-                  {pendingBottomGrid && (
-                    <button type="button" className="text-xs text-muted-foreground underline self-center" onClick={() => setPendingBottomGrid(null)}>Do not add the grid</button>
-                  )}
                 </>
               )}
               {rangeTopStep === "faucet" && (
@@ -22910,6 +22843,62 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         applySink(pendingSinkProduct, faucet);
                       }}
                     />
+                  )}
+                  {!isBathroomVanity && pendingSinkProduct && (
+                    <section data-testid="sink-bottom-grid-option" className="rounded-xl border border-border p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-semibold text-foreground">Add a bottom grid? <span className="font-normal text-muted-foreground">Optional</span></div>
+                          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">Protects the bowl. Goes on the quote and cart only, never in the drawing.</p>
+                        </div>
+                        {pendingBottomGrid && (
+                          <button type="button" className="shrink-0 text-[11px] font-medium text-[#8a6828] underline" onClick={() => setPendingBottomGrid(null)}>Remove</button>
+                        )}
+                      </div>
+                      {bottomGridCatalog.isLoading ? (
+                        <Skeleton className="mt-2 h-16 w-full rounded-lg" />
+                      ) : pendingSinkBottomGrids.length === 0 ? (
+                        <p data-testid="sink-bottom-grid-none" className="mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
+                          Pelican lists no bottom grid for this sink model, so none is offered. The sink is added without one.
+                        </p>
+                      ) : (
+                        <div className="mt-2 space-y-1.5">
+                          <button
+                            type="button"
+                            data-testid="sink-bottom-grid-none-option"
+                            aria-pressed={pendingBottomGrid == null}
+                            onClick={() => setPendingBottomGrid(null)}
+                            className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${pendingBottomGrid == null ? "border-[#a87f33] bg-[#a87f33]/5 font-semibold" : "border-border hover:border-[#a87f33]/60"}`}
+                          >
+                            <span className="flex-1">No grid — sink only</span>
+                            <span className="text-muted-foreground">$0</span>
+                          </button>
+                          {pendingSinkBottomGrids.map((gridProduct) => {
+                            const chosen = pendingBottomGrid?.id === gridProduct.id;
+                            return (
+                              <button
+                                key={gridProduct.id}
+                                type="button"
+                                data-testid={`sink-bottom-grid-${gridProduct.id}`}
+                                aria-pressed={chosen}
+                                onClick={() => setPendingBottomGrid(chosen ? null : gridProduct)}
+                                className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${chosen ? "border-[#a87f33] bg-[#a87f33]/5" : "border-border hover:border-[#a87f33]/60"}`}
+                              >
+                                {gridProduct.imageUrl
+                                  ? <img src={gridProduct.imageUrl} alt={gridProduct.name} className="h-10 w-10 shrink-0 rounded object-contain" loading="lazy" />
+                                  : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground"><Droplets className="h-4 w-4" /></span>}
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-xs font-semibold">{gridProduct.pelicanCode}</span>
+                                  <span className="block truncate text-[10px] text-muted-foreground">Stainless steel · sits inside the bowl</span>
+                                </span>
+                                <span className="shrink-0 text-xs font-bold text-[var(--color-navy)] dark:text-foreground">{formatPrice(gridProduct.sellPrice)}</span>
+                                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${chosen ? "bg-[#a87f33] text-white" : "bg-[#1a2744] text-white"}`}>{chosen ? "Added" : "Add"}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
                   )}
                   <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip faucet selection</button>
                 </>
