@@ -111,6 +111,7 @@ import {
   isBathroomVanitySinkRow,
   vanitySinkFitsVanityWidth,
 } from "@/lib/bathroomVanityCatalog";
+import { mergeBathroomFaucetRows } from "@/lib/bathroomFixtureCatalog";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
 import {
   DEFAULT_FRESH_LAYOUT_PRESET_ID,
@@ -10263,6 +10264,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const { data: faucetBaseProducts, isLoading: faucetProductsLoading } = trpc.surfaces.recommended.useQuery(
     { role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!sinkBaseDialog }
+  );
+  // The server's "vanity-faucet" role accepts PL-8112 only, so the vanity step
+  // used to show one model. Pelican sells 18 bathroom faucet models; the rest are
+  // active, priced, and photographed in the live catalog. Read the same name
+  // searches the Bathroom Fixtures browser uses, then keep only the SKUs that
+  // carry a measured profile. These follow the step's existing price basis (the
+  // `surfaces.recommended` rows), so one card is not priced on a different tier.
+  const vanityFaucetCatalogEnabled = Boolean(sinkBaseDialog && roomType === "bathroom");
+  const vanityFaucetByName = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog" as const, search: "Bathroom Faucet", limit: 80, offset: 0 },
+    { enabled: vanityFaucetCatalogEnabled },
+  );
+  const vanityFaucetByTerm = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog" as const, search: "Vanity Faucet", limit: 80, offset: 0 },
+    { enabled: vanityFaucetCatalogEnabled },
+  );
+  const vanityFaucetVesselTerm = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog" as const, search: "Vessel Faucet", limit: 80, offset: 0 },
+    { enabled: vanityFaucetCatalogEnabled },
+  );
+  const vanityFaucetCatalogRows = useMemo(
+    () => mergeBathroomFaucetRows(
+      (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+      [
+        ...(vanityFaucetByName.data?.items ?? []),
+        ...(vanityFaucetByTerm.data?.items ?? []),
+        ...(vanityFaucetVesselTerm.data?.items ?? []),
+      ] as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
+    ) as typeof faucetBaseProducts,
+    [faucetBaseProducts, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
   );
   // Auto-Design faucet picker. Same catalog the Products page and the Designer
   // surfaces picker already use: pelican.byCategory (Sinks & Faucets / Faucets)
@@ -22514,7 +22545,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // A vanity faucet is any row tagged `bathroom-vanity-faucet`. When a basin
         // is already pending, three-hole tops only receive faucets drilled to the
         // same hole count (and spread when the basin's sheet publishes one).
-        const filteredFaucets = ((faucetBaseProducts ?? []) as Array<{
+        const filteredFaucets = ((vanityFaucetCatalogRows ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
           bathroomFixtureTags?: string | null;
         }>).filter((product) => Boolean(verifiedPelicanFaucetProfile(product.pelicanCode)))
@@ -22746,7 +22777,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   ) : (
                     <PelicanFaucetPicker
                       faucets={filteredFaucets}
-                      isLoading={faucetProductsLoading}
+                      isLoading={faucetProductsLoading || (vanityFaucetCatalogEnabled && (vanityFaucetByName.isLoading || vanityFaucetByTerm.isLoading || vanityFaucetVesselTerm.isLoading))}
                       kind={isBathroomVanity ? "vanity" : "kitchen"}
                       onSelect={(faucet) => {
                         if (verifiedPelicanFaucetProfile(faucet.pelicanCode)?.installation === "wall-mounted-8-inch-center") {
