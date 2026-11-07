@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSeo } from "@/hooks/useSeo";
 import { formatPrice } from "@/lib/pelican";
+import { pelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
 import { requestSurfaceHandoff } from "@/lib/surfaceSelection";
 import { toast } from "sonner";
 import { Droplets, ShowerHead, ChefHat, ArrowRight, Sparkles, PaintBucket, ShoppingCart } from "lucide-react";
@@ -327,6 +328,7 @@ export default function StoneCreekCollection() {
 }
 
 function StoneCreekCard({ product, onAddToDesign }: { product: any; onAddToDesign: (p: any) => void }) {
+  const catalogDescription = pelicanSinkCatalogDescription(product.pelicanCode) ?? product.description;
   const finish = finishFromName(product.name ?? "");
   const { addItem } = useCart();
   const [, navigate] = useLocation();
@@ -396,9 +398,9 @@ function StoneCreekCard({ product, onAddToDesign }: { product: any; onAddToDesig
           <p className="text-sm font-medium leading-snug line-clamp-2 group-hover:text-primary transition-colors">
             {product.name?.replace("StoneCreek ", "")}
           </p>
-          {product.description && (
-            <p className="mt-1.5 text-xs text-muted-foreground line-clamp-2">
-              {product.description}
+          {catalogDescription && (
+            <p className="mt-1.5 text-xs text-muted-foreground line-clamp-3">
+              {catalogDescription}
             </p>
           )}
           <div className="mt-3 flex items-center justify-between">

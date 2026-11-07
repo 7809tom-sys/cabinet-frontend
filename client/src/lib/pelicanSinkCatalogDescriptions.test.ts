@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { pelicanSinkCatalogDescription, withPelicanSinkCatalogDescription } from "./pelicanSinkCatalogDescriptions";
 
@@ -22,6 +23,16 @@ describe("pelicanSinkCatalogDescription", () => {
     expect(pelicanSinkCatalogDescription(null)).toBeNull();
     const other = { pelicanCode: "PL-8112 BN", description: "Bathroom faucet" };
     expect(withPelicanSinkCatalogDescription(other)).toBe(other);
+  });
+
+  it("shows that copy on the shared product card used by the main site and every affiliate store", () => {
+    const card = readFileSync(new URL("../components/pelican/PelicanProductCard.tsx", import.meta.url), "utf8");
+    const category = readFileSync(new URL("../pages/SurfacesCategory.tsx", import.meta.url), "utf8");
+    const product = readFileSync(new URL("../pages/SurfacesProduct.tsx", import.meta.url), "utf8");
+    expect(card).toContain("pelicanSinkCatalogDescription(product.pelicanCode)");
+    expect(category).toContain("<PelicanProductCard");
+    expect(category).toContain("affiliateSlug={affiliateSlug}");
+    expect(product).toContain("pelicanSinkCatalogDescription(data.pelicanCode)");
   });
 
   it("replaces a stored generic sentence when the SKU has Pelican copy", () => {
