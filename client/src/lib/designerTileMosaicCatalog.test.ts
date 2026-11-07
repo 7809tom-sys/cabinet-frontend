@@ -4,6 +4,7 @@ import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping
 import {
   concatCatalogPages,
   designerMaterialRenderReady,
+  flooringFollowsCatalogPhoto,
   flooringSceneTextureUrl,
   isDesignerPaletteItemVisible,
   isSelectableDesignerFlooringPlank,
@@ -135,7 +136,7 @@ describe("Designer tile and mosaic catalog visibility", () => {
       id: 51,
       materialImageUrl: null,
       imageUrl: "/astoria-card.webp",
-    }, curated)).toBeNull();
+    }, curated)).toBe("/astoria-card.webp");
     expect(flooringSceneTextureUrl({
       id: 82,
       materialImageUrl: null,
@@ -146,7 +147,28 @@ describe("Designer tile and mosaic catalog visibility", () => {
       designerRenderReady: false,
       materialImageUrl: "/not-a-swatch.webp",
       imageUrl: "/astoria-card.webp",
+    })).toBe("/astoria-card.webp");
+    expect(flooringSceneTextureUrl({
+      id: 99,
+      materialImageUrl: null,
+      designerRenderReady: false,
+      imageUrl: "/manus-storage/pelican/captiva-gray.webp",
+    })).toBe("/manus-storage/pelican/captiva-gray.webp");
+    expect(flooringSceneTextureUrl({
+      id: 100,
+      materialImageUrl: null,
+      imageUrl: "/floor_normal.jpg",
     })).toBeNull();
+    expect(flooringFollowsCatalogPhoto({
+      category: "Flooring",
+      materialImageUrl: null,
+      imageUrl: "/manus-storage/pelican/captiva-gray.webp",
+    })).toBe(true);
+    expect(flooringFollowsCatalogPhoto({
+      category: "Quartz Slabs (Countertops)",
+      materialImageUrl: null,
+      imageUrl: "/slab-card.webp",
+    })).toBe(false);
     expect(flooringSceneTextureUrl({
       id: 54,
       hasSwatch: true,

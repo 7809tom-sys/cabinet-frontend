@@ -15661,13 +15661,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        : role === "flooring"
 	          ? activeFlooringSurface
 	          : activeBacksplashSurface;
-      // Catalog product cards can be staged-room or retail photographs. The
-      // final 3D scene accepts only an explicitly approved, repeatable swatch
-      // for flooring and countertops; named curated assets are resolved
-      // separately by the 3D renderer. Flooring still refuses staged room photography.
+      // Countertops still require an approved swatch. Flooring uses an approved
+      // swatch or a known product map, and otherwise tiles the selected
+      // product's catalog photo. Named curated assets stay in the 3D renderer.
       if (role === "flooring") {
         // A mosaic marked Use as floor tile uses the same picture as its wall
-        // backsplash. Planks still refuse a staged room or catalog photo.
+        // backsplash. Planks without a swatch use their catalog photo.
         if (isMosaicFloorProduct(selected)) {
           const mosaicFloorEntry = mosaicCatalogFor({
             name: selected?.name,
@@ -15679,10 +15678,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (mosaicFloorEntry) return selected?.materialImageUrl?.trim() || mosaicFloorEntry.texture;
           return selectedBacksplashTextureUrl(selected).url;
         }
-        // Never let a staged room/card image tile across a floor. An explicit
-        // designerRenderReady or hasSwatch flag wins; otherwise materialImageUrl
-        // is the approved swatch. Known product maps stay available. Any other
-        // selected floor receives the renderer's labeled neutral floor.
+        // An approved swatch or a known product map wins. Any other selected
+        // plank tiles its catalog photo so the floor matches that product
+        // instead of the default brown wood. A plank with no photo at all
+        // still receives the renderer's neutral floor.
         return flooringSceneTextureUrl(selected, approvedFlooringSwatchByProductId);
       }
       if (role === "backsplash") {

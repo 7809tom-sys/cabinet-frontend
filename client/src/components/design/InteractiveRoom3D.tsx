@@ -1457,9 +1457,10 @@ export function threeDProductMaterialSource(
 	    };
 	  }
 	}
-	// Flooring and countertops still refuse an unapproved room photo and use a
-	// neutral preview. A selected backsplash uses its own picture; with no
-	// picture it stays unlabeled instead of becoming a generic tile.
+	// Countertops still use a neutral preview until an approved slab swatch
+	// exists. Flooring reaches this branch only when the selected product has
+	// no swatch and no catalog photo. A selected backsplash uses its own
+	// picture; with no picture it stays unlabeled instead of becoming a generic tile.
 	if ((role === "backsplash" || mosaicOnFloor) && productName?.trim()) {
 		const sheet = parseBacksplashSheetInches({
 			name: productName,
