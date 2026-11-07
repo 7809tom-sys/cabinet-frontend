@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { makePelicanToiletGroup, type PelicanToiletMeshProfile } from "./pelicanToiletMesh";
+import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES } from "./pelicanBathroomFixtureProfiles";
+import { makePelicanToiletGroup, pelicanToiletForm, type PelicanToiletMeshProfile } from "./pelicanToiletMesh";
 
 const INCH = 1 / 12;
 const EPSILON = 0.000001;
@@ -87,9 +88,11 @@ describe("makePelicanToiletGroup", () => {
     expect(rear.userData).toMatchObject({ silhouette: "integrated-soft-rear" });
     const seat = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-seat")!;
     const lid = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-lid")!;
-    expect(seat.position.y).toBeCloseTo(source.seatHeightIn! * INCH + 0.018, 6);
-    expect((lid.geometry as THREE.BoxGeometry).parameters.depth).toBeLessThan(source.depthIn * INCH);
+    expect(seat.position.y).toBeCloseTo(source.seatHeightIn! * INCH, 6);
+    expect(new THREE.Box3().setFromObject(lid).getSize(new THREE.Vector3()).z).toBeLessThan(source.depthIn * INCH);
     expect(lid.geometry.getAttribute("position").count).toBeGreaterThan(100);
+    expect(lid.userData.lidProfile).toBe("soft-elongated-oval");
+    expect(seat.userData.seatProfile).toBe("closed-elongated-oval");
     expect(new THREE.Box3().setFromObject(bowl).min.y).toBeLessThan(new THREE.Box3().setFromObject(base).max.y);
   });
 
@@ -158,8 +161,33 @@ describe("makePelicanToiletGroup", () => {
       "toilet-tank-lid",
       "toilet-single-flush-button",
     ]));
+    expect(partsIn(fixture)).toEqual(expect.arrayContaining(["toilet-exposed-trapway"]));
     expect(partsIn(fixture)).not.toContain("toilet-integrated-rear-housing");
     const tank = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-tank")!;
     expect(tank.userData).toMatchObject({ silhouette: "soft-separate-tank" });
+    expect(fixture.userData.toiletForm).toBe("two-piece");
+  });
+
+  it("keeps every published toilet inside its sheet envelope and on its own silhouette", () => {
+    const expected: Record<string, string> = {
+      "PL-12005": "smart-wedge",
+      "PL-12050": "pedestal-one-piece",
+      "PL-12335": "pedestal-one-piece",
+      "PL-12305": "smart-egg",
+      "PL-12230": "smart-egg",
+      "PL-A249 ADA": "two-piece",
+      "PL-12044": "skirted-one-piece",
+      "PL-12318": "skirted-one-piece",
+    };
+    const toilets = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.filter((entry) => entry.kind === "toilet");
+    expect(toilets.length).toBeGreaterThanOrEqual(14);
+    for (const source of toilets) {
+      const fixture = makePelicanToiletGroup(source);
+      assertFitsSourceEnvelope(fixture, source);
+      const form = pelicanToiletForm(source);
+      if (expected[source.pelicanCode]) expect(form).toBe(expected[source.pelicanCode]);
+      expect(fixture.userData.toiletForm).toBe(form);
+      expect(partsIn(fixture)).toEqual(expect.arrayContaining(["toilet-bowl-exterior", "toilet-seat", "toilet-lid"]));
+    }
   });
 });

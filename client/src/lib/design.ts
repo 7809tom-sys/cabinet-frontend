@@ -3145,6 +3145,11 @@ export function snapPosition(
   island?: { x: number; y: number; width: number; depth: number } | null
 ): { x: number; y: number; snappedWall: boolean; snappedIsland: boolean; snappedCabinet: boolean; snappedGrid: boolean } {
   others = mergeActiveFloorObstacles(others);
+  // A tub or toilet owns its floor, but it is not a cabinet to butt against.
+  // Snapping or pushing a pantry onto that footprint is what slid the linen
+  // cabinet into the toilet. Collision still rejects the overlap; the cabinet
+  // stays where it was.
+  const snapPeers = others.filter((item) => !item.floorOccupancyObstacle);
   // Use the PLAN footprint (not the raw rotated size) so L-corner cabinets
   // (lazy-Susan / corner base) snap by their true SQUARE box. Their stored depth
   // can be the shallow ~24" leg depth, which would leave the box short of the
@@ -3199,7 +3204,7 @@ export function snapPosition(
 	    { value: room.depth - d, distance: Math.abs(y + d - room.depth), source: "wall" },
 	  ];
 
-	  for (const o of others) {
+	  for (const o of snapPeers) {
 	    if (o.uid === moving.uid) continue;
 	    if (!sharesPlanCollisionZone(moving, o)) continue;
 	    const os = placedFootprint(o);
@@ -3239,7 +3244,7 @@ export function snapPosition(
   // its neighbors instead of stacking on one of them.
   for (let pass = 0; pass < 4; pass++) {
     let moved = false;
-    for (const o of others) {
+    for (const o of snapPeers) {
       if (o.uid === moving.uid) continue;
       if (!sharesPlanCollisionZone(moving, o)) continue;
       const os = placedFootprint(o);
@@ -16106,21 +16111,48 @@ export function makeFurniture(defId: string, x: number, y: number): PlacedFurnit
 export function restoredFurniture(rows: unknown): PlacedFurniture[] {
   if (!Array.isArray(rows)) return [];
   const restored: PlacedFurniture[] = [];
+  const seen = new Set<string>();
   for (const row of rows) {
     if (!row || typeof row !== "object") continue;
     const candidate = row as PlacedFurniture;
     if (typeof candidate.defId !== "string" || candidate.defId.startsWith("bathroom-zone-")) continue;
     if (!FURNITURE_CATALOG.some((definition) => definition.id === candidate.defId)) continue;
+    const uid = typeof candidate.uid === "string" && candidate.uid ? candidate.uid : `furn-restored-${restored.length}`;
+    if (seen.has(uid)) continue;
+    seen.add(uid);
     const { planningZoneSize: _legacyZoneSize, ...rest } = candidate as PlacedFurniture & { planningZoneSize?: unknown };
     restored.push({
       ...rest,
-      uid: typeof candidate.uid === "string" && candidate.uid ? candidate.uid : `furn-restored-${restored.length}`,
+      uid,
       x: Number.isFinite(candidate.x) ? candidate.x : 0,
       y: Number.isFinite(candidate.y) ? candidate.y : 0,
       rotation: Number.isFinite(candidate.rotation) ? candidate.rotation : 0,
     });
   }
   return restored;
+}
+
+/**
+ * One reload of a saved plan or a local draft.
+ *
+ * Furniture may be stored twice: once as the live `furniture` list and again
+ * inside `room.persistedEntities` from the last server save. Those lists are
+ * not merged. The live list wins when it is present, so an older embedded
+ * copy cannot add a second and third tub on refresh. Selected surface rows
+ * are quotes, not floor items, and never become fixtures here.
+ *
+ * Cabinets come back at the coordinates that were saved. This pass does not
+ * reseat them, snap them, or push them off a toilet or tub.
+ */
+export function restoreSavedDesignerPlan(snapshot: {
+  room: RoomData;
+  placed?: PlacedCabinet[] | null;
+  furniture?: unknown;
+}): { room: RoomData; placed: PlacedCabinet[]; furniture: PlacedFurniture[] } {
+  const embedded = snapshot.room?.persistedEntities?.furniture;
+  const furniture = restoredFurniture(Array.isArray(snapshot.furniture) ? snapshot.furniture : embedded);
+  const placed = (Array.isArray(snapshot.placed) ? snapshot.placed : []).map((cabinet) => ({ ...cabinet }));
+  return { room: snapshot.room, placed, furniture };
 }
 
 /**

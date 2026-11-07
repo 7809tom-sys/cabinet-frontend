@@ -18,6 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  BATHROOM_FAUCET_CATALOG_SEARCHES,
+  bathroomFixtureCardImage,
+  mergeBathroomFaucetRows,
+} from "@/lib/bathroomFixtureCatalog";
 import { trpc } from "@/lib/trpc";
 import {
   PELICAN_STOREFRONT_CATEGORIES,
@@ -351,6 +356,26 @@ export function SurfacesPickerDialog({
     { role: activeBathroomRole, limit: activeBathroomRole === "flooring" ? 500 : PAGE_LIMIT, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: open && isBathroom && !browsingTileMosaic },
   );
+  // Vanity faucets are active and priced, but they sort after the 480-row
+  // window `surfaces.recommended` reads. Search the catalog by the words in
+  // their names so those rows still reach this tab.
+  const bathroomFaucetSearchEnabled = open && isBathroom && activeBathroomRole === "bathroom-faucet";
+  const bathroomFaucetByName = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog", search: BATHROOM_FAUCET_CATALOG_SEARCHES[0], limit: 50, offset: 0, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: bathroomFaucetSearchEnabled },
+  );
+  const vanityFaucetByName = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog", search: BATHROOM_FAUCET_CATALOG_SEARCHES[1], limit: 50, offset: 0, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: bathroomFaucetSearchEnabled },
+  );
+  const vesselFaucetByName = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog", search: BATHROOM_FAUCET_CATALOG_SEARCHES[2], limit: 50, offset: 0, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: bathroomFaucetSearchEnabled },
+  );
+  const tubFaucetByName = trpc.pelican.byCategory.useQuery(
+    { category: "Sinks & Faucets", scope: "catalog", search: BATHROOM_FAUCET_CATALOG_SEARCHES[3], limit: 50, offset: 0, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: bathroomFaucetSearchEnabled },
+  );
 
   const selectedIds = useMemo(() => new Set(selected.map((s) => s.id)), [selected]);
   const preferredIds = useMemo(
@@ -402,16 +427,29 @@ export function SurfacesPickerDialog({
       : []) as SelectedSurface[],
     [floorMosaicPage?.items, floorMosaicPage2?.items, showingFloorMaterials],
   );
+  const faucetCatalogItems = [
+    ...(bathroomFaucetByName.data?.items ?? []),
+    ...(vanityFaucetByName.data?.items ?? []),
+    ...(vesselFaucetByName.data?.items ?? []),
+    ...(tubFaucetByName.data?.items ?? []),
+  ] as SelectedSurface[];
+  const bathroomRows = isBathroom && activeBathroomRole === "bathroom-faucet"
+    ? mergeBathroomFaucetRows((bathroomData ?? []) as SelectedSurface[], faucetCatalogItems)
+    : ((bathroomData ?? []) as SelectedSurface[]);
   const baseItems: SelectedSurface[] = (isBathroom
-    ? (browsingTileMosaic ? categoryItems : bathroomData ?? [])
+    ? (browsingTileMosaic ? categoryItems : bathroomRows)
     : category === "Preferred"
       ? preferredItems
-      : categoryItems) as SelectedSurface[];
+      : categoryItems).map((item) => (
+    isBathroom
+      ? { ...item, imageUrl: bathroomFixtureCardImage(item.pelicanCode, item.imageUrl) }
+      : item
+  ));
   const items: SelectedSurface[] = showingFloorMaterials
     ? concatCatalogPages([baseItems, floorMosaics])
     : baseItems;
   const paletteLoading = isBathroom
-    ? (browsingTileMosaic ? isLoading || (catalogPage2Enabled && catalogPage2Loading) : bathroomLoading || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading))))
+    ? (browsingTileMosaic ? isLoading || (catalogPage2Enabled && catalogPage2Loading) : bathroomLoading || (bathroomFaucetSearchEnabled && (bathroomFaucetByName.isLoading || vanityFaucetByName.isLoading || vesselFaucetByName.isLoading || tubFaucetByName.isLoading)) || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading))))
     : category === "Preferred"
       ? preferredProductsLoading || catalogPreferredLoading
       : isLoading || (catalogPage2Enabled && catalogPage2Loading) || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading)));
@@ -678,7 +716,7 @@ export function SurfacesPickerDialog({
                 <section data-testid="selected-bathroom-fixture-preview" aria-label="Selected bathroom fixture preview" className="grid grid-cols-[5rem_minmax(0,1fr)] gap-3 rounded-xl border border-[var(--color-gold)]/45 bg-[#fffaf0] p-2.5">
                   <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg border border-[var(--color-gold)]/25 bg-white">
                     {selectedBathroomFixture.imageUrl ? (
-                      <img src={selectedBathroomFixture.imageUrl} alt={`${selectedBathroomFixture.name} selected preview`} className="h-full w-full object-contain" />
+                      <img src={bathroomFixtureCardImage(selectedBathroomFixture.pelicanCode, selectedBathroomFixture.imageUrl) ?? selectedBathroomFixture.imageUrl} alt={`${selectedBathroomFixture.name} selected preview`} className="h-full w-full object-contain" />
                     ) : (
                       <Waves className="h-6 w-6 text-[var(--color-gold)]" aria-hidden="true" />
                     )}
@@ -779,7 +817,7 @@ export function SurfacesPickerDialog({
                     >
                       <div className="relative aspect-[4/3] w-full">
                         {p.imageUrl ? (
-                          <img src={p.imageUrl} alt={`${configuration.label}${hasVariants ? ` in ${displayVariant.label}` : ""}`} className="h-full w-full object-cover" />
+                          <img src={bathroomFixtureCardImage(p.pelicanCode, p.imageUrl) ?? p.imageUrl} alt={`${configuration.label}${hasVariants ? ` in ${displayVariant.label}` : ""}`} className="h-full w-full object-contain" />
                         ) : (
                           <div
                             className="flex h-full w-full items-center justify-center"

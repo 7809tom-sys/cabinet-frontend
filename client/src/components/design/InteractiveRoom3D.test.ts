@@ -131,7 +131,7 @@ describe("source-measured Pelican bathroom fixtures", () => {
     const lid = fixture?.children.find((child) => child.userData.pelicanBathroomFixturePart === "toilet-lid") as THREE.Mesh;
     expect(base.userData).toMatchObject({ silhouette: "continuous-skirted-body" });
     expect(bowl.userData).toMatchObject({ continuousWithCeramicBase: true });
-    expect(lid.userData).toMatchObject({ lidProfile: "soft-elongated-rectangle" });
+    expect(lid.userData).toMatchObject({ lidProfile: "soft-elongated-oval" });
     const baseTop = new THREE.Box3().setFromObject(base).max.y;
     const bowlBottom = new THREE.Box3().setFromObject(bowl).min.y;
     expect(bowlBottom).toBeLessThan(baseTop); // one continuous joined silhouette

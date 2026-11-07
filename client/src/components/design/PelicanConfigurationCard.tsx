@@ -7,6 +7,8 @@ import {
   type PelicanConfiguration,
   type PelicanGroupable,
 } from "@shared/pelicanConfigurationGrouping";
+import { bathroomFixtureCardImage } from "@/lib/bathroomFixtureCatalog";
+import { pelicanToiletCatalogPhoto } from "@/lib/pelicanToiletCatalogPhotos";
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { PelicanFinishDot, PelicanVariantSelect } from "./PelicanVariantSelect";
 
@@ -43,7 +45,10 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
     ? configuration.variants.find((entry) => selectedIds.has(entry.item.id))
     : undefined;
   const anySelected = isSelected || Boolean(selectedElsewhere);
-  const image = item.imageUrl ?? configuration.variants.find((entry) => entry.item.imageUrl)?.item.imageUrl ?? null;
+  const image = bathroomFixtureCardImage(item.pelicanCode, item.imageUrl)
+    ?? configuration.variants.map((entry) => bathroomFixtureCardImage(entry.item.pelicanCode, entry.item.imageUrl)).find(Boolean)
+    ?? pelicanToiletCatalogPhoto(item.pelicanCode)
+    ?? null;
   const wording = isSelected ? "Selected" : actionLabel ?? pelicanUseLabel(configuration.optionLabel);
   const multiple = configuration.variants.length > 1;
 
