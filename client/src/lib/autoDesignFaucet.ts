@@ -161,8 +161,8 @@ export function applyChosenAutoDesignFaucet<T extends FaucetSink>(sink: T, produ
  * without making it a shopper choice. The faucet is drawn in plan and 3D but is
  * never added to the cart or the quote.
  */
-export function fillAutoFaucet<T extends FaucetSink>(sink: T, product: AutoDesignFaucetProduct | null): T {
-  return product ? withCatalogFaucet(sink, product, true) : withDefaultFaucet(sink);
+export function fillAutoFaucet<T extends FaucetSink>(sink: T, product: AutoDesignFaucetProduct | null, bathroom = false): T {
+  return product ? withCatalogFaucet(sink, product, true) : withDefaultFaucet(sink, bathroom);
 }
 
 /** True when this faucet was filled in by the Designer rather than chosen. */
@@ -241,13 +241,17 @@ export type MandatoryFaucetResult<T extends FaucetSink> = {
 export function ensureMandatorySinkFaucets<T extends FaucetSink>(
   sinks: readonly T[],
   catalogProducts: readonly AutoDesignFaucetProduct[],
-  options: { bathroom?: boolean } = {},
+  options: { bathroom?: boolean; bathroomForSink?: (sink: T) => boolean } = {},
 ): MandatoryFaucetResult<T> {
   const catalog = defaultAutoDesignFaucet(catalogProducts);
   const notes: string[] = [];
   const attachedUids: string[] = [];
   let usedDefault = false;
   let source: FaucetAttachSource | "none" = "none";
+  // A vanity basin gets the vanity fixture; an apron-front or kitchen sink gets
+  // the kitchen fixture. The caller can answer per sink, because a bathroom
+  // holds both a vanity sink base and a farmhouse sink base.
+  const bathroomSink = (sink: T) => options.bathroomForSink ? options.bathroomForSink(sink) : options.bathroom === true;
 
   const next = sinks.map((sink) => {
     // Add-only: an existing, DRAWABLE faucet is never replaced or removed. A bare
@@ -258,7 +262,7 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
     }
     const withFaucet = catalog
       ? withCatalogFaucet(sink, catalog, true)
-      : withDefaultFaucet(sink, options.bathroom === true);
+      : withDefaultFaucet(sink, bathroomSink(sink));
     if (!catalog) usedDefault = true;
     source = catalog ? "catalog" : "default";
     attachedUids.push(sink.uid);
@@ -269,7 +273,10 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
     notes.push(catalog
       ? `${catalog.name} was placed at ${attachedUids.length === 1 ? "the sink" : `each of the ${attachedUids.length} sinks`}, centered on the sink base.`
       : (() => {
-        const fallback = options.bathroom === true ? DEFAULT_PELICAN_VANITY_FAUCET : DEFAULT_PELICAN_KITCHEN_FAUCET;
+        const fallback = attachedUids.some((uid) => {
+          const sink = sinks.find((item) => item.uid === uid);
+          return sink ? bathroomSink(sink) : options.bathroom === true;
+        }) ? DEFAULT_PELICAN_VANITY_FAUCET : DEFAULT_PELICAN_KITCHEN_FAUCET;
         return `The selected line sells no faucet, so the default ${fallback.name} (${fallback.pelicanCode}) was placed at ${attachedUids.length === 1 ? "the sink" : `each of the ${attachedUids.length} sinks`}.`;
       })());
   }

@@ -4122,7 +4122,7 @@ export function resolvedThreeDSpecialtyProfile(sku: Pick<SceneSku, "graphicType"
     description: sku.description,
     graphicType: sku.graphicType ?? sku.customProfile ?? null,
   }) === "range-hood-front") return { kind: "range-hood-front" as const, pattern: null };
-  if (/^(?:ada[-_])?fsb[-_]?\d/i.test(sku.masterCode) || /farm(?:house)?\s+sink|apron[-\s]?front/i.test(sku.description ?? "")) return { kind: "farmhouse-sink" as const, pattern: null };
+  if (/^(?:ada[-_])?fsb[-_]?\d/i.test(sku.masterCode) || /farm(?:house|er)?'?s?\s+sink|apron[-\s]?front/i.test(sku.description ?? "")) return { kind: "farmhouse-sink" as const, pattern: null };
   // WAC1230/WAC1236/WAC1242 and AW aliases are one angled wall-END family.
   // They are not room-corner cabinets and they do not share the BA-24
   // quarter-octagon. The triangle's hypotenuse is the room-facing door.
@@ -4447,7 +4447,7 @@ export function addCabinet(
     && !/\b(?:wall|built[-\s]?in|single|double)\s+oven\b/i.test(sku.description ?? "");
   const isFreestandingRange = placement === "appliance" && !isCountertopOpeningAppliance && !isPlacedHood && (rangeOrStoveCode || rangeOrStoveDescription);
   const rangeAppearance = isFreestandingRange ? rangeVisualAppearance(sku) : null;
-  const isFarmhouseSinkBase = placement === "base" && (/^(?:ada[-_])?fsb[-_]?\d/i.test(sku.masterCode) || /farm(?:house)?\s+sink|apron[-\s]?front/i.test(sku.description ?? ""));
+  const isFarmhouseSinkBase = placement === "base" && (/^(?:ada[-_])?fsb[-_]?\d/i.test(sku.masterCode) || /farm(?:house|er)?'?s?\s+sink|apron[-\s]?front/i.test(sku.description ?? ""));
   const isRefrigeratorEndPanel = /refrigerator[-\s]?end[-\s]?panel|refrigerator-end-panel|\brepv\b/i.test(`${sku.description ?? ""} ${sku.masterCode ?? ""} ${sku.customProfile ?? ""}`);
   const openShelfCode = `${sku.masterCode ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
   const kitchenCrestGenericShelfCount = kitchenCrestGenericOpenEndShelfCount(sku);

@@ -69,7 +69,9 @@ describe("Every sink in the drawing has a faucet", () => {
   });
 
   it("still shows the kitchen faucet list to choose from", () => {
-    expect(designTool).toContain('if (!sinkBaseDialog || roomType === "bathroom")');
+    // The role follows the selected base: a kitchen or farmhouse / apron-front
+    // base asks for ordinary faucet rows; only a vanity asks for vanity faucets.
+    expect(designTool).toContain("{ role: faucetCatalogRoleForBase(sinkDialogBase, roomType), limit: 200, affiliateSlug: affiliateSlug ?? undefined }");
     expect(designTool).toContain("return (faucetBaseProducts ?? []) as typeof faucetBaseProducts;");
   });
 });
