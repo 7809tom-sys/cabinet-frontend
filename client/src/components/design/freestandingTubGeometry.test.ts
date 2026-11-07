@@ -114,6 +114,22 @@ describe("Freestanding tub geometry", () => {
     expect(centered.position.z).toBeCloseTo(0, 6);
   });
 
+  it("closes the basin so the room floor cannot show through the tub", () => {
+    for (const code of ['PL-02141 59"', 'PL-02146 59"', 'PL-02563 67"', 'PL-02138 59"']) {
+      const { profile, parts } = partsFor(code);
+      const height = profile.heightIn / 12;
+      // A capped basin floor sits above the room floor, not on it.
+      const well = parts.find((entry) => entry.part === "freestanding-tub-well")!;
+      expect(well, code).toBeTruthy();
+      const wellY = well.mesh.geometry.getAttribute("position");
+      let minY = Infinity;
+      for (let index = 0; index < wellY.count; index += 1) minY = Math.min(minY, wellY.getY(index));
+      expect(minY, `${code} basin floor`).toBeGreaterThan(height * 0.1);
+      // And the underside is capped, so the shell is not open at the floor.
+      expect(parts.some((entry) => entry.part === "freestanding-tub-base"), `${code} base`).toBe(true);
+    }
+  });
+
   it("treats only PL-02141 as a slipper tub", () => {
     const slipper = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.filter((entry) => isSlipperTub(entry)).map((entry) => entry.pelicanCode);
     expect(slipper).toEqual(['PL-02141 59"', 'PL-02141 67"']);

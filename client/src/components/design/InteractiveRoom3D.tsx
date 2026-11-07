@@ -11023,46 +11023,12 @@ function addPelicanBathroomFixture(
     rim.scale.set(width * 0.67, depth * 0.43, 1);
     rim.position.y = height * 0.8;
     add(rim, "bidet-rim");
-  } else if (profile.kind === "freestanding-tub" && (profile.tubShape === "rectangular" || profile.tubShape === "rounded-rectangular")) {
-    // PL-02146's official top view is rectangular. This tapered hollow shell
-    // stays within its measured exterior; wall thickness/radii are illustrative.
-    const ring = (w: number, d: number, y: number) => {
-      const radius = Math.min(w, d) * (profile.tubShape === "rounded-rectangular" ? 0.22 : 0.06);
-      const points: THREE.Vector3[] = [];
-      for (let corner = 0; corner < 4; corner++) {
-        const cx = corner === 0 || corner === 3 ? w / 2 - radius : -w / 2 + radius;
-        const cz = corner < 2 ? d / 2 - radius : -d / 2 + radius;
-        for (let step = 0; step <= 8; step++) {
-          const angle = (corner * 90 + step * 90 / 8) * Math.PI / 180;
-          points.push(new THREE.Vector3(cx + radius * Math.cos(angle), y, cz + radius * Math.sin(angle)));
-        }
-      }
-      return points;
-    };
-    const rings = [ring(width * 0.78, depth * 0.85, 0.008), ring(width, depth, height), ring(width * 0.89, depth * 0.93, height), ring(width * 0.65, depth * 0.78, height * 0.22)];
-    const vertices: number[] = [];
-    for (let level = 0; level < rings.length - 1; level++) {
-      for (let i = 0; i < rings[level].length; i++) {
-        const next = (i + 1) % rings[level].length;
-        for (const point of [rings[level][i], rings[level + 1][i], rings[level + 1][next], rings[level][i], rings[level + 1][next], rings[level][next]]) vertices.push(point.x, point.y, point.z);
-      }
-    }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.computeVertexNormals();
-    const rectangularMaterial = shell.clone();
-    rectangularMaterial.side = THREE.DoubleSide;
-    add(new THREE.Mesh(geometry, rectangularMaterial), "rectangular-freestanding-tub-shell");
-    const well = new THREE.Mesh(new RoundedBoxGeometry(width * 0.65, height * 0.02, depth * 0.78, width * 0.03, 4), shell);
-    well.position.y = height * 0.22;
-    add(well, "rectangular-freestanding-tub-well");
-    const drain = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.032, width * 0.032, 0.016, 20), dark);
-    drain.position.y = height * 0.24;
-    add(drain, "freestanding-tub-drain");
   } else if (profile.kind === "freestanding-tub") {
     // The supplier publishes the exterior envelope, drain side, and photos. The
     // shell follows that outline: a slipper backrest where the photo shows one,
-    // a thin rim, a tapered base flush to the floor, a real drain and overflow.
+    // a rounded-rectangle plan where the top view is rectangular, a thin rim, a
+    // tapered base flush to the floor, and a closed basin with a real drain and
+    // overflow so no room floor shows through the tub.
     for (const { mesh, part } of makeFreestandingTubParts(profile, { shell, dark }, { slipper: isSlipperTub(profile) })) {
       add(mesh, part);
     }

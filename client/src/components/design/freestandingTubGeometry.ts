@@ -127,10 +127,80 @@ function rimBand(outer: THREE.Vector3[], inner: THREE.Vector3[]): THREE.BufferGe
 }
 
 /**
- * The body of a freestanding tub, as one hollow shell.
+ * A rounded-rectangle outline ring at height share `t`, matching this family's
+ * published top view. `radiusShare` is how round the corners are.
+ */
+function roundedRingPoints(
+  halfWidth: number,
+  halfDepth: number,
+  t: number,
+  radiusShare: number,
+  heightAt: (angle: number, t: number) => number,
+  cornerSegments = 10,
+): THREE.Vector3[] {
+  const plan = profilePoint(t);
+  const w = halfWidth * 2 * plan.width;
+  const d = halfDepth * 2 * plan.width;
+  const radius = Math.min(w, d) * radiusShare;
+  const points: THREE.Vector3[] = [];
+  // Walk the four corners in order so the ring closes cleanly.
+  const corners: Array<{ cx: number; cz: number; start: number }> = [
+    { cx: w / 2 - radius, cz: d / 2 - radius, start: 0 },
+    { cx: -w / 2 + radius, cz: d / 2 - radius, start: Math.PI / 2 },
+    { cx: -w / 2 + radius, cz: -d / 2 + radius, start: Math.PI },
+    { cx: w / 2 - radius, cz: -d / 2 + radius, start: Math.PI * 1.5 },
+  ];
+  const total = corners.length * (cornerSegments + 1);
+  let step = 0;
+  for (const { cx, cz, start } of corners) {
+    for (let index = 0; index <= cornerSegments; index += 1) {
+      const angle = start + (index / cornerSegments) * (Math.PI / 2);
+      const pointAngle = (step / total) * Math.PI * 2;
+      points.push(new THREE.Vector3(
+        cx + Math.cos(angle) * radius,
+        heightAt(pointAngle, t),
+        cz + Math.sin(angle) * radius,
+      ));
+      step += 1;
+    }
+  }
+  return points;
+}
+
+/**
+ * A flat cap across a ring, so the shell is closed rather than open-ended.
+ * Used for the basin floor and the underside.
+ */
+function capRing(ring: THREE.Vector3[], yFor: (point: THREE.Vector3) => number): THREE.BufferGeometry {
+  const vertices: number[] = [];
+  const indices: number[] = [];
+  let cx = 0;
+  let cz = 0;
+  for (const point of ring) {
+    cx += point.x;
+    cz += point.z;
+  }
+  cx /= ring.length;
+  cz /= ring.length;
+  vertices.push(cx, yFor(ring[0]!), cz);
+  for (const point of ring) vertices.push(point.x, yFor(point), point.z);
+  for (let index = 0; index < ring.length; index += 1) {
+    const next = (index + 1) % ring.length;
+    indices.push(0, index + 1, next + 1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * The body of a freestanding tub, as one closed hollow shell.
  *
  * Returns the parts rather than adding them, so the caller keeps ownership of
- * the group and its userData.
+ * the group and its userData. The basin floor is part of the shell, so the room
+ * floor never shows through the tub.
  */
 export function makeFreestandingTubParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
@@ -143,6 +213,8 @@ export function makeFreestandingTubParts(
   const halfWidth = width / 2;
   const halfDepth = depth / 2;
   const slipper = options.slipper === true;
+  const rectangular = profile.tubShape === "rectangular" || profile.tubShape === "rounded-rectangular";
+  const radiusShare = profile.tubShape === "rounded-rectangular" ? 0.22 : 0.06;
   // The published height is the OVERALL height, measured at the backrest. The
   // foot end is therefore lower, not the backrest higher.
   const footShare = 1 / (1 + SLIPPER_BACK_RISE);
@@ -153,10 +225,18 @@ export function makeFreestandingTubParts(
     const influence = THREE.MathUtils.smoothstep(towardBack, SLIPPER_BACK_SHARE, 1);
     return footShare + (1 - footShare) * influence;
   };
+  const ringAt = (hw: number, hd: number, t: number, heightAt: (angle: number, share: number) => number) => (
+    rectangular
+      ? roundedRingPoints(hw, hd, t, radiusShare, heightAt)
+      : ringPointsAt(hw, hd, t, heightAt)
+  );
+  // The basin floor is a real surface, high enough to read as the bottom of a
+  // bath rather than the room floor.
+  const basinFloorShare = 0.16;
 
   const rimThickness = height * RIM_THICKNESS;
   const wall = width * 0.045;
-  const levels = [0, 0.14, 0.34, 0.58, 0.8, 0.93, 1];
+  const levels = [0, 0.24, 0.46, 0.68, 0.86, 0.95, 1];
   const parts: FreestandingTubPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string, material: THREE.Material = materials.shell) => {
     const mesh = new THREE.Mesh(geometry, material);
@@ -169,15 +249,19 @@ export function makeFreestandingTubParts(
   // Outer shell, tapered from the floor up to the rim itself.
   const outer = levels.map((level) => {
     const t = level === 1 ? 1 : level * (1 - rimThickness / height);
-    return ringPointsAt(halfWidth, halfDepth, t, (angle, share) => share * height * topShareAt(angle));
+    return ringAt(halfWidth, halfDepth, t, (angle, share) => share * height * topShareAt(angle));
   });
   push(loftRings(outer), "freestanding-tub-exterior");
+  // Close the underside so no room floor is visible through the tub.
+  push(capRing(outer[0]!, (point) => 0.004), "freestanding-tub-base");
 
   // Inner shell: inset by the wall, and one rim thickness below the outer rim
-  // at the same point, so the band between them is the flat top edge.
-  const inner = levels.map((level) => {
+  // at the same point, so the band between them is the flat top edge. It starts
+  // at the basin floor, not at the room floor.
+  const basinLevels = [basinFloorShare, ...levels.filter((level) => level > basinFloorShare)];
+  const inner = basinLevels.map((level) => {
     const t = level === 1 ? 1 : level * (1 - rimThickness / height);
-    return ringPointsAt(halfWidth - wall, halfDepth - wall, t, (angle, share) => (
+    return ringAt(halfWidth - wall, halfDepth - wall, t, (angle, share) => (
       Math.max(0.02, share * height * topShareAt(angle) - rimThickness)
     ));
   });
@@ -186,15 +270,11 @@ export function makeFreestandingTubParts(
   // A thin flat band closes the rim between the two shells.
   push(rimBand(outer[outer.length - 1]!, inner[inner.length - 1]!), "freestanding-tub-rim");
 
-  // Floor of the basin.
-  const wellY = Math.max(inner[0]![0]!.y, height * 0.1);
-  const well = new THREE.Mesh(new THREE.CircleGeometry(0.5, SEGMENTS), materials.shell);
-  well.rotation.x = -Math.PI / 2;
-  well.scale.set((halfWidth - wall) * 2 * BASE_TAPER, (halfDepth - wall) * 2 * BASE_TAPER, 1);
-  well.position.y = wellY;
-  well.castShadow = true;
-  well.receiveShadow = true;
-  parts.push({ mesh: well, part: "freestanding-tub-well" });
+  // Floor of the basin: a real cap at the bottom of the inner shell.
+  const basinRing = inner[0]!;
+  const well = capRing(basinRing, () => basinRing[0]!.y);
+  push(well, "freestanding-tub-well");
+  const wellY = basinRing[0]!.y;
 
   // Drain, at the foot end for a left/right drain, centred otherwise.
   const drainRadius = Math.max(0.025, width * 0.032);
