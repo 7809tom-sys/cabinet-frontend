@@ -15,7 +15,7 @@ function moreSheetSource(): string {
 }
 
 describe("Auto-Design in the More sheet (tablet and phone)", () => {
-  it("adds an Auto-Design row for admins and affiliate Designers", () => {
+  it("adds an Auto-Design row for every kitchen designer", () => {
     const sheet = moreSheetSource();
     expect(sheet).toContain('data-testid="more-sheet-auto-design"');
     const rowAt = sheet.indexOf('data-testid="more-sheet-auto-design"');
@@ -38,10 +38,11 @@ describe("Auto-Design in the More sheet (tablet and phone)", () => {
     expect(row).toContain("Auto-Design");
   });
 
-  it("keeps the desktop toolbar button and dialogs on the same affiliate audience gate", () => {
+  it("keeps the desktop toolbar button and dialogs on the same kitchen-only gate", () => {
     expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
-    expect(pageSource).toContain("const autoDesignAudienceAllowed = isAdmin || Boolean(affiliateSlug);");
-    expect(pageSource).toContain('const autoDesignAvailable = autoDesignAudienceAllowed && roomType === "kitchen";');
+    // The admin/affiliate audience gate is gone; the room gate is all that is left.
+    expect(pageSource).not.toContain("autoDesignAudienceAllowed");
+    expect(pageSource).toContain('const autoDesignAvailable = roomType === "kitchen";');
     expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
     expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
     // The corner chooser is part of Auto-Design and sits behind the same audience

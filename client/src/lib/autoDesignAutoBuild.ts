@@ -603,9 +603,10 @@ export function planAutoDesignAutoBuild(input: AutoDesignInputs): AutoDesignBuil
 }
 
 /**
- * Auto-Design layout is an empty-plan build. `audienceAllowed` is true for a
- * CabinetDealz admin and for every affiliate Designer, including storefront
- * customers. A hand-placed plan is never overwritten.
+ * Auto-Design layout is an empty-plan build. `audienceAllowed` is the room flag
+ * the Designer passes in (true in a kitchen for every visitor, signed in or
+ * not); the old admin/affiliate check is gone. A hand-placed plan is never
+ * overwritten.
  */
 export function canRunAutoDesign(audienceAllowed: boolean, hasHandPlacedItems: boolean): boolean {
   return audienceAllowed && !hasHandPlacedItems;
