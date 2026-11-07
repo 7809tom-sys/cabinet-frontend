@@ -99,6 +99,7 @@ import type { ApplianceFacingFacts } from "@shared/applianceFacing";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
 import { resolvePelicanDesignerMaterial } from "@/lib/pelicanQuartzMaterialMaps";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
+import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
   backsplashTextureWarningMessage,
@@ -11059,41 +11060,12 @@ function addPelicanBathroomFixture(
     drain.position.y = height * 0.24;
     add(drain, "freestanding-tub-drain");
   } else if (profile.kind === "freestanding-tub") {
-    // The supplier documents a freestanding exterior envelope and drain only.
-    // The nested acrylic shell, rim, well and drain below make the planning
-    // silhouette legible without claiming an unprovided cross section.
-    const outer = new THREE.Mesh(new THREE.LatheGeometry([
-      new THREE.Vector2(0, 0.008),
-      new THREE.Vector2(0.30, 0.008),
-      new THREE.Vector2(0.37, height * 0.16),
-      new THREE.Vector2(0.46, height * 0.7),
-      new THREE.Vector2(0.49, height * 0.97),
-      new THREE.Vector2(0.47, height * 0.995),
-      new THREE.Vector2(0.39, height * 0.995),
-      new THREE.Vector2(0.36, height * 0.89),
-      new THREE.Vector2(0.30, height * 0.33),
-      new THREE.Vector2(0, height * 0.31),
-    ], 64), shell);
-    outer.scale.set(width, 1, depth);
-    add(outer, "freestanding-tub-exterior");
-    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.48, Math.max(0.012, height * 0.055), 48), shell);
-    foot.scale.set(width * 0.63, 1, depth * 0.63);
-    foot.position.y = Math.max(0.006, height * 0.028);
-    add(foot, "freestanding-tub-plinth");
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.013, 12, 64), shell);
-    rim.rotation.x = Math.PI / 2;
-    rim.scale.set(width * 0.88, depth * 0.88, 1);
-    rim.position.y = height * 0.99;
-    add(rim, "freestanding-tub-rim");
-    const innerWell = new THREE.Mesh(new THREE.CircleGeometry(0.5, 64), shell);
-    innerWell.rotation.x = -Math.PI / 2;
-    innerWell.scale.set(width * 0.6, depth * 0.6, 1);
-    innerWell.position.y = height * 0.312;
-    add(innerWell, "freestanding-tub-well");
-    const drainOffset = profile.drain === "left" ? -depth * 0.21 : profile.drain === "right" ? depth * 0.21 : 0;
-    const drain = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.025, width * 0.032), Math.max(0.025, width * 0.032), 0.016, 20), dark);
-    drain.position.set(0, height * 0.32, drainOffset);
-    add(drain, "freestanding-tub-drain");
+    // The supplier publishes the exterior envelope, drain side, and photos. The
+    // shell follows that outline: a slipper backrest where the photo shows one,
+    // a thin rim, a tapered base flush to the floor, a real drain and overflow.
+    for (const { mesh, part } of makeFreestandingTubParts(profile, { shell, dark }, { slipper: isSlipperTub(profile) })) {
+      add(mesh, part);
+    }
   } else {
     // Alcove models retain the exact published exterior envelope and left/right
     // drain identity. The visible apron, raised rim and shallow inner well are
