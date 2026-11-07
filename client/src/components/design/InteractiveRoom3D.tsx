@@ -1239,6 +1239,84 @@ export function threeDSurfaceImageCrop(role: "countertop" | "flooring" | "backsp
   return { x: 0.08, y: 0.08, width: 0.84, height: 0.84 };
 }
 
+/**
+ * Rectangular crop (0–1 fractions) that excludes the retail photo's white border.
+ *
+ * Flooring and tile catalog photos are product shots on a white background, and
+ * the margin is not a fixed share of the image: on Pelican's 200×200 flooring
+ * photos it runs from about 2% to over 20%. Tiling that photo directly paints a
+ * white band at every repeat, which reads as broken flooring in plan and 3D.
+ *
+ * This measures how far the near-white border extends on each edge and returns
+ * the crop just inside it, leaving a small safety inset. A photo that is
+ * material edge to edge returns the neutral crop unchanged.
+ */
+export function threeDTrimmedPhotoCrop(
+  image: { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number } & Partial<CanvasImageSource>,
+  fallback: { x: number; y: number; width: number; height: number },
+): { x: number; y: number; width: number; height: number } {
+  const width = Number(image.naturalWidth ?? image.width ?? 0);
+  const height = Number(image.naturalHeight ?? image.height ?? 0);
+  if (!width || !height || typeof document === "undefined") return fallback;
+  let pixels: Uint8ClampedArray;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return fallback;
+    context.drawImage(image as CanvasImageSource, 0, 0, width, height);
+    pixels = context.getImageData(0, 0, width, height).data;
+  } catch {
+    // A cross-origin photo without CORS headers taints the canvas. Keep the
+    // neutral crop rather than failing the whole floor.
+    return fallback;
+  }
+  const isNearWhite = (x: number, y: number): boolean => {
+    const index = (y * width + x) * 4;
+    return pixels[index]! > 240 && pixels[index + 1]! > 240 && pixels[index + 2]! > 240;
+  };
+  // A row or column counts as margin only when it is near-white along most of its
+  // length, so a light plank with a white highlight is not mistaken for border.
+  const rowIsWhite = (y: number): boolean => {
+    const step = Math.max(1, Math.floor(width / 40));
+    let white = 0;
+    let total = 0;
+    for (let x = 0; x < width; x += step) {
+      total += 1;
+      if (isNearWhite(x, y)) white += 1;
+    }
+    return total > 0 && white / total >= 0.9;
+  };
+  const columnIsWhite = (x: number): boolean => {
+    const step = Math.max(1, Math.floor(height / 40));
+    let white = 0;
+    let total = 0;
+    for (let y = 0; y < height; y += step) {
+      total += 1;
+      if (isNearWhite(x, y)) white += 1;
+    }
+    return total > 0 && white / total >= 0.9;
+  };
+  const limit = Math.floor(Math.min(width, height) * 0.35);
+  let top = 0;
+  while (top < limit && rowIsWhite(top)) top += 1;
+  let bottom = 0;
+  while (bottom < limit && rowIsWhite(height - 1 - bottom)) bottom += 1;
+  let left = 0;
+  while (left < limit && columnIsWhite(left)) left += 1;
+  let right = 0;
+  while (right < limit && columnIsWhite(width - 1 - right)) right += 1;
+  if (top + bottom + left + right === 0) return fallback;
+  // One pixel of safety, so the outermost anti-aliased white pixel is excluded too.
+  const inset = 1;
+  const x0 = Math.min(left + inset, Math.floor(width / 2) - 1);
+  const y0 = Math.min(top + inset, Math.floor(height / 2) - 1);
+  const x1 = Math.max(width - right - inset, x0 + 1);
+  const y1 = Math.max(height - bottom - inset, y0 + 1);
+  return { x: x0 / width, y: y0 / height, width: (x1 - x0) / width, height: (y1 - y0) / height };
+}
+
 export type ThreeDProductSurfaceRole = "countertop" | "flooring" | "backsplash";
 
 export type ThreeDProductMaterialSource = {
@@ -1709,7 +1787,9 @@ function normalizedThreeDPlankImage(
   canvas.height = rowHeightPx * profile.rows;
   const context = canvas.getContext("2d");
   if (!context) return source;
-  const crop = threeDSurfaceImageCrop("flooring");
+  // Trim the retail photo's white border before sampling boards, so the margin
+  // never becomes a white seam between planks.
+  const crop = threeDTrimmedPhotoCrop(source, threeDSurfaceImageCrop("flooring"));
   const cropX = sourceWidth * crop.x;
   const cropY = sourceHeight * crop.y;
   const cropWidth = sourceWidth * crop.width;
@@ -1811,7 +1891,11 @@ function normalizedThreeDSurfaceImage(
   const sourceWidth = Number(dimensions.naturalWidth ?? dimensions.videoWidth ?? dimensions.width ?? 0);
   const sourceHeight = Number(dimensions.naturalHeight ?? dimensions.videoHeight ?? dimensions.height ?? 0);
   if (!sourceWidth || !sourceHeight || typeof document === "undefined") return source;
-  const crop = threeDSurfaceImageCrop(role);
+  // A retail photo's white border would repeat as a white band on every tile of
+  // the floor. Trim to the material itself first.
+  const crop = role === "flooring"
+    ? threeDTrimmedPhotoCrop(dimensions, threeDSurfaceImageCrop("flooring"))
+    : threeDSurfaceImageCrop(role);
   const cropWidth = Math.max(1, sourceWidth * crop.width);
   const cropHeight = Math.max(1, sourceHeight * crop.height);
   const scale = Math.min(1, maxDimension / Math.max(cropWidth, cropHeight));
