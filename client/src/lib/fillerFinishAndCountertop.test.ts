@@ -4,6 +4,9 @@ import {
   countertopDepthForRunItem,
   countertopSurfaces,
   effectiveStyleId,
+  adjacentCabinetForFiller,
+  fillerRenderStyleId,
+  isFillerItem,
   normalizeInstalledFillersToAdjacentCabinets,
   type PlacedCabinet,
 } from "./design";
@@ -84,6 +87,51 @@ describe("filler finish follows the cabinet it butts", () => {
     const matched = normalizeInstalledFillersToAdjacentCabinets([vanity, filler], DEFAULT_ROOM)[1]!;
     expect(matched.styleId).toBeNull();
     expect(effectiveStyleId(matched, 42)).toBe(42);
+    expect(fillerRenderStyleId(filler, [vanity, filler], DEFAULT_ROOM, 42)).toBe(42);
+  });
+
+  it("follows a navy vanity when the end filler overlaps the cabinet and has no saved owner", () => {
+    const vanity = item({ uid: "vanity", masterCode: "VSD48", description: "Drawer vanity", width: 48, depth: 21, x: 3, styleId: null });
+    const filler = item({
+      uid: "end",
+      masterCode: "BF3",
+      description: "3 inch stock",
+      category: "Accessory",
+      x: 2.4,
+      width: 3,
+      depth: 21,
+      styleId: 7,
+    });
+    expect(isFillerItem(filler)).toBe(true);
+    expect(adjacentCabinetForFiller(filler, [vanity, filler], DEFAULT_ROOM)?.uid).toBe("vanity");
+    expect(fillerRenderStyleId(filler, [vanity, filler], DEFAULT_ROOM, 42)).toBe(42);
+    expect(normalizeInstalledFillersToAdjacentCabinets([vanity, filler], DEFAULT_ROOM)[1]?.styleId).toBeNull();
+  });
+
+  it("follows a tall pantry when the side filler is scribe stock a short gap away", () => {
+    const pantry = item({
+      uid: "pantry",
+      masterCode: "TP2484",
+      description: "Tall pantry",
+      placement: "tall",
+      width: 24,
+      height: 84,
+      styleId: 42,
+    });
+    const filler = item({
+      uid: "scribe",
+      masterCode: "SCR",
+      description: "Scribe molding",
+      category: "Accessory",
+      placement: "tall",
+      x: 24.75,
+      width: 0.75,
+      height: 84,
+      styleId: 7,
+    });
+    expect(isFillerItem(filler)).toBe(true);
+    expect(isFillerItem({ masterCode: "WEP1596", description: "Wall end panel" })).toBe(false);
+    expect(fillerRenderStyleId(filler, [pantry, filler], DEFAULT_ROOM, 9)).toBe(42);
   });
 });
 

@@ -200,7 +200,7 @@ import {
 		  normalizeLCornerDepths, normalizeBlindCornerDoorSides, blindCornerPullPlacement, normalizeRefrigeratorBayUppers, refrigeratorSurroundElevation, refrigeratorBayRunMetrics, refrigeratorMagneticSnapEnvelope, fitExplicitRefrigeratorOptionPlacements, commitIndependentCabinetCandidate, commitConfiguredRefrigeratorCandidate, isMicrowaveOverRangePair,
 	  conflictingUids, blindCornerViolations, blindCornerSpecViolations, ceilingFitViolations, roomCeiling, inchesToFeetInches, isBlindCorner, isBaseBlindCorner, BLIND_CORNER_FILLER_WIDTH_IN, blindPullRange, isOnIsland, isCornerCabinet, isAngledWallCabinet, isProtectedCornerCabinet, requiresRoomCornerPlacement, missingCornerBaseViolations,
 	  isSinkBaseCabinet, isFarmSinkBasePaletteItem, fixtureBelongsToCabinet, fixtureIsOnCabinetFootprint, placedFootprint, hasCollision, cabinetCollisionDetail, COLLISION_EPSILON_IN, CABINET_CONFLICT_LOCK_IN, nearestCollisionFreeMountBottom, collisionReason, wallCabinetFitMeasure, wallCabinetPlacementReason, cabinetWallRunSegment, compatibleWallCabinetAlternatives, snapCabinetSeamOverlap, shouldBlockPlacementCollision, appendCollisionFreePlacements, appendRefrigeratorEnclosurePlacements, removeOverlappingPlacements, effectiveStyleId, pricingStyleId, rebaseFormerDefaultStyleOverrides, clearForeignSavedStyleOverrides, distinctStyleIds, isMixedFinish, paletteActiveWallPlacement, refrigeratorAdjacentOpeningPlacement, nextAvailableRoomCornerPlacement, nextAvailablePeninsulaCornerPlacement, cabinetCornerPlacementInfo, blindCornerSnapInfo, wallCabinetVerticalMoveLimit, repairWallCabinetPlanSeamForVerticalMove, selectedSinkBaseWallPlacement, sinkBaseWindowPlacement, selectedLowerCabinetWallPlacement, selectedCornerBaseWallPlacement, matchingLowerCabinetWallPlacement, snapWallCabinetToOwningWall, normalizeStandardWallMounts, normalizeWallOpenShelfMounts, wallOpenShelfExposedHand,
-  		  isPlaceableAccessory, accessoryPlacement, isPanelItem, isDishwasherPanel, normalizeDishwasherPanelPlacement, isFillerItem, adjacentCabinetForFiller, matchInstalledFillerToCabinet, isFloatingShelfItem, isWallOpenShelfCabinet, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount, wallOpenShelfShelfCount, KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, fillerWidthRange, alternateWallPlacementRecommendation, PENINSULA_INSIDE_CORNER_CLEARANCE_IN, adjoiningWallRunMountBottom,
+  		  isPlaceableAccessory, accessoryPlacement, isPanelItem, isDishwasherPanel, normalizeDishwasherPanelPlacement, isFillerItem, adjacentCabinetForFiller, matchInstalledFillerToCabinet, fillerRenderStyleId, isFloatingShelfItem, isWallOpenShelfCabinet, isKneeDrawerItem, kitchenCrestGenericOpenEndShelfCount, wallOpenShelfShelfCount, KNEE_DRAWER_MIN_MOUNT_BOTTOM_IN, KNEE_DRAWER_MAX_MOUNT_BOTTOM_IN, fillerWidthRange, alternateWallPlacementRecommendation, PENINSULA_INSIDE_CORNER_CLEARANCE_IN, adjoiningWallRunMountBottom,
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
@@ -2974,8 +2974,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // price lookup, a pending line, or a zero-value total.
   const pricingStyleIdFor = useCallback(
     (cabinet: PlacedCabinet) => {
-      const owner = isFillerItem(cabinet) ? adjacentCabinetForFiller(cabinet, placed, room) : null;
-      return pricingStyleId(owner ?? cabinet, styleId, lockedDistributorId, styleDistributorIdById);
+      const priced = isFillerItem(cabinet)
+        ? { styleId: fillerRenderStyleId(cabinet, placed, room, styleId) }
+        : cabinet;
+      return pricingStyleId(priced, styleId, lockedDistributorId, styleDistributorIdById);
     },
     [placed, room, styleId, lockedDistributorId, styleDistributorIdById],
   );
@@ -6124,8 +6126,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // A filler is finished with the cabinet it touches. Reading that cabinet
       // here, not the filler's own saved style, keeps the color live when the
       // door style or a per-cabinet color changes.
-      const owner = isFillerItem(cab) ? adjacentCabinetForFiller(cab, placed, room) : null;
-      return effectiveStyleId(owner ?? cab, styleId);
+      if (isFillerItem(cab)) return fillerRenderStyleId(cab, placed, room, styleId);
+      return effectiveStyleId(cab, styleId);
     },
     [placed, room, styleId],
   );
@@ -15391,9 +15393,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const threeDStyleAssignments = useMemo(
     () => designerThreeDAssignments({
       placed: placed.map((cabinet) => {
-        const owner = isFillerItem(cabinet) ? adjacentCabinetForFiller(cabinet, placed, room) : null;
-        if (!owner) return cabinet;
-        const nextStyleId = owner.styleId ?? null;
+        if (!isFillerItem(cabinet)) return cabinet;
+        const nextStyleId = fillerRenderStyleId(cabinet, placed, room, styleId ?? null);
         return (cabinet.styleId ?? null) === nextStyleId ? cabinet : { ...cabinet, styleId: nextStyleId };
       }),
       defaultStyleId: styleId ?? null,

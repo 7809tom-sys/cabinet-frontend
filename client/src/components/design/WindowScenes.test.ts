@@ -95,4 +95,29 @@ describe("Designer window scenes", () => {
     const trim = root.children[0]?.children.find((node) => node.userData.architecturalOpeningTrim) as THREE.Mesh | undefined;
     expect((trim?.material as THREE.MeshStandardMaterial).color.getHexString()).toBe("20252b");
   });
+
+  it("recesses the sash inside the wall and projects only the casing and sill by 1/2 inch", () => {
+    const root = new THREE.Group();
+    addWallOpening(root, {
+      uid: "recessed-window",
+      kind: "window",
+      label: "Window",
+      side: "top",
+      offset: 24,
+      width: 30,
+      height: 36,
+      sill: 44,
+    }, { width: 120, depth: 96, ceilingHeight: 96 });
+    const group = root.children[0] as THREE.Group;
+    const trim = group.children.find((node) => node.userData.architecturalOpeningTrim) as THREE.Mesh;
+    const glass = group.children.find((node) => node.userData.windowGlassReflection) as THREE.Mesh;
+    const sill = group.children.find((node) => node.userData.architecturalWindowSill) as THREE.Mesh;
+    const trimDepth = (trim.geometry as THREE.BoxGeometry).parameters.depth;
+    const glassDepth = (glass.geometry as THREE.BoxGeometry).parameters.depth;
+    const sillDepth = (sill.geometry as THREE.BoxGeometry).parameters.depth;
+    const proud = (mesh: THREE.Mesh, depth: number) => (group.position.z + mesh.position.z + depth / 2) * 12;
+    expect(proud(trim, trimDepth)).toBeCloseTo(0.5, 2);
+    expect(proud(sill, sillDepth)).toBeCloseTo(0.5, 2);
+    expect(proud(glass, glassDepth)).toBeLessThan(0);
+  });
 });
