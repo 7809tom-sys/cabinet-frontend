@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { FURNITURE_CATALOG, restoredFurniture } from "./design";
+import { FURNITURE_CATALOG, restoreSavedDesignerPlan, restoredFurniture, type PlacedCabinet, type RoomData } from "./design";
 
 describe("Saved bathroom plans that still contain planning-zone data", () => {
   it("loads the real fixtures and ignores every zone row instead of crashing", () => {
@@ -54,9 +54,43 @@ describe("Saved bathroom plans that still contain planning-zone data", () => {
 
   it("keeps the designer's save/restore paths going through the zone filter", () => {
     const source = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");
-    expect(source).toContain("setFurniture(restoredFurniture(persisted?.furniture))");
+    expect(source).toContain("restoreSavedDesignerPlan");
     expect(source).toContain("setFurniture(restoredFurniture(d.furniture))");
     expect(source).not.toContain("BathroomZoneAttributesDialog");
     expect(source).not.toContain("bathroomZoneWarningsByFixture");
+  });
+
+  it("reloads a bathroom exactly: no merged tubs, and the pantry stays where it was saved", () => {
+    const tub = { uid: "tub", defId: "pelican-tub-pl-02146-59", x: 8, y: 40, rotation: 90, pelicanCode: 'PL-02146 59"' };
+    const toilet = { uid: "toilet", defId: "pelican-toilet-pl-12044", x: 78, y: 8, rotation: 0, pelicanCode: "PL-12044" };
+    const staleTubs = [
+      tub,
+      { uid: "oval", defId: "pelican-tub-pl-02138-59", x: 40, y: 30, rotation: 0, pelicanCode: 'PL-02138 59"' },
+      { uid: "front", defId: "pelican-tub-pl-02563-59", x: 20, y: 70, rotation: 0, pelicanCode: 'PL-02563 59"' },
+    ];
+    const pantry = {
+      uid: "pantry", cabinetId: 1, masterCode: "TC2484", description: "Tall pantry", placement: "tall",
+      x: 100, y: 0, width: 24, depth: 24, height: 84, rotation: 0, wallId: "right", wallOffset: 72,
+    } as PlacedCabinet;
+    const room = {
+      width: 144,
+      depth: 120,
+      ceilingHeight: 96,
+      persistedEntities: { openings: [], sinks: [], island: null, furniture: staleTubs, ponyWalls: [] },
+    } as RoomData;
+    const first = restoreSavedDesignerPlan({ room, placed: [pantry], furniture: [tub, toilet] });
+    const second = restoreSavedDesignerPlan({
+      room: { ...room, persistedEntities: { ...room.persistedEntities!, furniture: first.furniture } },
+      placed: first.placed,
+      furniture: first.furniture,
+    });
+
+    expect(first.furniture.map((item) => item.uid)).toEqual(["tub", "toilet"]);
+    expect(first.furniture.find((item) => item.uid === "tub")).toMatchObject({ x: 8, y: 40, rotation: 90 });
+    expect(first.placed[0]).toMatchObject({ uid: "pantry", x: 100, y: 0, wallOffset: 72 });
+    expect(second.furniture.map((item) => ({ uid: item.uid, x: item.x, y: item.y }))).toEqual(
+      first.furniture.map((item) => ({ uid: item.uid, x: item.x, y: item.y })),
+    );
+    expect(second.placed[0]).toMatchObject({ x: 100, y: 0 });
   });
 });

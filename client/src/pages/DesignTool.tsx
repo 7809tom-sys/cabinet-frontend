@@ -204,7 +204,7 @@ import {
   resolveSwing, cycleSwing, swingText, hasDoorSwing, DoorSwing, resolveCabinetHardwarePosition, cabinetHardwarePositionPatch, isCabinetDoorHardwareEligible, applyCabinetDoorHardwareToAll, supportsCenteredTopDoorPull, requiresCenteredTopDoorPull, usesRaisedFloorWallDoorPull, isWd18CountertopDrawerCabinet, normalizeWd18CountertopMounts, ordinaryWallMountBottom,
   // (closet helpers imported separately below)
   APPLIANCES, applianceAsDesignCabinet, appliancesForRoom, ROOM_TYPES, type RoomType,
-  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, restoredFurniture, type PlacedFurniture,
+  FURNITURE_CATALOG, makeFurniture, makePelicanBathroomFixture, furnitureFootprint, restoreSavedDesignerPlan, restoredFurniture, type PlacedFurniture,
   WallOpening, WallSide, OPENINGS, OpeningDef, makeOpening,
 	  finishColors, toeKickLinearInches, lightRailLinearInches, inchesToLinearFeet,
   trimPiecesNeeded, countertopArea, countertopSurfaces, countertopSurfaceInsideRoom, battenLinearInches, valancePiecesNeeded,
@@ -1002,10 +1002,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // ONE commit boundary for cabinet state: every seated cabinet's run offset is
   // re-derived from its plan body on every wall kind, so resize, rotate and any
   // x/y-only edit can never leave a stale wallOffset behind.
-  const setPlaced = useCallback((update: SetStateAction<PlacedCabinet[]>) => {
+  const setPlaced = useCallback((update: SetStateAction<PlacedCabinet[]>, options?: { exact?: boolean }) => {
     setPlacedState((prev) => {
       const next = typeof update === "function" ? update(prev) : update;
-      const synced = next === prev ? prev : syncWallRunOffsets(next, roomRef.current);
+      // A reload must put every cabinet back where it was saved. Reseating
+      // against the room, or against a toilet footprint, is what slid the
+      // pantry over on refresh.
+      if (options?.exact || next === prev) return next;
+      const synced = syncWallRunOffsets(next, roomRef.current);
       const cut = applyRefrigeratorEndPanelFieldCuts(synced, roomRef.current);
       return cut === prev ? prev : cut;
     });
@@ -1149,9 +1153,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // a later refrigerator or other item is rejected instead of replacing an
   // already accepted cabinet occupying that physical opening.
   useEffect(() => {
+    // Bathroom reloads are exact. Running the overlap resolver here pushed a
+    // restored pantry along the wall until it sat against the toilet.
+    if (roomType === "bathroom") return;
     const resolution = removeOverlappingPlacements(placed, room);
     if (resolution.rejected.length > 0) setPlaced(resolution.placed);
-  }, [placed, room]);
+  }, [placed, room, roomType]);
 
   // The public Room Planner stores a selected room shape and starter layout
   // briefly in session storage before it opens the existing full designer.
@@ -5699,7 +5706,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      setOpenings(restoredOpenings);
       setPotFillers(Array.isArray(persisted?.potFillers) ? persisted.potFillers : []);
       setIsland(persisted?.island ?? null);
-      setFurniture(restoredFurniture(persisted?.furniture));
       setPonyWalls(Array.isArray(persisted?.ponyWalls) ? persisted.ponyWalls : []);
       // Normalize placement for appliance items — older saved designs may have
       // stored placement:"tall" for FRIDGE-* or RANGE-* items. Correct them here
@@ -5752,7 +5758,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const restoredDoorStyle = doorStyles?.find((style) => style.id === restoredStyle.styleId) ?? null;
       const styleKnown = restoredStyle.styleId == null || restoredDoorStyle != null;
       const withoutIneligibleSkins = styleKnown ? dropIneligibleSkins(pricedPlaced, restoredDoorStyle) : pricedPlaced;
-      setPlaced(restoredIsland ? normalizeIslandRangeRearPlanes(restoredIsland, withoutIneligibleSkins, restoredRoom) : withoutIneligibleSkins);
+      const bathroomReload = d.roomType === "bathroom";
+      const reloaded = restoreSavedDesignerPlan({
+        room: restoredRoom,
+        placed: bathroomReload ? rawPlaced : (restoredIsland ? normalizeIslandRangeRearPlanes(restoredIsland, withoutIneligibleSkins, restoredRoom) : withoutIneligibleSkins),
+        furniture: persisted?.furniture,
+      });
+      // A bathroom refresh must not reseat cabinets or merge an older fixture
+      // list into the one that was saved. Kitchen restores keep their repairs.
+      setFurniture(reloaded.furniture);
+      setPlaced(reloaded.placed, bathroomReload ? { exact: true } : undefined);
       setStyleId(restoredStyle.styleId);
       const restoredIslandStyleId = typeof restoredIsland?.cabinetStyleId === "number"
         && restoredIsland.cabinetStyleId !== restoredStyle.styleId
@@ -14304,7 +14319,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         snap.placed.length > 0 ||
         snap.openings.length > 0 ||
         snap.island != null ||
-        snap.styleId != null;
+        snap.styleId != null ||
+        snap.furniture.length > 0;
       if (worthKeeping) {
         localStorage.setItem(draftKey, JSON.stringify(snap));
         // A fresh preview from Featured Styles or the vendor portal must not
@@ -14382,19 +14398,26 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               normalizeBlindCornerDoorSides(normalizeLCornerDepths(draftCooktopConversion.placed), draftRoom),
 	              draftRoom,
 	            ), draftRoom), draftRoom);
-	            setPlaced(removeOverlappingPlacements(
-	              normalizeWallOpenShelfMounts(
-	                normalizeStandardWallMounts(
-	                  normalizeWd18CountertopMounts(
-	                    normalizeRefrigeratorBayUppers(peninsulaNormalizedDraft, draftRoom),
+	            const bathroomDraft = d.roomType === "bathroom";
+	            const reloadedDraft = restoreSavedDesignerPlan({
+	              room: draftRoom,
+	              placed: bathroomDraft ? (d.placed as PlacedCabinet[]) : removeOverlappingPlacements(
+	                normalizeWallOpenShelfMounts(
+	                  normalizeStandardWallMounts(
+	                    normalizeWd18CountertopMounts(
+	                      normalizeRefrigeratorBayUppers(peninsulaNormalizedDraft, draftRoom),
+	                    ),
+	                    Array.isArray(d.openings) ? d.openings : [],
+	                    draftRoom,
 	                  ),
-	                  Array.isArray(d.openings) ? d.openings : [],
 	                  draftRoom,
 	                ),
 	                draftRoom,
-	              ),
-	              draftRoom,
-	            ).placed);
+	              ).placed,
+	              furniture: Array.isArray(d.furniture) ? d.furniture : draftRoom.persistedEntities?.furniture,
+	            });
+	            setPlaced(reloadedDraft.placed, bathroomDraft ? { exact: true } : undefined);
+	            setFurniture(reloadedDraft.furniture);
           }
           if (Array.isArray(d.openings)) setOpenings(d.openings);
           setIsland(d.island ?? null);
@@ -14462,7 +14485,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           }
 	          if (Array.isArray(d.sinks)) setSinks(d.sinks);
 	          if (Array.isArray(d.potFillers)) setPotFillers(d.potFillers as PotFillerFixture[]);
-	          if (Array.isArray(d.furniture)) setFurniture(restoredFurniture(d.furniture));
+	          if (!Array.isArray(d.placed) && Array.isArray(d.furniture)) setFurniture(restoredFurniture(d.furniture));
 	          if (d.roomType) {
 	            const restoredRoom = d.roomType as RoomType;
 	            setRoomType(restoredRoom);
