@@ -2062,6 +2062,44 @@ export const THREE_D_WALL_SIDES: WallSide[] = ["top", "left", "right", "bottom"]
 const BASE_DEPTH = 24;
 const WALL_DEPTH = 12;
 const THREE_D_TOE_KICK = 4.5;
+const THREE_D_TOE_KICK_RECESS_IN = 3;
+const THREE_D_SIDE_THICKNESS_IN = 0.75;
+
+/**
+ * Side panels of a toe-kick cabinet run to the floor. The front 3 inches stay
+ * open so the kick recess is only behind the front, between the two sides.
+ */
+export function addThreeDSidePanelsToFloor(
+  cabinet: THREE.Group,
+  material: THREE.Material,
+  bodyMeshes: THREE.Mesh[],
+  size: {
+    bodyWidth: number;
+    bodyDepth: number;
+    bodyHeight: number;
+    toeKickHeight: number;
+    frontFlushBoard?: boolean;
+    boardDepth?: number;
+  },
+) {
+  const depth = size.frontFlushBoard ? Math.min(size.bodyDepth, size.boardDepth ?? size.bodyDepth) : size.bodyDepth;
+  const sideThickness = Math.min(THREE_D_SIDE_THICKNESS_IN * INCH, Math.max(0.02, size.bodyWidth / 2));
+  const recess = THREE_D_TOE_KICK_RECESS_IN * INCH;
+  const sideDepth = Math.max(sideThickness, depth - recess);
+  const sideY = -size.bodyHeight / 2 - size.toeKickHeight / 2;
+  const sideZ = -depth / 2 + sideDepth / 2 + (size.frontFlushBoard ? (size.bodyDepth / 2 - depth / 2) : 0);
+  for (const side of [-1, 1] as const) {
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(sideThickness, size.toeKickHeight, sideDepth), material);
+    panel.position.set(side * (size.bodyWidth / 2 - sideThickness / 2), sideY, sideZ);
+    panel.userData = {
+      cabinetSideToFloor: true,
+      toeKickNotchIn: THREE_D_TOE_KICK_RECESS_IN,
+      side: side === -1 ? "left" : "right",
+    };
+    cabinet.add(panel);
+    bodyMeshes.push(panel);
+  }
+}
 export const THREE_D_CABINET_FRONT_OUTER_REVEAL_IN = 1 / 16;
 export const THREE_D_CABINET_FRONT_CENTER_GAP_IN = 1 / 8;
 
@@ -4753,8 +4791,9 @@ export function addCabinet(
         bodyMeshes.push(toeKick);
       }
     } else if (!suppressInstalledFillerToeKick && !surfaceTextures?.suppressContinuousBaseToeKick) {
+      const sideThickness = Math.min(0.75 * INCH, Math.max(0.02, bodyWidth / 2));
       const toeKick = new THREE.Mesh(
-		        new THREE.BoxGeometry(bodyWidth + 0.02, toeKickHeight, isFrontFlushFillerBoard ? installedFillerBoardDepth : Math.max(0.12, bodyDepth - 0.25)),
+		        new THREE.BoxGeometry(Math.max(0.02, bodyWidth - sideThickness * 2), toeKickHeight, isFrontFlushFillerBoard ? installedFillerBoardDepth : Math.max(0.12, bodyDepth - 0.25)),
 	        toeKickMaterial,
 	      );
       // Recess the toe-kick three inches from the cabinet face, matching the
@@ -4774,10 +4813,18 @@ export function addCabinet(
       };
       cabinet.add(toeKick);
       bodyMeshes.push(toeKick);
+      addThreeDSidePanelsToFloor(cabinet, bodyMaterial, bodyMeshes, {
+        bodyWidth,
+        bodyDepth,
+        bodyHeight,
+        toeKickHeight,
+        frontFlushBoard: isFrontFlushFillerBoard,
+        boardDepth: installedFillerBoardDepth,
+      });
       if (hasSelectedToeKickFinish && !isFrontFlushFillerBoard) {
         const finishSkinThickness = 0.035;
         const finishSkin = new THREE.Mesh(
-          new THREE.BoxGeometry(bodyWidth + 0.02, toeKickHeight, finishSkinThickness),
+          new THREE.BoxGeometry(Math.max(0.02, bodyWidth - Math.min(0.75 * INCH, bodyWidth / 2) * 2), toeKickHeight, finishSkinThickness),
           toeKickMaterial,
         );
         finishSkin.position.set(
@@ -4796,6 +4843,13 @@ export function addCabinet(
         cabinet.add(finishSkin);
         bodyMeshes.push(finishSkin);
       }
+    } else if (!suppressInstalledFillerToeKick && surfaceTextures?.suppressContinuousBaseToeKick) {
+      addThreeDSidePanelsToFloor(cabinet, bodyMaterial, bodyMeshes, {
+        bodyWidth,
+        bodyDepth,
+        bodyHeight,
+        toeKickHeight,
+      });
     }
     }
   }
@@ -4824,6 +4878,21 @@ export function addCabinet(
       leg.userData = { specialtyProfile: specialty.kind, lCornerCarcass: true, selectedStyleSideSkin: true };
       cabinet.add(leg);
       bodyMeshes.push(leg);
+      if (isFloorStandingCabinet && !hasFurnitureBaseMolding) {
+        const recess = THREE_D_TOE_KICK_RECESS_IN * INCH;
+        const exposedOnZ = part === lShape.backLeg;
+        const dropWidth = exposedOnZ ? part.width : Math.max(0.04, part.width - recess);
+        const dropDepth = exposedOnZ ? Math.max(0.04, part.depth - recess) : part.depth;
+        const drop = new THREE.Mesh(new THREE.BoxGeometry(dropWidth, THREE_D_TOE_KICK * INCH, dropDepth), bodyMaterial);
+        drop.position.set(
+          part.x + (exposedOnZ ? 0 : -recess / 2),
+          -bodyHeight / 2 - (THREE_D_TOE_KICK * INCH) / 2,
+          part.z + (exposedOnZ ? -recess / 2 : 0),
+        );
+        drop.userData = { cabinetSideToFloor: true, lCornerSideToFloor: true, toeKickNotchIn: THREE_D_TOE_KICK_RECESS_IN };
+        cabinet.add(drop);
+        bodyMeshes.push(drop);
+      }
     }
   } else if (specialty.kind === "end-return") {
     const diagram = baseEndAttachedFrontLayout(bodyWidth, bodyDepth);
@@ -5796,6 +5865,29 @@ export function addCabinet(
       ...(decorativeEndIsDoor ? { cabinetFront: true } : { selectedFinishSideSkin: true }),
     };
     frontGroup.add(endPanel);
+    if (isFloorStandingCabinet && !hasFurnitureBaseMolding && !suppressInstalledFillerToeKick) {
+      const recess = THREE_D_TOE_KICK_RECESS_IN * INCH;
+      const toeKickHeight = THREE_D_TOE_KICK * INCH;
+      const lowerDepth = Math.max(0.04, bodyDepth - 0.05 - recess);
+      const lower = new THREE.Mesh(
+        new THREE.BoxGeometry(0.042, toeKickHeight, lowerDepth),
+        decorativeEndIsDoor ? faceMaterial : decorativeEndSkin,
+      );
+      const cabinetZ = -bodyDepth / 2 + 0.025 + lowerDepth / 2;
+      lower.position.set(
+        side * (bodyWidth / 2 + 0.022),
+        -bodyHeight / 2 - toeKickHeight / 2,
+        cabinetZ - faceDepth,
+      );
+      lower.userData = {
+        decorativeEndToFloor: true,
+        cabinetSideToFloor: true,
+        decorativeEndSide: side === -1 ? "left" : "right",
+        toeKickNotchIn: THREE_D_TOE_KICK_RECESS_IN,
+        ...(decorativeEndIsDoor ? {} : { selectedFinishSideSkin: true }),
+      };
+      frontGroup.add(lower);
+    }
   }
   const profileKind = doorProfileKind(doorProfile?.doorStyle, doorProfile?.doorPanelType);
 

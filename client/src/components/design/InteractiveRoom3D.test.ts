@@ -8619,6 +8619,33 @@ describe("interactive 3D room scene helpers", () => {
     expect(((carcass!.geometry as THREE.BoxGeometry).parameters.height)).toBeCloseTo(30 / 12, 8);
   });
 
+  it("runs base and tall cabinet sides to the floor and keeps the toe kick between them", () => {
+    for (const fixture of [
+      { masterCode: "VSD48", description: "48 inch drawer vanity", placementType: "base" as const, width: 48, height: 34.5, depth: 21 },
+      { masterCode: "TP2484", description: "Tall pantry", placementType: "tall" as const, width: 24, height: 84, depth: 24 },
+    ]) {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 1, cabinetId: 1, numberOfDoors: 2, numberOfDrawers: 1, cornerType: null, ...fixture,
+      } as never, null, {}, 144, 120, "#1e2d4f", "#f4f1ea");
+      const group = root.children[0]!;
+      group.updateMatrixWorld(true);
+      const sides = group.children.filter((node) => node.userData.cabinetSideToFloor) as THREE.Mesh[];
+      const kick = group.children.find((node) => node.userData.baseToeKick) as THREE.Mesh;
+      expect(sides, fixture.masterCode).toHaveLength(2);
+      const sideThickness = Math.min(0.75 / 12, fixture.width / 12 / 2);
+      expect((kick.geometry as THREE.BoxGeometry).parameters.width).toBeCloseTo(fixture.width / 12 - sideThickness * 2, 5);
+      for (const side of sides) {
+        const bounds = new THREE.Box3().setFromObject(side);
+        expect(bounds.min.y, fixture.masterCode).toBeCloseTo(0, 5);
+        const front = bounds.max.z;
+        const carcass = group.children.find((node) => node.userData.selectedStyleSideSkin && !node.userData.baseToeKick) as THREE.Mesh;
+        const carcassFront = new THREE.Box3().setFromObject(carcass).max.z;
+        expect(carcassFront - front, fixture.masterCode).toBeCloseTo(3 / 12, 5);
+      }
+    }
+  });
+
   it("adds a visible selected-finish skin at the three-inch toe-kick recess without replacing the physical support", () => {
     const selectedRoot = new THREE.Group();
     const sku = {
