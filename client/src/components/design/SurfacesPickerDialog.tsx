@@ -57,6 +57,7 @@ import {
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { PelicanVariantSelect } from "./PelicanVariantSelect";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
+import { pelicanSinkCatalogDescription, withPelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
 import {
   concatCatalogPages,
   designerMaterialRenderReady,
@@ -408,7 +409,7 @@ export function SurfacesPickerDialog({
       size: product.size,
       imageUrl: product.imageUrl,
       materialImageUrl: product.materialImageUrl,
-      description: product.description ?? null,
+      description: pelicanSinkCatalogDescription(product.pelicanCode) ?? product.description ?? null,
       sellPrice: product.sellPrice,
       showInDesigner: product.showInDesigner,
       isActive: product.isActive,
@@ -441,9 +442,9 @@ export function SurfacesPickerDialog({
     : category === "Preferred"
       ? preferredItems
       : categoryItems).map((item) => (
-    isBathroom
+    withPelicanSinkCatalogDescription(isBathroom
       ? { ...item, imageUrl: bathroomFixtureCardImage(item.pelicanCode, item.imageUrl) }
-      : item
+      : item)
   ));
   const items: SelectedSurface[] = showingFloorMaterials
     ? concatCatalogPages([baseItems, floorMosaics])
@@ -767,7 +768,7 @@ export function SurfacesPickerDialog({
                     imageUrl: p.imageUrl,
                     materialImageUrl: p.materialImageUrl,
                     ...readDesignerRenderFlags(p),
-                    description: p.description ?? null,
+                    description: pelicanSinkCatalogDescription(p.pelicanCode) ?? p.description ?? null,
                     sellPrice: p.sellPrice,
                     coverageSqFt: flooringCartonFacts(p)?.sqFtPerBox ?? null,
                     piecesPerBox: flooringCartonFacts(p)?.piecesPerBox ?? null,
@@ -843,6 +844,11 @@ export function SurfacesPickerDialog({
                         )}
                         {(p.size || p.pelicanCode) && (
                           <div className="truncate text-[11px] text-muted-foreground">{[p.size, p.pelicanCode].filter(Boolean).join(" · ")}</div>
+                        )}
+                        {pelicanSinkCatalogDescription(p.pelicanCode) && (
+                          <p data-testid={`surface-catalog-description-${p.id}`} className="line-clamp-4 text-[11px] leading-snug text-muted-foreground">
+                            {pelicanSinkCatalogDescription(p.pelicanCode)}
+                          </p>
                         )}
                         <FlooringCartonFacts product={p} testId={`flooring-carton-facts-${p.id}`} />
                         {siblingSelected && (
