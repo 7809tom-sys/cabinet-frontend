@@ -4,6 +4,7 @@ import { flooringLayoutName, flooringOverageLabel, flooringOverageRate } from "@
 import type { FlooringLayoutPattern } from "@/lib/design";
 import { isMosaicBacksplashPick, mosaicBacksplashWasteFactor, mosaicSheetSquareFeet, MOSAIC_BACKSPLASH_WASTE_NOTE, MOSAIC_BACKSPLASH_WASTE_PCT } from "@/lib/mosaicBacksplashWaste";
 import { normalizeFinalMaterialSelections } from "@/lib/surfaceSelection";
+import { isRangeTopSurfacePick } from "@/lib/rangeTopDisplayOnly";
 import { surfaceRole } from "@/lib/pelican";
 
 /** Minimal shape of a picked surface/fixture (subset of SelectedSurface). */
@@ -141,6 +142,10 @@ export function buildSurfaceCartLines(
     seenIds.add(surface.id);
   }
   for (const s of normalized) {
+    // Owner rule (Tom): a range top in the Surfaces & Fixtures list is displayed
+    // (and rendered) but is never sold, so it contributes no cart, quote, or
+    // order line — the same way an auto-filled faucet is drawn at qty 0.
+    if (isRangeTopSurfacePick(s)) continue;
     if (s.sellPrice == null) continue; // skip unpriced (quote-only) picks
     const label = s.size ? `${s.category} · ${s.size}` : s.category;
     let qty = 1;

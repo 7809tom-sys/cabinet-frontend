@@ -159,6 +159,7 @@ import { clampColorDeltaE } from "@shared/colorGate";
 import { clampRenderExposure } from "@shared/doorRenderLights";
 import { adjustedDesignUnitPrice, buildDesignCabinetCartLines, buildDesignPreviewPricingLines, bundleCabinetPricingSignature, calculateCartSubtotal, completeDesignPricingLines, lockDesignCartLinesToPackageTotal, mergeDesignCartLines } from "@/lib/designCartLines";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
+import { RANGE_TOP_DISPLAY_ONLY_PRICE_LABEL, isRangeTopPlacement, rangeTopPriceLabel } from "@/lib/rangeTopDisplayOnly";
 import { activeCatalogPricingIdsByMasterCode, currentCatalogPricingCabinetId } from "@/lib/designPricingIdentity";
 import { catalogFillerForGap, catalogFillerPricingId, fittedCatalogFillerDescription, isCatalogFiller, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "@/lib/autoEndPanels";
@@ -5914,6 +5915,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const buildRows = useMemo<BuildSheetRow[]>(() => {
     const map = new Map<string, BuildSheetRow>();
     for (const p of placed) {
+      // Owner rule (Tom): a range top is shown and rendered in the Designer but
+      // is never sold, so it has no line on the build sheet, quote, or material
+      // list. The cabinet under it is a separate placement and stays billable.
+      if (isRangeTopPlacement(p)) continue;
       // A sub-inch gap remains present in the drawing, but is a field cut from
       // another filler already on the order. Never create a separate material
       // line for that visual piece.
@@ -7435,6 +7440,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }>();
     for (const p of placed) {
       if (p.fillerBillingRole === "secondary") continue;
+      // Owner rule (Tom): a range top is drawn and rendered but is never sold,
+      // so it never joins a priced panel or quote group. The base under it does.
+      if (isRangeTopPlacement(p)) continue;
       // Resolve THIS cabinet's specific color (two-tone designs place cabinets in
       // either Color 1 or Color 2). We key by color too so each color shows as
       // its own line, and surface the swatch + finish name for the line item.
@@ -22636,7 +22644,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             rangeTopImageUrl: product?.imageUrl ?? layoutVisual?.imageUrl ?? null,
 	            applianceCatalogCode: product?.pelicanCode ?? product?.slug ?? `CATALOG-APPLIANCE-${type}`,
 	            applianceCatalogName: product?.name ?? layoutVisual?.label ?? `${type[0]!.toUpperCase()}${type.slice(1)} cooktop`,
-            applianceCatalogPrice: product?.sellPrice ?? null,
+            // Owner rule (Tom): the range tops are display-only. They keep their
+            // catalog identity for the drawing, but no price ever travels with
+            // them, so no cart, quote, or order line can be minted from one.
+            applianceCatalogPrice: null,
           } : null;
           if (legacyWithRangeTop) {
             const conversion = convertLegacyCooktopPlacements(
@@ -23067,7 +23078,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                             </div>
                             <div className="p-2">
                               <div className="line-clamp-2 text-[11px] font-semibold leading-snug">{p.name}</div>
-                              {p.sellPrice != null && <div className="text-[11px] font-bold text-[#1a2744] dark:text-foreground mt-0.5">${p.sellPrice.toFixed(2)}</div>}
+                              {/* Owner rule (Tom): a range top is display-only, so a price is
+                                  never shown here — the label says so instead. */}
+                              {rangeTopPriceLabel(p)
+                                ? <div data-testid={`range-top-display-only-${p.id}`} className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{RANGE_TOP_DISPLAY_ONLY_PRICE_LABEL}</div>
+                                : p.sellPrice != null && <div className="text-[11px] font-bold text-[#1a2744] dark:text-foreground mt-0.5">${p.sellPrice.toFixed(2)}</div>}
                             </div>
                           </button>
                         ))}

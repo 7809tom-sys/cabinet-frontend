@@ -14,6 +14,7 @@ import {
   scopedBrowserStorageKey,
   type StoreScope,
 } from "@/lib/affiliateContext";
+import { isRangeTopCartLine } from "@/lib/rangeTopDisplayOnly";
 
 export type CartItem = {
   masterCode: string;
@@ -137,7 +138,9 @@ function ScopedCartProvider({ children, scope }: { children: ReactNode; scope: S
   const [items, setItems] = useState<CartItem[]>(() => {
     try {
       const raw = typeof localStorage !== "undefined" ? localStorage.getItem(keys.storage) : null;
-      return raw ? (JSON.parse(raw) as CartItem[]) : [];
+      // Owner rule (Tom): a display-only range top saved by an older build is
+      // dropped on load so it can never be ordered from a restored cart.
+      return raw ? (JSON.parse(raw) as CartItem[]).filter((item) => !isRangeTopCartLine(item)) : [];
     } catch {
       return [];
     }
@@ -239,6 +242,10 @@ function ScopedCartProvider({ children, scope }: { children: ReactNode; scope: S
 
   const api = useMemo<CartState>(() => {
     const addItem = (item: CartItem): AddItemResult => {
+      // Owner rule (Tom): a display-only range top never reaches the cart, from
+      // any path. The Designer already omits these lines; this is the last
+      // guard so a stale saved row or a direct hand-off cannot bill one either.
+      if (isRangeTopCartLine(item)) return { ok: true };
       // Legacy supplier-conflict records remain readable for carts created by
       // older builds; new carts intentionally accept every vendor and quote
       // each vendor independently.
@@ -257,7 +264,9 @@ function ScopedCartProvider({ children, scope }: { children: ReactNode; scope: S
     };
     const replaceWithDesignItems = (designItems: readonly CartItem[], designId: number | null = null) => {
       setSupplierConflict(null);
-      setItems(synchronizedDesignCartItems(designItems));
+      // The design hand-off is still a cart write, so the same display-only
+      // range-top rule applies before anything is stored.
+      setItems(synchronizedDesignCartItems(designItems.filter((item) => !isRangeTopCartLine(item))));
       setSourceDesignId(Number.isInteger(designId) && designId! > 0 ? designId : null);
     };
     const removeItem: CartState["removeItem"] = (masterCode, styleId, tier, fillerStockWidthIn = null, fillerInstalledCutWidthIn = null) => {
