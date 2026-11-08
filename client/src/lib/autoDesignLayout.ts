@@ -59,6 +59,15 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import {
+  applyRangeFlankEndPanels,
+  applyRangeFlankPlan,
+  describeUnfinishedFlank,
+  planRangeFlankCabinets,
+  RANGE_FLANK_PANEL_THICKNESS_IN,
+  rangeFlankPanelRequests,
+} from "./autoDesignRangeFlanks";
+import { exposedPanelTypeForCatalog } from "./exposedSidePanels";
 import { normalizeContinuousVerticalFillers } from "./verticalFiller";
 import {
   autoDesignPeninsulaAttachment,
@@ -388,6 +397,12 @@ export function runAutoDesignLayout(args: {
    * the sink; with no usable row here it uses the built-in default fixture.
    */
   faucetCatalog?: readonly AutoDesignFaucetProduct[];
+  /**
+   * The selected line's end/finished panel stock. The build seats the line's own
+   * panel on the outside of the base cabinet it puts on each side of the range,
+   * as a real placed catalog row so it is drawn and billed.
+   */
+  panelCatalog?: readonly DesignCabinet[];
   styleId: number | null;
   makeUid: () => string;
   stoveMasterCode?: string;
@@ -916,7 +931,60 @@ export function runAutoDesignLayout(args: {
     }
   }
   working = absorbOpenBaseGaps(working, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
-  // Every layout has at least one three-drawer base (Tom, Oct 31). The planner already splits a wide door base beside
+  // Owner rule: a real base cabinet stands on EACH side of the range, and the
+  // range is wiggled along its own wall (by the 1/8" difference) so both sides
+  // land on a stock width. A side that is already a stock width needs no move.
+  // Filler is never the answer here; it appears only when nothing stock fits,
+  // and a finished end panel gets its own 3/4" outside an open flank first.
+  const flankPanels = args.panelCatalog ?? (args.fillers as unknown as DesignCabinet[]);
+  const panelThickness = flankPanels.some((row) => exposedPanelTypeForCatalog(row) === "base-end")
+    ? RANGE_FLANK_PANEL_THICKNESS_IN
+    : 0;
+  const flankPlans = planRangeFlankCabinets({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    catalog: pool,
+    origins: stage.anchorOrigins,
+    fillerMaxIn: autoDesignFillerMaxIn(),
+    panelThicknessIn: panelThickness,
+  });
+  const flanked = applyRangeFlankPlan({ placed: working, room, plans: flankPlans, styleId: args.styleId, makeUid });
+  working = flanked.placed;
+  notes.push(...flanked.notes);
+  if (flanked.plans.length > 0) {
+    // Finished end panels on the outside of each flank cabinet: the line's own
+    // end panel SKU, cut from stock, placed as a real row so plan, elevation and
+    // 3D draw it and the cart, quote and PO bill it and nothing else.
+    const panelPlan = rangeFlankPanelRequests({ placed: working, room, plans: flanked.plans });
+    if (panelPlan.requests.length > 0) {
+      const panels = applyRangeFlankEndPanels({
+        placed: working,
+        room,
+        catalog: flankPanels,
+        requests: panelPlan.requests,
+        styleId: args.styleId,
+        makeUid,
+      });
+      working = panels.placed;
+      notes.push(...panels.notes);
+      for (const skip of panels.skipped) {
+        reviewFindings.push({
+          ruleId: "range-flank-finished-ends",
+          code: "flank-end-panel-not-placed",
+          severity: "warning",
+          title: `${skip.cabinetCode} beside the range has no end panel`,
+          detail: `The owner rule finishes the outside of the cabinet on each side of the range, and ${skip.reason}.`,
+          cabinetUid: skip.cabinetUid,
+          cabinetCode: skip.cabinetCode,
+        });
+      }
+    }
+    // A flank whose outside already abuts a cabinet (the corner box of a U or L
+    // kitchen) is finished by that cabinet. Double-stocking it would be wrong, so
+    // the side is described on the plan instead of being given a second board.
+    for (const side of panelPlan.unspaced) notes.push(describeUnfinishedFlank(side));
+  }  // Every layout has at least one three-drawer base (Tom, Oct 31). The planner already splits a wide door base beside
   // the range; if no drawer base landed anywhere, convert the best-fitting base run. A line with no drawer base only warns.
   const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
   working = drawerRule.placed;

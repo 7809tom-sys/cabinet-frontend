@@ -4311,6 +4311,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // HARD RULE: the sink always gets a faucet. The catalog rows feed the real
       // pick; with none the build uses the built-in default fixture and says so.
       faucetCatalog: autoDesignFaucetProductsRef.current,
+      // The line's own end/finished panel stock: the build finishes the outside
+      // of the base cabinet on each side of the range with a real placed panel.
+      panelCatalog: autoPanelCatalog,
       preExistingPlacements,
       styleId: styleIdRef.current ?? null,
       makeUid,
@@ -4391,7 +4394,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       promptAutoDesignSinkAfterBuild(builtSinkBase);
     }
     return { ok: true as const };
-    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, autoPanelCatalog, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
