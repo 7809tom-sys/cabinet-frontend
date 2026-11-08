@@ -254,6 +254,47 @@ describe("Alcove tubs are three-wall fixtures", () => {
     expect(resolved?.id).toBe("top");
   });
 
+  it.each(ALCOVE_CODES)("%s exposes only its apron across the full opening", (id) => {
+    // Tom's installed-view references: the apron spans wall to wall, sits flush
+    // with both end walls, and no tub end is left exposed.
+    const item = tub(id);
+    const definition = definitionOf(item);
+    const seated = placeBathroomTubSelection([], item, ALCOVE_ROOM)!.furniture[0]!;
+    const bays = findAlcoveTubBays(ALCOVE_ROOM);
+    const bay = bays.find((entry) => entry.id === "top")!;
+    // Reconstruct the world footprint the way the 3D scene builds it: the plan
+    // rotation is applied to the placed record.
+    const quarterTurn = ((seated.rotation % 360) + 360) % 360;
+    const footprint = quarterTurn === 90 || quarterTurn === 270
+      ? { w: definition.d, d: definition.w }
+      : { w: definition.w, d: definition.d };
+    // The apron, not the tub's short width, is what spans the bay.
+    expect(footprint.w, `${id} apron does not span the opening`).toBeCloseTo(bay.spanIn, 2);
+    // And the two end walls are flush, so neither end is exposed.
+    expect(seated.x - bay.start.x).toBeCloseTo(0, 2);
+    expect((bay.start.x + bay.spanIn) - (seated.x + footprint.w)).toBeCloseTo(0, 2);
+    // The back edge is on the back wall and the apron faces into the room.
+    expect(seated.y - bay.start.y).toBeCloseTo(0, 2);
+    expect(seated.y + footprint.d).toBeCloseTo(bay.start.y + definition.w, 1);
+  });
+
+  it("centres a tub that is slightly short for its bay instead of jamming a return", () => {
+    // A 64" opening takes the 60" tub with 2" of slack each side. Centring keeps
+    // both ends an equal 2" off, so neither return looks wrong, and the warning
+    // is about the gap rather than about one end being tight.
+    const wideBay = { width: 64, depth: 36 };
+    const seated = alcoveTubInBay(tub("pelican-tub-pl-02851-left"), findAlcoveTubBays(wideBay).find((bay) => bay.id === "top")!);
+    const definition = definitionOf(seated);
+    expect(seated.x).toBeCloseTo((64 - definition.d) / 2, 2);
+    const fit = alcoveTubFit(seated, wideBay);
+    // 4" of slack over a 2" tolerance, so the length warning fires and names the
+    // gap rather than blaming one end.
+    expect(fit.lengthMatches).toBe(false);
+    expect(fit.warnings.join(" ")).toMatch(/gap/i);
+    // Symmetric, so neither end is singled out as the problem.
+    expect(fit.warnings.join(" ")).not.toMatch(/not tight/i);
+  });
+
   it("does not apply its bay rules to a freestanding tub", () => {
     const freestanding = tub("pelican-tub-pl-02563-59");
     const fit = alcoveTubFit(freestanding, ALCOVE_ROOM);
