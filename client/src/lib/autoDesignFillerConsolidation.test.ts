@@ -259,4 +259,32 @@ describe("consolidateAutoDesignFillers", () => {
     expect(second.changes).toHaveLength(0);
     expect(second.placed).toEqual(first.placed);
   });
+
+  it("never re-lays the mandatory bridge above a range", () => {
+    // A 30 inch wall run over a range: the bridge is seated at its own datum by
+    // its own hard rule. Re-laying it to chase a board would move a mandatory
+    // cabinet, so the run is left exactly as it is.
+    const bridgeSpot = wallPlacementAt(0, 30, 12, "top", ROOM);
+    const bridge: PlacedCabinet = {
+      uid: "bridge", cabinetId: 9, masterCode: "W3030", description: '30" bridge above the range',
+      category: "Wall", subCategory: "Wall", placement: "wall", width: 30, depth: 12, height: 12,
+      numberOfDoors: 2, numberOfDrawers: 0, mountBottom: 72, overRangeMicrowaveBridge: true,
+      ...bridgeSpot,
+    } as PlacedCabinet;
+    const run = [
+      bridge,
+      placedFiller(1, 30, "f1", "bridge"),
+      { ...placedBase("B27", 27, 31, "b2"), placement: "wall" as const, depth: 12, height: 30, mountBottom: 54 },
+      placedFiller(3, 58, "f2", "b2"),
+    ];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
+      maxFillerIn: 6, makeUid: uidFactory(), styleId: 1,
+    });
+    // The bridge keeps its exact seat: start, width, height, mount datum.
+    const after = result.placed.find((item) => item.uid === "bridge")!;
+    expect({ x: after.x, y: after.y, width: after.width, height: after.height, mountBottom: after.mountBottom })
+      .toEqual({ x: bridge.x, y: bridge.y, width: bridge.width, height: bridge.height, mountBottom: bridge.mountBottom });
+    expect(result.changes).toHaveLength(0);
+  });
 });
