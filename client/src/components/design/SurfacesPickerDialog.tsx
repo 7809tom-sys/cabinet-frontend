@@ -202,6 +202,7 @@ export function SurfacesPickerDialog({
   selected,
   onToggle,
   estimatedSubtotal,
+  addedItemCount,
   countertopPriceLines = [],
   backsplashHeightMode = "standard",
   onBacksplashHeightModeChange,
@@ -224,6 +225,12 @@ export function SurfacesPickerDialog({
   onToggle: (item: SelectedSurface) => void;
   /** Measured cart subtotal for selected surfaces, including area-based quantities. */
   estimatedSubtotal?: number | null;
+  /**
+   * Authoritative count of design lines this popup has contributed. Comes from the
+   * same cart-line basis the cart is built from, so the footer can never claim more
+   * than the design actually contains.
+   */
+  addedItemCount?: number | null;
   /** Price-locked countertop lines measured from the live rendered cabinet footprint. */
   countertopPriceLines?: Array<{
     name: string;
@@ -1024,11 +1031,11 @@ export function SurfacesPickerDialog({
         {/* Footer summary */}
         <div className="flex items-center justify-between border-t border-border px-6 py-3">
           <div className="text-sm text-muted-foreground">
-            {selected.length === 0 ? (
+            {(addedItemCount ?? selected.length) === 0 ? (
               "No surfaces added yet"
             ) : (
               <span className="flex items-center gap-2">
-                <Badge variant="secondary">{selected.length}</Badge>
+                <Badge variant="secondary">{addedItemCount ?? selected.length}</Badge>
                 added ·{" "}
                 <span className="font-semibold text-foreground">
                   {formatPrice(estimatedSubtotal ?? selected.reduce((sum, s) => sum + (s.sellPrice ?? 0), 0))}

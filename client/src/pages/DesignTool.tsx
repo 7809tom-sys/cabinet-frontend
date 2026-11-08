@@ -112,7 +112,6 @@ import {
 } from "@/lib/bathroomVanityCatalog";
 import {
   autoSeedSinkForBase,
-  faucetCartQuantities,
   faucetCatalogRoleForBase,
   faucetFamilyForBase,
   faucetRowFitsBase,
@@ -460,6 +459,7 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
+import { fixtureQuantitiesFromPlacements } from "@/lib/designCartReconciliation";
 import { mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { confirmPlacedItemRemoval } from "@/lib/placedItemRemoval";
@@ -1567,17 +1567,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => potFillers.filter((fixture) => potFillerMountedRange(fixture, placed, room, island)),
     [potFillers, placed, room, island],
   );
-  const potFillerQuantityByProduct = useMemo(() => {
-    // Include every persisted source ID at zero so an invalid/deleted range
-    // cannot leave a stale fixture product in the payable cart.
-    const quantities = new Map<number, number>();
-    potFillers.forEach((fixture) => quantities.set(fixture.pelicanProductId, 0));
-    validPotFillers.forEach((fixture) => quantities.set(
-      fixture.pelicanProductId,
-      (quantities.get(fixture.pelicanProductId) ?? 0) + 1,
-    ));
-    return quantities;
-  }, [potFillers, validPotFillers]);
   // Keep legacy and installed fixtures centered and lengthwise in their owning
   // sink base after a saved design loads or the base moves to another wall.
   useEffect(() => {
@@ -1816,7 +1805,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const host = openPelicanSinkHost(product, placedRef.current, sinks);
         if (host) {
           const fixture = adoptAutoDesignSinkRef.current(buildPelicanSinkOnCabinet(product, host, room));
+          // A basin sits one-per-host. Replacing it must also retire the basin it
+          // replaced from the design's product selection, otherwise the old model
+          // stays in the cart beside the new one. This is how a rectangular basin
+          // the shopper swapped for PL-3608 kept billing.
+          const replacedBasinIds = sinks
+            .filter((sink) => fixtureBelongsToCabinet(sink, host) && sink.pelicanProductId != null && sink.pelicanProductId !== product.id)
+            .map((sink) => sink.pelicanProductId as number);
           setSinks((current) => [...current.filter((sink) => !fixtureBelongsToCabinet(sink, host)), fixture]);
+          if (replacedBasinIds.length > 0) {
+            const stillPlacedElsewhere = new Set(
+              sinks
+                .filter((sink) => !fixtureBelongsToCabinet(sink, host))
+                .map((sink) => sink.pelicanProductId)
+                .filter((id): id is number => id != null),
+            );
+            setSelectedSurfaces((previous) => previous.filter(
+              (surface) => !replacedBasinIds.includes(surface.id) || stillPlacedElsewhere.has(surface.id),
+            ));
+          }
           setSelectedSinkUid(fixture.uid);
           setCountertop(true);
           toggleSurface(item);
@@ -2665,32 +2672,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }), [furniture, placed, selectedSurfaces, sinks]);
   const bathroomChecklistCompleted = bathroomChecklist.filter((step) => step.complete && !step.optional).length;
   const bathroomChecklistRequired = bathroomChecklist.filter((step) => !step.optional).length;
-  const bathroomFixtureQuantityByProduct = useMemo(() => {
-    // A selected bathroom fixture is cartable only when an actual persisted
-    // plan/3D placement owns it. Seed selected source profiles at zero so a
-    // deleted fixture cannot leave a stale one-unit quote line behind.
-    const quantities = new Map<number, number>();
-    selectedSurfaces.forEach((surface) => {
-      if (isPelicanBathroomFixtureProfileVerified(surface.pelicanCode)) quantities.set(surface.id, 0);
-    });
-    furniture.forEach((fixture) => {
-      if (!fixture.pelicanProductId || !isPelicanBathroomFixtureProfileVerified(fixture.pelicanCode)) return;
-      quantities.set(fixture.pelicanProductId, (quantities.get(fixture.pelicanProductId) ?? 0) + 1);
-    });
-    return quantities;
-  }, [furniture, selectedSurfaces]);
-  const placedFixtureQuantityByProduct = useMemo(() => {
-    const quantities = new Map(potFillerQuantityByProduct);
-    bathroomFixtureQuantityByProduct.forEach((quantity, productId) => {
-      quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
-    });
-    // A filled-in faucet is drawn but not billed. `faucetCartQuantities` seeds it
-    // at zero so a stale surface row cannot charge it, and counts only a pick.
-    faucetCartQuantities(sinks).forEach((quantity, productId) => {
-      quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
-    });
-    return quantities;
-  }, [bathroomFixtureQuantityByProduct, potFillerQuantityByProduct, sinks]);
+  // Every cartable fixture starts at zero and is incremented only by a real
+  // placement. Sharing this with `designCartReconciliation` means the cart, the
+  // quote, the order and the popup counter all read the same rule.
+  const fixtureQuantitiesByProduct = useMemo(() => fixtureQuantitiesFromPlacements({
+    selected: selectedSurfaces,
+    furniture,
+    sinks,
+    // Only a filler that is actually mounted on a placed range bills; an orphaned
+    // filler stays selected but must not reach the payable cart.
+    potFillers: validPotFillers,
+    // Every persisted filler id also starts at zero, so a stale one cannot bill.
+    zeroedPotFillerIds: potFillers.map((fixture) => fixture.pelicanProductId),
+  }), [selectedSurfaces, furniture, sinks, potFillers, validPotFillers]);
+  const placedFixtureQuantityByProduct = fixtureQuantitiesByProduct;
   // Text annotations placed on the floor plan.
   const [annotations, setAnnotations] = useState<PlanAnnotation[]>([]);
   const [selectedAnnotationUid, setSelectedAnnotationUid] = useState<string | null>(null);
@@ -6691,6 +6686,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     replaceWithDesignItems(cartableLines, currentSavedDesignId ?? null);
     toast.success(`3D design synchronized to cart (${cartableLines.reduce((count, line) => count + line.qty, 0)} items).`);
   }, [cartableLines, replaceWithDesignItems, currentSavedDesignId]);
+
+  // ─── Reconcile a cart that belongs to this saved design ─────────────────────
+  // The cart, quote and order must equal what is placed in the design. A cart line
+  // can only be created through `replaceWithDesignItems`, so for a saved design the
+  // cart is a snapshot of the design at the moment it was last sent over. If the
+  // design changed afterwards — a basin swapped, a fixture deleted, an item added
+  // to the popup but never placed — that snapshot is now wrong and the shopper
+  // keeps paying for it.
+  //
+  // Nothing re-ran the snapshot automatically, which is why an older saved design
+  // like cabinetman66 still showed items its drawing no longer contained. Once the
+  // saved design is loaded and the cart is known to belong to it, this rebuilds the
+  // cart from the authoritative `cartableLines` basis.
+  //
+  // Only a cart that names THIS design is touched: a cart built for another design,
+  // or one the shopper assembled by hand, is left alone.
+  const designReconciledRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (cartSourceDesignId == null) return;
+    if (currentSavedDesignId == null || cartSourceDesignId !== currentSavedDesignId) return;
+    if (designReconciledRef.current === cartSourceDesignId) return;
+    // Wait until the loaded design has actually populated the cart basis. An empty
+    // basis during hydration would wipe a correct cart.
+    if (cartableLines.length === 0) return;
+    designReconciledRef.current = cartSourceDesignId;
+    replaceWithDesignItems(cartableLines, cartSourceDesignId);
+  }, [cartSourceDesignId, currentSavedDesignId, cartableLines, replaceWithDesignItems]);
 
   // ─── Trim auto-apply ────────────────────────────────────────────────────────
   // Only toe kick auto-applies on a base run. Crown, batten, and valances remain opt-in.
@@ -15985,8 +16007,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }
       }}
       onRemoveFurniture={(uid) => {
-        setFurniture((previous) => previous.filter((item) => item.uid !== uid));
+        // Deleting a fixture from the plan must also delete it from the design's
+        // product selection. The cart is built from the selection, so leaving the
+        // row behind kept a deleted toilet, tub or basin payable.
+        const removed = furniture.find((item) => item.uid === uid) ?? null;
+        const remaining = furniture.filter((item) => item.uid !== uid);
+        setFurniture(remaining);
         setSelectedFurnUid((current) => current === uid ? null : current);
+        if (removed?.pelicanProductId != null) {
+          const productId = removed.pelicanProductId;
+          // Only drop the selection when no other placement still uses it.
+          const stillPlaced = remaining.some((item) => item.pelicanProductId === productId);
+          if (!stillPlaced) {
+            setSelectedSurfaces((previous) => previous.filter((surface) => surface.id !== productId));
+          }
+        }
         toast.success("Removed fixture from the 3D plan.");
       }}
       onRotateFurniture={rotateFurniture}
@@ -22182,6 +22217,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        initialBathroomRole={bathroomBrowseRole}
 	        onPlaceBathroomFixture={placePelicanBathroomFixture}
 	        estimatedSubtotal={calculateCartSubtotal(surfaceCartLines)}
+	        addedItemCount={surfaceCartLines.reduce((count, line) => count + line.qty, 0)}
 	        countertopPriceLines={surfaceCartLines
 	          .filter((line) => /countertop|quartz\s+slab/i.test(line.category ?? ""))
 	          .map((line) => ({
