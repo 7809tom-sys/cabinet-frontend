@@ -12418,6 +12418,11 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [doorTextureState, setDoorTextureState] = useState<"not-requested" | "loading" | "loaded" | "failed">("not-requested");
   const [backsplashTextureWarning, setBacksplashTextureWarning] = useState<string | null>(null);
+  // Declared here, with every other hook, because the render below returns early
+  // for an empty room and for a failed WebGL start. Declaring it after those
+  // returns meant the first render ran one fewer hook than the fallback render,
+  // which React reports as "Rendered fewer hooks than expected" (error #300).
+  const [colorTraceDismissed, setColorTraceDismissed] = useState(false);
   const validSuggestions = useMemo(() => scene.suggestions.filter((entry) => entry.sku), [scene.suggestions]);
   const renderExistingDesign = threeDUsesAuthoritativePlanScene(roomOverride, { placed, openings, sinks, potFillers, island, furniture, ponyWalls });
   const upperCabinetWallMinimums = useMemo(
@@ -14871,7 +14876,6 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     openings,
   );
 
-  const [colorTraceDismissed, setColorTraceDismissed] = useState(false);
   return (
     <section ref={previewRootRef} onDragOver={(event) => event.preventDefault()} data-immersive={immersive ? "true" : undefined} className={`relative ${embedded ? "flex h-full min-h-0 flex-col" : ""} ${isFullscreen ? "h-screen w-screen overflow-y-auto bg-background p-3 sm:p-5" : ""} ${immersive ? "h-full min-h-0 flex-col bg-background" : ""} ${className ?? ""}`} aria-label="Interactive three-dimensional room preview">
 	  {backsplashTextureWarning && <div role="alert" data-testid="backsplash-texture-warning" className="absolute left-1/2 top-3 z-40 max-w-[min(36rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg border border-amber-600 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-950 shadow-lg">{backsplashTextureWarning}</div>}
