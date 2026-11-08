@@ -293,7 +293,8 @@ import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
-import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, isSinkBasePlacement, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
+import { autoDesignBlocksEmptyPlan, autoDesignControlState, isRefrigeratorAppliance, isSinkBasePlacement } from "@/lib/autoDesignAvailability";
+import { anchoredRefrigeratorOf, refrigeratorAnchorMeasurement } from "@/lib/autoDesignRefrigeratorAnchor";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, fillAutoFaucet, isCatalogFaucet, sinkFaucetIsSatisfied, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
@@ -2131,16 +2132,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
   // A pushed Pelican sink seats a sink base and a fixture. That is a fixture
   // choice, not hand-placed cabinet work, so it must not gray Auto-Design out —
-  // otherwise pushing a sink made the whole auto-designer stop working.
+  // otherwise pushing a sink made the whole auto-designer stop working. A
+  // refrigerator is a fixed anchor the build designs around, so it does not
+  // count as hand-placed work either.
   const autoDesignBlockingPlacements = useMemo(
-    () => placed.filter((item) => !isSinkBasePlacement(item)),
+    () => placed.filter(autoDesignBlocksEmptyPlan),
     [placed],
   );
   const autoDesignControl = useMemo(() => autoDesignControlState({
     audienceAllowed: autoDesignAvailable,
     layoutLocked,
     placedCount: autoDesignBlockingPlacements.length,
-    hasRefrigerator: layoutHasRefrigerator,
+    refrigeratorAnchor: layoutHasRefrigerator,
   }), [autoDesignAvailable, autoDesignBlockingPlacements.length, layoutHasRefrigerator, layoutLocked]);
   // `openAutoDesign` is declared above this memo, so it reads the shared control
   // through a ref instead of duplicating the hand-placed rule.
@@ -2151,24 +2154,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    * the desktop explains "needs an empty plan".
    */
   const autoDesignBlockedNote = autoDesignControl.blockedNote;
-  const autoDesignSessionAnchorUids = useMemo(() => {
-    const anchors = autoDesignCornerStage?.anchors;
-    if (!anchors) return new Set<string>();
-    return new Set(Object.values(anchors).map((item) => item.uid));
-  }, [autoDesignCornerStage]);
-  const refrigeratorBlocksAutoDesignSession = refrigeratorBlocksAutoDesign(placed, autoDesignSessionAnchorUids);
-  useEffect(() => {
-    if (!autoDesignShouldTurnOffForRefrigerator({
-      blockedByRefrigerator: refrigeratorBlocksAutoDesignSession,
-      dialogOpen: autoDesignOpen,
-      cornerStageActive: autoDesignCornerStage != null,
-    })) return;
-    // Close the mode only. Do not complete the layout and do not use the
-    // cancel path, which clears every placement.
-    setAutoDesignOpen(false);
-    setAutoDesignCornerStage(null);
-    toast.info(AUTO_DESIGN_REFRIGERATOR_NOTE);
-  }, [autoDesignCornerStage, autoDesignOpen, refrigeratorBlocksAutoDesignSession]);
+  const autoDesignAnchorNote = autoDesignControl.refrigeratorAnchorNote;
+  /** The refrigerator the next build adopts as a fixed anchor, if any. */
+  const autoDesignAnchoredRefrigeratorRef = useRef<PlacedCabinet | null>(null);
   const rememberAutoDesignSink = useCallback((sink: SinkFixture, openingOverride?: readonly WallOpening[]): SinkFixture => {
     if (!autoDesignSessionRef.current) return sink;
     const result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
@@ -4250,11 +4238,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (roomType !== "kitchen") {
       return fail("Auto-Design builds a measured kitchen. Choose the Kitchen room type to use it; bathroom vanities and fixtures are placed from the Vanity and Fixtures tabs.");
     }
-    if (placedRef.current.some(isRefrigeratorAppliance)) {
-      return fail(AUTO_DESIGN_REFRIGERATOR_NOTE);
-    }
     if (!canRunAutoDesign(autoDesignAvailable, autoDesignBlockingPlacements.length > 0)) {
-      return fail("The auto-design build only runs on an empty Designer.");
+      return fail("The auto-design build only runs on a plan with no hand-placed cabinets. Remove them, or start a new design, then build the measured kitchen.");
     }
     if (autoFillCabinetsLoading || wallCabPoolLoading) {
       return fail("The selected line’s source-priced cabinets are still loading. Wait a moment, then build the measured kitchen again.");
@@ -4264,6 +4249,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // A sink pushed before the build keeps its exact position. The build works
     // around it and never drags it onto a run of its own choosing.
     const preExistingPlacements = placedRef.current;
+    // A refrigerator already on the plan is the build's FIXED ANCHOR. It is
+    // never moved, re-sized, or re-measured: the measured refrigerator rows in
+    // the setup dialog are ignored for it, and the bay, base runs, corners,
+    // talls and uppers are designed around its real position and floor space.
+    const anchoredRefrigerator = anchoredRefrigeratorOf(preExistingPlacements);
+    autoDesignAnchoredRefrigeratorRef.current = anchoredRefrigerator;
+    const anchoredRefrigeratorMeasurement = anchoredRefrigerator
+      ? refrigeratorAnchorMeasurement({
+        refrigerator: anchoredRefrigerator,
+        room,
+        originCorner: input.originCorner,
+        runDirection: input.runDirection,
+      })
+      : null;
     // Tall oven / pantry boxes this line sells, resolved from the same pools the
     // palette uses. A pop-up pick is matched here and auto-placed by the build.
     const tallById = new Map<number, DesignCabinet>();
@@ -4287,6 +4286,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const run = withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => runAutoDesignLayout({
       input: {
         ...input,
+        // A refrigerator already on the plan is measured where it stands, so the
+        // build reserves its exact floor space no matter what the dialog said.
+        refrigerator: anchoredRefrigeratorMeasurement ?? input.refrigerator,
         tallCabinets: autoDesignTallPicks.map((product) => ({
           cabinetId: product.id,
           masterCode: product.masterCode,
@@ -4312,6 +4314,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // pick; with none the build uses the built-in default fixture and says so.
       faucetCatalog: autoDesignFaucetProductsRef.current,
       preExistingPlacements,
+      anchoredRefrigerator,
       styleId: styleIdRef.current ?? null,
       makeUid,
     }));
@@ -4436,6 +4439,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const upperCorners: AutoDesignUpperCorner[] = [];
     const applianceMoves: AutoDesignApplianceMove[] = [];
     const seatedCornerIds = new Map<string, number>();
+    // A refrigerator already on the plan is a fixed anchor at this stage too:
+    // the corners are designed around it and its panels are never slid.
+    const stageAnchoredRefrigerator = autoDesignAnchoredRefrigeratorRef.current;
+    const fixedApplianceUids = stageAnchoredRefrigerator ? [stageAnchoredRefrigerator.uid] : [];
 
     for (const slot of stage.slots) {
       const choice = choices[slot.id] ?? { cabinetId: null };
@@ -4480,6 +4487,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         room,
         openings: stageOpenings,
         measuredApplianceUids: stage.anchorOrigins.filter((entry) => entry.kind === "refrigerator").map((entry) => entry.uid),
+        immovableApplianceUids: fixedApplianceUids,
         blindPullIn: choice.blindPullIn,
         catalogFillers,
         makeUid,
@@ -4537,12 +4545,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       catalog: stage.straightBaseCatalog,
       origins: stage.anchorOrigins,
       lockedUids: cornerOccupantRefrigeratorUids(working, room),
+      fixedUids: fixedApplianceUids,
     });
     working = wiggle.placed;
     const separated = separateRangeAndRefrigerator({
       placed: working,
       room,
       origins: stage.anchorOrigins,
+      fixedRefrigeratorUids: fixedApplianceUids,
     });
     working = separated.placed;
     let refrigeratorReservation = stage.refrigeratorReservation;
@@ -16455,10 +16465,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             Tablet preview
           </Button>
         )}
-        {/* Auto-Design trigger, dishwasher-side picker, and the blocked note for the
-            1024px+ toolbar. The phone/tablet top-actions cluster below renders the
-            same trio from the same `autoDesignControl`, so no width loses a
-            feature or its disabled reason. */}
+        {/* Auto-Design trigger, dishwasher-side picker, and the visible reason
+            while the control is disabled, for the 1024px+ toolbar. The
+            phone/tablet top-actions cluster below renders the same trio from the
+            same `autoDesignControl`, so no width loses a feature or its disabled
+            reason. A refrigerator on the plan is never a reason: it is the fixed
+            anchor the build designs around, and `autoDesignAnchorNote` says so. */}
         {autoDesignAvailable && (
           <>
             <Button
@@ -16489,6 +16501,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             {autoDesignBlockedNote && (
               <span data-testid="auto-design-blocked-note" data-auto-design-surface="desktop" className="hidden max-w-[14rem] text-[11px] leading-snug text-muted-foreground lg:inline">
                 {autoDesignBlockedNote}
+              </span>
+            )}
+            {autoDesignAnchorNote && (
+              <span data-testid="auto-design-refrigerator-anchor-note" data-auto-design-surface="desktop" className="hidden max-w-[14rem] text-[11px] leading-snug text-[#765416] lg:inline">
+                {autoDesignAnchorNote}
               </span>
             )}
           </>
@@ -16802,6 +16819,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   className="w-full text-[11px] leading-snug text-muted-foreground"
                 >
                   {autoDesignBlockedNote}
+                </span>
+              )}
+              {autoDesignAnchorNote && (
+                <span
+                  data-testid="mobile-auto-design-refrigerator-anchor-note"
+                  data-auto-design-anchor-note="true"
+                  aria-live="polite"
+                  className="w-full text-[11px] leading-snug text-[#765416]"
+                >
+                  {autoDesignAnchorNote}
                 </span>
               )}
             </div>
@@ -17130,6 +17157,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         Auto-Design
                         {autoDesignBlockedNote && (
                           <span className="block text-[11px] font-normal text-muted-foreground">{autoDesignBlockedNote}</span>
+                        )}
+                        {autoDesignAnchorNote && (
+                          <span data-testid="more-sheet-auto-design-anchor-note" className="block text-[11px] font-normal text-[#765416]">{autoDesignAnchorNote}</span>
                         )}
                       </span>
                       <Badge variant="secondary" className="text-[10px]">measured</Badge>

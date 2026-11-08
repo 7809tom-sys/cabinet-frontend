@@ -92,6 +92,8 @@ export function seatAutoDesignCornerFromCatalog(input: {
   room: RoomData;
   openings: WallOpening[];
   measuredApplianceUids?: readonly string[];
+  /** Refrigerators already on the plan: fixed anchors the corner is designed around. */
+  immovableApplianceUids?: readonly string[];
   /** Pull chosen in a review dialog. Omitted callers use Cabinet Config's max pull. */
   blindPullIn?: number;
   catalogFillers: readonly CatalogFillerCandidate[];
@@ -144,6 +146,7 @@ export function seatAutoDesignCornerFromCatalog(input: {
         makeUid: input.makeUid,
         styleId: input.styleId,
         measuredApplianceUids: input.measuredApplianceUids,
+        immovableApplianceUids: input.immovableApplianceUids,
       });
       if (!trial.ok) {
         lastMessage = trial.message;
