@@ -359,7 +359,11 @@ export function SurfacesPickerDialog({
       case "shower-door":
       case "shower-surround":
       case "shower-system":
+      case "shower-pan":
+      case "shower-niche":
       case "bathroom-accessory": return "Shower & Bath";
+      // The shower walls and floor reuse the existing tile rows.
+      case "shower-tile": return "Tile & Mosaic";
       case "bathroom-sink":
       case "bathroom-faucet": return "Sinks & Faucets";
       default: return null;

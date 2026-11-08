@@ -1,0 +1,397 @@
+import * as THREE from "three";
+import type { VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
+
+/**
+ * Shower fixture geometry: pans, surround panels, wall systems, niches.
+ *
+ * Each builder is a pure function returning named parts, matching the tub and
+ * toilet builders, so the caller keeps ownership of the group and its userData
+ * and the closure/envelope tests can measure the built meshes.
+ *
+ * Only a pan has a measured floor envelope. A surround is a wall panel set, a
+ * shower system is wall trim, and a niche is recessed; those sit on walls rather
+ * than occupying floor, which is why their footprint is not a floor body.
+ */
+
+export type ShowerMaterials = {
+  /** White acrylic pan body. */
+  shell: THREE.Material;
+  /** Chrome / brushed trim. */
+  metal: THREE.Material;
+  /** Glass for a door panel. */
+  glass?: THREE.Material;
+  /** Panel face for a surround, keyed by finish name when available. */
+  panel?: THREE.Material;
+};
+
+export type ShowerPart = {
+  mesh: THREE.Mesh;
+  part: string;
+};
+
+const INCH = 1 / 12;
+
+const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+const UP = new THREE.Vector3(0, 1, 0);
+
+/**
+ * Quad collector that guarantees each face points where it is meant to.
+ *
+ * The designer's fixture materials are single sided, so a mis-wound face is not
+ * merely dark — it is invisible and you see straight through the fixture.
+ */
+class Panel {
+  private positions: number[] = [];
+  private indices: number[] = [];
+
+  quad(
+    corners: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
+    facing: THREE.Vector3,
+  ): this {
+    const [a, b, c, d] = corners;
+    const normal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    const ordered = normal.dot(facing) >= 0 ? [a, b, c, d] : [d, c, b, a];
+    const base = this.positions.length / 3;
+    for (const point of ordered) this.positions.push(point.x, point.y, point.z);
+    this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    return this;
+  }
+
+  box(min: THREE.Vector3, max: THREE.Vector3): this {
+    const { x: x0, y: y0, z: z0 } = min;
+    const { x: x1, y: y1, z: z1 } = max;
+    this.quad([v(x0, y0, z0), v(x0, y0, z1), v(x0, y1, z1), v(x0, y1, z0)], v(-1, 0, 0));
+    this.quad([v(x1, y0, z0), v(x1, y0, z1), v(x1, y1, z1), v(x1, y1, z0)], v(1, 0, 0));
+    this.quad([v(x0, y0, z0), v(x1, y0, z0), v(x1, y1, z0), v(x0, y1, z0)], v(0, 0, -1));
+    this.quad([v(x0, y0, z1), v(x1, y0, z1), v(x1, y1, z1), v(x0, y1, z1)], v(0, 0, 1));
+    this.quad([v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1), v(x0, y0, z1)], v(0, -1, 0));
+    this.quad([v(x0, y1, z0), v(x1, y1, z0), v(x1, y1, z1), v(x0, y1, z1)], UP);
+    return this;
+  }
+
+  /** An outward-facing box shell is built by four walls plus a top; the pan
+   * needs a genuine interior, so this is used for the rim and apron only. */
+  geometry(): THREE.BufferGeometry {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(this.positions, 3));
+    geometry.setIndex(this.indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+}
+
+/**
+ * A shower pan.
+ *
+ * Authored to the catalog's own convention so the plan footprint and the mesh
+ * agree: `widthIn` runs on X and `depthIn` on Z, and the exposed front lip is
+ * the long face at -Z. The back (+Z) and both ends are the walled sides, so the
+ * pan snaps into a corner or alcove exactly like an alcove tub.
+ *
+ * The published height is the full pan height, so the flat rim sits at that
+ * height with a recessed basin below it; the drain sits in the basin floor on the
+ * published drain side.
+ */
+export function makeShowerPanParts(
+  profile: VerifiedPelicanBathroomFixtureProfile,
+  materials: ShowerMaterials,
+): ShowerPart[] {
+  const W = profile.widthIn * INCH;
+  const D = profile.depthIn * INCH;
+  const H = Math.max(0.25, profile.heightIn * INCH);
+  const halfW = W / 2;
+  const halfD = D / 2;
+
+  // Rim width and basin depth scale with the pan so a 48" pan does not get a
+  // 60" pan's rim. Both stay inside the published height.
+  const rim = Math.min(3.5 * INCH, Math.min(W, D) * 0.14);
+  const basinDepth = Math.min(H * 0.62, 2.6 * INCH);
+  const basinY = H - basinDepth;
+
+  const parts: ShowerPart[] = [];
+  const push = (geometry: THREE.BufferGeometry, part: string, material: THREE.Material = materials.shell) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parts.push({ mesh, part });
+  };
+
+  // ---- Outer walls ---------------------------------------------------------
+  // Front lip is the -Z long face; the other three sides sit against walls.
+  {
+    const p = new Panel();
+    p.quad([v(-halfW, 0, -halfD), v(-halfW, 0, halfD), v(-halfW, H, halfD), v(-halfW, H, -halfD)], v(-1, 0, 0));
+    p.quad([v(halfW, 0, -halfD), v(halfW, 0, halfD), v(halfW, H, halfD), v(halfW, H, -halfD)], v(1, 0, 0));
+    p.quad([v(-halfW, 0, -halfD), v(halfW, 0, -halfD), v(halfW, H, -halfD), v(-halfW, H, -halfD)], v(0, 0, -1));
+    p.quad([v(-halfW, 0, halfD), v(halfW, 0, halfD), v(halfW, H, halfD), v(-halfW, H, halfD)], v(0, 0, 1));
+    push(p.geometry(), "shower-pan-body");
+  }
+
+  // ---- Underside -----------------------------------------------------------
+  {
+    const p = new Panel();
+    p.quad([
+      v(-halfW, 0.004, -halfD), v(halfW, 0.004, -halfD),
+      v(halfW, 0.004, halfD), v(-halfW, 0.004, halfD),
+    ], v(0, -1, 0));
+    push(p.geometry(), "shower-pan-base");
+  }
+
+  // ---- Flat rim around the recessed basin ----------------------------------
+  const innerX = Math.max(1, halfW - rim);
+  const innerZ = Math.max(1, halfD - rim);
+  {
+    const p = new Panel();
+    p.quad([v(-innerX, H, -innerZ), v(-halfW, H, -innerZ), v(-halfW, H, innerZ), v(-innerX, H, innerZ)], UP);
+    p.quad([v(innerX, H, -innerZ), v(halfW, H, -innerZ), v(halfW, H, innerZ), v(innerX, H, innerZ)], UP);
+    p.quad([v(-innerX, H, -innerZ), v(innerX, H, -innerZ), v(innerX, H, -halfD), v(-innerX, H, -halfD)], UP);
+    p.quad([v(-innerX, H, innerZ), v(innerX, H, innerZ), v(innerX, H, halfD), v(-innerX, H, halfD)], UP);
+    push(p.geometry(), "shower-pan-rim");
+  }
+
+  // ---- Basin walls and floor -----------------------------------------------
+  const floorW = innerX * 0.92;
+  const floorD = innerZ * 0.94;
+  {
+    const p = new Panel();
+    p.quad([v(innerX, H, -innerZ), v(innerX, H, innerZ), v(floorW, basinY, floorD), v(floorW, basinY, -floorD)], v(-1, 1, 0));
+    p.quad([v(-innerX, H, -innerZ), v(-innerX, H, innerZ), v(-floorW, basinY, floorD), v(-floorW, basinY, -floorD)], v(1, 1, 0));
+    p.quad([v(-innerX, H, -innerZ), v(innerX, H, -innerZ), v(floorW, basinY, -floorD), v(-floorW, basinY, -floorD)], v(0, 1, 1));
+    p.quad([v(-innerX, H, innerZ), v(innerX, H, innerZ), v(floorW, basinY, floorD), v(-floorW, basinY, floorD)], v(0, 1, -1));
+    push(p.geometry(), "shower-pan-basin-wall");
+
+    const f = new Panel();
+    f.quad([
+      v(-floorW, basinY, -floorD), v(floorW, basinY, -floorD),
+      v(floorW, basinY, floorD), v(-floorW, basinY, floorD),
+    ], UP);
+    push(f.geometry(), "shower-pan-basin-floor");
+  }
+
+  // ---- Drain ---------------------------------------------------------------
+  // The drain sides are the pan's ends, which run along X.
+  const drainRadius = Math.max(0.03, Math.min(W, D) * 0.045);
+  const drainX = profile.drain === "left" ? -innerX * 0.45
+    : profile.drain === "right" ? innerX * 0.45
+      : 0;
+  const drain = new THREE.Mesh(
+    new THREE.CylinderGeometry(drainRadius, drainRadius, 0.014, 28),
+    materials.metal,
+  );
+  drain.position.set(drainX, basinY + 0.008, 0);
+  drain.receiveShadow = true;
+  parts.push({ mesh: drain, part: "shower-pan-drain" });
+
+  return parts;
+}
+
+/**
+ * A three-piece alcove surround: the back wall plus both ends, standing from the
+ * pan's rim to the published panel height.
+ *
+ * Authored in the same frame as the pan, so the two line up: `widthIn` runs on X
+ * (the 60" back panel spans it), `depthIn` runs on Z (the two end panels run that
+ * far), and the open front is the -Z long face where the door goes. Nothing here
+ * occupies floor.
+ */
+export function makeShowerSurroundParts(
+  profile: VerifiedPelicanBathroomFixtureProfile,
+  materials: ShowerMaterials,
+  options: { baseHeightIn?: number } = {},
+): ShowerPart[] {
+  const W = profile.widthIn * INCH;
+  const D = profile.depthIn * INCH;
+  const t = 0.35 * INCH;
+  const base = Math.max(0, options.baseHeightIn ?? 0) * INCH;
+  const top = Math.max(base + 1, profile.heightIn * INCH);
+  const halfW = W / 2;
+  const halfD = D / 2;
+
+  const parts: ShowerPart[] = [];
+  const material = materials.panel ?? materials.shell;
+  const push = (geometry: THREE.BufferGeometry, part: string) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parts.push({ mesh, part });
+  };
+
+  // ---- Back panel: the +Z long side, spanning the full alcove width ----------
+  {
+    const p = new Panel();
+    p.quad([
+      v(-halfW, base, halfD - t), v(halfW, base, halfD - t),
+      v(halfW, top, halfD - t), v(-halfW, top, halfD - t),
+    ], v(0, 0, -1));
+    p.quad([
+      v(-halfW, base, halfD), v(halfW, base, halfD),
+      v(halfW, top, halfD), v(-halfW, top, halfD),
+    ], v(0, 0, 1));
+    p.quad([
+      v(-halfW, top, halfD - t), v(halfW, top, halfD - t),
+      v(halfW, top, halfD), v(-halfW, top, halfD),
+    ], UP);
+    push(p.geometry(), "shower-surround-back");
+  }
+
+  // ---- End panels: the two short sides, running the alcove depth ------------
+  for (const side of [-1, 1] as const) {
+    const p = new Panel();
+    const xOuter = side * halfW;
+    const xInner = side * (halfW - t);
+    // Inner face (toward the shower), outer face, top edge, and the cut edge at
+    // the open front.
+    p.quad([
+      v(xInner, base, -halfD), v(xInner, base, halfD - t),
+      v(xInner, top, halfD - t), v(xInner, top, -halfD),
+    ], v(-side, 0, 0));
+    p.quad([
+      v(xOuter, base, -halfD), v(xOuter, base, halfD - t),
+      v(xOuter, top, halfD - t), v(xOuter, top, -halfD),
+    ], v(side, 0, 0));
+    p.quad([
+      v(xInner, top, -halfD), v(xInner, top, halfD - t),
+      v(xOuter, top, halfD - t), v(xOuter, top, -halfD),
+    ], UP);
+    p.quad([
+      v(xInner, base, -halfD), v(xOuter, base, -halfD),
+      v(xOuter, top, -halfD), v(xInner, top, -halfD),
+    ], v(0, 0, -1));
+    push(p.geometry(), side < 0 ? "shower-surround-end-left" : "shower-surround-end-right");
+  }
+
+  return parts;
+}
+
+/**
+ * A Hydra shower system on the wet wall: the valve trim plate, the lever, the
+ * riser, the head, and the spout when the model has one.
+ *
+ * Mounted on the shower's BACK wall, which in the pan's frame is the +Z face at
+ * z = depth. The trim lies flat on that wall and everything reaches out into the
+ * room along -Z, so nothing pokes through the wall finish. The caller turns the
+ * group to put that wall wherever the wet wall actually is.
+ */
+export function makeShowerSystemParts(
+  profile: VerifiedPelicanBathroomFixtureProfile,
+  materials: ShowerMaterials,
+  options: { deckHeightIn?: number; wallDepthIn?: number } = {},
+): ShowerPart[] {
+  const deck = Math.max(0, options.deckHeightIn ?? 0) * INCH;
+  const reach = (profile.tubFillerSpoutReachIn ?? 8) * INCH;
+  // The scene positions a fixture group at the fixture's own centre, so the
+  // system is built about the origin too: the wall sits half a footprint away on
+  // +Z and the head reaches back toward the room.
+  const wallZ = ((profile.depthIn || 8) / 2) * INCH;
+
+  const parts: ShowerPart[] = [];
+  const push = (mesh: THREE.Mesh, part: string) => {
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parts.push({ mesh, part });
+  };
+
+  // ---- Valve trim plate and lever -------------------------------------------
+  const valveY = deck + 42 * INCH;
+  const plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(3 * INCH, 3 * INCH, 0.5 * INCH, 32),
+    materials.metal,
+  );
+  plate.rotation.x = Math.PI / 2;
+  plate.position.set(0, valveY, wallZ - 0.25 * INCH);
+  push(plate, "shower-valve-trim");
+
+  const lever = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55 * INCH, 0.7 * INCH, 2.2 * INCH, 20),
+    materials.metal,
+  );
+  lever.rotation.x = Math.PI / 2;
+  lever.position.set(0, valveY, wallZ - 1.5 * INCH);
+  push(lever, "shower-valve-handle");
+
+  // ---- Riser and head -------------------------------------------------------
+  const headY = deck + 72 * INCH;
+  const riser = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, Math.max(1, headY - valveY), 16),
+    materials.metal,
+  );
+  riser.position.set(0, (headY + valveY) / 2, wallZ - 0.4 * INCH);
+  push(riser, "shower-riser");
+
+  // Arm out into the room along -Z, then the head face over the pan.
+  const arm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22 * INCH, 0.22 * INCH, reach, 16),
+    materials.metal,
+  );
+  arm.rotation.x = Math.PI / 2;
+  arm.position.set(0, headY, wallZ - reach / 2);
+  push(arm, "shower-head-arm");
+
+  const head = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6 * INCH, 2.2 * INCH, 0.8 * INCH, 28),
+    materials.metal,
+  );
+  head.position.set(0, headY - 0.4 * INCH, wallZ - reach);
+  push(head, "shower-head");
+
+  // ---- Tub spout ------------------------------------------------------------
+  if ((profile.tubFillerSpoutReachIn ?? 0) >= 6) {
+    const spout = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5 * INCH, 0.5 * INCH, 4 * INCH, 20),
+      materials.metal,
+    );
+    spout.rotation.x = Math.PI / 2;
+    spout.position.set(0, deck + 8 * INCH, wallZ - 2 * INCH);
+    push(spout, "shower-spout");
+  }
+
+  return parts;
+}
+
+/**
+ * A recessed niche: a shallow open box in a surround wall.
+ *
+ * It is recessed, so it has no floor footprint; the caller mounts it on a wall.
+ */
+export function makeShowerNicheParts(
+  profile: VerifiedPelicanBathroomFixtureProfile,
+  materials: ShowerMaterials,
+): ShowerPart[] {
+  const W = profile.widthIn * INCH;
+  const Hp = profile.heightIn * INCH;
+  const depth = profile.depthIn * INCH;
+  const shell = 0.12 * INCH;
+
+  const parts: ShowerPart[] = [];
+  const push = (geometry: THREE.BufferGeometry, part: string) => {
+    const mesh = new THREE.Mesh(geometry, materials.shell);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    parts.push({ mesh, part });
+  };
+
+  // Open toward -X into the room, recessed along +X.
+  const p = new Panel();
+  const back = W / 2 - 0;
+  p.quad([v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(depth, Hp / 2, -W / 2)], v(1, 0, 0));
+  // Floor, ceiling and both sides of the recess.
+  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], UP);
+  p.quad([v(-shell, Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, -1, 0));
+  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(-shell, Hp / 2, -W / 2)], v(0, 0, 1));
+  p.quad([v(-shell, -Hp / 2, W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, 0, -1));
+  push(p.geometry(), "shower-niche-body");
+
+  // Face flange, the visible 1/2" border that laps the wall finish.
+  const f = new Panel();
+  const flange = 0.5 * INCH;
+  const outerW = W / 2 + flange;
+  const outerH = Hp / 2 + flange;
+  f.quad([v(-shell, outerH, outerW), v(-shell, outerH, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, Hp / 2, W / 2)], v(-1, 0, 0));
+  f.quad([v(-shell, -outerH, outerW), v(-shell, -outerH, -outerW), v(-shell, -Hp / 2, -W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
+  f.quad([v(-shell, -Hp / 2, -outerW), v(-shell, Hp / 2, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, -Hp / 2, -W / 2)], v(-1, 0, 0));
+  f.quad([v(-shell, -Hp / 2, outerW), v(-shell, Hp / 2, outerW), v(-shell, Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
+  push(f.geometry(), "shower-niche-flange");
+  void back;
+
+  return parts;
+}

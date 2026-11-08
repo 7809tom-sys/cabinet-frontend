@@ -22,7 +22,7 @@ import {
   wallSegmentLength as polygonWallSegmentLength,
 } from "./polygonRoom";
 import { activeFloorObstacles } from "./floorOccupancyState";
-import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
+import { ALL_PELICAN_BATHROOM_FIXTURE_PROFILES, VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 import { isPlainBaseCode as isPlainBaseCodeRule } from "./plainBaseCode";
 import { aefPrintedGeometryForSku, FRAMELESS_DEEP_WALL_DEPTH_IN, FRAMELESS_STANDARD_WALL_DEPTH_IN, hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { standardBaseDoorCount } from "@shared/genericCabinetDrawerReference";
@@ -16135,7 +16135,7 @@ export const FURNITURE_CATALOG: FurnitureDef[] = [
   { id: "modern-media-console", name: 'Modern Media Console 72"', category: "other", collection: "modern", shape: "rect",  w: 72, d: 18, clearance: 18, color: "#3f454c", height: 24 },
   { id: "modern-floor-lamp",    name: "Modern Floor Lamp",        category: "other", collection: "modern", shape: "round", w: 14, d: 14, clearance: 12, color: "#c09b58", height: 64 },
   { id: "modern-planter",       name: "Modern Planter",            category: "other", collection: "modern", shape: "round", w: 18, d: 18, clearance: 12, color: "#5b7b67", height: 24 },
-  ...VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.map((profile): FurnitureDef => ({
+  ...ALL_PELICAN_BATHROOM_FIXTURE_PROFILES.map((profile): FurnitureDef => ({
     id: profile.id,
     name: profile.name,
     category: "bathroom-fixture",

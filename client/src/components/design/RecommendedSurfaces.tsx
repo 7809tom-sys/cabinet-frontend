@@ -31,7 +31,12 @@ export type RecommendedRole =
   | "shower-door"
   | "shower-surround"
   | "shower-system"
-  | "bathroom-accessory";
+  | "bathroom-accessory"
+  // Shower designer. Pans are the shower floor, tiles are the wall/floor finish
+  // reusing the existing Pelican mosaic rows, and niches/trays are wall fittings.
+  | "shower-pan"
+  | "shower-tile"
+  | "shower-niche";
 
 export const RECOMMENDED_SECTIONS: {
   role: RecommendedRole;
@@ -67,9 +72,12 @@ export const BATHROOM_FIXTURE_RECOMMENDED_SECTIONS: {
   { role: "bathroom-faucet", label: "Vanity & Tub Faucets" },
   { role: "toilet-bidet", label: "Toilets & Bidets" },
   { role: "bathtub", label: "Bathtubs" },
-  { role: "shower-door", label: "Shower & Tub Doors" },
-  { role: "shower-surround", label: "Shower Walls" },
-  { role: "shower-system", label: "Shower Systems" },
+  { role: "shower-pan", label: "Shower Pans (floors)" },
+  { role: "shower-surround", label: "Shower Panels & Surrounds" },
+  { role: "shower-tile", label: "Shower Tile" },
+  { role: "shower-system", label: "Shower Heads & Faucets" },
+  { role: "shower-door", label: "Glass Doors" },
+  { role: "shower-niche", label: "Niches & Soap Trays" },
 ];
 
 /** Backward-compatible alias for callers that previously requested all bathroom cards. */

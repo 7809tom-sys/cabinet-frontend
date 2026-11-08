@@ -10,7 +10,13 @@
  * - bathtubs-PL-*.txt
  */
 
-export type PelicanBathroomFixtureKind = "toilet" | "bidet" | "freestanding-tub" | "alcove-tub" | "shower-door" | "tub-door" | "shower-wall" | "floor-tub-filler";
+export type PelicanBathroomFixtureKind =
+  | "toilet" | "bidet" | "freestanding-tub" | "alcove-tub"
+  | "shower-door" | "tub-door" | "shower-wall" | "floor-tub-filler"
+  // Shower designer. A pan is the floor of the shower; a surround is the wall
+  // panel set above a pan or tub; a shower system is the wall valve + head; a
+  // niche is recessed into a surround wall; a soap tray sits on a wall or pan.
+  | "shower-pan" | "shower-surround" | "shower-system" | "shower-niche" | "soap-tray";
 
 export type VerifiedPelicanBathroomFixtureProfile = {
   /** Stable browser-safe furniture definition identity. */
@@ -124,8 +130,242 @@ export const VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES: readonly VerifiedPelica
   })),
 ] as const;
 
+/**
+ * Shower designer fixtures.
+ *
+ * Every envelope below comes from that model's own Pelican technical sheet; the
+ * pan sizes also match the SKU itself (PL-016030 is 60 x 30). Where a family
+ * publishes one dimensioned drawing per drain side, the three drawings share an
+ * envelope, so one entry per drain side covers C/L/R.
+ *
+ * Not sourced with a measured envelope here, because Pelican publishes none:
+ * the soap trays, the surround panel thickness, and the Hydra wall occupancy.
+ * Those carry `planningOnly` so the designer never claims a measured fit.
+ */
+const SHOWER_PAN_SOURCES = [
+  // code, width, depth, height, drain
+  ["PL-014836C", 48, 36, 4, "center"],
+  ["PL-014836L", 48, 36, 4, "left"],
+  ["PL-014836R", 48, 36, 4, "right"],
+  ["PL-016030C", 60, 30, 5.5, "center"],
+  ["PL-016030L", 60, 30, 5.5, "left"],
+  ["PL-016030R", 60, 30, 5.5, "right"],
+  ["PL-016032C", 60, 32, 5.5, "center"],
+  ["PL-016032L", 60, 32, 5.5, "left"],
+  ["PL-016032R", 60, 32, 5.5, "right"],
+  ["PL-016036C", 60, 36, 5.5, "center"],
+  ["PL-016036L", 60, 36, 5.5, "left"],
+  ["PL-016036R", 60, 36, 5.5, "right"],
+  ["PL-SMC4836C", 47 + 63 / 64, 36, 4 + 1 / 32, "center"],
+  ["PL-SMC6030C", 60, 30, 4 + 1 / 64, "center"],
+  ["PL-SMC6030L", 60, 30, 4 + 1 / 32, "left"],
+  ["PL-SMC6030R", 60, 30, 4 + 1 / 32, "right"],
+  ["PL-SMC6032C", 60, 32, 4 + 1 / 64, "center"],
+  ["PL-SMC6032L", 60, 32, 4 + 1 / 32, "left"],
+  ["PL-SMC6032R", 60, 32, 4 + 1 / 32, "right"],
+  ["PL-SMC6036C", 60, 36, 4 + 1 / 64, "center"],
+  ["PL-SMC6036L", 60, 36, 4 + 1 / 32, "left"],
+  ["PL-SMC6036R", 60, 36, 4 + 1 / 32, "right"],
+] as const;
+
+const SHOWER_PAN_DRAIN_LABEL: Record<string, string> = {
+  center: "Center Drain",
+  left: "Left Drain",
+  right: "Right Drain",
+};
+
+const SHOWER_PAN_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_PAN_SOURCES.map(
+  ([code, widthIn, depthIn, heightIn, drain]) => ({
+    id: `pelican-shower-pan-${code.toLowerCase()}`,
+    pelicanCode: code,
+    name: `${code} ${widthIn}" x ${depthIn}" ${SHOWER_PAN_DRAIN_LABEL[drain] ?? ""} Shower Pan`.replace(/\s+/g, " ").trim(),
+    kind: "shower-pan" as const,
+    widthIn,
+    depthIn,
+    heightIn,
+    finish: "acrylic-white" as const,
+    drain: drain as "center" | "left" | "right",
+    // Pan sheets are per drain drawing on the supplier's product page.
+    specificationUrl: `https://buildpelican.com/products/pl-${code.replace(/^PL-/, "").replace(/[CLR]$/, "").toLowerCase()}`,
+  }),
+);
+
+/**
+ * Surrounds are sold BY ALCOVE SIZE, which the Marble-Wall-Specs sheet makes
+ * explicit: it lists the panel set for each pan it fits.
+ *
+ *   96" shower panels   PL-483696  48" back, 36" sides   fits PL-014836/SMC4836
+ *                       PL-603096  60" back, 30" sides   fits PL-016030/SMC6030
+ *                       PL-603296  60" back, 32" sides   fits PL-016032/SMC6032
+ *                       PL-603696  60" back, 36" sides   fits PL-016036/SMC6036
+ *   74" tub panels      PL-603074  60" back, 30" sides   fits PL-02849
+ *                       PL-603274  60" back, 32" sides   fits PL-02850
+ *                       PL-603674  60" back, 36" sides   fits PL-02850
+ *
+ * The four décors (Carrara Marble, Grey Wood, White Wood, White Brick) are panel
+ * finishes of these same sets, so each size is offered in each décor rather than
+ * one generic 48" set standing in for a 60" alcove.
+ */
+const SURROUND_SIZES = [
+  // panelModel, back width, side depth, height, fits a pan of this alcove
+  ["PL-483696", 48, 36, 96],
+  ["PL-603096", 60, 30, 96],
+  ["PL-603296", 60, 32, 96],
+  ["PL-603696", 60, 36, 96],
+  ["PL-603074T", 60, 30, 74],
+  ["PL-603274T", 60, 32, 74],
+  ["PL-603674T", 60, 36, 74],
+] as const;
+
+const SURROUND_DECORS = ["Marble", "Grey Wood", "White Wood", "Brick"] as const;
+
+const SHOWER_SURROUND_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SURROUND_SIZES.flatMap(
+  ([panelModel, backIn, sideIn, heightIn]) => SURROUND_DECORS.map((decor) => ({
+    id: `pelican-shower-surround-${panelModel.toLowerCase()}-${decor.toLowerCase().replace(/\s+/g, "-")}`,
+    // The catalog carries one purchasable code per décor at the 48" set; the
+    // larger sets resolve through the panel model they are cut from.
+    pelicanCode: `${panelModel} ${decor}`,
+    name: `${panelModel} ${decor} ${backIn}" x ${sideIn}" x ${heightIn}" 3-Piece Alcove Surround`,
+    kind: "shower-surround" as const,
+    // A surround's back panel spans the alcove and its side panels run the depth.
+    widthIn: backIn,
+    depthIn: sideIn,
+    heightIn,
+    finish: "shower-panel" as const,
+    drain: null,
+    specificationUrl: "https://buildpelican.com/products/carrara-marble-matte-surround",
+  })),
+);
+
+/**
+ * Hydra shower systems. The sheet publishes the spout/head reach rather than a
+ * plan envelope, so the wall occupancy is illustrative and marked planningOnly.
+ */
+const SHOWER_SYSTEM_SOURCES = [
+  ["PL-86H55 BRUSHED NICKEL", "PL-86H55", "brushed-nickel", 14 + 3 / 16],
+  ["PL-86H55 CHROME", "PL-86H55", "chrome", 14 + 3 / 16],
+  ["PL-86H55 MATTE BLACK", "PL-86H55", "matte-black", 14 + 3 / 16],
+  ["PL-86H15 BRUSHED NICKEL", "PL-86H15", "brushed-nickel", 14 + 1 / 4],
+  ["PL-86H15 CHROME", "PL-86H15", "chrome", 14 + 1 / 4],
+  ["PL-86H15 MATTE BLACK", "PL-86H15", "matte-black", 14 + 1 / 4],
+  ["PL-86A33 BRUSHED NICKEL", "PL-86A33", "brushed-nickel", 13 + 7 / 8],
+  ["PL-86A33 CHROME", "PL-86A33", "chrome", 13 + 7 / 8],
+  ["PL-86A33 MATTE BLACK", "PL-86A33", "matte-black", 13 + 7 / 8],
+  ["PL-86A23 BRUSHED NICKEL", "PL-86A23", "brushed-nickel", 13 + 7 / 8],
+  ["PL-86A23 CHROME", "PL-86A23", "chrome", 13 + 7 / 8],
+  ["PL-86A23 MATTE BLACK", "PL-86A23", "matte-black", 13 + 7 / 8],
+  ["PL-86S22 BRUSHED NICKEL", "PL-86S22", "brushed-nickel", 6 + 5 / 8],
+  ["PL-86S22 CHROME", "PL-86S22", "chrome", 6 + 5 / 8],
+  ["PL-86S22 MATTE BLACK", "PL-86S22", "matte-black", 6 + 5 / 8],
+] as const;
+
+const SHOWER_SYSTEM_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_SYSTEM_SOURCES.map(
+  ([code, model, finish, reach]) => ({
+    id: `pelican-shower-system-${model.toLowerCase()}-${finish}`,
+    pelicanCode: code,
+    name: `${code} Hydra Shower System`,
+    kind: "shower-system" as const,
+    // Illustrative wall occupancy: the trim plate sits on the wall, so the plan
+    // footprint is that plate, not the spout reach.
+    widthIn: 8,
+    depthIn: 8,
+    heightIn: 72,
+    finish: finish as "brushed-nickel" | "chrome" | "matte-black",
+    drain: null,
+    planningOnly: true,
+    tubFillerSpoutReachIn: reach,
+    specificationUrl: `https://buildpelican.com/products/${model.toLowerCase()}`,
+  }),
+);
+
+/**
+ * Niches. The sheets publish the face plate, the structural opening and a
+ * 3-17/32" recess depth.
+ */
+const SHOWER_NICHE_SOURCES = [
+  ["PL-SN1614", 16, 14, "Single Shelf"],
+  ["PL-SN1627", 27 + 1 / 16, 16 + 1 / 64, "Double Shelf"],
+  ["PL-SN1639", 16 + 1 / 64, 39 + 1 / 32, "Triple Shelf"],
+] as const;
+
+const SHOWER_NICHE_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_NICHE_SOURCES.map(
+  ([code, widthIn, heightIn, label]) => ({
+    id: `pelican-shower-niche-${code.toLowerCase()}`,
+    pelicanCode: code,
+    name: `${code} ${label} Shower Niche`,
+    kind: "shower-niche" as const,
+    widthIn,
+    depthIn: 3 + 17 / 32,
+    heightIn,
+    finish: "acrylic-white" as const,
+    drain: null,
+    specificationUrl: `https://buildpelican.com/products/${code.toLowerCase()}`,
+  }),
+);
+
+/**
+ * Soap trays. Pelican publishes no exterior envelope for either, so these are
+ * illustrative and marked planningOnly — the designer never claims a measured
+ * fit for them.
+ */
+const SOAP_TRAY_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = [
+  {
+    id: "pelican-soap-tray-pl-sd88-corner",
+    pelicanCode: "PL-SD88 Corner",
+    name: "PL-SD88 Corner Soap Tray",
+    kind: "soap-tray",
+    widthIn: 8,
+    depthIn: 8,
+    heightIn: 2,
+    finish: "vitreous-china-white",
+    drain: null,
+    planningOnly: true,
+    specificationUrl: "https://buildpelican.com/products/pl-sd88-corner",
+  },
+  {
+    id: "pelican-soap-tray-pl-sd125-side",
+    pelicanCode: "PL-SD125 Side",
+    name: "PL-SD125 Side Soap Tray",
+    kind: "soap-tray",
+    widthIn: 12,
+    depthIn: 5,
+    heightIn: 2,
+    finish: "vitreous-china-white",
+    drain: null,
+    planningOnly: true,
+    specificationUrl: "https://buildpelican.com/products/pl-sd125-side",
+  },
+];
+
+/** Everything the shower designer adds. Kept separate so legacy codes win. */
+export const SHOWER_FIXTURE_PROFILES: readonly VerifiedPelicanBathroomFixtureProfile[] = [
+  ...SHOWER_PAN_PROFILES,
+  ...SHOWER_SURROUND_PROFILES,
+  ...SHOWER_SYSTEM_PROFILES,
+  ...SHOWER_NICHE_PROFILES,
+  ...SOAP_TRAY_PROFILES,
+];
+
+/** The full list the Designer and the quote both resolve against. */
+export const ALL_PELICAN_BATHROOM_FIXTURE_PROFILES: readonly VerifiedPelicanBathroomFixtureProfile[] = [
+  ...VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES,
+  ...SHOWER_FIXTURE_PROFILES,
+];
+
 function normalizeCode(code: string | null | undefined) {
   return (code ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+/**
+ * Case-insensitive match on a normalised SKU.
+ *
+ * Supplier codes are not consistently cased: pans are `PL-SMC6030L`, surrounds
+ * are `PL-483696 Marble`, taps are `PL-86H55 CHROME`. The catalog stores the
+ * supplier's own casing, so comparing on exact text would silently fail to
+ * resolve a real product.
+ */
+function sameCode(left: string, right: string): boolean {
+  return left.toUpperCase() === right.toUpperCase();
 }
 
 /** Exact profile only: a product image without a dimensioned source sheet is not enough. */
@@ -133,7 +373,10 @@ export function verifiedPelicanBathroomFixtureProfile(
   code: string | null | undefined,
 ): VerifiedPelicanBathroomFixtureProfile | null {
   const normalized = normalizeCode(code);
-  const direct = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((profile) => profile.pelicanCode === normalized);
+  // Existing profiles win over the shower-designer additions, so a legacy code
+  // can never be shadowed by a newer entry that happens to share its prefix.
+  const direct = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((profile) => sameCode(profile.pelicanCode, normalized))
+    ?? SHOWER_FIXTURE_PROFILES.find((profile) => sameCode(profile.pelicanCode, normalized));
   if (direct) return direct;
   // Current active catalog records carry finish / panel décor suffixes, while
   // the official technical sheet describes the shared physical envelope. Keep
@@ -147,7 +390,7 @@ export function verifiedPelicanBathroomFixtureProfile(
         // envelope or the tub cannot be placed at all.
         : /^(PL-028(?:49|50|51)[LR])NSO$/.test(normalized) ? normalized.replace(/NSO$/, "")
           : null;
-  const shared = baseCode ? VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((profile) => profile.pelicanCode === baseCode) : null;
+  const shared = baseCode ? ALL_PELICAN_BATHROOM_FIXTURE_PROFILES.find((profile) => sameCode(profile.pelicanCode, baseCode)) : null;
   return shared ? { ...shared, pelicanCode: normalized, name: normalized } : null;
 }
 

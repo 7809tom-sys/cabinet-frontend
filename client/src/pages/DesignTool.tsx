@@ -1739,6 +1739,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     role: "flooring" | "backsplash" | "countertop" | "sink" | "faucet" | "range-top"
       | "bathroom-sink" | "bathroom-faucet" | "toilet-bidet" | "bathtub"
       | "shower-door" | "shower-surround" | "shower-system" | "bathroom-accessory"
+      | "shower-pan" | "shower-tile" | "shower-niche"
   ) => {
     if (role === "sink" || role === "faucet" || role === "bathroom-sink" || role === "bathroom-faucet") {
       const product: PelicanPlacedProduct = {
