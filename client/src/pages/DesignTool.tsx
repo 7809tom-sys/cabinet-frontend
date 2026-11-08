@@ -398,6 +398,7 @@ import { CountertopFabricationSheetActions } from "@/components/design/Counterto
 import type { CountertopFabricationInput } from "@/lib/countertopFabricationSheet";
 import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/SurfacesPickerDialog";
 import { ShowerBuilderWizard } from "@/components/shower/ShowerBuilderWizard";
+import { BathroomSetupChecklist } from "@/components/design/BathroomSetupChecklist";
 import {
   bayForWall,
   openingForSurround,
@@ -16225,6 +16226,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      onToggleWallLayer={() => setShowWallLayer((visible) => !visible)}
 	      onSaveToAccount={() => setSaveSignal((signal) => signal + 1)}
 	      onSyncCart={syncThreeDOrderWithCart}
+	      floatingChecklistAction={roomType === "bathroom" ? (
+	        <BathroomSetupChecklist
+	          steps={bathroomChecklist}
+	          completed={bathroomChecklistCompleted}
+	          required={bathroomChecklistRequired}
+	          onBrowseFixtures={openBathroomFixtureChecklistPicker}
+	          idPrefix="three-d"
+	        />
+	      ) : undefined}
 	      initialPresentation={interactive3dPresentation ?? undefined}
 	      catalogFinishOverride={activeFinish.face}
 	      renderExposure={doorRenderExposure}
@@ -20185,27 +20195,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </div>
 	            </aside>
 	          )}
+	          {/* The bathroom checklist is a BUTTON in the plan's right-edge control
+	              column, not a panel pinned over the drawing surface. It used to sit
+	              at right-3/top-16 and cover those controls; now it starts closed and
+	              its popover opens to the LEFT of the column. */}
 	          {viewMode === "plan" && roomType === "bathroom" && (
-	            <aside data-testid="bathroom-fixture-checklist" className="absolute right-3 top-16 z-30 max-h-[calc(100%-5rem)] w-[min(20rem,calc(100%-1.5rem))] overflow-y-auto rounded-xl border border-[#1a2744]/25 bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
-	              <div className="flex items-start justify-between gap-3">
-	                <div>
-	                  <p className="font-semibold text-[#1a2744]">Bathroom setup checklist</p>
-	                  <p className="mt-0.5 text-[11px] text-slate-600">{bathroomChecklistCompleted} of {bathroomChecklistRequired} core choices selected</p>
-	                </div>
-	                <button type="button" onClick={() => openBathroomFixtureChecklistPicker()} className="shrink-0 rounded border border-[#1a2744]/35 px-2 py-1 text-[10px] font-semibold text-[#1a2744] hover:bg-slate-100">Browse fixtures</button>
-	              </div>
-	              <ol className="mt-2 space-y-1.5">
-	                {bathroomChecklist.map((step) => (
-	                  <li key={step.id} className={`rounded-lg border px-2 py-1.5 ${step.complete ? "border-emerald-200 bg-emerald-50/80" : "border-slate-200 bg-white/80"}`}>
-	                    <button type="button" onClick={() => openBathroomFixtureChecklistPicker(step.id)} className="flex w-full items-start gap-2 text-left">
-	                      <span aria-hidden className={`mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[9px] ${step.complete ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-400 text-transparent"}`}>✓</span>
-	                      <span className="min-w-0"><span className="font-semibold text-slate-800">{step.label}{step.optional ? " (optional)" : ""}</span><span className="mt-0.5 block text-[10px] leading-snug text-slate-600">{step.detail}</span></span>
-	                    </button>
-	                  </li>
-	                ))}
-	              </ol>
-	              <p className="mt-2 border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-600">Checklist notes are visual planning aids. Confirm fixture clearances, opening swings, and installation conditions with the official product sheets and qualified local guidance.</p>
-	            </aside>
+	            <div
+	              data-testid="plan-floating-column"
+	              className="absolute right-2 top-16 z-40 flex w-max flex-col items-center gap-1 sm:right-3"
+	            >
+	              <BathroomSetupChecklist
+	                steps={bathroomChecklist}
+	                completed={bathroomChecklistCompleted}
+	                required={bathroomChecklistRequired}
+	                onBrowseFixtures={openBathroomFixtureChecklistPicker}
+	                idPrefix="plan"
+	              />
+	            </div>
 	          )}
 	          {viewMode === "plan" && peninsulaDraft && (
             <section

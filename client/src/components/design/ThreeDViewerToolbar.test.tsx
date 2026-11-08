@@ -3,6 +3,7 @@ import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { ThreeDViewerNavigationControls } from "./InteractiveRoom3D";
+import { BathroomSetupChecklist } from "./BathroomSetupChecklist";
 import {
   THREE_D_FLOATING_COLUMN_TEST_ID,
   THREE_D_VIEWER_BUTTON_CLASS,
@@ -249,5 +250,45 @@ describe("right-hand 3D toolbar", () => {
     expect(items.indexOf("quick-action")).toBeGreaterThan(items.indexOf("three-d-zoom-out"));
     expect(items.indexOf("trail-action")).toBeLessThan(items.indexOf("three-d-pan-pad"));
     expect(items[items.length - 1]).toBe("three-d-pan-pad");
+  });
+});
+
+describe("the bathroom checklist joins the one floating column", () => {
+  it("renders as a 44px column button, not a panel over the canvas", () => {
+    const { container } = renderControls({
+      trailing: (
+        <BathroomSetupChecklist
+          steps={[{ id: "a", label: "Place a vanity sink base", detail: "…", complete: false }]}
+          completed={0}
+          required={1}
+          onBrowseFixtures={() => {}}
+          idPrefix="test"
+        />
+      ),
+    });
+    const toggle = container.querySelector('[data-testid="bathroom-checklist-toggle"]') as HTMLElement;
+    expect(toggle).toBeTruthy();
+    // Exactly the same size and shape class every other column button uses.
+    expect(toggle.className).toContain("h-11");
+    expect(toggle.className).toContain("w-11");
+    // And it is closed: nothing covers the canvas until the shopper asks.
+    expect(container.querySelector('[data-testid="bathroom-fixture-checklist"]')).toBeNull();
+  });
+
+  it("sits inside the floating column, so it cannot drift off the axis", () => {
+    const { container } = renderControls({
+      trailing: (
+        <BathroomSetupChecklist
+          steps={[]}
+          completed={0}
+          required={5}
+          onBrowseFixtures={() => {}}
+          idPrefix="test"
+        />
+      ),
+    });
+    const column = container.querySelector('[data-testid="three-d-pan-pad"]')?.parentElement;
+    expect(column).toBeTruthy();
+    expect(column!.querySelector('[data-testid="bathroom-checklist-toggle"]')).toBeTruthy();
   });
 });
