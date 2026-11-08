@@ -59,6 +59,11 @@ function isRunCabinet(item: PlacedCabinet, layer: FillerLayer): boolean {
   if (isSinkBaseCabinet(item)) return false;
   if (isCornerCabinet(item.masterCode, item.description, item.cornerType ?? null)) return false;
   if (isRangeOrOven(item.masterCode, item.description)) return false;
+  // The bridge above a range and the cabinet above a refrigerator are placed by
+  // their own mandatory rules at a fixed datum, width and height. They are never
+  // re-laid or re-sized to chase a filler, so they are not part of a cluster.
+  if (item.overRangeMicrowaveBridge === true) return false;
+  if (item.refrigeratorAssemblyId || item.refrigeratorAssemblyRole) return false;
   return (Number(item.width) || 0) > 0;
 }
 
@@ -415,11 +420,19 @@ export function planFillerCluster(input: {
     return { kind: "leave", reason: "one board already closes the run end" };
   }
   const laid = layCluster({ cluster, room });
+  // The cabinets that may be re-laid, plus the one board, must still fill the
+  // stretch exactly. A mandatory piece in the same run (an over-range bridge, a
+  // refrigerator assembly member) is not re-laid, so the run would no longer be
+  // covered — leave it alone.
+  const expectedEnd = Math.round((cluster.endIn - cluster.boardTotalIn) * 1000) / 1000;
+  if (Math.abs(laid.endIn - expectedEnd) > 0.02) {
+    return { kind: "leave", reason: "the run holds a mandatory cabinet that must keep its exact seat" };
+  }
   return {
     kind: "consolidate",
     boardWidthIn: cluster.boardTotalIn,
     starts: laid.starts,
-    boardStartIn: Math.round((cluster.endIn - cluster.boardTotalIn) * 1000) / 1000,
+    boardStartIn: expectedEnd,
   };
 }
 
