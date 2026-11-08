@@ -16168,6 +16168,18 @@ export interface PlacedFurniture {
   pelicanCategory?: string;
   pelicanSellPrice?: number | null;
   pelicanGeometrySource?: { version: 1; mounting: "floor"; footprintBasis: "illustrative-occupancy"; specificationUrl: string };
+  /**
+   * Mounting height above the pan/floor, in inches, for a wall-mounted shower
+   * fitting (valve, head, niche, soap tray). Absent on a floor fixture. Set by the
+   * Build Shower wizard, and editable there; the 3D builder reads it.
+   */
+  mountHeightIn?: number;
+  /**
+   * Which Build Shower wizard step placed this part. Used to replace or remove a
+   * step's part as a unit, so re-choosing never leaves the old part behind and a
+   * deleted part leaves the cart with it.
+   */
+  showerStepId?: "surround" | "pan" | "heads" | "niche" | "door";
 }
 
 export function makeFurniture(defId: string, x: number, y: number): PlacedFurniture {

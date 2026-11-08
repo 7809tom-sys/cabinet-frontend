@@ -166,6 +166,19 @@ const SHOWER_PAN_SOURCES = [
   ["PL-SMC6036C", 60, 36, 4 + 1 / 64, "center"],
   ["PL-SMC6036L", 60, 36, 4 + 1 / 32, "left"],
   ["PL-SMC6036R", 60, 36, 4 + 1 / 32, "right"],
+  // Sizes the live catalog also sells. The "-SO" rows are the tile-flange version of
+  // the same base, so they share its measured envelope.
+  ["PL-013636C", 36, 36, 4, "center"],
+  ["PL-013838ADA", 38, 38, 4, "center"],
+  ["PL-014236C", 42, 36, 4, "center"],
+  ["PL-014242C", 42, 42, 4, "center"],
+  ["PL-014832C", 48, 32, 4, "center"],
+  ["PL-016034C", 60, 34, 5.5, "center"],
+  ["PL-016034L", 60, 34, 5.5, "left"],
+  ["PL-016034R", 60, 34, 5.5, "right"],
+  ["PL-016038C", 60, 38, 5.5, "center"],
+  ["PL-016236ADA", 62, 36, 5.5, "center"],
+  ["PL-016238ADA", 62, 38, 5.5, "center"],
 ] as const;
 
 const SHOWER_PAN_DRAIN_LABEL: Record<string, string> = {
@@ -310,6 +323,22 @@ const SHOWER_NICHE_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_NI
  */
 const SOAP_TRAY_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = [
   {
+    // A wall-mounted faucet that ships with a soap dish. Pelican publishes no
+    // exterior envelope for it, so it is illustrative and marked planningOnly, the
+    // same as the SMC trays.
+    id: "pelican-soap-tray-pl-8461",
+    pelicanCode: "PL-8461 BN",
+    name: "PL-8461 Wall-Mounted Faucet with Soap Dish",
+    kind: "soap-tray",
+    widthIn: 8,
+    depthIn: 6,
+    heightIn: 6,
+    finish: "brushed-nickel",
+    drain: null,
+    planningOnly: true,
+    specificationUrl: "https://buildpelican.com/products/pl-8461",
+  },
+  {
     id: "pelican-soap-tray-pl-sd88-corner",
     pelicanCode: "PL-SD88 Corner",
     name: "PL-SD88 Corner Soap Tray",
@@ -369,6 +398,71 @@ function sameCode(left: string, right: string): boolean {
 }
 
 /** Exact profile only: a product image without a dimensioned source sheet is not enough. */
+/**
+ * Resolve a purchasable catalog code to the technical-sheet code whose measured
+ * envelope it shares.
+ *
+ * The catalog and the specification sheets name the same product differently: the
+ * catalog appends the finish in its own style ("CHR" / "BN" / "MB"), a generation
+ * suffix ("PL-86S22S" for the PL-86S22 model), a tile-flange suffix ("…CSO" /
+ * "…LSO" / "…RSO"), or a panel décor ("Marble", "White Wood"). Those rows are the
+ * products a shopper actually buys, so each must resolve to a sheet's envelope — or
+ * the part cannot be placed in the plan at all.
+ *
+ * Returns null when the code already matches a profile directly, or when nothing
+ * published covers it.
+ */
+export function showerBaseCodeForCatalogRow(normalized: string): string | null {
+  const finish = /\s+(BN|CHR|MB)$/.exec(normalized)?.[1] ?? null;
+  const FINISH_SHEET_NAME: Record<string, string> = { CHR: "CHROME", BN: "BRUSHED NICKEL", MB: "MATTE BLACK" };
+  const decor = /\s+(BRICK|GREY WOOD|MARBLE|WHITE WOOD)$/i.test(normalized);
+
+  // Sliding and bypass doors: the catalogue code carries a size token and the
+  // finish, and the sheet is the shared PL-03A42S envelope.
+  if (/^PL-03[BD]\d{2}[ST]SO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42S";
+  if (/^PL-03A42S60\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42S";
+  if (/^PL-03A42T60\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42T";
+  if (/^PL-03A11S\d{2}\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42S";
+  if (/^PL-03[ABD]\d{2}TS[OL]?\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42T";
+
+  // A Hydra system: the model plus the catalogue's finish token. "PL-86S22S CHR"
+  // is the PL-86S22 sheet in chrome; "PL-86H55T/S BN" is the PL-86H55 sheet.
+  if (finish && /^PL-86[AHKS]\d{2}[ST]?(?:\/S)?$/.test(normalized.replace(/\s+(?:BN|CHR|MB)$/, ""))) {
+    const model = normalized.replace(/\s+(?:BN|CHR|MB)$/, "").replace(/^PL-(86[AHKS]\d{2})[ST]?(?:\/S)?$/, "PL-$1");
+    return `${model} ${FINISH_SHEET_NAME[finish]}`;
+  }
+
+  // A panel set's décor: the 74" tub panels are sold as PL-603274 / PL-603674 and
+  // resolve to the "T" sheets; the 96" sets resolve directly.
+  if (decor) {
+    // Keep the décor: the profile list is per décor ("PL-603696 Marble"), so the
+    // resolved code must carry it or the lookup misses.
+    const decorToken = /\s+((?:BRICK|GREY WOOD|MARBLE|WHITE WOOD))$/i.exec(normalized)?.[1] ?? "";
+    const model = normalized.replace(/\s+(?:BRICK|GREY WOOD|MARBLE|WHITE WOOD)$/i, "");
+    if (/^PL-603(?:074|274|674)$/.test(model)) return `${model}T ${decorToken}`.trim();
+    if (/^PL-(?:483696|603096|603296|603696)$/.test(model)) return `${model} ${decorToken}`.trim();
+  }
+
+  // A tile-flange pan ("…CSO" / "…LSO" / "…RSO") shares its base's envelope.
+  const ada = /^(PL-0\d{5}ADA)SO$/.exec(normalized);
+  if (ada) return ada[1]!;
+  const flange = /^(PL-(?:0\d{5}|SMC\d{4}))[CLR]SO$/.exec(normalized);
+  if (flange) {
+    const base = flange[1]!;
+    const drain = normalized.endsWith("LSO") ? "L" : normalized.endsWith("RSO") ? "R" : "C";
+    return `${base}${drain}`;
+  }
+
+  // A wall-mounted faucet that ships with a soap dish is the soap-dish product.
+  if (/^PL-8461\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-8461 BN";
+
+  // Pelican sells the alcove tubs both with and without the NSO suffix; the sheet
+  // is the same drain-side drawing.
+  if (/^(PL-028(?:49|50|51)[LR])NSO$/.test(normalized)) return normalized.replace(/NSO$/, "");
+
+  return null;
+}
+
 export function verifiedPelicanBathroomFixtureProfile(
   code: string | null | undefined,
 ): VerifiedPelicanBathroomFixtureProfile | null {
@@ -381,15 +475,7 @@ export function verifiedPelicanBathroomFixtureProfile(
   // Current active catalog records carry finish / panel décor suffixes, while
   // the official technical sheet describes the shared physical envelope. Keep
   // the selected purchasable identity without inventing finish-specific sizes.
-  const baseCode = /^PL-03A42S60\s+(?:BN|CHR|MB)$/.test(normalized) ? "PL-03A42S"
-    : /^PL-03A42T60\s+(?:BN|CHR|MB)$/.test(normalized) ? "PL-03A42T"
-      : /^PL-603074\s+(?:BRICK|GREY WOOD|MARBLE|WHITE WOOD)$/.test(normalized) ? "PL-603074"
-        // Pelican sells the alcove tubs both with and without the NSO suffix
-        // ("no skirt"? the sheet is the same drain-side drawing). The purchasable
-        // catalog rows carry NSO, so they must resolve to the same measured
-        // envelope or the tub cannot be placed at all.
-        : /^(PL-028(?:49|50|51)[LR])NSO$/.test(normalized) ? normalized.replace(/NSO$/, "")
-          : null;
+  const baseCode = showerBaseCodeForCatalogRow(normalized);
   const shared = baseCode ? ALL_PELICAN_BATHROOM_FIXTURE_PROFILES.find((profile) => sameCode(profile.pelicanCode, baseCode)) : null;
   return shared ? { ...shared, pelicanCode: normalized, name: normalized } : null;
 }
