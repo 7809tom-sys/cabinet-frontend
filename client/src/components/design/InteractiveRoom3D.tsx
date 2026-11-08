@@ -102,6 +102,7 @@ import { resolveSinkFinish } from "@/lib/bathroomSinkFinish";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
 import { SHADOW_STRENGTH_MAX, normalizeShadowStrength, readShadowStrengthPreference, shadowStrengthDescription, shadowStrengthLabel, shadowStrengthScale, writeShadowStrengthPreference } from "@/lib/shadowStrength";
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
+import { makeAlcoveTubParts } from "./alcoveTubGeometry";
 import {
   makeShowerNicheParts,
   makeShowerPanParts,
@@ -11116,17 +11117,22 @@ function addPelicanBathroomFixture(
     const drain = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.035, width * 0.035, 0.012, 20), dark);
     drain.position.set(0, height * 0.925, depth * 0.02);
     add(drain, "bidet-drain");
-  } else if (profile.kind === "freestanding-tub" || profile.kind === "alcove-tub") {
-    // The supplier publishes the exterior envelope, drain side, and photos. Both
-    // families build the same closed shell: a slipper backrest where the photo
-    // shows one, a rounded-rectangle plan where the top view is rectangular, a
-    // thin rim, a base flush to the floor, a basin floor, and a real drain and
-    // overflow. An alcove tub is a straight-sided box whose front IS the apron,
-    // so it adds no separate panel. No room floor can show through, and no wall
-    // is left open.
+  } else if (profile.kind === "alcove-tub") {
+    // An alcove tub is its own shape, built from Pelican's published sheet for
+    // that exact model: a rectangular box with a full-height flat apron, square
+    // ends, a flat deck with a tile flange, and a sloped rectangular basin with
+    // the drain and overflow on the drain end. See alcoveTubGeometry.ts.
+    for (const { mesh, part } of makeAlcoveTubParts(profile, { shell, dark })) {
+      add(mesh, part);
+    }
+  } else if (profile.kind === "freestanding-tub") {
+    // The supplier publishes the exterior envelope, drain side, and photos, so
+    // the shell reproduces that model's own silhouette: a slipper backrest where
+    // the photo shows one, a rounded rectangle where the top view is rectangular,
+    // a thin rim, a base flush to the floor, a basin floor, and a real drain and
+    // overflow. No room floor can show through, and no wall is left open.
     for (const { mesh, part } of makeFreestandingTubParts(profile, { shell, dark }, {
       slipper: isSlipperTub(profile),
-      apronFront: profile.kind === "alcove-tub",
     })) {
       add(mesh, part);
     }

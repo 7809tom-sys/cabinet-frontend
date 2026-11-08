@@ -12,6 +12,14 @@ import { floorRectsOverlap, nearestClearFloorPosition, occupiedFloor, type Floor
 import { isPelicanVanityFaucetSku } from "@shared/pelicanBathroomFixtures";
 import { placeTubFiller } from "./tubFillerFloor";
 import { isShowerPanFurniture, placeShowerPanInBay } from "./showerPlacement";
+import {
+  ALCOVE_BAY_TOLERANCE_IN,
+  alcoveTubFit,
+  alcoveTubInBay,
+  findAlcoveTubBays,
+  isAlcoveTubFurniture,
+  type AlcoveTubFit,
+} from "./alcoveTubBay";
 import { isVanityFaucetProfileId, isVanitySinkProfileId } from "./pelicanFixtureProfiles";
 import {
   verifiedPelicanBathroomFixtureProfile,
@@ -137,7 +145,7 @@ export function placeBathroomTubSelection(
   room: Pick<RoomData, "width" | "depth">,
   cabinets: readonly PlacedCabinet[] = [],
   options: { addAnother?: boolean } = {},
-): { furniture: PlacedFurniture[]; replaced: boolean } | null {
+): { furniture: PlacedFurniture[]; replaced: boolean; fit?: AlcoveTubFit } | null {
   // A shower pan is a three-wall fixture like an alcove tub: it goes into a bay
   // rather than into whatever clear floor happens to be left.
   if (isShowerPanFurniture(draft)) {
@@ -146,6 +154,14 @@ export function placeBathroomTubSelection(
   }
   const tubs = furniture.filter(isBathroomTubFurniture);
   const others = furniture.filter((item) => !isBathroomTubFurniture(item));
+  // An alcove tub replaces its predecessor and goes straight into a bay; it is
+  // never dropped in whatever clear floor happens to be left.
+  if (isAlcoveTubFurniture(draft)) {
+    const kept = options.addAnother ? furniture : others;
+    const targetUid = !options.addAnother && tubs.length > 0 ? tubs[0]!.uid : draft.uid;
+    const bayPlacement = placeAlcoveTubInBay({ ...draft, uid: targetUid }, kept, room, cabinets);
+    if (bayPlacement) return { furniture: [...kept, bayPlacement.placement], replaced: !options.addAnother && tubs.length > 0, fit: bayPlacement.fit };
+  }
   if (tubs.length > 0 && !options.addAnother) {
     const current = tubs[0]!;
     const inPlace = { ...draft, uid: current.uid, x: current.x, y: current.y, rotation: current.rotation };
@@ -179,6 +195,9 @@ export function bathroomTubWallParallelPlacement(item: PlacedFurniture, room: Pi
  * the supplier width × depth. It may touch another floor item and may not
  * intersect a fixture, vanity, tall cabinet, or other floor body. There are
  * no planning zones.
+ *
+ * Alcove tubs are the exception: they are three-wall fixtures, so they go into a
+ * bay instead of "the nearest clear floor". See `lib/alcoveTubBay`.
  */
 export function bathroomFixtureFreePlacement(
   fixture: PlacedFurniture,
@@ -200,6 +219,56 @@ export function bathroomFixtureFreePlacement(
     if (!best || distance < best.distance - 1e-6) best = { ...position, rotation, distance };
   }
   return best ? { x: best.x, y: best.y, rotation: best.rotation } : null;
+}
+
+/**
+ * Where an alcove tub goes: into a three-wall bay, not just any clear floor.
+ *
+ * Preference order is the longest bay that matches the tub's own length first,
+ * then the nearest matching bay to `near`, then any bay at all so the tub still
+ * lands somewhere sensible the customer can correct. Returns `null` only when
+ * the room has no bay — no wall closed at both ends — in which case the caller
+ * falls back to ordinary free placement and the tub reports that it needs walls.
+ *
+ * Nothing else on the floor is moved: this only chooses a position for the tub.
+ */
+export function placeAlcoveTubInBay(
+  tub: PlacedFurniture,
+  furniture: readonly PlacedFurniture[],
+  room: RoomData,
+  cabinets: readonly PlacedCabinet[] = [],
+  near?: { x: number; y: number },
+): { placement: PlacedFurniture; fit: AlcoveTubFit } | null {
+  const definition = FURNITURE_CATALOG.find((entry) => entry.id === tub.defId);
+  if (!definition || !isAlcoveTubFurniture(tub)) return null;
+  const bays = findAlcoveTubBays(room);
+  if (!bays.length) return null;
+  const alongIn = Math.max(definition.w, definition.d);
+  const occupied = occupiedFloor(furniture, cabinets, tub.uid);
+  const target = near ?? { x: room.width / 2, y: room.depth / 2 };
+  const scored = bays.map((bay) => {
+    const seated = alcoveTubInBay(tub, bay);
+    const footprint = furnitureFootprint(seated, definition);
+    const body: FloorRect = { uid: tub.uid, x: seated.x, y: seated.y, w: footprint.w, d: footprint.d, label: definition.name };
+    const clear = !occupied.some((other) => floorRectsOverlap(body, other));
+    const centre = { x: seated.x + footprint.w / 2, y: seated.y + footprint.d / 2 };
+    return {
+      bay,
+      seated,
+      clear,
+      matches: Math.abs(bay.spanIn - alongIn) <= ALCOVE_BAY_TOLERANCE_IN,
+      distance: (centre.x - target.x) ** 2 + (centre.y - target.y) ** 2,
+    };
+  });
+  // A bay that fits the tub and is clear beats one that does not; among equals
+  // prefer the nearer one so a click lands where the customer pointed.
+  scored.sort((left, right) => {
+    if (left.clear !== right.clear) return left.clear ? -1 : 1;
+    if (left.matches !== right.matches) return left.matches ? -1 : 1;
+    return left.distance - right.distance;
+  });
+  const chosen = scored[0]!;
+  return { placement: chosen.seated, fit: alcoveTubFit(chosen.seated, room, { furniture, cabinets }) };
 }
 
 /** Tub fillers follow their own floor-space rule in `lib/tubFillerFloor`. */

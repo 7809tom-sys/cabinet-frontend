@@ -99,6 +99,7 @@ import {
 } from "@/lib/pelicanAutoPlace";
 import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/design/TabletPreviewOverlay";
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
+import { alcoveTubFit, isAlcoveTubFurniture } from "@/lib/alcoveTubBay";
 import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate, placeBathroomTubSelection, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
 import { fixtureFloorCabinets, resolveFurnitureMove } from "@/lib/floorOccupancy";
 import { withFloorObstacles } from "@/lib/floorOccupancyState";
@@ -1985,11 +1986,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return next;
     });
     setSelectedFurnUid((tubPlacement?.furniture.find((entry) => entry.pelicanProductId === item.id) ?? fixture)?.uid ?? null);
-    toast.success(tubFillerPlacement
+    const alcoveFit = tubPlacement?.fit;
+    const baseMessage = tubFillerPlacement
       ? `${item.name} placed beside the tub — visual planning only; verify plumbing fit`
       : tubPlacement?.replaced
         ? `${item.name} replaced the tub already in the room. The vanity, toilet, and cabinets stayed put.`
-        : `${item.name} placed in Floor Plan and 3D`);
+        : `${item.name} placed in Floor Plan and 3D`;
+    // An alcove tub warns about its own bay and never moves another item to make
+    // room. The first warning is the one worth reading, so it leads the toast.
+    if (alcoveFit?.warnings.length) {
+      toast.warning(baseMessage, { description: alcoveFit.warnings[0], duration: 12000 });
+    } else {
+      toast.success(baseMessage);
+    }
   }, [room.depth, room.width]);
   // Clear both saved layers: the source product used by Cart/3D and the plan's
   // representative material. Clearing only one left the flooring pattern visible.
@@ -2633,8 +2642,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const selectedBathroomPlanningGuidance = useMemo(() => {
     const selected = selectedFurnUid ? furniture.find((item) => item.uid === selectedFurnUid) ?? null : null;
     const definition = selected ? FURNITURE_CATALOG.find((item) => item.id === selected.defId) ?? null : null;
+    // An alcove tub reports what is wrong with its bay right now, so the warning
+    // follows the tub instead of appearing once at drop time.
+    if (selected && isAlcoveTubFurniture(selected)) {
+      const fit = alcoveTubFit(selected, room, { furniture, cabinets: placedRef.current });
+      if (fit.warnings.length) {
+        return {
+          title: `${selected.pelicanCode ?? definition?.name ?? "Alcove tub"} · alcove check`,
+          text: fit.warnings.join(" "),
+          sourceUrl: verifiedPelicanBathroomFixtureProfile(selected.pelicanCode ?? definition?.pelicanCode)?.specificationUrl ?? "",
+        };
+      }
+    }
     return bathroomPlanningGuidance(verifiedPelicanBathroomFixtureProfile(selected?.pelicanCode ?? definition?.pelicanCode));
-  }, [furniture, selectedFurnUid]);
+  }, [furniture, selectedFurnUid, room]);
   const bathroomChecklist = useMemo(() => bathroomFixtureChecklist({
     cabinets: placed,
     sinks,
