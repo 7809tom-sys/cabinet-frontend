@@ -189,6 +189,18 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     summary: "Openings the standard filler does not close, up to 12 inches, still receive catalog seam filler.",
   },
   {
+    id: "range-flank-base-cabinets",
+    name: "a real base cabinet on each side of the range",
+    phase: "auto-design-stage",
+    summary: "A real base cabinet always stands on each side of the range. When a side opening is a hair off a stock width, the range is slid along its own wall by the small difference (inside the anchor cap) so both sides land on widths the line sells. Filler is used only when no stock width fits after the move.",
+  },
+  {
+    id: "range-flank-finished-ends",
+    name: "finished end on the outside of each range flank",
+    phase: "auto-design-stage",
+    summary: "The outside of the base cabinet on each side of the range gets the line's own end panel, cut from catalog stock and placed in the drawing so only real placed items are billed. A side already finished by a neighbouring cabinet or the wall is reported instead of double-stocked.",
+  },
+  {
     id: "nine-inch-tray-base",
     name: "nine-inch tray base",
     phase: "shared-pipeline",
