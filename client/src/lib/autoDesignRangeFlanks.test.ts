@@ -31,6 +31,7 @@ import {
   applianceAsDesignCabinet,
   cabinetPlacementCollisionDetail,
   cabinetWall,
+  countertopSurfaces,
   freeSegmentsOnWall,
   isRangeOrOven,
   wallPlacementAt,
@@ -239,6 +240,28 @@ describe("the reported right-wall plan: range with an 8 7/8\" gap and a 9 1/8\" 
     expect(result.placed.filter((item) => item.subCategory === "End panel")).toEqual([]);
     // Both red "Fits up to" openings beside the range are gone.
     expect(baseGaps(result.placed, "right", room).filter((gap) => gap.end - gap.start >= 3.05)).toEqual([]);
+    // The countertop runs continuously over each flank cabinet and up to the
+    // cabinet beside it: the new pass leaves no bare base and no gap in the top.
+    const surfaces = countertopSurfaces(result.placed, room);
+    const onRight = surfaces.filter((surface) => surface.supportWallId === "right");
+    const flankCabinets = result.placed.filter((item) => item.masterCode === "BT9" && cabinetWall(item, room) === "right");
+    expect(flankCabinets).toHaveLength(2);
+    for (const flank of flankCabinets) {
+      const start = wallRunOffset(flank, "right", room);
+      const end = start + flank.width;
+      const slab = onRight.find((surface) => (
+        Math.abs(surface.y - start) <= 0.01 && Math.abs(surface.y + surface.depth - end) <= 0.01
+      ));
+      expect(slab, `${flank.masterCode} at ${start} has no countertop`).toBeDefined();
+      expect(slab!.linearInches).toBeCloseTo(flank.width, 3);
+    }
+    // Every base on the wall that carries a top is covered, and the only break in
+    // the counter is the range opening itself (30"), which is correct.
+    const rightEdges = onRight.map((surface) => [surface.y, surface.y + surface.depth]).sort((a, b) => a[0]! - b[0]!);
+    const gapsInTop = rightEdges.slice(1)
+      .map((edge, index) => Math.round((edge[0]! - rightEdges[index]![1]!) * 1000) / 1000)
+      .filter((gap) => gap > 0.06);
+    expect(gapsInTop).toEqual([30]);
   });
 });
 
