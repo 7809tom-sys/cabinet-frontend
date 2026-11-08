@@ -32,6 +32,7 @@ import { cabinetDrawingType } from "@/lib/cabinetGraphics";
 import { baseAngleEndClipPath, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { isWallAngleEndCabinet, wallAngleEndClipPath } from "@/lib/wallAngleEndLayout";
 import { catalogFillerSuggestion, type CatalogFillerCandidate } from "@/lib/catalogFiller";
+import { layoutFillerLabels, shortFillerLabel, type FillerLabelInput } from "@/lib/fillerLabelLayout";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { islandCountertopVisibleRects, islandFaceCapacity, islandRaisedBarRects } from "@/lib/islandScene";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN } from "@/lib/polygonRoom";
@@ -589,6 +590,26 @@ function planFloorPattern(
   return { backgroundSize: `${tw}px ${th}px` };
 }
 
+/**
+ * One group per run, so a board's banner only ever competes with the banners on
+ * its own wall and layer. Two boards at the same canvas X on different walls are
+ * a whole room apart and must not be stacked.
+ */
+function planFillerLabelGroup(p: PlacedCabinet, room: RoomData): string {
+  const wall = p.wallId ?? cabinetWall(p, room);
+  return `${wall}/${p.placement}`;
+}
+
+/** The full banner text of an installed filler measurement. */
+function planFillerFullLabel(installedText: string, gapText: string | null, overMaxText: string | null): string {
+  return `FILLER ${installedText}${gapText ? ` · GAP ${gapText}` : ""}${overMaxText ?? ""}`;
+}
+
+/** The short banner used when a crowded run cannot fit every full label. */
+function planFillerShortLabel(installedText: string, overMaximum: boolean): string {
+  return shortFillerLabel(installedText, overMaximum);
+}
+
 export function PlanCanvas({
   room, autoDesignWallGuides = [], catalogDragCabinet = null, cabinets, countertopGeometry, selectedUid, attributesTargetUid = null, onSelect, onMove, onDelete, onRotate, onUnlockCorner, onOpenAttributes, onDropNew, onDropToFloor,
   showWallLayer, showCrownTopBadges = false, onToggleWallLayer, measureMode = false, autoDimensions = false, onDimensionAdjustmentChange, showPeninsulaCornerSnapFeedback = true, island = null, onIslandChange, onIslandMove,
@@ -823,6 +844,33 @@ export function PlanCanvas({
   const ppi = fitPpi * floorPlanZoom;
   const ppiRef = useRef(4);
   useEffect(() => { ppiRef.current = ppi; }, [ppi]);
+  // Every filler banner on the plan, laid out per run so no banner can cover
+  // another one or the cabinet code beneath it. A crowded run collapses its
+  // banners to "F 1-1/4\"" and keeps the full text in the hover tooltip.
+  const fillerLabelPlacements = useMemo(() => {
+    const inputs: FillerLabelInput[] = [];
+    for (const item of cabinets) {
+      if (!isFillerItem(item)) continue;
+      const installed = Math.min(Math.abs(Number(item.width)), Math.abs(Number(item.depth)));
+      if (!Number.isFinite(installed) || installed <= 0) continue;
+      const over = installed > (fillerWidthRange(item)?.max ?? 3) + 0.001;
+      // The banner hangs over the board's rendered center, exactly where it was
+      // drawn before; only its lane and its text change.
+      const { bodyW, bodyLeft } = planCabinetRenderFrame(item);
+      const installedText = formatEighthInches(installed);
+      const gap = Number(item.fillerTotalWidth);
+      const gapText = Number.isFinite(gap) && gap > 0 && Math.abs(gap - installed) > 0.001 ? formatEighthInches(gap) : null;
+      inputs.push({
+        uid: item.uid,
+        groupId: planFillerLabelGroup(item, room),
+        centerXPx: (bodyLeft + bodyW / 2) * ppi,
+        fullText: planFillerFullLabel(installedText, gapText, over ? " · OVER MAX" : null),
+        shortText: planFillerShortLabel(installedText, over),
+      });
+    }
+    const placements = layoutFillerLabels(inputs);
+    return new Map(placements.map((placement) => [placement.uid, placement]));
+  }, [cabinets, ppi, room]);
   const planPanDrag = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const dimensionLeaderDrag = useRef<{
     key: string;
@@ -2794,27 +2842,49 @@ export function PlanCanvas({
                     PRICE MISSING
                   </span>
                 )}
-                {showBbcFillerMeasurement && installedFillerWidth != null && (
+                {showBbcFillerMeasurement && installedFillerWidth != null && (() => {
+                  const placement = fillerLabelPlacements.get(p.uid);
+                  const installedText = formatEighthInches(installedFillerWidth);
+                  const fullText = `FILLER ${installedText} · MAX ${formatEighthInches(BLIND_CORNER_FILLER_WIDTH_IN)}`;
+                  const text = placement?.text ?? fullText;
+                  return (
                   <span
                     data-testid="bbc-filler-measurement-label"
+                    data-filler-label-lane={placement?.lane ?? 0}
+                    data-filler-label-collapsed={placement?.collapsed ? "true" : undefined}
+                    style={{ marginTop: placement?.offsetYPx ? -placement.offsetYPx : undefined }}
                     role="status"
                     className="pointer-events-none absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 -translate-y-[calc(100%+5px)] items-center whitespace-nowrap rounded border border-sky-200 bg-sky-800 px-1.5 py-0.5 text-[8px] font-extrabold leading-none text-white shadow-[0_0_0_2px_rgba(255,255,255,0.86),0_0_10px_rgba(14,116,144,0.5)]"
-                    title={`Installed filler width ${formatEighthInches(installedFillerWidth)}; BBC return maximum ${formatEighthInches(BLIND_CORNER_FILLER_WIDTH_IN)}`}
+                    title={fullText}
                   >
-                    FILLER {formatEighthInches(installedFillerWidth)} · MAX {formatEighthInches(BLIND_CORNER_FILLER_WIDTH_IN)}
+                    {text}
                   </span>
-                )}
-                {showMeasuredFillerMeasurement && installedFillerWidth != null && (
+                  );
+                })()}
+                {showMeasuredFillerMeasurement && installedFillerWidth != null && (() => {
+                  const placement = fillerLabelPlacements.get(p.uid);
+                  const installedText = formatEighthInches(installedFillerWidth);
+                  const gapText = measuredFillerGapWidth != null && Math.abs(measuredFillerGapWidth - installedFillerWidth) > 0.001
+                    ? ` · GAP ${formatEighthInches(measuredFillerGapWidth)}`
+                    : "";
+                  const overMaxText = fillerExceedsMaximum ? ` · MAX ${formatEighthInches(fillerMaximum!)} · OVER MAX` : "";
+                  const fullText = `FILLER ${installedText}${gapText}${overMaxText}`;
+                  const text = placement?.text ?? fullText;
+                  return (
                   <span
                     data-testid="measured-filler-measurement-label"
                     data-filler-warning={fillerExceedsMaximum ? "over-maximum" : undefined}
+                    data-filler-label-lane={placement?.lane ?? 0}
+                    data-filler-label-collapsed={placement?.collapsed ? "true" : undefined}
+                    style={{ marginTop: placement?.offsetYPx ? -placement.offsetYPx : undefined }}
                     role={fillerExceedsMaximum ? "alert" : "status"}
                     className={`pointer-events-none absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 -translate-y-[calc(100%+5px)] items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[8px] font-extrabold leading-none text-white shadow-[0_0_0_2px_rgba(255,255,255,0.86)] ${fillerExceedsMaximum ? "border-red-200 bg-red-700" : "border-violet-200 bg-violet-800"}`}
                     title={`Measured filler gap ${formatEighthInches(measuredFillerGapWidth ?? installedFillerWidth)}; installed filler width ${formatEighthInches(installedFillerWidth)}`}
                   >
-                    FILLER {formatEighthInches(installedFillerWidth)}{measuredFillerGapWidth != null && Math.abs(measuredFillerGapWidth - installedFillerWidth) > 0.001 ? ` · GAP ${formatEighthInches(measuredFillerGapWidth)}` : ""}{fillerExceedsMaximum ? ` · MAX ${formatEighthInches(fillerMaximum!)} · OVER MAX` : ""}
+                    {text}
                   </span>
-                )}
+                  );
+                })()}
                 {showWallSnapSuccess && (
 		                  <span
 		                    data-testid="wall-snap-success-indicator"

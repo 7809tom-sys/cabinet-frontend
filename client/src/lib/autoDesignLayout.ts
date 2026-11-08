@@ -34,6 +34,12 @@ import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import {
+  closeSmallOpeningsWithStock,
+  consolidateAutoDesignFillers,
+  findFillerClusters,
+  formatFillerInches,
+} from "./autoDesignFillerConsolidation";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
@@ -354,6 +360,37 @@ function resolveLeftoverOpenings(input: {
     }
   }
   return { placed: working, notes };
+}
+
+/**
+ * A run that still carries two boards after consolidation is named on the
+ * review list instead of being left silently doubled. One board per run end is
+ * the rule; a second board means no stock width and no single board could close
+ * the run, so the person deciding the plan has to see it.
+ */
+function reviewFillers(
+  wallIds: readonly string[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  openings: readonly WallOpening[],
+  findings: DesignerReviewFinding[],
+): void {
+  for (const layer of ["base", "wall"] as const) {
+    for (const wallId of wallIds) {
+      for (const cluster of findFillerClusters({ placed, room, openings, wallId, layer })) {
+        if (cluster.fillers.length < 2) continue;
+        findings.push({
+          ruleId: "one-filler-per-run",
+          code: "extra-filler-boards",
+          severity: "warning",
+          title: `${cluster.fillers.length} filler boards on ${wallId}`,
+          detail: `This ${layer} run still carries ${cluster.fillers.map((filler) => formatFillerInches(Number(filler.width) || 0)).join(" + ")} of filler because no single stock width and no single board closes the run. Adjust the run to close it with one board.`,
+          cabinetUid: cluster.fillers[0]?.uid ?? null,
+          cabinetCode: cluster.fillers[0]?.masterCode ?? null,
+        });
+      }
+    }
+  }
 }
 
 /** Auto-Design never installs a filler board wider than 3 inches. A wider catalog filler is cut to 3 instead of being flagged over its maximum. */
@@ -922,6 +959,9 @@ export function runAutoDesignLayout(args: {
   working = drawerRule.placed;
   if (drawerRule.note) notes.push(drawerRule.note);
   if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
+  // A run end is finished, not gapped: no filler is appended at the end of a run,
+  // and one board per run is the most Auto-Design ever places. The small-gap pass
+  // is therefore off here (the measured build fills only a genuine sliver below).
   const baseRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
     // Owner rule: filler is the last resort, never automatic. Real cabinets first
@@ -1021,8 +1061,41 @@ export function runAutoDesignLayout(args: {
   working = clampPlacedToRefrigeratorPanels(working, room).placed;
   const finishedRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
+    // The automatic small-gap pass is off for the whole measured build: filler is
+    // the last resort, and a run closes with one board at most (below).
+    allowAutoFillers: false,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
+  // One board per run end. Before this pass a run could collect a 1¼″ beside a
+  // stock run, a 1″ beside the range and a 3″ at each window shoulder, because
+  // every stage filled its own sliver. Now a stock width closes the opening when
+  // one exists, and the boards of one run are consolidated into a single board.
+  const stockClosed = closeSmallOpeningsWithStock({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: runWalls,
+    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    maxOpeningIn: autoDesignFillerMaxIn(),
+    styleId: args.styleId,
+    makeUid,
+  });
+  working = stockClosed.placed;
+  notes.push(...stockClosed.notes);
+  const consolidated = consolidateAutoDesignFillers({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: runWalls,
+    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    fillers: catalogFillers,
+    maxFillerIn: autoDesignFillerMaxIn(),
+    makeUid,
+    styleId: args.styleId,
+  });
+  working = consolidated.placed;
+  notes.push(...consolidated.notes);
+  reviewFillers(runWalls, working, room, stageOpenings, reviewFindings);
   // HARD RULE (owner, Nov 5 2026): the bridge above the range is mandatory and is
   // already seated before the upper run tiled. What follows is the existing
   // add-only logic for the MICROWAVE and HOOD on top of that bridge: the popup

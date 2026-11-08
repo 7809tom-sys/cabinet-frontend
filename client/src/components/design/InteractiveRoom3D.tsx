@@ -34,6 +34,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, wallOpenShelfExposedHand, normalizeWallOpenShelfMounts, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
+import { removeIllegalFillers } from "@/lib/fillerPlacementRule";
 import {
   baseboardSpans, mosaicFinishedEdges, mosaicInterlockSpecForKey, mosaicSheetSpecFor, mosaicInterlockUnitPlan, mosaicPhaseAnchorEdge, mosaicPitchIn,
   clampMosaicGroutIn, isMosaicPatternKind, type MosaicInterlockSpec,
@@ -11725,9 +11726,15 @@ export function threeDSceneInputDiagnostics(
  * Rendering-only compatibility repair for legacy saved refrigerator cap
  * fillers. The source plan stays untouched; this returns the exact same
  * verified filler envelope used by the regular Designer restore path.
+ *
+ * A saved design written before the front-face rule can still carry a board cut
+ * against a refrigerator end panel. That board rendered as a white horizontal
+ * strip across the panel's outside face, so it is dropped from the RENDER only —
+ * the saved plan is never rewritten here.
  */
-export function threeDRenderPlacements(placed: PlacedCabinet[], room: RoomData): PlacedCabinet[] {
-  return normalizeInstalledFillersToAdjacentCabinets(placed, room);
+export function threeDRenderPlacements(placed: PlacedCabinet[], room: RoomData, openings: readonly WallOpening[] = []): PlacedCabinet[] {
+  const normalized = normalizeInstalledFillersToAdjacentCabinets(placed, room);
+  return removeIllegalFillers({ placed: normalized, room, openings }).placed;
 }
 
 export type ThreeDDesignParityInput = Pick<Props,
@@ -12693,7 +12700,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    const room = roomOverride
 	      ? { ...roomOverride, ceilingHeight: wallHeightIn }
 	      : { ...dimensions(scene.roomShape?.defaultDimensions), ceilingHeight: wallHeightIn };
-	    const renderedPlaced = renderExistingDesign ? threeDRenderPlacements(placed, room) : placed;
+	    const renderedPlaced = renderExistingDesign ? threeDRenderPlacements(placed, room, openings) : placed;
 
     const roomFrameKey = threeDCameraRoomFrameKey(room);
 	    const canvasWidth = Math.max(280, mount.clientWidth);
