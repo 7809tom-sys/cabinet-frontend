@@ -22,6 +22,7 @@ import { threeDBacksplashCoverageIntervals } from "./InteractiveRoom3D";
 import { MosaicFloorField } from "./MosaicFloorField";
 import {
   type HardwareStyleId,
+  type CatalogHardwareSelection,
   hardwareStyle as resolveHardwareStyle,
   doorCountForCabinet,
   drawerCountForCabinet,
@@ -30,6 +31,8 @@ import {
   FRAMED_STILE_CENTER_IN,
   normalizeDoorHardwareFramePosition,
 } from "@/lib/hardware";
+import { hardwareDrawSpec, measuredHardwareGeometry, type HardwareDrawSpec } from "@/lib/hardwareElevation";
+import { HardwareGlyph } from "./HardwareElevationGlyph";
 import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, threeDrawerBaseRowHeights, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { toeKickHeightForElevation } from "@/lib/elevationToeKick";
@@ -102,6 +105,17 @@ interface Props {
   hardwareStyleId?: HardwareStyleId | null;
   /** Optional source-selected real hardware finish tint for the existing proxy. */
   hardwareAccent?: string;
+  /**
+   * The exact catalog item the customer picked for this design. Its family and
+   * catalog-measured size drive every drawn piece; when absent (or when its
+   * label carries no readable size) the elevation keeps the generic proxy.
+   */
+  catalogHardware?: CatalogHardwareSelection | null;
+  /**
+   * Per-cabinet catalog override: return the exact pick this cabinet was
+   * finished with, or null/undefined to use the design-level pick.
+   */
+  catalogHardwareFor?: (cab: PlacedCabinet) => CatalogHardwareSelection | null | undefined;
   // Corner cabinets that physically wrap THIS corner but are owned by the
   // adjoining wall. CornerView injects them so a lazy-Susan / diagonal / blind
   // corner unit is drawn on BOTH walls, pinned to the seam (corner end of the
@@ -273,6 +287,7 @@ export function ElevationView({
   finish = DEFAULT_FINISH_COLORS, crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", mirror = false, hideSwitcher = false,
   hardwareStyleId = null, hardwareAccent = "#1a2744",
+  catalogHardware = null, catalogHardwareFor,
   finishFor, panelKindFor, doorSampleUrlFor, drawerSampleUrlFor, seamCabinets = [],
   frameInsetFor, frameMetricsFor,
   onMove, onMoveVertical, moveLocked = false,
@@ -768,6 +783,7 @@ export function ElevationView({
             />
           )}
           {!isAppliance && cabType !== "range-hood-front" && hw.id !== "none" && (() => {
+            const cabinetHardware = catalogHardwareFor ? (catalogHardwareFor(p) ?? catalogHardware) : catalogHardware;
             const overlay = (faceWidthIn: number) => (
               <HardwareOverlay
                 doors={displayCounts.doors}
@@ -785,6 +801,7 @@ export function ElevationView({
                 cabinetHeightIn={height}
                 doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
                 pantryLayout={pantryDrawerFrontLayout({ ...p, placementType: p.placement, graphicType: customProfile, numberOfDoors: displayCounts.doors, numberOfDrawers: displayCounts.drawers }, height)}
+                catalogSpec={hardwareDrawSpec(cabinetHardware)}
               />
             );
             // A blind corner has one operating door: the exposed 60% of its face. The other 40% is the
@@ -2234,8 +2251,13 @@ export function ElevationView({
 // a door region (top) plus a stacked drawer region split into N equal drawers.
 // Pieces are tiny CSS shapes positioned by percentage so they scale with zoom.
 //   knob → small filled circle   pull → short horizontal bar   cup → half-moon
+//
+// When the customer picked a real catalog item, `catalogSpec` carries its family
+// and its catalog-measured size; each piece is then drawn as that item's own
+// front-on outline at its true size against the cabinet front's inches. A pick
+// whose label carried no readable size keeps the proportional proxy above.
 export function HardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, isWall = false, faceWidthIn, frameStileIn, frameRailIn, cabinetHeightIn, raisedDoorPullOnRail = false, pantryLayout, doorBandStartPct,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, isWall = false, faceWidthIn, frameStileIn, frameRailIn, cabinetHeightIn, raisedDoorPullOnRail = false, pantryLayout, doorBandStartPct, catalogSpec = null,
 }: {
   doors: number;
   drawers: number;
@@ -2253,6 +2275,8 @@ export function HardwareOverlay({
   pantryLayout?: ReturnType<typeof pantryDrawerFrontLayout>;
   /** Doors start this many percent below the top of the face (farmhouse sink apron zone). */
   doorBandStartPct?: number;
+  /** Real catalog pick (family + measured size). null keeps the legacy proxy. */
+  catalogSpec?: HardwareDrawSpec | null;
 }) {
   // Brushed-metal sheen: diagonal light streak over accent color with crisp
   // top highlight and soft drop shadow so pieces read as real metal hardware.
@@ -2261,7 +2285,7 @@ export function HardwareOverlay({
   const normalizedDoorPosition = normalizeDoorHardwareFramePosition(hardwarePosition);
   // For door hardware (knobs), position on the handle side (opposite of hinge).
   // Drawers always center their hardware.
-  const piece = (kind: "knob" | "pull" | "cup", key: string, topPct: number, isDoor?: boolean, index = 0, drawerColumns = 1) => {
+  const piece = (kind: "knob" | "pull" | "cup", key: string, topPct: number, isDoor?: boolean, index = 0, drawerColumns = 1, band?: { topPct: number; heightPct: number }) => {
     // Drawer hardware is an authoritative center-only construction rule. Door
     // fronts retain their individual Attributes choice, including paired pulls.
     const requestedPosition = isDoor ? normalizedDoorPosition : "center";
@@ -2294,6 +2318,59 @@ export function HardwareOverlay({
       "data-hardware-center-in": centerFromLeftIn,
       "data-hardware-edge-inset-in": horizontalPosition === "center" ? undefined : edgeInsetIn,
     } : {};
+    const hardwareTag = isDoor ? "door-pull" : "drawer-pull";
+    const orientation = horizontalTopRailPull ? "horizontal" : isDoor ? "vertical" : "horizontal";
+    const positionTag = raisedWallDoorPull ? "raised-door-rail" : topCenteredDoorPull ? "top-center" : position;
+    // Multi-column drawers center one pull in each column; single drawers and
+    // doors use the frame-aware centerline computed above.
+    const centerFromLeftForPiece = isDoor
+      ? centerFromLeftIn
+      : drawerColumns > 1 && physicalWidthIn > 0
+        ? ((index + 0.5) / drawerColumns) * physicalWidthIn
+        : physicalWidthIn / 2;
+    // Real catalog pick: keep the placement rules above and swap the proxy for
+    // the item's own outline at its catalog size.
+    if (catalogSpec?.measured) {
+      const vertical = orientation === "vertical";
+      const frontHeightIn = Math.max(0.25, Number(cabinetHeightIn) || 100);
+      const bandTopPct = band?.topPct ?? 0;
+      const bandHeightPct = band?.heightPct ?? 100 - bandTopPct;
+      const measured = measuredHardwareGeometry({
+        spec: catalogSpec,
+        faceWidthIn: physicalWidthIn > 0 ? physicalWidthIn : 12,
+        faceHeightIn: frontHeightIn,
+        centerFromLeftIn: centerFromLeftForPiece,
+        centerFromTopIn: (topPct / 100) * frontHeightIn,
+        bandTopPct,
+        bandHeightPct,
+        vertical,
+      });
+      return (
+        <div
+          key={key}
+          className="absolute"
+          data-cabinet-hardware={hardwareTag}
+          data-hardware-orientation={orientation}
+          data-hardware-position={positionTag}
+          data-hardware-family={catalogSpec.family}
+          data-hardware-length-in={catalogSpec.lengthIn ?? undefined}
+          data-hardware-drawn-length-in={Number(measured.drawnWidthIn.toFixed(3))}
+          data-hardware-measured={measured.fullSize ? "true" : "clamped"}
+          {...measuredHardwareData}
+          style={{
+            left: `${measured.leftPct}%`,
+            top: `${measured.topPct}%`,
+            width: `${measured.widthPct}%`,
+            height: `${measured.heightPct}%`,
+            transform: measured.edgeMounted ? "translateX(-50%)" : "translate(-50%, -50%)",
+            zIndex: 8,
+            pointerEvents: "none",
+          }}
+        >
+          <HardwareGlyph spec={catalogSpec} widthIn={measured.drawnWidthIn} heightIn={measured.drawnHeightIn} accent={accent} vertical={vertical} />
+        </div>
+      );
+    }
     if (kind === "knob") {
       return (
         <div
@@ -2363,7 +2440,7 @@ export function HardwareOverlay({
       pantryLayout.rows.forEach((row, rowIndex) => {
         const rowPct = (row.height / pantryFaceHeight) * 100;
         for (let column = 0; column < row.count; column++) {
-          pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${rowIndex}-${column}`, rowTop + rowPct / 2, false, column, row.count));
+          pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${rowIndex}-${column}`, rowTop + rowPct / 2, false, column, row.count, { topPct: rowTop, heightPct: rowPct }));
         }
         rowTop += rowPct;
       });
@@ -2372,7 +2449,7 @@ export function HardwareOverlay({
         // Ordinary bases keep their existing top drawer band.
         const sliceH = drawerBand / drawers;
         const center = sliceH * i + sliceH / 2;
-        pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${i}`, center, false));
+        pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${i}`, center, false, 0, 1, { topPct: sliceH * i, heightPct: sliceH }));
       }
     }
   }
@@ -2400,7 +2477,7 @@ export function HardwareOverlay({
       ? Math.min(doors, 2)
       : 1;
     for (let i = 0; i < visibleDoorPieces; i++) {
-      pieces.push(piece(doorPiece as "knob" | "pull", `do-${i}`, doorTop, true, i));
+      pieces.push(piece(doorPiece as "knob" | "pull", `do-${i}`, doorTop, true, i, 1, { topPct: doorBandTop, heightPct: doorHeightPct }));
     }
   }
 

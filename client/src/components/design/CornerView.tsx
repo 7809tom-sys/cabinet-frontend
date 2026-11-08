@@ -3,7 +3,7 @@ import {
   type DoorPanelKind, type WallSide,
   isCornerCabinet, cabinetWall, cornerRotationForPlaced,
 } from "@/lib/design";
-import { type HardwareStyleId } from "@/lib/hardware";
+import { type HardwareStyleId, type CatalogHardwareSelection } from "@/lib/hardware";
 import { ElevationView } from "./ElevationView";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useIsMobile } from "@/hooks/useMobile";
@@ -43,6 +43,10 @@ interface Props {
   panelKind?: DoorPanelKind;
   hardwareStyleId?: HardwareStyleId | null;
   hardwareAccent?: string;
+  /** The exact catalog item picked for this design (family + catalog size). */
+  catalogHardware?: CatalogHardwareSelection | null;
+  /** Per-cabinet catalog override; falls back to the design-level pick. */
+  catalogHardwareFor?: (cab: PlacedCabinet) => CatalogHardwareSelection | null | undefined;
   finishFor?: (cab: PlacedCabinet) => FinishColors;
   panelKindFor?: (cab: PlacedCabinet) => DoorPanelKind;
   doorSampleUrlFor?: (cab: PlacedCabinet) => string | null;
@@ -54,6 +58,7 @@ export function CornerView({
   countertopMaterialId = null, openings = [],
   finish = DEFAULT_FINISH_COLORS, crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", hardwareStyleId = null, hardwareAccent,
+  catalogHardware = null, catalogHardwareFor,
   finishFor, panelKindFor, doorSampleUrlFor, drawerSampleUrlFor,
 }: Props) {
   const { t } = useLanguage();
@@ -84,6 +89,7 @@ export function CornerView({
   const sharedProps = {
     room, cabinets, selectedUid, attributesTargetUid, onSelect,
     countertopMaterialId, openings, finish, crown, toeKick, batten, lightRail, panelKind, hardwareStyleId, hardwareAccent,
+    catalogHardware, catalogHardwareFor,
     finishFor, panelKindFor, doorSampleUrlFor, drawerSampleUrlFor,
   };
 

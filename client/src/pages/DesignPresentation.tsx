@@ -11,7 +11,7 @@ import {
   type FinishColors, DEFAULT_FINISH_COLORS, cabinetWall,
   type PlanAnnotation,
 } from "@/lib/design";
-import type { HardwareStyleId } from "@/lib/hardware";
+import type { HardwareStyleId, CatalogHardwareSelection } from "@/lib/hardware";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import {
   designerDraftActiveKey,
@@ -63,6 +63,8 @@ interface DraftSnapshot {
   backsplashMaterialId?: string | null;
   flooringMaterialId?: string | null;
   hardwareStyleId?: HardwareStyleId | null;
+  /** Exact catalog hardware picked in the Designer; absent on older drafts. */
+  catalogHardwareSelection?: CatalogHardwareSelection | null;
   annotations?: PlanAnnotation[];
   roomType?: string;
 }
@@ -312,6 +314,7 @@ export default function DesignPresentation() {
                 countertopMaterialId={draft.countertopMaterialId}
                 backsplashMaterialId={draft.backsplashMaterialId}
                 hardwareStyleId={draft.hardwareStyleId}
+                catalogHardware={draft.catalogHardwareSelection ?? null}
                 hideSwitcher={true}
                 showProductCodes={hasFullDocumentAccess}
               />

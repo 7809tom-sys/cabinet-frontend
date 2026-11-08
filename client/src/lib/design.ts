@@ -1,6 +1,7 @@
 // ─── Kitchen Design geometry & snapping engine ──────────────────────────────
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
+import type { CatalogHardwareSelection } from "@/lib/hardware";
 import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
@@ -1144,6 +1145,12 @@ export interface PlacedCabinet {
   // value) retains the cabinet's hinge-aware supplier/default pull position.
   // `paired` places one pull at the meeting edge of each leaf on paired doors.
   hardwarePosition?: CabinetHardwarePosition | null;
+  /**
+   * Exact catalog hardware this one cabinet was finished with, when it differs
+   * from the design-level pick. Stored as the same normalized selection the
+   * Designer picker records; absent means "use the design's pick".
+   */
+  catalogHardware?: CatalogHardwareSelection | null;
   // rolloutQty: number of roll-out (pull-out) trays to add inside this base
   // cabinet. Priced as an add-on line per tray.
   rolloutQty?: number | null;

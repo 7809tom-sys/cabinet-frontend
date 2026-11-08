@@ -29,6 +29,7 @@ import { inferredIslandFace, islandCountertopRect, islandFaceLength, islandOffse
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import {
   type HardwareStyleId,
+  type CatalogHardwareSelection,
   hardwareStyle as resolveHardwareStyle,
   doorCountForCabinet,
   drawerCountForCabinet,
@@ -37,6 +38,8 @@ import {
   FRAMED_STILE_CENTER_IN,
   normalizeDoorHardwareFramePosition,
 } from "@/lib/hardware";
+import { hardwareDrawSpec, measuredHardwareGeometry, type HardwareDrawSpec } from "@/lib/hardwareElevation";
+import { HardwareGlyph } from "./HardwareElevationGlyph";
 import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { useRef, useEffect, useState } from "react";
@@ -237,7 +240,7 @@ function DoorFront({
 }
 
 export function IslandHardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct, faceHeightIn, catalogSpec = null,
 }: {
   doors: number; drawers: number;
   doorPiece: "knob" | "pull" | "none";
@@ -250,11 +253,15 @@ export function IslandHardwareOverlay({
   raisedDoorPullOnRail?: boolean;
   /** Doors start this many percent below the top of the face (farmhouse sink apron zone). */
   doorBandStartPct?: number;
+  /** Real face height in inches, needed to draw a catalog-measured part to scale. */
+  faceHeightIn?: number;
+  /** Real catalog pick (family + measured size). null keeps the legacy proxy. */
+  catalogSpec?: HardwareDrawSpec | null;
 }) {
   const metal = `linear-gradient(135deg, color-mix(in srgb, ${accent} 55%, #ffffff) 0%, ${accent} 38%, color-mix(in srgb, ${accent} 70%, #000000) 72%, color-mix(in srgb, ${accent} 88%, #ffffff) 100%)`;
   const metalShadow = "0 1px 1.5px rgba(0,0,0,0.35), inset 0 0.5px 0 rgba(255,255,255,0.55)";
   const normalizedDoorPosition = normalizeDoorHardwareFramePosition(hardwarePosition);
-  const piece = (kind: "knob" | "pull" | "cup", key: string, topPct: number, isDoor?: boolean, index = 0) => {
+  const piece = (kind: "knob" | "pull" | "cup", key: string, topPct: number, isDoor?: boolean, index = 0, band?: { topPct: number; heightPct: number }) => {
     const requestedSide = isDoor ? normalizedDoorPosition : null;
     const topCenteredDoorPull = Boolean(isDoor && requestedSide === "top-center");
     const raisedWallDoorPull = Boolean(isDoor && raisedDoorPullOnRail);
@@ -285,6 +292,50 @@ export function IslandHardwareOverlay({
       "data-hardware-center-in": centerFromLeftIn,
       "data-hardware-edge-inset-in": edgeInsetIn,
     } : {};
+    // Real catalog pick: keep every existing placement rule and draw the picked
+    // item's own outline at its catalog-measured size.
+    if (catalogSpec?.measured) {
+      const orientation = horizontalTopRailPull ? "horizontal" : isDoor ? "vertical" : "horizontal";
+      const vertical = orientation === "vertical";
+      const frontHeightIn = Math.max(0.25, Number(faceHeightIn) || 100);
+      const bandTopPct = band?.topPct ?? 0;
+      const bandHeightPct = band?.heightPct ?? 100 - bandTopPct;
+      const measured = measuredHardwareGeometry({
+        spec: catalogSpec,
+        faceWidthIn: physicalWidthIn > 0 ? physicalWidthIn : 12,
+        faceHeightIn: frontHeightIn,
+        centerFromLeftIn: isDoor || physicalWidthIn > 0 ? centerFromLeftIn : physicalWidthIn / 2,
+        centerFromTopIn: (topPct / 100) * frontHeightIn,
+        bandTopPct,
+        bandHeightPct,
+        vertical,
+      });
+      return (
+        <div
+          key={key}
+          className="absolute"
+          data-cabinet-hardware={isDoor ? "door-pull" : "drawer-pull"}
+          data-hardware-orientation={orientation}
+          data-hardware-position={raisedWallDoorPull ? "raised-door-rail" : topCenteredDoorPull ? "top-center" : hSide ?? "center"}
+          data-hardware-family={catalogSpec.family}
+          data-hardware-length-in={catalogSpec.lengthIn ?? undefined}
+          data-hardware-drawn-length-in={Number(measured.drawnWidthIn.toFixed(3))}
+          data-hardware-measured={measured.fullSize ? "true" : "clamped"}
+          {...measuredHardwareData}
+          style={{
+            left: `${measured.leftPct}%`,
+            top: `${measured.topPct}%`,
+            width: `${measured.widthPct}%`,
+            height: `${measured.heightPct}%`,
+            transform: measured.edgeMounted ? "translateX(-50%)" : "translate(-50%, -50%)",
+            zIndex: 8,
+            pointerEvents: "none",
+          }}
+        >
+          <HardwareGlyph spec={catalogSpec} widthIn={measured.drawnWidthIn} heightIn={measured.drawnHeightIn} accent={accent} vertical={vertical} />
+        </div>
+      );
+    }
     if (kind === "knob") {
       return (
         <div key={key} className="absolute rounded-full"
@@ -318,14 +369,15 @@ export function IslandHardwareOverlay({
       ? Math.min(doors, 2)
       : 1;
     for (let index = 0; index < visibleDoorPieces; index++) {
-      items.push(piece(doorPiece as "knob" | "pull", `door-${index}`, topPct, true, index));
+      items.push(piece(doorPiece as "knob" | "pull", `door-${index}`, topPct, true, index, { topPct: bandStart, heightPct: 100 - bandStart }));
     }
   }
   if (drawers > 0 && drawerPiece !== "none") {
     const drawerH = 100 / (drawers + (doors > 0 ? 1 : 0));
     for (let i = 0; i < drawers; i++) {
-      const topPct = (doors > 0 ? drawerH : 0) + drawerH * i + drawerH / 2;
-      items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${i}`, topPct));
+      const rowTop = (doors > 0 ? drawerH : 0) + drawerH * i;
+      const topPct = rowTop + drawerH / 2;
+      items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${i}`, topPct, false, 0, { topPct: rowTop, heightPct: drawerH }));
     }
   }
   return <>{items}</>;
@@ -353,6 +405,10 @@ interface Props {
   hardwareStyleId?: HardwareStyleId | null;
   /** Optional source-selected real hardware finish tint for the existing proxy. */
   hardwareAccent?: string;
+  /** The exact catalog item picked for this design (family + catalog size). */
+  catalogHardware?: CatalogHardwareSelection | null;
+  /** Per-cabinet catalog override; falls back to the design-level pick. */
+  catalogHardwareFor?: (cab: PlacedCabinet) => CatalogHardwareSelection | null | undefined;
   finishFor?: (cab: PlacedCabinet) => FinishColors;
   panelKindFor?: (cab: PlacedCabinet) => DoorPanelKind;
   doorSampleUrlFor?: (cab: PlacedCabinet) => string | null;
@@ -378,6 +434,7 @@ export function IslandElevationView({
   finish = DEFAULT_FINISH_COLORS,
   crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", hardwareStyleId = null, hardwareAccent = "#1a2744",
+  catalogHardware = null, catalogHardwareFor,
   finishFor, panelKindFor, doorSampleUrlFor, drawerSampleUrlFor, frameInsetFor, frameMetricsFor,
 }: Props) {
   const { t } = useLanguage();
@@ -554,6 +611,8 @@ export function IslandElevationView({
               faceWidthIn={cabSizeAlong}
               frameStileIn={cabFrameStileIn}
               doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
+              faceHeightIn={height}
+              catalogSpec={hardwareDrawSpec(catalogHardwareFor ? (catalogHardwareFor(p) ?? catalogHardware) : catalogHardware)}
             />
           )}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ zIndex: 5 }}>

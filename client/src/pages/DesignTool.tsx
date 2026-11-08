@@ -6395,6 +6395,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     },
     [placed, room, styleId],
   );
+  // Per-cabinet catalog hardware: a cabinet that recorded its own exact pick
+  // uses it; every other cabinet follows the design's pick. Absent for older
+  // saved designs, which keep the generic proxy.
+  const catalogHardwareForCab = useCallback(
+    (cab: PlacedCabinet) => cab.catalogHardware ?? null,
+    [],
+  );
   const finishForCab = useCallback(
     (cab: PlacedCabinet) => {
       const sid = displayStyleIdForCab(cab);
@@ -20291,6 +20298,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               panelKind={activePanelKind}
               hardwareStyleId={hardwareStyleId}
               hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
+              catalogHardware={catalogHardwareSelection}
+              catalogHardwareFor={catalogHardwareForCab}
               finishFor={finishForCab}
               panelKindFor={panelKindForCab}
               doorSampleUrlFor={doorSampleForCab}
@@ -20330,6 +20339,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 panelKind={activePanelKind}
                 hardwareStyleId={hardwareStyleId}
                 hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
+                catalogHardware={catalogHardwareSelection}
+                catalogHardwareFor={catalogHardwareForCab}
                 finishFor={finishForCab}
                 panelKindFor={panelKindForCab}
                 doorSampleUrlFor={doorSampleForCab}
@@ -20358,6 +20369,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               panelKind={activePanelKind}
               hardwareStyleId={hardwareStyleId}
               hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
+              catalogHardware={catalogHardwareSelection}
+              catalogHardwareFor={catalogHardwareForCab}
               finishFor={finishForCab}
               panelKindFor={panelKindForCab}
               doorSampleUrlFor={doorSampleForCab}
@@ -20496,6 +20509,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   panelKind={activePanelKind}
                   hardwareStyleId={hardwareStyleId}
                   hardwareAccent={catalogHardwareSelection ? catalogHardwareFinishAccent(catalogHardwareSelection.finish) : undefined}
+                  catalogHardware={catalogHardwareSelection}
+                  catalogHardwareFor={catalogHardwareForCab}
                   finishFor={finishForCab}
                   panelKindFor={panelKindForCab}
                   doorSampleUrlFor={doorSampleForCab}
