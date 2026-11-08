@@ -230,6 +230,20 @@ describe("the reported right-wall plan: range with an 8 7/8\" gap and a 9 1/8\" 
     expect(result.placed.find((item) => isRangeOrOven(item.masterCode, item.description))?.placement).toBe("appliance");
   });
 
+  it("keeps the flank cabinets when heavy cooking is selected, and names the 9\" landing", () => {
+    // The owner's rule is unconditional: a base cabinet on each side of the range.
+    // A 9" opening cannot hold the 15" a heavy cook would prefer, so the cabinets
+    // stay and the existing heavy-cook review names what the run could not give —
+    // a named finding, never a silent trade.
+    const heavy = build({ kitchenUsage: { uses: ["everyday-cooking"], skipped: false, acceptedSuggestionIds: [] } });
+    const { left, right } = flankNeighbours(heavy.placed, "right", room);
+    expect(left?.masterCode).toBe("BT9");
+    expect(right?.masterCode).toBe("BT9");
+    expect(baseGaps(heavy.placed, "right", room)).toEqual([]);
+    expect(heavy.warnings.join(" ")).toMatch(/Heavy cooking needs 15/);
+    expect(heavy.warnings.join(" ")).toMatch(/BT9 \(9"\)/);
+  });
+
   it("says in the plan why a flank that ends against the corner box gets no separate panel", () => {
     // In a U kitchen each flank's outside runs into the corner box that owns the
     // room vertex. That side is already finished, so the plan reports it instead
