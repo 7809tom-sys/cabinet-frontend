@@ -92,7 +92,8 @@ describe("bathroom tab classification", () => {
 
   it("separates shower doors, surrounds and pans", () => {
     expect(bathroomTabForRow({ pelicanCode: "PL-03A11S60 MB", description: "Single Sliding Frameless Shower Door" })).toBe("shower-door");
-    expect(bathroomTabForRow({ pelicanCode: "PL-014836LSO", description: "Shower Base with Tile Flange" })).toBe("shower-surround");
+    // Pans and bases have their own tab; a surround wall kit stays a surround.
+    expect(bathroomTabForRow({ pelicanCode: "PL-014836LSO", description: "Shower Base with Tile Flange" })).toBe("shower-pan");
     expect(bathroomTabForRow({ pelicanCode: "PL-483696 Brick", description: "3-Piece Glue Up Alcove Shower Wall Kit" })).toBe("shower-surround");
   });
 

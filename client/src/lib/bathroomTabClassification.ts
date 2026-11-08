@@ -36,6 +36,9 @@ export type BathroomTabRole =
   | "shower-door"
   | "shower-surround"
   | "shower-system"
+  | "shower-pan"
+  | "shower-tile"
+  | "shower-niche"
   | "bathroom-accessory";
 
 /** Minimal shape of a catalog row, so this module stays testable without tRPC. */
@@ -213,9 +216,8 @@ export function bathroomTabForRow(row: BathroomTabRow): BathroomTabRole | null {
   // 4. Shower pans and bases are three-wall fixtures like an alcove tub, and must be
   //    recognised before the accessory rules: their descriptions contain "shower"
   //    and their SKUs share prefixes with accessory sets.
-  if (/\b(?:shower|tub) (?:pan|base)"?|\bshower pan\b|\bshower base\b|\bshower receptor\b|\bpan only\b|\bshower kit\b/i.test(text)) {
-    return "shower-surround";
-  }
+  if (/\bshower pan\b|\bshower base\b|\bshower receptor\b|\bpan only\b/i.test(text)) return "shower-pan";
+  if (/\b(?:shower|tub) base\b|\bshower kit\b/i.test(text)) return "shower-surround";
 
   // 5. Shower doors before accessories for the same reason: PL-03A11S60 is a door.
   if (/\bshower (?:door|glass|enclosure)\b|\bframeless\b.*\bdoor\b|\b(?:single|double) sliding\b.*\bdoor\b/i.test(text)) {
@@ -240,6 +242,11 @@ export function bathroomTabForRow(row: BathroomTabRow): BathroomTabRole | null {
   //    that is not a faucet. This is what brings the 16 free-standing tubs out of
   //    `Sink & Faucet Accessories` and into Bathtubs.
   if (TUB_DESCRIPTION.test(text) && !FAUCET_DESCRIPTION.test(text)) return "bathtub";
+
+  // Niches and soap trays before walls: their names mention the shower wall.
+  if (/\b(?:niche|soap (?:tray|dish))\b/i.test(text)) return "shower-niche";
+  // Shower wall tile is tile, not a panel.
+  if (/\b(?:shower|wall) tile\b|\bmosaic\b/i.test(text) && /shower/i.test(text)) return "shower-tile";
 
   // 8. Remaining shower surrounds.
   if (/\bshower (?:wall|surround|panel|kit)\b|\balcove shower\b|\bglue up\b/i.test(text)) return "shower-surround";
@@ -266,9 +273,12 @@ export const BATHROOM_TAB_ROLES: readonly BathroomTabRole[] = [
   "bathroom-faucet",
   "toilet-bidet",
   "bathtub",
-  "shower-door",
+  "shower-pan",
   "shower-surround",
+  "shower-tile",
   "shower-system",
+  "shower-door",
+  "shower-niche",
   "bathroom-accessory",
 ] as const;
 

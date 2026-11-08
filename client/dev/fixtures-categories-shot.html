@@ -1,0 +1,26 @@
+<!doctype html>
+<!--
+  Before/after harness for the Fixtures sidebar → catalog popup flow.
+
+  It renders the REAL `RecommendedSurfaces` sidebar and the REAL
+  `SurfacesPickerDialog`, wired the way the Design Tool wires them. On the
+  previous build the sidebar is an accordion with a "Browse all" link per row; on
+  this build each category is one row that opens the popup on that category's tab,
+  so there is a single place to browse and pick.
+
+  Served by the Vite dev server at /dev/fixtures-categories-shot.html.
+  Query: ?open=<role> starts on that tab, ?select=1 preselects the PL-3099 row.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fixtures categories → catalog</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/fixturesCategoriesScreenshotHarness.tsx"></script>
+  </body>
+</html>

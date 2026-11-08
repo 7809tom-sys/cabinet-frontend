@@ -104,6 +104,12 @@ import { SHADOW_STRENGTH_MAX, normalizeShadowStrength, readShadowStrengthPrefere
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
 import { makeAlcoveTubParts } from "./alcoveTubGeometry";
 import {
+  makeShowerNicheParts,
+  makeShowerPanParts,
+  makeShowerSurroundParts,
+  makeShowerSystemParts,
+} from "./showerFixtureGeometry";
+import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
   backsplashTextureWarningMessage,
   parseBacksplashSheetInches,
@@ -11072,6 +11078,49 @@ function addPelicanBathroomFixture(
     const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.045, 0.045), metal);
     rail.position.y = height - 0.0225;
     add(rail, "shower-door-rail");
+  } else if (profile.kind === "shower-pan") {
+    // A pan is the shower floor: a measured envelope with a flat rim, a recessed
+    // basin and a drain on the published side. Its back and both ends are the
+    // walled sides, so it snaps into a corner or alcove like an alcove tub.
+    const showerMaterials = {
+      shell: new THREE.MeshPhysicalMaterial({ color: "#f7f8f5", roughness: 0.22, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.2 }),
+      metal: new THREE.MeshStandardMaterial({ color: "#aab4b8", roughness: 0.3, metalness: 0.8 }),
+    };
+    for (const { mesh, part } of makeShowerPanParts(profile, showerMaterials)) {
+      // The builder works around the pan's own centre; the fixture group is
+      // positioned by its centre, so no extra offset is needed.
+      add(mesh, part);
+    }
+  } else if (profile.kind === "shower-surround") {
+    // The wall panel set stands above the pan or tub deck to the published panel
+    // height. It is a wall finish, so it holds no floor.
+    const surround = makeShowerSurroundParts(profile, {
+      shell: shell,
+      metal: dark,
+      panel: new THREE.MeshStandardMaterial({ color: "#cdc4b4", roughness: 0.78, metalness: 0.02 }),
+    });
+    for (const { mesh, part } of surround) {
+      add(mesh, part);
+    }
+  } else if (profile.kind === "shower-system") {
+    // Valve, lever, riser, head and spout on the wet wall.
+    // The system is authored flat on a wall at local x = 0 reaching into +X, so
+    // it needs no extra offset: the fixture group is already on its wall.
+    for (const { mesh, part } of makeShowerSystemParts(profile, {
+      shell,
+      metal: new THREE.MeshStandardMaterial({ color: "#b9c2c7", roughness: 0.24, metalness: 0.9 }),
+    })) {
+      add(mesh, part);
+    }
+  } else if (profile.kind === "shower-niche" || profile.kind === "soap-tray") {
+    // A niche is recessed into a panel wall; a soap tray sits on a wall or pan.
+    // Both are wall fittings with no floor footprint.
+    for (const { mesh, part } of makeShowerNicheParts(profile, {
+      shell: new THREE.MeshStandardMaterial({ color: "#f2f3f0", roughness: 0.4 }),
+      metal: dark,
+    })) {
+      add(mesh, part);
+    }
   } else if (profile.kind === "shower-wall") {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, Math.max(depth, 0.02)), new THREE.MeshStandardMaterial({ color: "#e7e2dc", roughness: 0.72 }));
     panel.position.y = height / 2;
@@ -11086,13 +11135,17 @@ function addPelicanBathroomFixture(
     // rather than a pedestal with a ring floating on it.
     const china = pelicanChinaMaterial(profile.finish === "vitreous-china-matte-black");
     const baseHeight = height * 0.62;
+    // 96 segments, matching the toilets: a bidet sits right next to a toilet in
+    // the room, so a visibly faceted bidet would undo the china work.
     const pedestal = new THREE.Mesh(new THREE.LatheGeometry([
       new THREE.Vector2(0, 0.004),
       new THREE.Vector2(width * 0.29, 0.004),
-      new THREE.Vector2(width * 0.25, baseHeight * 0.55),
+      new THREE.Vector2(width * 0.295, baseHeight * 0.28),
+      new THREE.Vector2(width * 0.25, baseHeight * 0.58),
+      new THREE.Vector2(width * 0.30, baseHeight * 0.88),
       new THREE.Vector2(width * 0.32, baseHeight),
       new THREE.Vector2(0, baseHeight),
-    ], 40), china);
+    ], 96), china);
     pedestal.scale.z = Math.max(0.75, (depth * 0.70) / width);
     pedestal.position.y = 0;
     add(pedestal, "bidet-ceramic-base");
@@ -11101,15 +11154,16 @@ function addPelicanBathroomFixture(
     const basin = new THREE.Mesh(new THREE.LatheGeometry([
       new THREE.Vector2(0, baseHeight - 0.02),
       new THREE.Vector2(width * 0.32, baseHeight - 0.01),
+      new THREE.Vector2(width * 0.405, height * 0.86),
       new THREE.Vector2(width * 0.42, height * 0.90),
       new THREE.Vector2(width * 0.39, height * 0.95),
       new THREE.Vector2(width * 0.26, height * 0.91),
       new THREE.Vector2(0, height * 0.90),
-    ], 48), china);
+    ], 96), china);
     basin.scale.z = Math.max(0.8, (depth * 0.86) / width);
     add(basin, "bidet-basin");
 
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, Math.min(0.045, height * 0.026), 12, 48), china);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, Math.min(0.045, height * 0.026), 28, 128), china);
     rim.rotation.x = Math.PI / 2;
     rim.scale.set(width * 0.96, depth * 0.96, 1);
     rim.position.y = height * 0.98;

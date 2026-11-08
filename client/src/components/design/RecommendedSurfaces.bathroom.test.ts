@@ -22,14 +22,21 @@ describe("RecommendedSurfaces bathroom palette", () => {
   });
 
   it("exposes the source-backed bathroom fixture families in the Fixtures group", () => {
+    // The sidebar is a list of destinations. Its order IS the popup's tab order,
+    // so these roles must stay in the order the popup shows them.
     expect(BATHROOM_FIXTURE_RECOMMENDED_SECTIONS.map((section) => section.role)).toEqual([
       "bathroom-sink",
       "bathroom-faucet",
       "toilet-bidet",
       "bathtub",
-      "shower-door",
+      "shower-pan",
       "shower-surround",
+      "shower-tile",
       "shower-system",
+      "shower-door",
+      "shower-niche",
+      // Accessories are their own destination: towel bars and accessory sets used
+      // to appear on the Bathtubs tab.
       "bathroom-accessory",
     ]);
     expect(BATHROOM_RECOMMENDED_SECTIONS).toBe(BATHROOM_FIXTURE_RECOMMENDED_SECTIONS);
@@ -37,10 +44,18 @@ describe("RecommendedSurfaces bathroom palette", () => {
       "Vanity Sinks",
       "Toilets & Bidets",
       "Bathtubs",
-      "Shower Walls",
-      "Shower & Tub Doors",
+      "Shower Pans (floors)",
+      "Shower Panels & Surrounds",
       "Other Bathroom Accessories",
+      "Shower Tile",
+      "Shower Heads & Faucets",
+      "Glass Doors",
+      "Niches & Soap Trays",
     ]));
+    // The shower families appear once each: merging them into the existing
+    // doors/walls/systems tabs, never duplicating them.
+    const roles = BATHROOM_FIXTURE_RECOMMENDED_SECTIONS.map((section) => section.role);
+    expect(new Set(roles).size).toBe(roles.length);
   });
 
   it("keeps kitchen sink and faucet recommendation roles out of the bathroom palette", () => {
@@ -55,12 +70,19 @@ describe("RecommendedSurfaces bathroom palette", () => {
     const compact = readFileSync(new URL("./RecommendedSurfaces.tsx", import.meta.url), "utf8");
     const full = readFileSync(new URL("./SurfacesPickerDialog.tsx", import.meta.url), "utf8");
     const designer = readFileSync(new URL("../../pages/DesignTool.tsx", import.meta.url), "utf8");
-    expect(compact).toContain("whitespace-normal break-words text-sm font-semibold");
-    expect(compact).not.toContain("truncate text-[10px] font-semibold uppercase");
-    expect(compact).not.toContain("{blurb}");
-    expect(compact).toContain("Pelican bathroom fixtures only.");
-    expect(compact).toContain("onBrowseAll(role)");
-    expect(compact).toMatch(/if \(\(role === "toilet-bidet" \|\| role === "bathtub" \|\| tubFiller\) && onPlaceBathroomFixture\)/);
+    // A category row is a destination, not an accordion: no expand state, no
+    // inline card grid, and no second browse affordance.
+    expect(compact).toContain("onOpenCategory(role)");
+    expect(compact).not.toContain("Browse all");
+    expect(compact).not.toContain("aria-expanded");
+    // Compact rows: the name wraps rather than truncating, and there is no
+    // chevron because the whole row is the link.
+    expect(compact).toContain("break-words");
+    expect(compact).not.toContain("truncate");
+    expect(compact).not.toContain("ChevronRight");
+    expect(compact).not.toContain("ChevronDown");
+    // Placement now happens in the popup, which is the only place to pick.
+    expect(full).toContain("onPlaceBathroomFixture");
     expect(full).toContain("initialBathroomRole?: RecommendedRole");
     expect(designer).toContain("initialBathroomRole={bathroomBrowseRole}");
     expect(designer).toContain('stepId === "tub" ? "bathtub"');

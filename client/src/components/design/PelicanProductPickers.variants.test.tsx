@@ -109,71 +109,89 @@ describe("Pelican faucet picker uses the hardware card-plus-selector pattern", (
   });
 });
 
-describe("Recommended Pelican rows swap finishes instead of duplicating a product", () => {
-  it("starts surface families condensed and exposes their exact cards only after the heading is opened", () => {
+describe("Recommended categories are destinations, not accordions", () => {
+  it("renders one row per family with no inline cards and no expand state", () => {
+    const onBrowseAll = vi.fn();
     render(
       <RecommendedSurfaces
         selected={[]}
         onToggle={vi.fn()}
-        onBrowseAll={vi.fn()}
+        onBrowseAll={onBrowseAll}
         limit={60}
       />,
     );
 
-    const faucetHeading = screen.getByTestId("recommended-section-toggle-faucet");
-    expect(faucetHeading.getAttribute("aria-expanded")).toBe("false");
+    // Every family is a single clickable row. Nothing expands inline, so the
+    // card grids and the aria-expanded toggle that used to live here are gone.
+    const faucetRow = screen.getByTestId("recommended-category-faucet");
+    expect(faucetRow.getAttribute("aria-expanded")).toBeNull();
     expect(screen.queryAllByTestId(/^recommended-faucet-/)).toHaveLength(0);
 
-    fireEvent.click(faucetHeading);
-    expect(faucetHeading.getAttribute("aria-expanded")).toBe("true");
-    expect(cardsOf("recommended-faucet").length).toBeGreaterThan(0);
+    // Clicking the row opens the catalog on that family instead.
+    fireEvent.click(faucetRow);
+    expect(onBrowseAll).toHaveBeenCalledWith("faucet");
+    expect(screen.queryAllByTestId(/^recommended-faucet-/)).toHaveLength(0);
   });
 
-  it("removes the selected sibling finish before adding the newly chosen one", () => {
-    const onToggle = vi.fn();
-    const selected = [faucet("PL-8237 BN")];
+  it("puts the name and count on one line, wraps the name, and ships no browse link or chevron", () => {
+    const onBrowseAll = vi.fn();
     render(
       <RecommendedSurfaces
-        selected={selected as never}
-        onToggle={onToggle}
-        onBrowseAll={vi.fn()}
+        selected={[]}
+        onToggle={vi.fn()}
+        onBrowseAll={onBrowseAll}
+        roomType="bathroom"
+        bathroomPaletteMode="fixtures"
         limit={60}
       />,
     );
-    openRecommendedSection("faucet");
-    const card = cardsOf("recommended-faucet").find((entry) => mentions(entry, /PL-8237/))!;
-    // The card opens on the finish that is already in the design and says so.
-    expect(within(card).getByRole("button", { name: /selected/i }).getAttribute("aria-pressed")).toBe("true");
-    const trigger = within(card).getByRole("combobox");
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    fireEvent.click(screen.getByRole("option", { name: /matte black/i }));
-    expect(within(card).getByText(/in your design/i).textContent).toMatch(/brushed nickel/i);
-    fireEvent.click(within(card).getByRole("button", { name: /use this finish/i }));
-    expect(onToggle.mock.calls.map((call) => (call[0] as Row).pelicanCode)).toEqual(["PL-8237 BN", "PL-8237 MB"]);
+    const row = screen.getByTestId("recommended-category-toilet-bidet");
+    // Compact: "Toilets & Bidets (14)" in one text run, name then count.
+    expect(row.textContent).toMatch(/^Toilets & Bidets\(\d+\)/);
+    // No truncation class anywhere in the row, so a long name wraps instead of
+    // collapsing to "Shower & Tub Do…".
+    expect(row.querySelector('[class*="truncate"]')).toBeNull();
+    expect(row.querySelector('[class*="break-words"]')).not.toBeNull();
+    // The whole row is the link: no separate browse control and no chevron.
+    expect(row.querySelector("svg")).toBeNull();
+    expect(row.textContent).not.toMatch(/browse/i);
+    expect(row.getAttribute("title")).toBe("Toilets & Bidets");
+    fireEvent.click(row);
+    expect(onBrowseAll).toHaveBeenCalledWith("toilet-bidet");
   });
 
-  it("does not remove a sibling when the role already replaces its previous choice (countertop)", () => {
-    const onToggle = vi.fn();
-    const slabs = quartzRows.filter((row) => /^Calacatta Oro 3cm/.test(row.name));
-    expect(slabs.length).toBeGreaterThan(1);
+  it("gives each family its own row so the popup tab order matches the sidebar", () => {
+    const onBrowseAll = vi.fn();
     render(
       <RecommendedSurfaces
-        selected={[slabs[0]!] as never}
-        onToggle={onToggle}
-        onBrowseAll={vi.fn()}
+        selected={[]}
+        onToggle={vi.fn()}
+        onBrowseAll={onBrowseAll}
+        roomType="bathroom"
+        bathroomPaletteMode="fixtures"
         limit={60}
       />,
     );
-    openRecommendedSection("countertop");
-    const card = cardsOf("recommended-countertop").find((entry) => mentions(entry, /Calacatta Oro/i))!;
-    const trigger = within(card).getByRole("combobox");
-    fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    const other = slabs[1]!;
-    const options = screen.getAllByRole("option");
-    expect(options.length).toBe(slabs.length);
-    fireEvent.click(options[slabs.indexOf(other)]!);
-    fireEvent.click(within(card).getByRole("button", { name: /use this slab/i }));
-    expect(onToggle).toHaveBeenCalledTimes(1);
-    expect((onToggle.mock.calls[0]![0] as Row).id).toBe(other.id);
+    const rows = screen.getAllByTestId(/^recommended-category-/);
+    expect(rows.map((row) => row.dataset.categoryRole)).toEqual([
+      "bathroom-sink",
+      "bathroom-faucet",
+      "toilet-bidet",
+      "bathtub",
+      "shower-pan",
+      "shower-surround",
+      "shower-tile",
+      "shower-system",
+      "shower-door",
+      "shower-niche",
+      // Accessories are their own destination. Towel bars and accessory sets used
+      // to appear on the Bathtubs tab, which only shows tubs.
+      "bathroom-accessory",
+    ]);
+    // Each row is its own destination, including every new shower category.
+    fireEvent.click(screen.getByTestId("recommended-category-shower-pan"));
+    expect(onBrowseAll).toHaveBeenCalledWith("shower-pan");
+    fireEvent.click(screen.getByTestId("recommended-category-shower-niche"));
+    expect(onBrowseAll).toHaveBeenCalledWith("shower-niche");
   });
 });
