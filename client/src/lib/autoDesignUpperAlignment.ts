@@ -23,6 +23,7 @@ import {
   isRangeOrOven,
   isRefrigerator,
   isSinkBaseCabinet,
+  placedFootprint,
   wallRunFrame,
   wallRunOffset,
   wallRunSpan,
@@ -66,7 +67,7 @@ function mergeSpans(spans: readonly UpperAlignmentSpan[]): UpperAlignmentSpan[] 
 /**
  * The leg a seated corner cabinet reaches along one of its two walls. On its own
  * wall that is the corner's full plan span; on the return wall it is a cabinet
- * depth measured from the shared vertex.
+ * depth measured from the shared vertex the corner actually touches.
  */
 export function cornerLegSpanOnWall(
   corner: PlacedCabinet,
@@ -82,8 +83,23 @@ export function cornerLegSpanOnWall(
   const span = wallRunSpan(corner, ownWall, room);
   if (ownWall === wallId) return { start: ownStart, end: ownStart + span };
   const legIn = Math.min(span, Math.max(0, Number(corner.depth) || STD.BASE_DEPTH));
-  const touchesStart = Math.abs(ownStart - frame.runStart) <= 0.5;
-  return touchesStart
+  // Which end of the RETURN wall is the vertex this corner owns? The corner's
+  // footprint touches both of its walls at that shared point, so the end closest
+  // to the footprint is the one. Measuring the along-wall offset of one wall
+  // against the other wall's frame is what put the leg at the wrong end.
+  const foot = placedFootprint(corner);
+  const cornerBox = {
+    x: Math.min(corner.x, corner.x + foot.w),
+    y: Math.min(corner.y, corner.y + foot.d),
+    w: foot.w,
+    d: foot.d,
+  };
+  const distanceTo = (point: { x: number; y: number }) => Math.hypot(
+    Math.max(cornerBox.x - point.x, 0, point.x - (cornerBox.x + cornerBox.w)),
+    Math.max(cornerBox.y - point.y, 0, point.y - (cornerBox.y + cornerBox.d)),
+  );
+  const atStart = distanceTo(frame.start) <= distanceTo(frame.end);
+  return atStart
     ? { start: frame.runStart, end: frame.runStart + legIn }
     : { start: frame.runEnd - legIn, end: frame.runEnd };
 }
