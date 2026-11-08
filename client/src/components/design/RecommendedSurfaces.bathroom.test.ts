@@ -67,13 +67,16 @@ describe("RecommendedSurfaces bathroom palette", () => {
     const full = readFileSync(new URL("./SurfacesPickerDialog.tsx", import.meta.url), "utf8");
     const designer = readFileSync(new URL("../../pages/DesignTool.tsx", import.meta.url), "utf8");
     // A category row is a destination, not an accordion: no expand state, no
-    // inline card grid, and no second "Browse all" affordance.
-    expect(compact).toContain("whitespace-normal break-words text-sm font-semibold");
-    expect(compact).not.toContain("truncate text-[10px] font-semibold uppercase");
-    expect(compact).not.toContain("{blurb}");
+    // inline card grid, and no second browse affordance.
     expect(compact).toContain("onOpenCategory(role)");
     expect(compact).not.toContain("Browse all");
     expect(compact).not.toContain("aria-expanded");
+    // Compact rows: the name wraps rather than truncating, and there is no
+    // chevron because the whole row is the link.
+    expect(compact).toContain("break-words");
+    expect(compact).not.toContain("truncate");
+    expect(compact).not.toContain("ChevronRight");
+    expect(compact).not.toContain("ChevronDown");
     // Placement now happens in the popup, which is the only place to pick.
     expect(full).toContain("onPlaceBathroomFixture");
     expect(full).toContain("initialBathroomRole?: RecommendedRole");

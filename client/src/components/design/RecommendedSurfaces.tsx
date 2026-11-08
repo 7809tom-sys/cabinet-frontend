@@ -10,7 +10,6 @@ import {
 import { floorCapableMosaics } from "@/lib/mosaicFloorTile";
 import { surfaceRole } from "@/lib/pelican";
 import { trpc } from "@/lib/trpc";
-import { ChevronRight } from "lucide-react";
 import type { SelectedSurface } from "./SurfacesPickerDialog";
 
 /**
@@ -136,8 +135,12 @@ function toSurface(p: RecItem, installedAs?: "flooring"): SelectedSurface {
  *
  * The sidebar is a list of destinations, not an accordion: a category never
  * expands inline, it opens the Bathroom Fixtures popup on that category's tab.
- * The popup is the single place to browse and pick, so the row carries no second
- * expand/browse affordance of its own — the row itself is the link.
+ * The popup is the single place to browse and pick.
+ *
+ * Each row is compact: the name and its count share one line, and the name wraps
+ * rather than truncating, so a long family ("Shower Panels & Surrounds") reads in
+ * full instead of collapsing to "Shower & Tub Do…". There is no chevron and no
+ * second browse affordance — the row itself is the link.
  */
 function RecommendedCategoryRow({
   role,
@@ -154,22 +157,23 @@ function RecommendedCategoryRow({
   selectedCount: number;
   onOpenCategory: (role: RecommendedRole) => void;
 }) {
+  const countLabel = loading ? "…" : count == null ? null : String(count);
   return (
     <button
       type="button"
       data-testid={`recommended-category-${role}`}
       data-category-role={role}
+      title={label}
       onClick={() => onOpenCategory(role)}
-      className="flex w-full items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-2 text-left transition-colors hover:border-[#a87f33]/60 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
+      className="block w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-sm leading-snug text-foreground transition-colors hover:border-[#a87f33]/60 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
     >
-      <span className="min-w-0 flex-1">
-        <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground">{label}</span>
-        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
-          {loading ? "Loading…" : count == null ? "Open catalog" : `(${count})`}
-          {selectedCount > 0 ? ` · ${selectedCount} selected` : ""}
-        </span>
-      </span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      {/* One line: name then count. `break-words` lets a long name wrap onto a
+          second line instead of being cut off. */}
+      <span className="font-semibold break-words">{label}</span>
+      {countLabel !== null && <span className="ml-1 font-normal text-muted-foreground">({countLabel})</span>}
+      {selectedCount > 0 && (
+        <span className="ml-1 text-[11px] font-normal text-[#a87f33]">· {selectedCount} selected</span>
+      )}
     </button>
   );
 }

@@ -133,6 +133,33 @@ describe("Recommended categories are destinations, not accordions", () => {
     expect(screen.queryAllByTestId(/^recommended-faucet-/)).toHaveLength(0);
   });
 
+  it("puts the name and count on one line, wraps the name, and ships no browse link or chevron", () => {
+    const onBrowseAll = vi.fn();
+    render(
+      <RecommendedSurfaces
+        selected={[]}
+        onToggle={vi.fn()}
+        onBrowseAll={onBrowseAll}
+        roomType="bathroom"
+        bathroomPaletteMode="fixtures"
+        limit={60}
+      />,
+    );
+    const row = screen.getByTestId("recommended-category-toilet-bidet");
+    // Compact: "Toilets & Bidets (14)" in one text run, name then count.
+    expect(row.textContent).toMatch(/^Toilets & Bidets\(\d+\)/);
+    // No truncation class anywhere in the row, so a long name wraps instead of
+    // collapsing to "Shower & Tub Do…".
+    expect(row.querySelector('[class*="truncate"]')).toBeNull();
+    expect(row.querySelector('[class*="break-words"]')).not.toBeNull();
+    // The whole row is the link: no separate browse control and no chevron.
+    expect(row.querySelector("svg")).toBeNull();
+    expect(row.textContent).not.toMatch(/browse/i);
+    expect(row.getAttribute("title")).toBe("Toilets & Bidets");
+    fireEvent.click(row);
+    expect(onBrowseAll).toHaveBeenCalledWith("toilet-bidet");
+  });
+
   it("gives each family its own row so the popup tab order matches the sidebar", () => {
     const onBrowseAll = vi.fn();
     render(
