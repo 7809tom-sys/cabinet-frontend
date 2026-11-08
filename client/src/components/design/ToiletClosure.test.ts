@@ -145,8 +145,19 @@ export function auditToilet(code: string): ToiletAudit {
   const shell = meshes(group).find((mesh) => /base|tank/.test(String(mesh.userData.pelicanBathroomFixturePart)))?.material as THREE.MeshPhysicalMaterial | undefined;
   if (!shell) failures.push("no ceramic body");
   else {
-    const expected = black ? "#17191b" : "#ffffff";
-    if (`#${shell.color.getHexString()}` !== expected) failures.push(`china colour ${`#${shell.color.getHexString()}`} not ${expected}`);
+    if (black) {
+      if (`#${shell.color.getHexString()}` !== "#17191b") failures.push(`matte black china colour #${shell.color.getHexString()}`);
+    } else {
+      // White china is a near-neutral white body, not a 1.0 albedo. Asserting
+      // pure #ffffff is what let the fixtures render as flat plaster: a surface at
+      // maximum albedo saturates under any normal room light and loses every
+      // shading gradient. Brightness must come from the clearcoat, not the base.
+      const hex = shell.color.getHexString();
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      const luma = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255;
+      if (luma < 0.78 || luma > 0.93) failures.push(`white china albedo off (${hex}, luma ${luma.toFixed(2)})`);
+      if (Math.max(r, g, b) - Math.min(r, g, b) > 8) failures.push(`white china is tinted (${hex})`);
+    }
     if (!black && (shell.roughness ?? 1) > 0.1) failures.push(`china too rough (${shell.roughness})`);
     if (!black && (shell.clearcoat ?? 0) < 0.8) failures.push(`china lacks clearcoat (${shell.clearcoat})`);
   }

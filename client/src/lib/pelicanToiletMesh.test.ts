@@ -200,7 +200,17 @@ describe("makePelicanToiletGroup", () => {
       "toilet-dual-flush-right-button",
     ]));
     const shell = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-ceramic-base")!.material as THREE.MeshPhysicalMaterial;
-    expect(shell.color.getHexString()).toBe("ffffff");
+    // A glaze is a near-neutral white body, but not a pure 1.0 albedo: at pure
+    // white the diffuse term saturates under ordinary room light and every
+    // shading gradient disappears. Brightness comes from the clearcoat highlight.
+    // getHexString reports sRGB, which is where a 0.80-ish albedo reads as a
+    // light warm white rather than the clip-to-1.0 flat white.
+    const shellHex = shell.color.getHexString();
+    const [sr, sg, sb] = [0, 2, 4].map((i) => parseInt(shellHex.slice(i, i + 2), 16));
+    const shellSrgbLuma = (sr * 0.2126 + sg * 0.7152 + sb * 0.0722) / 255;
+    expect(shellSrgbLuma).toBeGreaterThan(0.78);
+    expect(shellSrgbLuma).toBeLessThan(0.93);
+    expect(Math.max(sr, sg, sb) - Math.min(sr, sg, sb)).toBeLessThanOrEqual(8);
     expect(shell.roughness).toBeLessThanOrEqual(0.08);
     expect(shell.clearcoat).toBeGreaterThanOrEqual(0.9);
     const seat = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-seat")!;

@@ -11028,13 +11028,17 @@ function addPelicanBathroomFixture(
     // rather than a pedestal with a ring floating on it.
     const china = pelicanChinaMaterial(profile.finish === "vitreous-china-matte-black");
     const baseHeight = height * 0.62;
+    // 96 segments, matching the toilets: a bidet sits right next to a toilet in
+    // the room, so a visibly faceted bidet would undo the china work.
     const pedestal = new THREE.Mesh(new THREE.LatheGeometry([
       new THREE.Vector2(0, 0.004),
       new THREE.Vector2(width * 0.29, 0.004),
-      new THREE.Vector2(width * 0.25, baseHeight * 0.55),
+      new THREE.Vector2(width * 0.295, baseHeight * 0.28),
+      new THREE.Vector2(width * 0.25, baseHeight * 0.58),
+      new THREE.Vector2(width * 0.30, baseHeight * 0.88),
       new THREE.Vector2(width * 0.32, baseHeight),
       new THREE.Vector2(0, baseHeight),
-    ], 40), china);
+    ], 96), china);
     pedestal.scale.z = Math.max(0.75, (depth * 0.70) / width);
     pedestal.position.y = 0;
     add(pedestal, "bidet-ceramic-base");
@@ -11043,15 +11047,16 @@ function addPelicanBathroomFixture(
     const basin = new THREE.Mesh(new THREE.LatheGeometry([
       new THREE.Vector2(0, baseHeight - 0.02),
       new THREE.Vector2(width * 0.32, baseHeight - 0.01),
+      new THREE.Vector2(width * 0.405, height * 0.86),
       new THREE.Vector2(width * 0.42, height * 0.90),
       new THREE.Vector2(width * 0.39, height * 0.95),
       new THREE.Vector2(width * 0.26, height * 0.91),
       new THREE.Vector2(0, height * 0.90),
-    ], 48), china);
+    ], 96), china);
     basin.scale.z = Math.max(0.8, (depth * 0.86) / width);
     add(basin, "bidet-basin");
 
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, Math.min(0.045, height * 0.026), 12, 48), china);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, Math.min(0.045, height * 0.026), 28, 128), china);
     rim.rotation.x = Math.PI / 2;
     rim.scale.set(width * 0.96, depth * 0.96, 1);
     rim.position.y = height * 0.98;
