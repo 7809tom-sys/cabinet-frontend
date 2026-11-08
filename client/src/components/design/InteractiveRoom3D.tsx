@@ -63,7 +63,7 @@ import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawe
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
-import { makePelicanToiletGroup } from "@/lib/pelicanToiletMesh";
+import { makePelicanToiletGroup, pelicanChinaMaterial } from "@/lib/pelicanToiletMesh";
 import { doorOpeningAppearance, roomDoorSwing } from "@/lib/doorOpeningAppearance";
 import { catalogHardwareFinishSurface, doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwareFramePosition, type HardwareStyleId } from "@/lib/hardware";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
@@ -11013,16 +11013,52 @@ function addPelicanBathroomFixture(
     const toilet = makePelicanToiletGroup(profile);
     for (const child of [...toilet.children]) group.add(child);
   } else if (profile.kind === "bidet") {
-    const baseHeight = height * 0.78;
-    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.27, width * 0.36, baseHeight, 28), shell);
-    pedestal.scale.z = Math.max(0.7, depth / width);
-    pedestal.position.y = baseHeight / 2;
-    add(pedestal, "bidet-pedestal");
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.07, 10, 30), dark);
+    // A bidet is a floor-standing fixture: a pedestal that widens into a shallow
+    // oval basin with a continuous rim, a seat-height deck, and a tap. Built as
+    // closed volumes that fill the published envelope, so it reads as a bidet
+    // rather than a pedestal with a ring floating on it.
+    const china = pelicanChinaMaterial(profile.finish === "vitreous-china-matte-black");
+    const baseHeight = height * 0.62;
+    const pedestal = new THREE.Mesh(new THREE.LatheGeometry([
+      new THREE.Vector2(0, 0.004),
+      new THREE.Vector2(width * 0.29, 0.004),
+      new THREE.Vector2(width * 0.25, baseHeight * 0.55),
+      new THREE.Vector2(width * 0.32, baseHeight),
+      new THREE.Vector2(0, baseHeight),
+    ], 40), china);
+    pedestal.scale.z = Math.max(0.75, (depth * 0.70) / width);
+    pedestal.position.y = 0;
+    add(pedestal, "bidet-ceramic-base");
+
+    // Basin rim: a shallow oval bowl on the pedestal, filling the plan.
+    const basin = new THREE.Mesh(new THREE.LatheGeometry([
+      new THREE.Vector2(0, baseHeight - 0.02),
+      new THREE.Vector2(width * 0.32, baseHeight - 0.01),
+      new THREE.Vector2(width * 0.42, height * 0.90),
+      new THREE.Vector2(width * 0.39, height * 0.95),
+      new THREE.Vector2(width * 0.26, height * 0.91),
+      new THREE.Vector2(0, height * 0.90),
+    ], 48), china);
+    basin.scale.z = Math.max(0.8, (depth * 0.86) / width);
+    add(basin, "bidet-basin");
+
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.5, Math.min(0.045, height * 0.026), 12, 48), china);
     rim.rotation.x = Math.PI / 2;
-    rim.scale.set(width * 0.67, depth * 0.43, 1);
-    rim.position.y = height * 0.8;
+    rim.scale.set(width * 0.96, depth * 0.96, 1);
+    rim.position.y = height * 0.98;
     add(rim, "bidet-rim");
+
+    // Tap deck and mixer at the wall end, and a drain in the basin. The tap stays
+    // inside the published height so the fixture never overruns its sheet.
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(width * 0.28, 0.04, depth * 0.12), china);
+    deck.position.set(0, height * 0.96, -depth * 0.38);
+    add(deck, "bidet-tap-deck");
+    const tap = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, Math.max(0.04, height * 0.06), 14), dark);
+    tap.position.set(0, height * 0.985, -depth * 0.38);
+    add(tap, "bidet-tap");
+    const drain = new THREE.Mesh(new THREE.CylinderGeometry(width * 0.035, width * 0.035, 0.012, 20), dark);
+    drain.position.set(0, height * 0.925, depth * 0.02);
+    add(drain, "bidet-drain");
   } else if (profile.kind === "freestanding-tub" || profile.kind === "alcove-tub") {
     // The supplier publishes the exterior envelope, drain side, and photos. Both
     // families build the same closed shell: a slipper backrest where the photo
