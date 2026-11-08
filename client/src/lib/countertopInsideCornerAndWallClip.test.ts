@@ -40,7 +40,15 @@ describe("shared countertop pass: inside 90° corner fill + interior pony-wall c
     const placed = [...run("w3", [0, 36], 36), ...run("w4", [24, 60], 24)];
     const s = countertopSurfaces(placed, room, null);
     expect(s.some((x) => x.cabinetRunId?.startsWith("corner-fill"))).toBe(true);
-    expect(s.filter((x) => x.customWallId).length).toBe(2);
+    // w3 is one continuous 36+36 slab. w4 carries two 24" cabinets 12" apart, and
+    // a 12" empty gap is not support: the top ends at the first and starts again
+    // at the second (owner rule — a top covers only the cabinets under it).
+    expect(s.filter((x) => x.customWallId).length).toBe(3);
+    const w4Spans = s
+      .filter((x) => x.customWallId === "w4")
+      .map((x) => ({ start: Number(x.customWallRunStartIn), end: Number(x.customWallRunStartIn) + Number(x.linearInches) }))
+      .sort((left, right) => left.start - right.start);
+    expect(w4Spans).toEqual([{ start: 24, end: 48 }, { start: 60, end: 84 }]);
   });
 
   it("never lets a top cross an interior pony wall", () => {

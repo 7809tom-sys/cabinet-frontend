@@ -14131,23 +14131,69 @@ function mergeContiguousBaseCountertopRuns(
   placed: readonly PlacedCabinet[] = [],
 ): CountertopSurface[] {
   const tolerance = 1 / 16;
-  // Void filling: a gap between two counter-bearing pieces on the same wall
-  // closes automatically unless a physical non-counter unit (range, fridge,
-  // tall pantry, end panel) actually stands in it. Previously ANY gap wider
-  // than 1/16" ended the run, so a 1/8" seam, a filler-sized hole or a small
-  // depth mismatch left the top starting but never finishing.
-  const wallBlockers = (wallKey: string): Array<{ start: number; end: number }> => {
+  // A finished top covers the cabinets under it, plus the two places the Designer
+  // already treats as part of the run:
+  //   • a filler-sized seam — that space is meant to be closed by a filler board,
+  //     so the top runs over it continuously;
+  //   • an appliance OPENING, where a base-height appliance actually stands between
+  //     the two cabinets (a range or cooktop). The top covers it by rule.
+  // Anything else ends the run. That is the fix for a deleted cabinet: the empty
+  // span it leaves is neither a filler seam nor an appliance opening, so the top
+  // stops at the last real support and starts again at the next one instead of
+  // floating at full length over the floor (the owner's screenshot).
+  const fillerSeamMaxIn = Math.max(0, Number(kitchenRuleNumber("filler_gap_max_in")) || 0);
+  /**
+   * A base-height appliance that STANDS INSIDE the gap between two cabinets, e.g.
+   * `[B24] 2" [RANGE30] 2" [B24]`. The top covers that opening, exactly as the
+   * existing void-fill rule did.
+   *
+   * A base-height body FLUSH against a cabinet is not an opening: it occupies the
+   * floor where a counter-bearing cabinet would otherwise be, so the top stops at
+   * it (`[B24][RANGE30][B24]` already ends the run in the existing rules).
+   */
+  const wallApplianceGaps = (wallKey: string): Array<{ start: number; end: number }> => {
     const id = wallKey.startsWith("custom:") ? wallKey.slice("custom:".length) : wallKey.slice("wall:".length);
-    return placed.flatMap((cabinet) => {
-      if (cabinet.placement === "wall") return [];
-      if (cabinet.placement === "base" && bearsCountertop(cabinet)) return [];
+    const intervals = placed.flatMap((cabinet) => {
       let wall: string | null = null;
       try { wall = cabinetWall(cabinet, room) as string | null; } catch { wall = null; }
       if (wall !== id) return [];
       const start = wallRunOffset(cabinet, id, room);
       const span = wallRunSpan(cabinet, id, room);
-      return Number.isFinite(start) && Number.isFinite(span) && span > 0 ? [{ start, end: start + span }] : [];
+      if (!Number.isFinite(start) || !Number.isFinite(span) || span <= 0) return [];
+      return [{ cabinet, start, end: start + span }];
     });
+    const supports = intervals.filter((entry) => bearsCountertop(entry.cabinet));
+    return intervals
+      .filter((entry) => isBaseHeightAppliance(entry.cabinet))
+      .filter((entry) => !supports.some((support) => (
+        Math.abs(support.end - entry.start) <= tolerance || Math.abs(support.start - entry.end) <= tolerance
+      )))
+      .map((entry) => ({ start: entry.start, end: entry.end }));
+  };
+  /**
+   * A confirmed filler purchase can be split into two pieces fitted at the two
+   * ends of one opening. Those halves are one board, not empty floor, so the top
+   * still runs continuously between them. The bridge is bounded by the outermost
+   * pieces of that one group, so it can never reach past them.
+   */
+  const wallFillerGroupGaps = (wallKey: string): Array<{ start: number; end: number }> => {
+    const id = wallKey.startsWith("custom:") ? wallKey.slice("custom:".length) : wallKey.slice("wall:".length);
+    const groups = new Map<string, { start: number; end: number }>();
+    for (const cabinet of placed) {
+      const groupId = cabinet.fillerPieceGroupId;
+      if (!groupId || !bearsCountertop(cabinet)) continue;
+      let wall: string | null = null;
+      try { wall = cabinetWall(cabinet, room) as string | null; } catch { wall = null; }
+      if (wall !== id) continue;
+      const start = wallRunOffset(cabinet, id, room);
+      const span = wallRunSpan(cabinet, id, room);
+      if (!Number.isFinite(start) || !Number.isFinite(span) || span <= 0) continue;
+      const current = groups.get(groupId);
+      groups.set(groupId, current
+        ? { start: Math.min(current.start, start), end: Math.max(current.end, start + span) }
+        : { start, end: start + span });
+    }
+    return Array.from(groups.values());
   };
   const DEPTH_FILL_TOLERANCE_IN = 2;
   const merged: CountertopSurface[] = [];
@@ -14189,7 +14235,8 @@ function mergeContiguousBaseCountertopRuns(
   const panelStops = refrigeratorPanelOuterStops(placed, room);
   groups.forEach((entries, key) => {
     entries.sort((left, right) => left.start - right.start || left.index - right.index);
-    const blockers = wallBlockers(key);
+    const applianceGaps = wallApplianceGaps(key);
+    const fillerGroupGaps = wallFillerGroupGaps(key);
     let cursor = 0;
     while (cursor < entries.length) {
       const first = entries[cursor]!;
@@ -14202,9 +14249,14 @@ function mergeContiguousBaseCountertopRuns(
         const next = entries[cursor]!;
         const gapStart = end;
         const gapEnd = next.start;
-        const gapBlocked = gapEnd > gapStart + tolerance
-          && blockers.some((b) => b.start < gapEnd - tolerance && b.end > gapStart + tolerance);
-        if ((next.start > end + tolerance && gapBlocked) || Math.abs(next.thickness - depth) > DEPTH_FILL_TOLERANCE_IN) break;
+        // A gap continues the top only while it is a filler-sized seam or an
+        // appliance opening standing in it. Any other gap — above all the empty
+        // span a deleted cabinet leaves — ends the run, so this piece stops at
+        // the last real support and the next piece starts at the next one.
+        const holdsRun = gapEnd <= gapStart + tolerance
+          || gapEnd - gapStart <= fillerSeamMaxIn + tolerance
+          || applianceGaps.some((gap) => gap.start < gapEnd - tolerance && gap.end > gapStart + tolerance)
+          || fillerGroupGaps.some((gap) => gap.start <= gapStart + tolerance && gap.end >= gapEnd - tolerance);        if (!holdsRun || Math.abs(next.thickness - depth) > DEPTH_FILL_TOLERANCE_IN) break;
         depth = Math.max(depth, next.thickness);
         end = Math.max(end, next.start + next.span);
         members.push(next);
