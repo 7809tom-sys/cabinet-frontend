@@ -51,7 +51,8 @@ describe("makePelicanToiletGroup", () => {
     const normals = base.geometry.getAttribute("normal");
     let outward = 0;
     for (let index = 0; index < positions.count; index++) {
-      if (positions.getY(index) > 0.05 && positions.getY(index) < 1 && positions.getZ(index) > 0.7) {
+      // Sample the front face of the skirt, above the floor and below the rim.
+      if (positions.getY(index) > 0.05 && positions.getY(index) < 0.8 && positions.getZ(index) > 0.45) {
         const radialDot = positions.getX(index) * normals.getX(index) + positions.getZ(index) * normals.getZ(index);
         expect(radialDot).toBeGreaterThan(0);
         outward++;
@@ -93,7 +94,12 @@ describe("makePelicanToiletGroup", () => {
     expect(lid.geometry.getAttribute("position").count).toBeGreaterThan(100);
     expect(lid.userData.lidProfile).toBe("soft-elongated-oval");
     expect(seat.userData.seatProfile).toBe("closed-elongated-oval");
-    expect(new THREE.Box3().setFromObject(bowl).min.y).toBeLessThan(new THREE.Box3().setFromObject(base).max.y);
+    // The overhanging rim is the part that grows out of the skirt, so the bowl
+    // mouth and the rim both sit at the top of one continuous body.
+    const rim = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-bowl-rim")!;
+    expect(new THREE.Box3().setFromObject(rim).min.y).toBeLessThan(new THREE.Box3().setFromObject(base).max.y);
+    expect(new THREE.Box3().setFromObject(rim).max.x).toBeGreaterThan(new THREE.Box3().setFromObject(base).max.x);
+    expect(new THREE.Box3().setFromObject(bowl).max.y).toBeLessThanOrEqual(source.seatHeightIn! * INCH + EPSILON);
   });
 
   it("keeps PL-12011 matte-black finish identity with the same integrated one-piece silhouette", () => {
@@ -132,17 +138,19 @@ describe("makePelicanToiletGroup", () => {
       "toilet-bowl-water",
       "toilet-seat",
       "toilet-lid",
-      "toilet-smart-rear-housing",
       "toilet-touchless-auto-top",
       "toilet-smart-control-panel",
     ]));
     expect(partsIn(fixture).some((part) => part.includes("flush-button"))).toBe(false);
     const base = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-ceramic-base")!;
     const lid = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-lid")!;
-    const rear = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-smart-rear-housing")!;
     expect(base.userData).toMatchObject({ silhouette: "low-squared-smart-body" });
     expect(lid.userData).toMatchObject({ lidProfile: "flat-rounded-rectangle" });
-    expect(rear.userData).toMatchObject({ silhouette: "flat-squared-smart-rear" });
+    const box = new THREE.Box3().setFromObject(fixture);
+    // The control dial sits on the side panel and the sensor on the lid, both
+    // within the published envelope.
+    expect(box.max.y).toBeLessThanOrEqual(source.heightIn * INCH + EPSILON);
+    expect(box.max.x).toBeLessThanOrEqual(source.widthIn * INCH / 2 + EPSILON);
   });
 
   it("keeps a two-piece model as a separate, softly rounded tank inside the same measured envelope", () => {
@@ -212,8 +220,12 @@ describe("makePelicanToiletGroup", () => {
   it("keeps every published toilet inside its sheet envelope and on its own silhouette", () => {
     const expected: Record<string, string> = {
       "PL-12005": "smart-wedge",
-      "PL-12050": "pedestal-one-piece",
-      "PL-12335": "pedestal-one-piece",
+      // Both are skirted one-piece units in their catalog photos.
+      "PL-12050": "skirted-one-piece",
+      "PL-12335": "skirted-one-piece",
+      // Both show the moulded trapway on the side of the base.
+      "PL-12027": "pedestal-one-piece",
+      "PL-12210": "pedestal-one-piece",
       "PL-12305": "smart-egg",
       "PL-12230": "smart-egg",
       "PL-A249 ADA": "two-piece",
