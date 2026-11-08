@@ -2497,6 +2497,11 @@ export const THREE_D_CUTAWAY_WALL_OPACITY = 0.025;
 export const THREE_D_DESIGNER_WALL_OPACITY = 0.28;
 export const THREE_D_DESIGNER_FOREGROUND_WALL_OPACITY = 0.14;
 export const THREE_D_WALL_DEPTH_WRITE = false;
+// A window pane is a transparent surface, so it draws after every opaque
+// surface (the room shell, the cabinets, the exterior view) or the cabinet
+// behind it would be blended against an unwritten depth buffer. The highlight
+// strip sits one step later so it layers over the pane it belongs to.
+export const THREE_D_WINDOW_GLASS_RENDER_ORDER = 2;
 // A kitchen is placed in a room, not on an empty stage. Show the drawn walls on
 // first load so the customer can immediately see cabinet-to-wall relationships.
 // The control still offers a deliberate clear-stage view for close inspection.
@@ -4054,33 +4059,233 @@ export function threeDMiteredRoomWallOutlines(
   );
 }
 
-/** A full-height wall mesh with sharp mitered plan corners and no end caps. */
+/**
+ * A window cut through a wall. The horizontal edges are fractions of the wall
+ * face length so the same opening lines up on the room face and the exterior
+ * face; the vertical edges are measured in inches above the floor.
+ */
+export type ThreeDWallOpeningHole = {
+  startFraction: number;
+  endFraction: number;
+  bottomIn: number;
+  topIn: number;
+};
+
+/**
+ * Projects each saved window onto one rendered wall face. A window is an
+ * aperture, so the wall body must not cover it: the returned fractions are the
+ * exact cut the wall builder removes. `faceStart`/`faceEnd` are the finished
+ * room-facing corners of that wall body in the same plan space
+ * `openingTransform` reports, and a mitered corner therefore never shifts a
+ * measured opening offset.
+ */
+export function threeDWallOpeningHoles(
+  openings: readonly WallOpening[],
+  wall: {
+    side: WallSide;
+    customWallId?: string | null;
+    faceStart: { x: number; y: number };
+    faceEnd: { x: number; y: number };
+  },
+  room: RoomData,
+): ThreeDWallOpeningHole[] {
+  const spanX = wall.faceEnd.x - wall.faceStart.x;
+  const spanY = wall.faceEnd.y - wall.faceStart.y;
+  const lengthIn = Math.hypot(spanX, spanY);
+  if (!(lengthIn > 0.5)) return [];
+  const tangentX = spanX / lengthIn;
+  const tangentY = spanY / lengthIn;
+  return openings.flatMap((opening) => {
+    // Doors keep their existing planning slab and backing; only a window is an
+    // opening you are meant to see through.
+    if (opening.kind !== "window") return [];
+    if (opening.side !== wall.side && opening.side !== wall.customWallId) return [];
+    const placed = openingTransform(opening, room);
+    const centerIn = (placed.x - wall.faceStart.x) * tangentX + (placed.z - wall.faceStart.y) * tangentY;
+    const startIn = Math.max(0, Math.min(lengthIn, centerIn - opening.width / 2));
+    const endIn = Math.max(0, Math.min(lengthIn, centerIn + opening.width / 2));
+    if (endIn - startIn < 0.5) return [];
+    return [{
+      startFraction: startIn / lengthIn,
+      endFraction: endIn / lengthIn,
+      bottomIn: Math.max(0, opening.sill),
+      topIn: Math.max(0, opening.sill + opening.height),
+    } satisfies ThreeDWallOpeningHole];
+  });
+}
+
+type ThreeDWallPlanPoint = { x: number; y: number };
+type ThreeDWallSpacePoint = { x: number; y: number; z: number };
+
+/**
+ * A full-height wall mesh with sharp mitered plan corners and no end caps.
+ * Rectangular `holes` are removed from both faces and closed with real reveal
+ * (jamb) surfaces, so a window is a hole through the wall rather than a panel
+ * painted onto it.
+ */
 export function threeDMiteredRoomWallGeometry(
   corners: Array<{ x: number; y: number }>,
   height: number,
+  holes: readonly ThreeDWallOpeningHole[] = [],
 ) {
   const [startLeft, endLeft, endRight, startRight] = corners;
   if (!startLeft || !endLeft || !endRight || !startRight) return new THREE.BufferGeometry();
-  const positions = new Float32Array([
-    startLeft.x, 0, startLeft.y,
-    endLeft.x, 0, endLeft.y,
-    endRight.x, 0, endRight.y,
-    startRight.x, 0, startRight.y,
-    startLeft.x, height, startLeft.y,
-    endLeft.x, height, endLeft.y,
-    endRight.x, height, endRight.y,
-    startRight.x, height, startRight.y,
-  ]);
+  const wallHeight = Math.max(0, Number(height) || 0);
+  const cuts = holes
+    .map((hole) => ({
+      startFraction: Math.max(0, Math.min(1, hole.startFraction)),
+      endFraction: Math.max(0, Math.min(1, hole.endFraction)),
+      bottom: Math.max(0, Math.min(wallHeight, hole.bottomIn * INCH)),
+      top: Math.max(0, Math.min(wallHeight, hole.topIn * INCH)),
+    }))
+    .filter((hole) => hole.endFraction - hole.startFraction > 1e-6 && hole.top - hole.bottom > 1e-6);
+  if (cuts.length === 0) {
+    const positions = new Float32Array([
+      startLeft.x, 0, startLeft.y,
+      endLeft.x, 0, endLeft.y,
+      endRight.x, 0, endRight.y,
+      startRight.x, 0, startRight.y,
+      startLeft.x, height, startLeft.y,
+      endLeft.x, height, endLeft.y,
+      endRight.x, height, endRight.y,
+      startRight.x, height, startRight.y,
+    ]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setIndex([
+      0, 2, 1, 0, 3, 2,
+      4, 5, 6, 4, 6, 7,
+      0, 1, 5, 0, 5, 4,
+      1, 2, 6, 1, 6, 5,
+      2, 3, 7, 2, 7, 6,
+      3, 0, 4, 3, 4, 7,
+    ]);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  // Both finished faces share the authored start/end direction; only their plan
+  // offset differs, so one fraction cuts the same slot on each face.
+  const roomFace: [ThreeDWallPlanPoint, ThreeDWallPlanPoint] = [startLeft, endLeft];
+  const exteriorFace: [ThreeDWallPlanPoint, ThreeDWallPlanPoint] = [startRight, endRight];
+  const onFace = (
+    face: [ThreeDWallPlanPoint, ThreeDWallPlanPoint],
+    fraction: number,
+    y: number,
+  ): ThreeDWallSpacePoint => ({
+    x: face[0].x + (face[1].x - face[0].x) * fraction,
+    y,
+    z: face[0].y + (face[1].y - face[0].y) * fraction,
+  });
+  const pushTriangle = (
+    a: ThreeDWallSpacePoint, b: ThreeDWallSpacePoint, c: ThreeDWallSpacePoint,
+    ua: [number, number], ub: [number, number], uc: [number, number],
+  ) => {
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    uvs.push(ua[0], ua[1], ub[0], ub[1], uc[0], uc[1]);
+  };
+  const pushQuad = (
+    a: ThreeDWallSpacePoint, b: ThreeDWallSpacePoint, c: ThreeDWallSpacePoint, d: ThreeDWallSpacePoint,
+    uvA: [number, number], uvB: [number, number], uvC: [number, number], uvD: [number, number],
+  ) => {
+    pushTriangle(a, b, c, uvA, uvB, uvC);
+    pushTriangle(a, c, d, uvA, uvC, uvD);
+  };
+  const uniqueEdges = (values: number[]) => values
+    .slice()
+    .sort((left, right) => left - right)
+    .filter((value, index, sorted) => index === 0 || value - sorted[index - 1]! > 1e-6);
+  const wallCenter = {
+    x: (startLeft.x + endLeft.x + endRight.x + startRight.x) / 4,
+    z: (startLeft.y + endLeft.y + endRight.y + startRight.y) / 4,
+  };
+  const faceNormal = (face: [ThreeDWallPlanPoint, ThreeDWallPlanPoint]): ThreeDWallPlanPoint => {
+    const dx = face[1].x - face[0].x;
+    const dz = face[1].y - face[0].y;
+    const length = Math.hypot(dx, dz);
+    if (!(length > 1e-9)) return { x: 0, y: 0 };
+    return { x: -dz / length, y: dx / length };
+  };
+  /** Winds one quad so its normal leaves the wall body through that face. */
+  const pushOutwardQuad = (
+    quad: [ThreeDWallSpacePoint, ThreeDWallSpacePoint, ThreeDWallSpacePoint, ThreeDWallSpacePoint],
+    quadUvs: Array<[number, number]>,
+    face: [ThreeDWallPlanPoint, ThreeDWallPlanPoint],
+  ) => {
+    const normal = faceNormal(face);
+    const faceMidX = (face[0].x + face[1].x) / 2 - wallCenter.x;
+    const faceMidZ = (face[0].y + face[1].y) / 2 - wallCenter.z;
+    const outwardSign = normal.x * faceMidX + normal.y * faceMidZ >= 0 ? 1 : -1;
+    const cross = (a: ThreeDWallSpacePoint, b: ThreeDWallSpacePoint, c: ThreeDWallSpacePoint) => ({
+      x: (b.y - a.y) * (c.z - a.z) - (b.z - a.z) * (c.y - a.y),
+      z: (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x),
+    });
+    const candidate = cross(quad[0], quad[1], quad[2]);
+    const order = candidate.x * normal.x * outwardSign + candidate.z * normal.y * outwardSign >= 0
+      ? [0, 1, 2, 3]
+      : [3, 2, 1, 0];
+    pushQuad(
+      quad[order[0]!]!, quad[order[1]!]!, quad[order[2]!]!, quad[order[3]!]!,
+      quadUvs[order[0]!]!, quadUvs[order[1]!]!, quadUvs[order[2]!]!, quadUvs[order[3]!]!,
+    );
+  };
+  const fractionCuts = uniqueEdges([0, 1, ...cuts.flatMap((hole) => [hole.startFraction, hole.endFraction])]);
+  const heightCuts = uniqueEdges([0, wallHeight, ...cuts.flatMap((hole) => [hole.bottom, hole.top])]);
+  const insideHole = (fraction: number, y: number) => cuts.some((hole) => (
+    fraction > hole.startFraction && fraction < hole.endFraction && y > hole.bottom && y < hole.top
+  ));
+
+  for (let column = 0; column < fractionCuts.length - 1; column += 1) {
+    const left = fractionCuts[column]!;
+    const right = fractionCuts[column + 1]!;
+    for (let row = 0; row < heightCuts.length - 1; row += 1) {
+      const bottom = heightCuts[row]!;
+      const top = heightCuts[row + 1]!;
+      if (insideHole((left + right) / 2, (bottom + top) / 2)) continue;
+      const uvFor = (fraction: number, y: number): [number, number] => [fraction, wallHeight > 0 ? y / wallHeight : 0];
+      // Both finished faces are emitted. Each quad is wound so its normal points
+      // out of the wall body (into the room on one face, outdoors on the other),
+      // so a cut wall never renders inside out.
+      for (const face of [roomFace, exteriorFace]) {
+        const quad: [ThreeDWallSpacePoint, ThreeDWallSpacePoint, ThreeDWallSpacePoint, ThreeDWallSpacePoint] = [
+          onFace(face, left, bottom), onFace(face, right, bottom), onFace(face, right, top), onFace(face, left, top),
+        ];
+        const uvs: Array<[number, number]> = [uvFor(left, bottom), uvFor(right, bottom), uvFor(right, top), uvFor(left, top)];
+        pushOutwardQuad(quad, uvs, face);
+      }
+    }
+  }
+
+  // The reveal: four jamb surfaces spanning the wall thickness around each hole.
+  for (const hole of cuts) {
+    const revealUv = (depth: number, y: number): [number, number] => [depth, wallHeight > 0 ? y / wallHeight : 0];
+    pushQuad(
+      onFace(roomFace, hole.startFraction, hole.bottom), onFace(exteriorFace, hole.startFraction, hole.bottom),
+      onFace(exteriorFace, hole.startFraction, hole.top), onFace(roomFace, hole.startFraction, hole.top),
+      revealUv(0, hole.bottom), revealUv(1, hole.bottom), revealUv(1, hole.top), revealUv(0, hole.top),
+    );
+    pushQuad(
+      onFace(roomFace, hole.endFraction, hole.bottom), onFace(roomFace, hole.endFraction, hole.top),
+      onFace(exteriorFace, hole.endFraction, hole.top), onFace(exteriorFace, hole.endFraction, hole.bottom),
+      revealUv(0, hole.bottom), revealUv(0, hole.top), revealUv(1, hole.top), revealUv(1, hole.bottom),
+    );
+    pushQuad(
+      onFace(roomFace, hole.startFraction, hole.bottom), onFace(roomFace, hole.endFraction, hole.bottom),
+      onFace(exteriorFace, hole.endFraction, hole.bottom), onFace(exteriorFace, hole.startFraction, hole.bottom),
+      revealUv(hole.startFraction, 0), revealUv(hole.endFraction, 0), revealUv(hole.endFraction, 1), revealUv(hole.startFraction, 1),
+    );
+    pushQuad(
+      onFace(roomFace, hole.startFraction, hole.top), onFace(exteriorFace, hole.startFraction, hole.top),
+      onFace(exteriorFace, hole.endFraction, hole.top), onFace(roomFace, hole.endFraction, hole.top),
+      revealUv(hole.startFraction, 0), revealUv(hole.startFraction, 1), revealUv(hole.endFraction, 1), revealUv(hole.endFraction, 0),
+    );
+  }
+
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geometry.setIndex([
-    0, 2, 1, 0, 3, 2,
-    4, 5, 6, 4, 6, 7,
-    0, 1, 5, 0, 5, 4,
-    1, 2, 6, 1, 6, 5,
-    2, 3, 7, 2, 7, 6,
-    3, 0, 4, 3, 4, 7,
-  ]);
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -11477,19 +11682,27 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
   const windowSashDepth = 1.5 * INCH;
   const windowSashRoomFace = windowWallFaceZ - 0.25 * INCH;
   const windowSashCenter = windowSashRoomFace - windowSashDepth / 2;
+  // The exterior view card sits at the back of the sash recess: behind the glass
+  // from the kitchen, and still outside the room so it never blocks the interior
+  // when the camera looks in through the opening from outdoors.
+  const windowSceneBackdropCenter = windowSashRoomFace - windowSashDepth - 0.006;
   const openingDepth = isWindow ? windowTrimProjection : 0.12;
   const trimCenterZ = isWindow ? windowWallFaceZ + windowTrimProjection / 2 : openingDepth / 2;
   const trimWidth = Math.min(0.12, Math.max(0.055, width * 0.075));
   const backingMaterial = isDoor ? new THREE.MeshStandardMaterial({ color: appearance.color, roughness: 0.5, transparent: true, opacity: 0, depthWrite: false }) : trimMaterial;
   const backingDepth = isWindow ? 0.04 : 0.07;
-  const backing = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2, height + trimWidth * 2, backingDepth), backingMaterial);
-  // The cap used to sit on the room side of the recessed sash, so the exterior
-  // scene rendered behind a solid trim-colored panel. Keep the cap on the
-  // outside of the recess, behind the glass.
-  backing.position.z = isWindow ? windowSashCenter - windowSashDepth / 2 - backingDepth / 2 - 0.004 : 0;
-  backing.userData = { architecturalOpeningBacking: true };
-  // A reach-in bi-fold is a room aperture, not a blank white wall behind its leaves.
-  if (!isBifold) group.add(backing);
+  // A window is a real hole through the wall (threeDMiteredRoomWallGeometry
+  // cuts it). Any cap here would be an opaque panel behind the glass, so only
+  // doors and cased openings keep the planning backing.
+  if (!isWindow) {
+    const backing = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2, height + trimWidth * 2, backingDepth), backingMaterial);
+    // The cap used to sit on the room side of the recessed sash, so the exterior
+    // scene rendered behind a solid trim-colored panel.
+    backing.position.z = 0;
+    backing.userData = { architecturalOpeningBacking: true };
+    // A reach-in bi-fold is a room aperture, not a blank white wall behind its leaves.
+    if (!isBifold) group.add(backing);
+  }
   const trimPieces = [
     [width + trimWidth * 2, trimWidth, 0, height / 2 + trimWidth / 2],
     [width + trimWidth * 2, trimWidth, 0, -height / 2 - trimWidth / 2],
@@ -11514,12 +11727,23 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
       group.add(leaf);
   }
   } else {
+  // The exterior view is a card at the back of the recess, not a pane in the
+  // sash plane. It faces the room only: a camera outdoors looks straight past
+  // it and sees the kitchen through the wall opening. Both the view and the
+  // glass are behind the trim, so the opening reads as a real hole.
   const windowTexture = isWindow ? (windowPhotoTexture(effectiveWindowSceneKind, width / height) ?? windowSceneTexture(effectiveWindowSceneKind)) : null;
-  const paneMaterial = isWindow && windowTexture
-    ? new THREE.MeshBasicMaterial({ map: windowTexture, side: THREE.DoubleSide, depthWrite: true })
-    : new THREE.MeshStandardMaterial({ color: isWindow ? "#dbe8e4" : isDoor ? appearance.color : "#4a3528", roughness: 0.28, metalness: isWindow ? 0.12 : 0, ...(isDoor ? { transparent: true, opacity: appearance.opacity, depthWrite: false } : {}) });
-  const pane = new THREE.Mesh(new THREE.BoxGeometry(width - 0.08, height - 0.08, isWindow ? 0.012 : 0.08), paneMaterial);
-  pane.position.z = isWindow ? windowSashCenter : 0.01;
+  const paneMaterial = isWindow
+    ? (windowTexture
+      ? new THREE.MeshBasicMaterial({ map: windowTexture, side: THREE.FrontSide, depthWrite: true })
+      // No photo could be built (offscreen render). Stay invisible rather than
+      // dropping an opaque panel into the opening.
+      : new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.FrontSide }))
+    : new THREE.MeshStandardMaterial({ color: isDoor ? appearance.color : "#4a3528", roughness: 0.28, metalness: 0, ...(isDoor ? { transparent: true, opacity: appearance.opacity, depthWrite: false } : {}) });
+  const paneGeometry = isWindow
+    ? new THREE.PlaneGeometry(width - 0.08, height - 0.08)
+    : new THREE.BoxGeometry(width - 0.08, height - 0.08, 0.08);
+  const pane = new THREE.Mesh(paneGeometry, paneMaterial);
+  pane.position.z = isWindow ? windowSceneBackdropCenter : 0.01;
   if (isWindow) pane.userData = { windowScenePlane: true, windowSceneKind: effectiveWindowSceneKind };
   if (isDoor) pane.userData = { architecturalDoorSlab: true, planningOpacity: appearance.opacity };
   group.add(pane);
@@ -11541,18 +11765,39 @@ export function addWallOpening(root: THREE.Group, opening: WallOpening, roomOrWi
       horizontal.userData = { windowMuntin: "horizontal", windowMuntinIndex: row };
       mullions.push(horizontal);
     }
+    // Clear glass, not a lit panel: a thin physical pane with very low opacity
+    // that writes no depth, so the exterior view and the cabinetry behind it stay
+    // visible from either side. Alpha blending is deliberate — a transmission
+    // pass would need its own render target and can hide what is behind the pane
+    // on mobile GPUs. The pane is double-sided because the camera sees it through
+    // the wall opening from outdoors as well as from the kitchen.
     const glass = new THREE.Mesh(
       new THREE.BoxGeometry(width - 0.08, height - 0.08, 0.018),
-      new THREE.MeshPhysicalMaterial({ color: "#d9f0f2", transparent: true, opacity: 0.16, roughness: 0.055, metalness: 0.08, transmission: 0.12, ior: 1.46, thickness: 0.04, depthWrite: false, side: THREE.DoubleSide }),
+      new THREE.MeshPhysicalMaterial({
+        color: "#eaf7f9",
+        transparent: true,
+        opacity: 0.12,
+        ior: 1.46,
+        thickness: 0.02,
+        roughness: 0.08,
+        metalness: 0,
+        envMapIntensity: 1.05,
+        clearcoat: 0.35,
+        clearcoatRoughness: 0.1,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
     );
     glass.position.z = windowSashCenter;
-    glass.userData = { windowGlassReflection: true, windowSceneKind: effectiveWindowSceneKind, windowConstructionStyle: effectiveWindowConstructionStyle, windowGridStyle: effectiveWindowGridStyle, realPhotograph: Boolean(windowSceneAssetUrl(effectiveWindowSceneKind)) };
+    glass.renderOrder = THREE_D_WINDOW_GLASS_RENDER_ORDER;
+    glass.userData = { windowGlassReflection: true, windowSceneKind: effectiveWindowSceneKind, windowConstructionStyle: effectiveWindowConstructionStyle, windowGridStyle: effectiveWindowGridStyle, realPhotograph: Boolean(windowSceneAssetUrl(effectiveWindowSceneKind)), transparentWindowGlass: true };
     const reflection = new THREE.Mesh(
       new THREE.PlaneGeometry(Math.max(0.08, width * 0.16), height * 0.88),
       new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, opacity: 0.075, depthWrite: false, side: THREE.DoubleSide }),
     );
     reflection.position.set(-width * 0.22, height * 0.02, windowSashCenter + 0.012);
     reflection.rotation.z = -0.28;
+    reflection.renderOrder = THREE_D_WINDOW_GLASS_RENDER_ORDER + 1;
     reflection.userData = { windowGlassHighlight: true, windowSceneKind: effectiveWindowSceneKind };
     const sill = new THREE.Mesh(new THREE.BoxGeometry(width + trimWidth * 2.7, trimWidth * 1.5, windowTrimProjection), trimMaterial);
     sill.position.set(0, -height / 2 - trimWidth * 0.85, trimCenterZ);
@@ -13102,7 +13347,15 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	      const side = threeDWallSideForPolygonEdge(index, explicitWallSegments.length, start, end, room);
 	      const customWallHeight = heightIn ?? customWall?.height;
 	      const sideWallHeight = (typeof customWallHeight === "number" ? customWallHeight : wallHeights[side]) * INCH;
-	      const wall = new THREE.Mesh(threeDMiteredRoomWallGeometry(outline.corners, sideWallHeight), wallMaterial.clone());
+	      const wallHoles = threeDWallOpeningHoles(openings, {
+	        side,
+	        customWallId: customWall?.id ?? null,
+	        // The authored segment is the finished room-facing surface, which is
+	        // the same datum openingTransform measures from.
+	        faceStart: { x: start.x / INCH, y: -start.y / INCH },
+	        faceEnd: { x: end.x / INCH, y: -end.y / INCH },
+	      }, room);
+	      const wall = new THREE.Mesh(threeDMiteredRoomWallGeometry(outline.corners, sideWallHeight, wallHoles), wallMaterial.clone());
 	      wall.userData = {
 	        roomWall: true,
 	        physicalWallSide: side,
