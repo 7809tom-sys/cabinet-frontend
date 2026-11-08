@@ -40,6 +40,7 @@ import {
   vanitySinkFitsVanityWidth,
 } from "./bathroomVanityCatalog";
 import { isAutoFilledFaucet, withDefaultFaucet } from "./autoDesignFaucet";
+import { DEFAULT_VANITY_BASIN_SKU, resolveSinkFinish } from "./bathroomSinkFinish";
 
 export type SinkFamily = "vanity" | "farmhouse" | "standard";
 export type FaucetFamily = "vanity" | "kitchen";
@@ -278,13 +279,34 @@ export function placeSinkOnBase(input: {
     }
     : { ...measured, faucet: false };
 
+  // The seeded default has no catalog product, so nothing above has set a
+  // finish. Copy the measured vanity basin's own porcelain finish onto it and,
+  // on a vanity, refuse anything that would draw as a kitchen sink. This is the
+  // source of the stainless sink the owner saw on a vanity.
+  const defaultBasinProfile = family === "vanity" ? verifiedPelicanSinkProfile(DEFAULT_VANITY_BASIN_SKU) : null;
+  const finishForFamily = resolveSinkFinish(withProduct.surfaceFinish, family);
+  const withFinish: SinkFixture = {
+    ...withProduct,
+    surfaceFinish: finishForFamily,
+    bathroomVanitySink: family === "vanity" ? true : undefined,
+    ...(!product && defaultBasinProfile ? {
+      pelicanProfileId: defaultBasinProfile.id,
+      bowlWidth: defaultBasinProfile.bowlWidthIn,
+      bowlDepth: defaultBasinProfile.bowlDepthIn,
+      bowlHeight: defaultBasinProfile.bowlHeightIn,
+      bowlCount: defaultBasinProfile.bowlCount ?? 1,
+      exteriorHeight: defaultBasinProfile.exteriorHeightIn,
+      apronFront: defaultBasinProfile.apronFront,
+    } : {}),
+  };
+
   const faucetProfile = faucet ? verifiedPelicanFaucetProfile(faucet.pelicanCode) : null;
   if (faucet && !faucetProfile) {
     return { ok: false, reason: `${faucet.name} is not a source-verified Pelican faucet, so it cannot be drawn.` };
   }
   const sink: SinkFixture = faucet && faucetProfile
     ? {
-      ...withProduct,
+      ...withFinish,
       faucet: true,
       autoDesignFaucet: true,
       // A shopper's pick: not auto-filled, so it is billed.
@@ -300,11 +322,11 @@ export function placeSinkOnBase(input: {
       faucetFinish: faucetProfile.finish,
       faucetForm: faucetProfile.profile,
       faucetCenterSpread: faucetProfile.centerSpreadIn,
-      faucetRearDeckOffsetIn: withProduct.faucetRearDeckOffsetIn ?? (withProduct.type === "farmhouse" ? undefined : 1.25),
+      faucetRearDeckOffsetIn: withFinish.faucetRearDeckOffsetIn ?? (withFinish.type === "farmhouse" ? undefined : 1.25),
     }
     // Nothing chosen: draw the family's standard Pelican faucet and mark it so it
     // never reaches the cart, quote, or order totals.
-    : withDefaultFaucet(withProduct, family === "vanity");
+    : withDefaultFaucet(withFinish, family === "vanity");
 
   return {
     ok: true,
@@ -321,7 +343,15 @@ export function autoSeedSinkForBase(input: {
 }): SinkFixture {
   const placement = placeSinkOnBase({ ...input, product: null, faucet: null });
   if (placement.ok) return placement.sink;
-  return { ...makeSinkForCabinet("single", input.base, input.room), faucet: true };
+  // Last-resort fallback: a bare sink with no profile. It still has to be
+  // porcelain on a vanity, or the renderer would draw the kitchen stainless
+  // basin the owner reported.
+  const family = sinkFamilyForBase(input.base, input.roomType);
+  return {
+    ...makeSinkForCabinet("single", input.base, input.room),
+    faucet: true,
+    surfaceFinish: resolveSinkFinish(undefined, family),
+  };
 }
 
 /**

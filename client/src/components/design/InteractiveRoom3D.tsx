@@ -98,6 +98,7 @@ import { buildRenderApplianceFacing } from "@/lib/renderApplianceFacing";
 import type { ApplianceFacingFacts } from "@shared/applianceFacing";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
 import { resolvePelicanDesignerMaterial } from "@/lib/pelicanQuartzMaterialMaps";
+import { resolveSinkFinish } from "@/lib/bathroomSinkFinish";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
 import { SHADOW_STRENGTH_MAX, normalizeShadowStrength, readShadowStrengthPreference, shadowStrengthDescription, shadowStrengthLabel, shadowStrengthScale, writeShadowStrengthPreference } from "@/lib/shadowStrength";
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
@@ -9594,13 +9595,19 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   const stainlessSteel = new THREE.MeshPhysicalMaterial({ color: "#d3dade", metalness: 0.9, roughness: 0.17, clearcoat: 0.28, clearcoatRoughness: 0.2 });
   const brushedStainlessSteel = new THREE.MeshPhysicalMaterial({ color: "#c0c8cc", metalness: 0.7, roughness: 0.28, clearcoat: 0.18, clearcoatRoughness: 0.32 });
   const stainlessBasinInterior = sinkInteriorStencilMaterial(new THREE.MeshPhysicalMaterial({ color: "#b6c0c5", metalness: 0.58, roughness: 0.3, clearcoat: 0.2, clearcoatRoughness: 0.3, side: THREE.DoubleSide }), sinkStencilRef);
-  const isGunmetalBlack = sink.surfaceFinish === "gunmetal-black";
-  const isVitreousChina = sink.surfaceFinish?.startsWith("vitreous-china") === true;
-  const vitreousChinaColor = sink.surfaceFinish === "vitreous-china-black"
+  // A bathroom vanity never draws a kitchen basin. A sink marked as a vanity
+  // sink can only be porcelain, whatever finish a stale record carries — a
+  // missing finish used to fall through to stainless below, which is how a
+  // stainless kitchen sink appeared in a vanity.
+  const vanitySink = sink.bathroomVanitySink === true;
+  const resolvedFinish = vanitySink ? resolveSinkFinish(sink.surfaceFinish, "vanity") : sink.surfaceFinish;
+  const isGunmetalBlack = !vanitySink && resolvedFinish === "gunmetal-black";
+  const isVitreousChina = resolvedFinish?.startsWith("vitreous-china") === true;
+  const vitreousChinaColor = resolvedFinish === "vitreous-china-black"
     ? "#292827"
-    : sink.surfaceFinish === "vitreous-china-bone"
+    : resolvedFinish === "vitreous-china-bone"
       ? "#e6dcc4"
-      : sink.surfaceFinish === "vitreous-china-grey"
+      : resolvedFinish === "vitreous-china-grey"
         ? "#a7a5a0"
         : "#f6f5f0";
   const vitreousChina = new THREE.MeshPhysicalMaterial({ color: vitreousChinaColor, metalness: 0.01, roughness: 0.14, clearcoat: 0.52, clearcoatRoughness: 0.12 });

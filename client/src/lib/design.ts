@@ -14928,6 +14928,12 @@ export interface SinkFixture {
   /** Source-documented sink surface finish for deterministic physical fixture rendering. */
   surfaceFinish?: "stainless-steel" | "gunmetal-black" | "vitreous-china" | "vitreous-china-black" | "vitreous-china-bone" | "vitreous-china-grey";
   /**
+   * This sink stands on a bathroom vanity. Recorded so the 3D renderer can
+   * refuse a kitchen (stainless / gunmetal / apron-front) basin on a vanity
+   * without needing the room type, which it is not given.
+   */
+  bathroomVanitySink?: boolean;
+  /**
    * Auto-Design attached this faucet. The faucet is part of the sink fixture, so
    * it moves and deletes with the sink. Clicking it reopens the faucet picker.
    */

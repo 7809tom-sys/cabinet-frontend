@@ -29,6 +29,7 @@ import {
   type WallOpening,
   type WallSide,
 } from "./design";
+import { isPelicanVanitySinkSku } from "@shared/pelicanBathroomFixtures";
 import { nextIslandFacePlacement } from "./islandScene";
 import { pickAutoDesignSinkBase, type AutoBuildCatalogCandidate } from "./autoDesignAutoBuild";
 import {
@@ -336,6 +337,10 @@ export function buildPelicanSinkOnCabinet(
       apronFront: profile.apronFront,
       surfaceFinish: profile.surfaceFinish,
     } : {}),
+    // A verified vanity basin is porcelain by its own profile. Recording the
+    // family lets the renderer refuse a kitchen basin here even if a stale pick
+    // or an older saved plan asks for one.
+    bathroomVanitySink: isPelicanVanitySinkSku(item.pelicanCode) ? true : undefined,
   };
 }
 

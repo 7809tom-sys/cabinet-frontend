@@ -283,6 +283,7 @@ import {
   type CatalogHardwareSelection,
 } from "@/lib/hardware";
 import { HardwareCatalogPicker } from "@/components/design/HardwareCatalogPicker";
+import { repairVanitySinkFinishes } from "@/lib/bathroomSinkFinish";
 import { CanvasActionRail } from "@/components/design/CanvasActionRail";
 import { SampleDoorCompareDialog } from "@/components/design/SampleDoorCompareDialog";
 import { sampleDoorComparisonPhotoUrl, type SampleDoorComparisonStyle } from "@/lib/sampleDoorCompare";
@@ -5766,8 +5767,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
       );
       const convertedSinkOwners = cooktopConversion.convertedCabinetUids;
-      setSinks((Array.isArray(persisted?.sinks) ? persisted.sinks : [])
-        .filter((sink) => !convertedSinkOwners.has(sink.cabinetUid ?? "")));
+      // A plan saved before the bathroom rule can hold a vanity basin with no
+      // recorded finish (which drew as the kitchen stainless default) or a
+      // kitchen basin outright. Repair the finish on load; position, size,
+      // setback and faucet are left exactly as saved.
+      const restoredSinks = (Array.isArray(persisted?.sinks) ? persisted.sinks : [])
+        .filter((sink) => !convertedSinkOwners.has(sink.cabinetUid ?? ""));
+      const vanitySinkOwners = new Set(
+        normalizedPlaced
+          .filter((cabinet) => isSinkBaseCabinet(cabinet) && (sinkFamilyForBase(cabinet, d.roomType) === "vanity"))
+          .map((cabinet) => cabinet.uid),
+      );
+      setSinks(repairVanitySinkFinishes(restoredSinks, vanitySinkOwners).sinks);
       const convertedPlaced = cooktopConversion.placed;
       const restoredRoom = d.room ?? DEFAULT_ROOM;
       const restoredIsland = persisted?.island ?? null;
