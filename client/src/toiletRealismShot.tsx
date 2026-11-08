@@ -196,8 +196,39 @@ const centre = bounds.getCenter(new THREE.Vector3());
 const size = bounds.getSize(new THREE.Vector3());
 const span = Math.max(size.x, size.y, size.z);
 
-const camera = new THREE.PerspectiveCamera(34, W / H, 0.05, 200);
-if (view === "top") {
+// An orthographic elevation view, used to compare the built silhouette against a
+// catalog product photo. Perspective makes that comparison meaningless, because
+// the photo's own focal length is unknown.
+const silhouetteView = view === "silhouette" || view === "front";
+const camera = silhouetteView
+  ? new THREE.OrthographicCamera(-span * 1.35, span * 1.35, span * 1.35, -span * 1.35, 0.01, 400)
+  : new THREE.PerspectiveCamera(34, W / H, 0.05, 200);
+
+if (silhouetteView) {
+  // Pure white fixture on pure black, lit only by ambient, so the result is a
+  // clean shape mask with no shading to confuse the outline.
+  scene.background = new THREE.Color("#000000");
+  scene.environment = null;
+  scene.traverse((node) => {
+    if ((node as THREE.Light).isLight) (node as THREE.Light).visible = false;
+  });
+  scene.add(new THREE.AmbientLight("#ffffff", 1));
+  // Hide the room: the silhouette must contain the fixture and nothing else.
+  const inFixture = (node: THREE.Object3D) => {
+    for (const group of placed) {
+      if (node === group) return true;
+      let p: THREE.Object3D | null = node.parent;
+      while (p) { if (p === group) return true; p = p.parent; }
+    }
+    return false;
+  };
+  for (const node of scene.children.slice()) {
+    if ((node as THREE.Mesh).isMesh && !inFixture(node)) node.visible = false;
+  }
+  if (view === "front") camera.position.set(centre.x, centre.y, centre.z + span * 3);
+  else camera.position.set(centre.x - span * 1.1, centre.y, centre.z + span * 1.9);
+  camera.lookAt(centre.x, centre.y, centre.z);
+} else if (view === "top") {
   camera.position.set(centre.x, centre.y + span * 2.2, centre.z + 0.02);
   camera.lookAt(centre.x, centre.y, centre.z);
 } else if (view === "close") {

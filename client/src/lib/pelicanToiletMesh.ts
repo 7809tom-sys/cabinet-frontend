@@ -1019,6 +1019,12 @@ function addPedestalOnePiece(
     radiusZ: width * 0.50,
     centerZ: pedestalCentreZ,
   });
+  // A dimmed clone of the china for shadow-gap details, so the lid seam reads as a
+  // recess without touching the shared material every other surface uses.
+  const shadowSeamMaterial = (shell as THREE.MeshPhysicalMaterial).clone();
+  shadowSeamMaterial.color.multiplyScalar(0.72);
+  shadowSeamMaterial.roughness = 0.55;
+
   const tankDepth = Math.min(depth * 0.30, 0.7);
   const tankWidth = width * 0.86;
   const tankZ = -depth / 2 + tankDepth / 2 + 0.035;
@@ -1030,13 +1036,28 @@ function addPedestalOnePiece(
     tankBottom + tankHeight / 2, tankZ,
   );
   tank.userData.silhouette = "rounded-rectangular-tank";
-  const tankLidThickness = 0.028;
+  // A vitreous china tank lid OVERHANGS its tank. Drawing it slightly narrower
+  // than the tank leaves a flat join with no shadow line, so the lid disappears
+  // into the body — the same mistake the seat and lid had. The lid is 1.5% larger
+  // in plan and sits on a shallow shadow gap.
+  const tankLidThickness = 0.030;
+  const tankLidGap = 0.006;
   const tankLid = addRoundedBox(
     group, profile, "toilet-tank-lid", shell,
-    tankWidth * 0.99, tankLidThickness, tankDepth * 0.98, Math.min(tankWidth, tankDepth) * 0.16,
-    height - tankLidThickness / 2 - 0.004, tankZ,
+    tankWidth * 1.03, tankLidThickness, tankDepth * 1.05, Math.min(tankWidth, tankDepth) * 0.16,
+    height - tankLidThickness / 2 - tankLidGap, tankZ,
   );
   tankLid.userData.silhouette = "rounded-rectangular-tank-lid";
+
+  // The shadow line under the overhang, so the lid reads as a separate slab. Its
+  // own dimmed material — never mutate the shared shell, or every surface on the
+  // fixture darkens with it.
+  const lidSeam = addRoundedBox(
+    group, profile, "toilet-tank-lid-seam", shadowSeamMaterial,
+    tankWidth * 0.995, tankLidGap * 0.9, tankDepth * 1.01, Math.min(tankWidth, tankDepth) * 0.15,
+    height - tankLidThickness - tankLidGap * 0.55, tankZ,
+  );
+  lidSeam.userData.shadowSeam = true;
   addTrapwayCap(group, profile, shell, -width * 0.30, seatHeight * 0.32, depth * 0.02);
   if (baseCode(profile.pelicanCode).startsWith("PL-12335")) {
     addSideLever(group, profile, chrome, tankWidth / 2 + 0.02, tankBottom + tankHeight * 0.62, tankZ);
