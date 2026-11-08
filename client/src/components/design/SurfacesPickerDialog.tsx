@@ -23,6 +23,7 @@ import {
   bathroomFixtureCardImage,
   mergeBathroomFaucetRows,
 } from "@/lib/bathroomFixtureCatalog";
+import { filterRowsForBathroomTab } from "@/lib/bathroomTabClassification";
 import { trpc } from "@/lib/trpc";
 import {
   PELICAN_STOREFRONT_CATEGORIES,
@@ -456,6 +457,14 @@ export function SurfacesPickerDialog({
     ...(vesselFaucetByName.data?.items ?? []),
     ...(tubFaucetByName.data?.items ?? []),
   ] as SelectedSurface[];
+  // Every bathroom tab shows only its own product type. The dialog's candidate
+  // rows arrive from several queries (a role filter, the family category, and four
+  // name searches), so a wrong-family row could reach this list by any of them.
+  // This is the last gate, and it is driven by product identity — the exact SKU
+  // tables and verified per-SKU profiles — not by the vendor's import bucket.
+  const tabBathroomRows = <T extends { pelicanCode?: string | null; name?: string | null; description?: string | null; category?: string | null; subCategory?: string | null }>(
+    rows: readonly T[],
+  ): T[] => filterRowsForBathroomTab(rows, activeBathroomRole as Parameters<typeof filterRowsForBathroomTab>[1]);
   const bathroomRows = isBathroom && activeBathroomRole === "bathroom-faucet"
     ? mergeBathroomFaucetRows((bathroomData ?? []) as SelectedSurface[], faucetCatalogItems)
     : (() => {
@@ -469,8 +478,10 @@ export function SurfacesPickerDialog({
       for (const row of familyRows) if (!byId.has(row.id)) byId.set(row.id, row);
       return Array.from(byId.values());
     })();
+  // The tab gate runs for every bathroom tab, including faucets.
+  const gatedBathroomRows = isBathroom ? tabBathroomRows(bathroomRows) : bathroomRows;
   const baseItems: SelectedSurface[] = (isBathroom
-    ? (browsingTileMosaic ? categoryItems : bathroomRows)
+    ? (browsingTileMosaic ? categoryItems : gatedBathroomRows)
     : category === "Preferred"
       ? preferredItems
       : categoryItems).map((item) => (
@@ -579,7 +590,18 @@ export function SurfacesPickerDialog({
                 size="sm"
                 variant={section.role === activeBathroomRole ? "default" : "outline"}
                 className="h-10 min-h-10 shrink-0 whitespace-nowrap px-3 text-xs sm:h-8"
-                onClick={() => setBathroomRole(section.role)}
+                onClick={() => {
+                  if (section.role === activeBathroomRole) return;
+                  // Switching tabs starts a fresh search. Leaving the previous
+                  // tab's query in place made the new tab look empty (or, worse,
+                  // re-filtered its rows by a word from another product family).
+                  setBathroomRole(section.role);
+                  setSearch("");
+                  setDebounced("");
+                  setBathroomFinish("all");
+                  setBathroomSize("all");
+                  setStyleFilter(ALL_PELICAN_STYLES);
+                }}
               >
                 {section.label}
               </Button>

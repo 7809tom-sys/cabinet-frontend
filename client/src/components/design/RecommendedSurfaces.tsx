@@ -70,6 +70,9 @@ export const BATHROOM_FIXTURE_RECOMMENDED_SECTIONS: {
   { role: "shower-door", label: "Shower & Tub Doors" },
   { role: "shower-surround", label: "Shower Walls" },
   { role: "shower-system", label: "Shower Systems" },
+  // Accessories are their own group. The old role filter was putting towel bars
+  // and accessory sets on the Bathtubs tab; they belong here, and only here.
+  { role: "bathroom-accessory", label: "Other Bathroom Accessories" },
 ];
 
 /** Backward-compatible alias for callers that previously requested all bathroom cards. */
