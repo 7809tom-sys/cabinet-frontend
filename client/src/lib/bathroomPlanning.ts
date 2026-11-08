@@ -11,6 +11,7 @@ import {
 import { floorRectsOverlap, nearestClearFloorPosition, occupiedFloor, type FloorRect } from "./floorOccupancy";
 import { isPelicanVanityFaucetSku } from "@shared/pelicanBathroomFixtures";
 import { placeTubFiller } from "./tubFillerFloor";
+import { isShowerPanFurniture, placeShowerPanInBay } from "./showerPlacement";
 import {
   ALCOVE_BAY_TOLERANCE_IN,
   alcoveTubFit,
@@ -145,6 +146,12 @@ export function placeBathroomTubSelection(
   cabinets: readonly PlacedCabinet[] = [],
   options: { addAnother?: boolean } = {},
 ): { furniture: PlacedFurniture[]; replaced: boolean; fit?: AlcoveTubFit } | null {
+  // A shower pan is a three-wall fixture like an alcove tub: it goes into a bay
+  // rather than into whatever clear floor happens to be left.
+  if (isShowerPanFurniture(draft)) {
+    const panInBay = placeShowerPanInBay(draft, furniture, room, cabinets);
+    if (panInBay) return { furniture: [...furniture.filter((item) => item.uid !== draft.uid), panInBay.placement], replaced: false };
+  }
   const tubs = furniture.filter(isBathroomTubFurniture);
   const others = furniture.filter((item) => !isBathroomTubFurniture(item));
   // An alcove tub replaces its predecessor and goes straight into a bay; it is

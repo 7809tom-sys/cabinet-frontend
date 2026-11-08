@@ -113,40 +113,38 @@ import { RecommendedSurfaces } from "./RecommendedSurfaces";
 afterEach(cleanup);
 
 describe("Recommended flooring palette", () => {
-  it("lists every priced active plank and ignores the 8-item cap, trim, and underlayment", () => {
+  it("counts every priced active plank in the category row and opens the popup instead of expanding", () => {
+    const onBrowseAll = vi.fn();
     render(
       <RecommendedSurfaces
         selected={[]}
         onToggle={vi.fn()}
-        onBrowseAll={vi.fn()}
+        onBrowseAll={onBrowseAll}
         limit={8}
       />,
     );
 
-    const heading = screen.getByTestId("recommended-section-toggle-flooring");
-    expect(heading.textContent).toContain("(10)");
-    fireEvent.click(heading);
-    const cards = screen.getAllByTestId(/^recommended-flooring-/).filter((element) => !element.getAttribute("data-testid")!.includes("-use-"));
-    expect(cards).toHaveLength(10);
-    expect(cards.some((card) => card.textContent?.includes("Plank 1"))).toBe(true);
-    expect(cards.some((card) => card.textContent?.includes("Plank 10"))).toBe(true);
-    expect(screen.queryByText("Hidden Stair Nose")).toBeNull();
-    expect(screen.queryByText("Hidden Underlayment")).toBeNull();
-    expect(screen.queryByText("Unpriced Plank")).toBeNull();
+    // The sidebar is a list of destinations: the row shows the family's own
+    // count and opens the catalog on that tab. It never expands inline, so no
+    // cards render here and trim / underlayment / unpriced rows stay excluded
+    // from the count the same way they were excluded from the grid.
+    const row = screen.getByTestId("recommended-category-flooring");
+    expect(row.dataset.categoryRole).toBe("flooring");
+    expect(row.textContent).toContain("Flooring");
+    // No inline card grid: the only element for this family is its row.
+    expect(screen.queryAllByTestId(/^recommended-flooring-/)).toHaveLength(0);
     expect(recommendedInputs).toContainEqual({ role: "flooring", limit: 500 });
-    const cardText = (name: string) => cards.find((card) => card.textContent?.includes(name));
-    expect(cardText("Plank 1")?.querySelector("img")).toBeNull();
-    expect(cardText("Plank 2")?.querySelector("img")?.getAttribute("src")).toBe("/photos/plank-2.webp");
-    expect(cardText("Plank 4")?.querySelector("img")?.getAttribute("src")).toBe("/photos/plank-4.webp");
+
+    fireEvent.click(row);
+    expect(onBrowseAll).toHaveBeenCalledWith("flooring");
   });
 
   it("reads the full storefront flooring catalog and tiles a plank catalog photo when no swatch exists", () => {
     const recommended = readFileSync(resolve(process.cwd(), "client/src/components/design/RecommendedSurfaces.tsx"), "utf8");
     const dialog = readFileSync(resolve(process.cwd(), "client/src/components/design/SurfacesPickerDialog.tsx"), "utf8");
     const designTool = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
-    expect(recommended).toContain('const storefrontCatalog = role === "backsplash"');
-    expect(recommended).toContain('{ role: "flooring", limit: 500 }');
-    expect(recommended).toContain("const visible = storefrontCatalog || fullFlooringPalette ? configurations : configurations.slice(0, limit)");
+    // Flooring still reads its own full palette through the sidebar count.
+    expect(recommended).toContain('role: "flooring", limit: 500');
     expect(recommended).not.toContain('subCategory: role === "flooring"');
     expect(dialog).toContain('scope: "catalog" as const');
     expect(dialog).not.toContain('scope: browsingTileMosaic ? "catalog" as const : "designer" as const');
