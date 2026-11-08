@@ -21,7 +21,7 @@ import {
   type PlacedFurniture, FURNITURE_CATALOG, furnitureFootprint,
   flooringMaterial,
   type PlanAnnotation,
-  cabinetWallRunSegment, retainedWallSegmentForSplit, floorPlanWallDimensionChains, roomWallRunFrames, isFillerItem, fillerWidthRange, isWallOpenShelfCabinet,
+  cabinetWallRunSegment, retainedWallSegmentForSplit, floorPlanWallDimensionChains, roomWallRunFrames, isFillerItem, fillerWidthRange, isWallOpenShelfCabinet, isPanelItem, isLooseTrimItem,
 		  type PonyWall, clampPonyWall, ponyWallMiteredFootprint, ponyWallPlanFrame, drywallPonyWallAppearance, drywallPonyWallPreviewBackground,
 	  type IslandZone, type IslandFace,
 	} from "@/lib/design";
@@ -47,6 +47,47 @@ export type PlanCabinetRenderFrame = {
   bodyLeft: number;
   bodyTop: number;
 };
+
+/**
+ * Narrowest pointer target a placed item may offer, in CSS px, measured across
+ * its thin axis and centred on the drawn body. A 3" filler is only a few pixels
+ * wide at a fitted plan zoom — below what a mouse or a fingertip can reliably
+ * land on — so the target alone is widened. The drawn size never changes.
+ */
+export const PLAN_ITEM_MIN_HIT_PX = 12;
+
+export type PlanItemHitFrame = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+/**
+ * The pointer target for one placed item, in the same inch coordinate system as
+ * the drawn body, plus the padding that separates the two. Cabinets and
+ * appliances already fill their body, so their target is the body itself.
+ * Fillers, end panels, and loose trim are deliberately thin, so their target
+ * grows to `PLAN_ITEM_MIN_HIT_PX` across the narrow axis and stays centred on
+ * the drawn board.
+ */
+export function planItemHitFrame(
+  body: PlanItemHitFrame,
+  ppi: number,
+  thinTarget: boolean,
+): { frame: PlanItemHitFrame; padX: number; padY: number } {
+  if (!thinTarget) return { frame: body, padX: 0, padY: 0 };
+  const minimumIn = PLAN_ITEM_MIN_HIT_PX / Math.max(0.01, ppi);
+  const width = Math.max(body.width, minimumIn);
+  const height = Math.max(body.height, minimumIn);
+  const padX = (width - body.width) / 2;
+  const padY = (height - body.height) / 2;
+  return {
+    frame: { left: body.left - padX, top: body.top - padY, width, height },
+    padX,
+    padY,
+  };
+}
 
 /**
  * Saved cabinet coordinates are the bounding-box origin of the fully rotated
@@ -2031,19 +2072,35 @@ export function PlanCanvas({
                 cursor: "pointer",
               };
           return (
-            <div
-              key={`wall-${side}`}
-              onPointerDown={(e) => onWallPointerDown(e, side)}
-              onContextMenu={(event) => onWallContextMenu(event, side)}
-              onDoubleClick={(event) => onWallContextMenu(event, side)}
-              className="absolute z-[5] flex items-center justify-center transition-colors"
-              style={{
-                ...wstyle,
-                background: isActive ? "rgba(212,167,90,0.55)" : "transparent",
-                boxShadow: isActive ? "inset 0 0 0 2px #d4a75a" : undefined,
-              }}
-              title={`${t("dt_pc_wall_target", { wall: wallLabel[side] })} · Right-click for Attributes`}
-            >
+            <Fragment key={`wall-${side}`}>
+              {/* Wall band: one 14 px strip along the wall. Its highlight is
+                  drawn above placed items so the selected wall still reads, but
+                  the strip never takes a pointer: every item butted against the
+                  wall — including a 3" filler — stays selectable to its back
+                  edge. The wall itself stays selectable from the room edge. */}
+              <div
+                data-testid="wall-band-visual"
+                aria-hidden="true"
+                className="pointer-events-none absolute z-[5] flex items-center justify-center transition-colors"
+                style={{
+                  ...wstyle,
+                  background: isActive ? "rgba(212,167,90,0.55)" : "transparent",
+                  boxShadow: isActive ? "inset 0 0 0 2px #d4a75a" : undefined,
+                }}
+              />
+              <div
+                data-testid="wall-band"
+                onPointerDown={(e) => onWallPointerDown(e, side)}
+                onContextMenu={(event) => onWallContextMenu(event, side)}
+                onDoubleClick={(event) => onWallContextMenu(event, side)}
+                className="absolute z-[1] flex items-center justify-center transition-colors"
+                style={{
+                  ...wstyle,
+                  cursor: "pointer",
+                  background: "transparent",
+                }}
+                title={`${t("dt_pc_wall_target", { wall: wallLabel[side] })} · Right-click for Attributes`}
+              />
               {showCompassRetainedPreview && (
                 <div
                   data-testid="compass-retained-wall-preview"
@@ -2112,7 +2169,7 @@ export function PlanCanvas({
                   🔒
                 </span>
               )}
-            </div>
+            </Fragment>
           );
         })}
         {/* Countertop slab layer — visible material over base cabinets + island.
@@ -2742,9 +2799,27 @@ export function PlanCanvas({
                 ? `${cornerStatus.angle}° inside corner · ${cornerStatus.clearanceIn}" required clearance`
                 : `${cornerStatus.angle}° corner · seated flush (0" corner clearance)${isSeatedErb36 ? " · ERB36 corner snap confirmed" : isSeatedBlindCorner ? ` · ${p.masterCode} blind-corner snap confirmed` : ""}`
               : null;
+            // The drawn body, in inches. A filler, panel, or loose trim board is
+            // deliberately thin, so its pointer target is padded out to a usable
+            // width while the board itself keeps its exact size.
+            const bodyFrame = {
+              left: transitionBounds?.minX ?? bodyLeft,
+              top: transitionBounds?.minY ?? bodyTop,
+              width: transitionBounds ? transitionBounds.maxX - transitionBounds.minX : bodyW,
+              height: transitionBounds ? transitionBounds.maxY - transitionBounds.minY : bodyD,
+            };
+            // Only genuinely thin stock is padded: a filler, an end panel, or a
+            // loose trim board. A cabinet already fills its body, so its target
+            // stays exactly its own footprint and neighbouring boxes keep their
+            // own edges.
+            const thinStock = isFillerItem(p) || isPanelItem(p) || isLooseTrimItem(p);
+            const hitTarget = planItemHitFrame(bodyFrame, ppi, thinStock);
             return (
               <div
                 key={p.uid}
+                data-cabinet-uid={p.uid}
+                data-plan-item-role={isFillerItem(p) ? "filler" : isAppliance ? "appliance" : isWall ? "wall" : "cabinet"}
+                data-plan-item-hit-padded={hitTarget.padX > 0 || hitTarget.padY > 0 ? "true" : undefined}
                 onPointerDown={(e) => handlePointerDown(e, p)}
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
@@ -2768,14 +2843,42 @@ export function PlanCanvas({
                       }
                     : undefined
                 }
-                className={`group absolute transition-[box-shadow,border-color] duration-200 ${
-                  measureMode ? "cursor-crosshair" : "cursor-move"
-	                } ${isWindowCenteredSink || showSeatedPeninsulaCornerFeedback || applianceSnap || showWallSnapSuccess ? "motion-safe:animate-pulse" : ""} ${isAttributesTarget ? "z-30" : isSelected ? "z-20" : isWall ? "z-10" : isAppliance ? "z-[3]" : "z-[2]"}`}
+                className={`group absolute ${measureMode ? "cursor-crosshair" : "cursor-move"} ${
+                  isAttributesTarget ? "z-30" : isSelected ? "z-20" : isWall ? "z-10" : isAppliance ? "z-[3]" : "z-[2]"
+                }`}
                 style={{
-	                  left: (transitionBounds?.minX ?? bodyLeft) * ppi,
-	                  top: (transitionBounds?.minY ?? bodyTop) * ppi,
-	                  width: (transitionBounds ? transitionBounds.maxX - transitionBounds.minX : bodyW) * ppi,
-	                  height: (transitionBounds ? transitionBounds.maxY - transitionBounds.minY : bodyD) * ppi,
+                  left: hitTarget.frame.left * ppi,
+                  top: hitTarget.frame.top * ppi,
+                  width: hitTarget.frame.width * ppi,
+                  height: hitTarget.frame.height * ppi,
+                }}
+                title={splitFillerTooltip ?? applianceSnapTooltip ?? cornerPlacementTooltip ?? placementHoverTooltip ?? `${p.masterCode} — ${p.description}`}
+                tabIndex={splitFillerTooltip ? 0 : undefined}
+                aria-describedby={splitFillerTooltip ? `split-filler-tooltip-${p.uid}` : undefined}
+                data-cabinet-attributes-target={isAttributesTarget ? "true" : undefined}
+                data-corner-snap-confirmed={isSeatedProtectedCorner || isSeatedPeninsulaCorner ? "true" : undefined}
+                data-peninsula-corner-snap-confirmed={isSeatedPeninsulaCorner ? "true" : undefined}
+                data-sink-window-snap-confirmed={isWindowCenteredSink ? "true" : undefined}
+                data-continuous-wall-appliance-snap-confirmed={applianceSnap ? "true" : undefined}
+                data-wall-snap-confirmed={showWallSnapSuccess ? "true" : undefined}
+                data-angled-wall-mitered-filler={isMiteredAngledWallFiller ? "true" : undefined}
+                data-angled-wall-transition-filler={transitionBounds ? "true" : undefined}
+                data-placement-detail-tooltip={placementHoverDetail ? "true" : undefined}
+                data-price-missing={priceMissing ? "true" : undefined}
+              >
+              {/* The board itself: exact drawn size, and never a pointer target.
+                  Everything a click or right-click needs lives on the padded
+                  element above, so a 3" filler stays as easy to hit as a box. */}
+              <div
+                data-plan-item-body="true"
+                className={`pointer-events-none absolute transition-[box-shadow,border-color] duration-200 ${
+                  isWindowCenteredSink || showSeatedPeninsulaCornerFeedback || applianceSnap || showWallSnapSuccess ? "motion-safe:animate-pulse" : ""
+                }`}
+                style={{
+                  left: (bodyFrame.left - hitTarget.frame.left) * ppi,
+                  top: (bodyFrame.top - hitTarget.frame.top) * ppi,
+                  width: bodyFrame.width * ppi,
+                  height: bodyFrame.height * ppi,
                   background: isWall
                     ? `repeating-linear-gradient(45deg, ${edgeColor}33, ${edgeColor}33 6px, ${edgeColor}55 6px, ${edgeColor}55 12px), ${faceFill}`
                     : faceFill,
@@ -2818,19 +2921,6 @@ export function PlanCanvas({
 	                  transform: transitionBounds ? undefined : lockedAngledRun ? `rotate(${p.rotation}deg)` : undefined,
 	                  transformOrigin: transitionBounds ? undefined : lockedAngledRun ? "center" : undefined,
                 }}
-	                title={splitFillerTooltip ?? applianceSnapTooltip ?? cornerPlacementTooltip ?? placementHoverTooltip ?? `${p.masterCode} — ${p.description}`}
-                tabIndex={splitFillerTooltip ? 0 : undefined}
-                aria-describedby={splitFillerTooltip ? `split-filler-tooltip-${p.uid}` : undefined}
-                data-cabinet-attributes-target={isAttributesTarget ? "true" : undefined}
-	                data-corner-snap-confirmed={isSeatedProtectedCorner || isSeatedPeninsulaCorner ? "true" : undefined}
-	                data-peninsula-corner-snap-confirmed={isSeatedPeninsulaCorner ? "true" : undefined}
-	                data-sink-window-snap-confirmed={isWindowCenteredSink ? "true" : undefined}
-	                data-continuous-wall-appliance-snap-confirmed={applianceSnap ? "true" : undefined}
-	                data-wall-snap-confirmed={showWallSnapSuccess ? "true" : undefined}
-	                data-angled-wall-mitered-filler={isMiteredAngledWallFiller ? "true" : undefined}
-	                data-angled-wall-transition-filler={transitionBounds ? "true" : undefined}
-	                data-placement-detail-tooltip={placementHoverDetail ? "true" : undefined}
-                data-price-missing={priceMissing ? "true" : undefined}
               >
                 {priceMissing && (
                   <span
@@ -2854,7 +2944,7 @@ export function PlanCanvas({
                     data-filler-label-collapsed={placement?.collapsed ? "true" : undefined}
                     style={{ marginTop: placement?.offsetYPx ? -placement.offsetYPx : undefined }}
                     role="status"
-                    className="pointer-events-none absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 -translate-y-[calc(100%+5px)] items-center whitespace-nowrap rounded border border-sky-200 bg-sky-800 px-1.5 py-0.5 text-[8px] font-extrabold leading-none text-white shadow-[0_0_0_2px_rgba(255,255,255,0.86),0_0_10px_rgba(14,116,144,0.5)]"
+                    className="pointer-events-auto absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 -translate-y-[calc(100%+5px)] cursor-move items-center whitespace-nowrap rounded border border-sky-200 bg-sky-800 px-1.5 py-0.5 text-[8px] font-extrabold leading-none text-white shadow-[0_0_0_2px_rgba(255,255,255,0.86),0_0_10px_rgba(14,116,144,0.5)]"
                     title={fullText}
                   >
                     {text}
@@ -2878,7 +2968,7 @@ export function PlanCanvas({
                     data-filler-label-collapsed={placement?.collapsed ? "true" : undefined}
                     style={{ marginTop: placement?.offsetYPx ? -placement.offsetYPx : undefined }}
                     role={fillerExceedsMaximum ? "alert" : "status"}
-                    className={`pointer-events-none absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 -translate-y-[calc(100%+5px)] items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[8px] font-extrabold leading-none text-white shadow-[0_0_0_2px_rgba(255,255,255,0.86)] ${fillerExceedsMaximum ? "border-red-200 bg-red-700" : "border-violet-200 bg-violet-800"}`}
+                    className={`pointer-events-auto absolute left-1/2 top-0 z-40 inline-flex -translate-x-1/2 -translate-y-[calc(100%+5px)] cursor-move items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-[8px] font-extrabold leading-none text-white shadow-[0_0_0_2px_rgba(255,255,255,0.86)] ${fillerExceedsMaximum ? "border-red-200 bg-red-700" : "border-violet-200 bg-violet-800"}`}
                     title={`Measured filler gap ${formatEighthInches(measuredFillerGapWidth ?? installedFillerWidth)}; installed filler width ${formatEighthInches(installedFillerWidth)}`}
                   >
                     {text}
@@ -3228,7 +3318,7 @@ export function PlanCanvas({
                     aria-label={t("dt_pc_rotate_aria")}
                     onPointerDown={(e) => { e.stopPropagation(); }}
                     onClick={(e) => { e.stopPropagation(); onRotate(p.uid); }}
-                    className="absolute -top-2.5 -left-2.5 z-30 flex h-5 w-5 items-center justify-center rounded-full bg-[#1a2744] text-white shadow-md hover:bg-[#243456] active:scale-95 transition"
+                    className="pointer-events-auto absolute -top-2.5 -left-2.5 z-30 flex h-5 w-5 items-center justify-center rounded-full bg-[#1a2744] text-white shadow-md hover:bg-[#243456] active:scale-95 transition"
                     style={{ transitionDuration: "120ms" }}
                     title={t("dt_pc_rotate_title")}
                   >
@@ -3242,7 +3332,7 @@ export function PlanCanvas({
                     aria-label={t("dt_pc_delete_cabinet")}
                     onPointerDown={(e) => { e.stopPropagation(); }}
                     onClick={(e) => { e.stopPropagation(); onDelete(p.uid); }}
-                    className="absolute -top-2.5 -right-2.5 z-30 flex h-5 w-5 items-center justify-center rounded-full bg-[#dc2626] text-white shadow-md hover:bg-[#b91c1c] active:scale-95 transition"
+                    className="pointer-events-auto absolute -top-2.5 -right-2.5 z-30 flex h-5 w-5 items-center justify-center rounded-full bg-[#dc2626] text-white shadow-md hover:bg-[#b91c1c] active:scale-95 transition"
                     style={{ transitionDuration: "120ms" }}
                   >
                     <X className="h-3 w-3" strokeWidth={3} />
@@ -3279,6 +3369,7 @@ export function PlanCanvas({
                   </button>
                 </div>
               )}
+              </div>
               </div>
             );
           })}

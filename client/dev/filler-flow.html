@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  Interaction harness for a narrow filler beside a range.
+
+  Renders the real Floor Plan (`PlanCanvas`) with a 30" range, a 3" base filler
+  flush against it, and the cabinets either side, and records the callbacks the
+  plan fires. Used only by e2e/designer-filler-selection.spec.ts so the select,
+  right-click menu, and remove paths are exercised on the real component.
+
+  Dev-only: served at /dev/filler-flow.html, imported by nothing in the app.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Filler selection</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #plan { position: absolute; inset: 0; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="plan"></div>
+    <script type="module" src="/src/fillerFlowHarness.tsx"></script>
+  </body>
+</html>

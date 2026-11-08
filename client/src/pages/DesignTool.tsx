@@ -18328,6 +18328,29 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <Wrench className="h-3.5 w-3.5" /> Attributes
                 </Button>
               )}
+              {/* Delete from the bar that opens on selection. The bottom action
+                  strip can be off screen (3D focus, full screen) and the mobile
+                  sheet only exists on a phone, so a selected filler or cabinet
+                  had no Delete here at all. Same lock checks as that sheet. */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="selected-cabinet-delete"
+                disabled={cabinetsLocked || Boolean(selectedCab.locked)}
+                className="h-8 shrink-0 gap-1 border-red-300 bg-white px-2.5 text-xs font-semibold text-red-700 hover:bg-red-50"
+                title={cabinetsLocked || selectedCab.locked
+                  ? `${selectedCab.masterCode} is locked — unlock it before deleting`
+                  : `Remove ${selectedCab.masterCode} from the plan`}
+                aria-label={`Delete ${selectedCab.masterCode}`}
+                onClick={() => {
+                  if (cabinetsLocked) { toast.info("Cabinets are locked — unlock them before deleting."); return; }
+                  if (selectedCab.locked) { toast.info("This cabinet is locked — unlock it before deleting."); return; }
+                  deleteCabinet(selectedCab.uid);
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete {selectedCab.masterCode}
+              </Button>
               <Button
                 type="button"
                 size="sm"
