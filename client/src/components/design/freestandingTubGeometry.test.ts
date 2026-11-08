@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
 import { VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES } from "@/lib/pelicanBathroomFixtureProfiles";
+import { tubSideProfile } from "./tubSideProfiles";
 
 const materials = {
   shell: new THREE.MeshPhysicalMaterial({ color: "#ffffff" }),
@@ -90,9 +91,10 @@ describe("Freestanding tub geometry", () => {
     }
     expect(minGap).toBeGreaterThan(0);
     // The band's height is the rim thickness at the foot end, where the slipper
-    // curve is flat: about a third of an inch on a 27-inch tub.
+    // curve is flat. Thickness is per model now (see tubSideProfiles.ts), so
+    // assert against this model's own configured value rather than a constant.
     const profile = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((entry) => entry.pelicanCode === 'PL-02141 59"')!;
-    expect(minGap).toBeCloseTo((profile.heightIn / 12) * 0.012, 4);
+    expect(minGap).toBeCloseTo((profile.heightIn / 12) * tubSideProfile(profile).rimThickness, 4);
     // The backrest rises along the rim, so the strip there is wider across; what
     // matters is that it is a band, not a fat torus.
     expect(maxGap).toBeLessThan(0.08);
