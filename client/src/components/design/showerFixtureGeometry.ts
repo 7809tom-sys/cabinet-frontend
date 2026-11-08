@@ -42,7 +42,26 @@ const UP = new THREE.Vector3(0, 1, 0);
  */
 class Panel {
   private positions: number[] = [];
+  private uvs: number[] = [];
   private indices: number[] = [];
+
+  /**
+   * Planar UVs in world units, projected onto whichever plane the face lies in.
+   *
+   * A texture map is useless without UVs: the shader samples one texel and the whole
+   * face renders as flat colour, which is exactly why the surround read as a plain
+   * white box no matter what finish was set on it. Projecting in world units also
+   * keeps grout spacing and marble veining at their real physical size, so a 60"
+   * panel and a 36" end panel show the same tile scale.
+   */
+  private static planarUv(point: THREE.Vector3, normal: THREE.Vector3): [number, number] {
+    const ax = Math.abs(normal.x);
+    const ay = Math.abs(normal.y);
+    const az = Math.abs(normal.z);
+    if (ay >= ax && ay >= az) return [point.x, point.z];
+    if (ax >= az) return [point.z, point.y];
+    return [point.x, point.y];
+  }
 
   quad(
     corners: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
@@ -52,7 +71,11 @@ class Panel {
     const normal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
     const ordered = normal.dot(facing) >= 0 ? [a, b, c, d] : [d, c, b, a];
     const base = this.positions.length / 3;
-    for (const point of ordered) this.positions.push(point.x, point.y, point.z);
+    for (const point of ordered) {
+      this.positions.push(point.x, point.y, point.z);
+      const [u, w] = Panel.planarUv(point, facing);
+      this.uvs.push(u, w);
+    }
     this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     return this;
   }
@@ -74,6 +97,7 @@ class Panel {
   geometry(): THREE.BufferGeometry {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(this.positions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(this.uvs, 2));
     geometry.setIndex(this.indices);
     geometry.computeVertexNormals();
     return geometry;

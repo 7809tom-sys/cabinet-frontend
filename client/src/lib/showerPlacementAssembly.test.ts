@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RoomData } from "./design";
-import type { ShowerCatalogPart } from "./showerBuilder";
+import { choosePart, showerPlacementIssues, skipStep, type ShowerCatalogPart } from "./showerBuilder";
 import {
   bayForWall,
   clampShowerHeight,
@@ -145,12 +145,31 @@ describe("step 5 — the glass door goes on the open side, on the pan front", ()
   });
 });
 
-describe("the pan is required and everything else can be skipped", () => {
-  it("marks only the pan as non-skippable", () => {
-    expect(SKIPPABLE_STEPS.has("pan")).toBe(false);
-    for (const step of ["surround", "heads", "niche", "door"] as const) {
+describe("every step can be skipped, the pan included", () => {
+  it("lets the shopper skip all five steps", () => {
+    for (const step of ["surround", "pan", "heads", "niche", "door"] as const) {
       expect(SKIPPABLE_STEPS.has(step), step).toBe(true);
     }
+  });
+
+  it("still warns when a door has nothing to sit on, now that the pan is optional", () => {
+    // Skipping the pan must not make a panless door silent.
+    const doorOnly = choosePart(skipStep(skipStep({}, "surround"), "pan"), "door", {
+      code: "PL-03B71SSO BN", id: 535, name: "door", price: 598, kind: "door",
+    });
+    const issues = showerPlacementIssues(doorOnly);
+    expect(issues.some((issue) => issue.stepId === "door")).toBe(true);
+  });
+
+  it("warns that panels have no pan under them once the pan is skipped", () => {
+    const panelsNoPan = skipStep(
+      choosePart({}, "surround", {
+        code: "PL-603696 Marble", id: 693, name: "surround", price: 1337.29, kind: "surround",
+      }, "top"),
+      "pan",
+    );
+    const issues = showerPlacementIssues(panelsNoPan);
+    expect(issues.some((issue) => issue.stepId === "pan")).toBe(true);
   });
 });
 

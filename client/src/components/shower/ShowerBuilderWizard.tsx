@@ -35,8 +35,19 @@ import {
  * cart, so skipping a step or deleting a part removes it from the cart too.
  */
 
-/** Which steps may be skipped. The pan is required: a shower needs a floor. */
-export const SKIPPABLE_STEPS: ReadonlySet<ShowerStepId> = new Set<ShowerStepId>(["surround", "heads", "niche", "door"]);
+/**
+ * Every step may be skipped, the pan included. A shopper can put in wall panels
+ * today and add the pan later, or price a surround on its own. The wizard never
+ * blocks; the warnings in `showerPlacementIssues` state what a partial shower still
+ * needs so the omission is visible rather than silent.
+ */
+export const SKIPPABLE_STEPS: ReadonlySet<ShowerStepId> = new Set<ShowerStepId>([
+  "surround",
+  "pan",
+  "heads",
+  "niche",
+  "door",
+]);
 
 const KIND_LABEL: Record<ShowerPartKind, string> = {
   surround: "Wall panel set",
@@ -197,7 +208,6 @@ export function ShowerBuilderWizard({
 
   const step = SHOWER_STEPS[stepIndex]!;
   const isLastStep = stepIndex === SHOWER_STEPS.length - 1;
-  const canSkip = SKIPPABLE_STEPS.has(step.id);
   const { parts, droppedUnpriced } = offeredParts(step.id, catalogParts);
   const chosen = selection[step.id] ?? null;
   const wallForStep: ShowerWall = wallByStep[step.id] ?? chosen?.wall ?? "top";
@@ -264,7 +274,7 @@ export function ShowerBuilderWizard({
         <div>
           <h2 className="text-lg font-semibold">Build a shower</h2>
           <p className="text-sm text-muted-foreground">
-            Five steps in build order. Each step goes on the wall you choose; every step except the pan can be skipped.
+            Five steps in build order. Each step goes on the wall you choose, and every step can be skipped.
           </p>
         </div>
         {onClose && (
@@ -296,7 +306,6 @@ export function ShowerBuilderWizard({
                 <span className="font-semibold">{index + 1}</span>
                 {entry.title}
                 {done && !active && <Check className="h-3.5 w-3.5" />}
-                {!SKIPPABLE_STEPS.has(entry.id) && <span className="text-[10px] opacity-70">required</span>}
               </button>
             </li>
           );
@@ -311,15 +320,9 @@ export function ShowerBuilderWizard({
             </h3>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{step.blurb}</p>
           </div>
-          {canSkip ? (
-            <Button variant="ghost" size="sm" onClick={skip} data-testid="shower-skip-step">
-              <Ban className="mr-1.5 h-4 w-4" /> Skip / don&apos;t add
-            </Button>
-          ) : (
-            <span className="text-xs font-medium text-muted-foreground" data-testid="shower-step-required">
-              Required — a shower needs a pan
-            </span>
-          )}
+          <Button variant="ghost" size="sm" onClick={skip} data-testid="shower-skip-step">
+            <Ban className="mr-1.5 h-4 w-4" /> Skip / don&apos;t add
+          </Button>
         </div>
 
         {step.picksWall && (
@@ -435,7 +438,6 @@ export function ShowerBuilderWizard({
           <Button
             size="sm"
             onClick={advance}
-            disabled={!chosen?.part && !isLastStep && !canSkip}
             data-testid="shower-next-step"
           >
             {isLastStep ? "Finish" : "Next"} <ChevronRight className="ml-1 h-4 w-4" />
@@ -451,7 +453,7 @@ export function ShowerBuilderWizard({
           <Badge variant="secondary">{showerCartLines(selection).length} part{showerCartLines(selection).length === 1 ? "" : "s"}</Badge>
         </div>
         {showerCartLines(selection).length === 0 ? (
-          <p className="mt-2 text-sm text-muted-foreground">Nothing chosen yet. Every step except the pan can be skipped.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Nothing chosen yet. Every step can be skipped.</p>
         ) : (
           <ul className="mt-2 divide-y text-sm">
             {showerCartLines(selection).map((line) => (
