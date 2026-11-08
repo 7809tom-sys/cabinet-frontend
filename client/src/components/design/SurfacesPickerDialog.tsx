@@ -92,6 +92,12 @@ export type SelectedSurface = {
   sellPrice: number | null;
   /** Wall-run versus island countertop assignment. Undefined is the legacy whole-design behavior. */
   countertopScope?: CountertopScope;
+  /**
+   * Which Build Shower wizard step chose this part. Set only on a shower part the
+   * wizard placed, so re-choosing or removing a step replaces or removes exactly
+   * that part and never another fixture.
+   */
+  showerStepId?: "surround" | "pan" | "heads" | "niche" | "door";
   /** Supplier description. Flooring carton counts are parsed from here when coverageSqFt is empty. */
   description?: string | null;
   /** Sq ft per box/carton — structured field, or the value parsed from the description. */
