@@ -197,7 +197,8 @@ function loftRingPoints(ringPoints: THREE.Vector3[][], capTop = true, capBottom 
   return geometry;
 }
 
-/** Signed volume of a vertex/index pair, by the divergence theorem. */function signedLoftVolume(vertices: readonly number[], indices: readonly number[]): number {
+/** Signed volume of a vertex/index pair, by the divergence theorem. */
+function signedLoftVolume(vertices: readonly number[], indices: readonly number[]): number {
   let volume = 0;
   const ax = [0, 0, 0];
   const bx = [0, 0, 0];
@@ -215,6 +216,12 @@ function loftRingPoints(ringPoints: THREE.Vector3[][], capTop = true, capBottom 
     ) / 6;
   }
   return volume;
+}
+
+/** A ring spanning a back-to-front range, for the rounded-plan loft. */
+function spanRing(width: number, y: number, back: number, front: number, radiusFraction: number): Ring {
+  const depth = Math.max(0.04, front - back);
+  return { width, depth, y, z: (front + back) / 2, radius: Math.min(width, depth) * radiusFraction };
 }
 
 /** Closed loft. Ellipse rings read as a bowl; rounded rectangles read as a tank or smart body. */
@@ -1129,36 +1136,65 @@ function addSmartEgg(
   const width = profile.widthIn * INCH;
   const depth = profile.depthIn * INCH;
   const height = profile.heightIn * INCH;
-  const base = addPart(group, profile, "toilet-ceramic-base", ellipseLoft([
-    { width: width * 0.94, depth: depth * 0.99, y: 0, z: 0 },
-    { width: width * 0.96, depth: depth * 0.90, y: seatHeight * 0.35, z: 0 },
-    { width: width * 0.88, depth: depth * 0.74, y: seatHeight * 0.95, z: depth * 0.03 },
-  ]), shell);
+  const halfD = depth / 2;
+  // PL-12230/PL-12305 are tankless smart toilets: one smooth skirted body with a
+  // low moulded rear deck, a flush closed lid, and a side control panel. There is
+  // no separate tall tank box. Built on the same extruded skirt as the one-piece
+  // family so the sides are smooth and continuous.
+  const footWidth = width * 0.97;
+  const footDepth = depth * 0.97;
+  const base = addPart(group, profile, "toilet-ceramic-base", skirtBodyGeometry(footWidth, footDepth, seatHeight), shell);
   base.userData.silhouette = "rounded-smart-body";
-  const bowl = addPart(group, profile, "toilet-bowl-exterior", ellipseLoft([
-    { width: width * 0.55, depth: depth * 0.32, y: seatHeight * 0.7, z: depth * 0.08 },
-    { width: width * 0.80, depth: depth * 0.48, y: seatHeight * 0.98, z: depth * 0.08 },
-  ]), shell);
+  base.userData.bowlForm = "elongated";
+
+  // Rim cap and bowl opening, flush with the skirt top.
+  const rim = ovalCap(footWidth * 0.34, footDepth * 0.20, 0.008, 0.004);
+  const bowl = addPart(group, profile, "toilet-bowl-exterior", rim, shell);
+  bowl.position.set(0, seatHeight * 0.995, depth * 0.06);
   bowl.userData.continuousWithCeramicBase = true;
-  addClosedSeatAndLid(group, profile, seatMaterial, water, Math.min(seatHeight, height * 0.9), width, depth);
-  // A rounded smart toilet still has a raised rear housing, and the flush
-  // control and control panel sit on top of it. The old torus floated beside
-  // the body, touching nothing.
-  const rearTop = height - 0.016;
-  const rearZ = -depth * 0.20;
-  const rear = addPart(group, profile, "toilet-smart-rear-housing", ellipseLoft([
-    { width: width * 0.62, depth: depth * 0.26, y: seatHeight * 0.90, z: rearZ },
-    { width: width * 0.66, depth: depth * 0.30, y: seatHeight * 0.985, z: rearZ },
-    { width: width * 0.62, depth: depth * 0.28, y: rearTop, z: rearZ },
-  ]), shell);
-  rear.userData.silhouette = "rounded-smart-deck";
+  bowl.userData.bowlForm = "elongated";
+
+  const radiusX = width * 0.38;
+  const radiusZ = Math.min(depth * 0.29, radiusX * 1.45);
+  const centerZ = THREE.MathUtils.clamp(depth * 0.10, -halfD + radiusZ, halfD - radiusZ - 0.02);
+  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth, false, {
+    radiusX,
+    radiusZ,
+    centerZ,
+  });
+
+  // Low moulded rear deck. The sheet's overall height is measured at this
+  // housing, so it rises from inside the body to the published height; the lid
+  // stays flush at seat height.
+  const deckDepth = Math.min(depth * 0.24, 0.52);
+  const deckZ = -halfD + deckDepth / 2 + 0.02;
+  const deckTop = height;
+  const deckBottom = seatHeight * 0.72;
+  const deck = addRoundedBox(
+    group, profile, "toilet-smart-rear-housing", shell,
+    width * 0.80, Math.max(0.08, deckTop - deckBottom), deckDepth,
+    Math.min(width, deckDepth) * 0.28,
+    deckBottom + (deckTop - deckBottom) / 2, deckZ,
+  );
+  deck.userData.silhouette = "low-integrated-smart-deck";
+
+  // Touchless flush cap, recessed into the deck so nothing exceeds the envelope.
   const part = profile.toiletFlushControl === "touchless-auto" ? "toilet-touchless-auto-top" : "toilet-touchless-top";
-  const ring = addPart(group, profile, part, new THREE.CylinderGeometry(width * 0.055, width * 0.055, 0.010, 20), dark);
-  ring.position.set(-width * 0.14, rearTop + 0.001, rearZ);
-  ring.userData.toiletFlushControlMode = profile.toiletFlushControl ?? "touchless";
-  const panel = addPart(group, profile, "toilet-smart-control-panel", ovalCap(width * 0.10, depth * 0.045, 0.006, 0.003), dark);
-  panel.position.set(width * 0.17, rearTop + 0.001, rearZ);
-  panel.userData.controlPanel = "touchless-sensor";
+  const cap = addPart(group, profile, part, new THREE.CylinderGeometry(width * 0.05, width * 0.05, 0.01, 24), dark);
+  cap.position.set(0, deckTop - 0.006, deckZ + deckDepth * 0.1);
+  cap.userData.toiletFlushControlMode = profile.toiletFlushControl ?? "touchless";
+
+  // Side control panel, at the height the photos show it.
+  const panel = addPart(
+    group,
+    profile,
+    "toilet-smart-control-panel",
+    new RoundedBoxGeometry(Math.max(0.05, height * 0.10), Math.max(0.04, height * 0.055), 0.008, 3, 0.006),
+    dark,
+  );
+  panel.position.set(-footWidth * 0.505, seatHeight * 0.60, deckZ + deckDepth * 0.2);
+  panel.rotation.y = Math.PI / 2;
+  panel.userData.controlPanel = "side";
 }
 
 /**

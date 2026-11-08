@@ -217,6 +217,40 @@ describe("makePelicanToiletGroup", () => {
     expect(new THREE.Box3().setFromObject(fixture).max.y).toBeLessThanOrEqual(source.heightIn * INCH + EPSILON);
   });
 
+  it("builds the smart toilets as a tankless one-piece body at the published height", () => {
+    for (const code of ["PL-12230", "PL-12305"]) {
+      const source = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((entry) => entry.pelicanCode === code)!;
+      const fixture = makePelicanToiletGroup(source);
+      assertFitsSourceEnvelope(fixture, source);
+      expect(fixture.userData.toiletForm).toBe("smart-egg");
+      const parts = partsIn(fixture);
+      expect(parts).toEqual(expect.arrayContaining([
+        "toilet-ceramic-base",
+        "toilet-bowl-exterior",
+        "toilet-seat",
+        "toilet-lid",
+        "toilet-smart-rear-housing",
+        "toilet-smart-control-panel",
+      ]));
+      const rear = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-smart-rear-housing")!;
+      const base = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-ceramic-base")!;
+      // The overall height is measured at the low rear housing, and the body is
+      // one continuous piece rather than a separate tank block on a bowl.
+      expect(rear.userData.silhouette).toBe("low-integrated-smart-deck");
+      expect(base.userData.silhouette).toBe("rounded-smart-body");
+      const rearBox = new THREE.Box3().setFromObject(rear);
+      expect(rearBox.max.y * 12).toBeCloseTo(source.heightIn, 0);
+      // The housing stays low and shallow: a deck, not a tank.
+      expect((rearBox.max.y - rearBox.min.y) * 12).toBeLessThan(source.heightIn * 0.5);
+      const rearSize = rearBox.getSize(new THREE.Vector3());
+      expect(rearSize.z).toBeLessThan(rearSize.x);
+      // The side control panel the photos show.
+      const panel = meshesIn(fixture).find((mesh) => mesh.userData.pelicanBathroomFixturePart === "toilet-smart-control-panel")!;
+      expect(panel.userData.controlPanel).toBe("side");
+      expect(Math.abs(panel.position.x)).toBeGreaterThan(source.widthIn * INCH * 0.35);
+    }
+  });
+
   it("keeps every published toilet inside its sheet envelope and on its own silhouette", () => {
     const expected: Record<string, string> = {
       "PL-12005": "smart-wedge",

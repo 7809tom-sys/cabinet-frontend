@@ -161,6 +161,27 @@ export function DraggableOverlayDialog({
     onBackdropClick?.();
   }, [onBackdropClick]);
 
+  // Escape is the dismissal every keyboard — and a tablet keyboard — reaches
+  // for, and this bridge dialog is not a Radix Dialog, so nothing handled it at
+  // all. The listener is on the window so the popup closes from any focused
+  // child, but it stands down whenever a nested popup is open and owns its own
+  // Escape (a Select menu, or another dialog layered over this one).
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !onBackdropClick) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.defaultPrevented) return;
+      if (document.querySelector("[data-radix-popper-content-wrapper]")) return;
+      if ((event.target instanceof Element) && (event.target as Element).closest("[data-radix-popper-content-wrapper],[data-slot='dialog-content'],[data-slot='sheet-content']")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onBackdropClick();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [onBackdropClick]);
+
   React.useEffect(() => () => {
     if (clearBackdropSuppressionTimerRef.current) clearTimeout(clearBackdropSuppressionTimerRef.current);
   }, []);
@@ -184,6 +205,21 @@ export function DraggableOverlayDialog({
         onLostPointerCapture={handleLostPointerCapture}
         onKeyDownCapture={handleKeyDownCapture}
       >
+        {/* Always-present close control. The content is scrolled independently,
+            so a long sink or faucet list used to push every "Skip" link out of
+            reach and leave the popup with no visible way out. */}
+        {onBackdropClick && (
+          <button
+            type="button"
+            data-testid="popup-dialog-close"
+            aria-label="Close this popup"
+            title="Close"
+            onClick={(event) => { event.stopPropagation(); onBackdropClick(); }}
+            className="absolute right-2 top-2 z-10 flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] focus-visible:ring-offset-1 active:scale-95"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+          </button>
+        )}
         {children}
       </div>
     </div>
