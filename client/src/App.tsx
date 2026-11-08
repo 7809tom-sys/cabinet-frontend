@@ -110,6 +110,7 @@ const CrmCustomerLookupPreview = lazy(() => import("@/pages/CrmCustomerLookupPre
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
+const BuildShower = lazy(() => import("@/pages/BuildShower"));
 
 function PageLoader() {
   return (
@@ -805,6 +806,13 @@ export default function App() {
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
               <PlumbersChoice />
+            </Suspense>
+          </AppLayout>
+        </Route>
+        <Route path="/build-shower">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <BuildShower />
             </Suspense>
           </AppLayout>
         </Route>

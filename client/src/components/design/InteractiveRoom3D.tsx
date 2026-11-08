@@ -11020,6 +11020,27 @@ function addPonyWall(root: THREE.Group, ponyWall: PonyWall, room: RoomData, pony
   root.add(wall);
 }
 
+/**
+ * The surround's visible panel finish.
+ *
+ * Pelican sells these surrounds in named finishes — White Brick, White Wood, Grey
+ * Wood, Carrara Marble — and the reference bathrooms show pale stone and white marble
+ * tile. The panel is a real, light finish; it is never a dark grey filler, so the
+ * white shower pan and the metal door frame stay legible against it.
+ */
+export function showerSurroundPanelFinish(code: string | null | undefined): {
+  color: string;
+  roughness: number;
+  clearcoat: number;
+} {
+  const text = (code ?? "").toLowerCase();
+  if (/marble|carrara/.test(text)) return { color: "#f4f2ee", roughness: 0.34, clearcoat: 0.42 };
+  if (/white wood|white brick|white/.test(text)) return { color: "#f1efea", roughness: 0.52, clearcoat: 0.18 };
+  if (/grey wood|gray wood|grey|gray/.test(text)) return { color: "#cfccc6", roughness: 0.55, clearcoat: 0.14 };
+  if (/brick/.test(text)) return { color: "#f0ece4", roughness: 0.6, clearcoat: 0.1 };
+  return { color: "#efedea", roughness: 0.5, clearcoat: 0.2 };
+}
+
 function addPelicanBathroomFixture(
   root: THREE.Group,
   furniture: PlacedFurniture,
@@ -11094,10 +11115,21 @@ function addPelicanBathroomFixture(
   } else if (profile.kind === "shower-surround") {
     // The wall panel set stands above the pan or tub deck to the published panel
     // height. It is a wall finish, so it holds no floor.
+    // The reference bathrooms are finished in pale stone or white marble tile, not
+    // a dark grey panel. The panel finish is a real, light stone so the surround
+    // reads as a tiled wall and the white pan and metal trim stay legible against it.
+    const surroundPanelFinish = showerSurroundPanelFinish(profile.pelicanCode);
     const surround = makeShowerSurroundParts(profile, {
       shell: shell,
-      metal: dark,
-      panel: new THREE.MeshStandardMaterial({ color: "#cdc4b4", roughness: 0.78, metalness: 0.02 }),
+      // Real metal trim: the reference showers all show a visible metal frame/edge.
+      metal: new THREE.MeshStandardMaterial({ color: "#9aa4ab", roughness: 0.26, metalness: 0.88 }),
+      panel: new THREE.MeshPhysicalMaterial({
+        color: surroundPanelFinish.color,
+        roughness: surroundPanelFinish.roughness,
+        metalness: 0,
+        clearcoat: surroundPanelFinish.clearcoat,
+        clearcoatRoughness: 0.35,
+      }),
     });
     for (const { mesh, part } of surround) {
       add(mesh, part);

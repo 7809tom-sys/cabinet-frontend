@@ -391,7 +391,48 @@ export function makeShowerNicheParts(
   f.quad([v(-shell, -Hp / 2, -outerW), v(-shell, Hp / 2, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, -Hp / 2, -W / 2)], v(-1, 0, 0));
   f.quad([v(-shell, -Hp / 2, outerW), v(-shell, Hp / 2, outerW), v(-shell, Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
   push(f.geometry(), "shower-niche-flange");
+
+  // Shelves. Pelican sells these niches as "1 Shelf" / "2 Shelves" / "3 Shelves",
+  // and the reference bathrooms show a real shelf dividing the recess. Without them
+  // the niche reads as an empty hole in the wall.
+  const shelfCount = nicheShelfCount(profile.name);
+  if (shelfCount > 0) {
+    const shelfThickness = 0.4 * INCH;
+    for (let index = 1; index <= shelfCount; index += 1) {
+      const y = -Hp / 2 + (Hp * index) / (shelfCount + 1);
+      const s = new Panel();
+      // A shelf spans the opening, sits inside the recess, and is thin.
+      s.quad(
+        [v(-shell, y - shelfThickness / 2, -W / 2), v(depth * 0.94, y - shelfThickness / 2, -W / 2),
+          v(depth * 0.94, y - shelfThickness / 2, W / 2), v(-shell, y - shelfThickness / 2, W / 2)],
+        v(0, -1, 0),
+      );
+      s.quad(
+        [v(-shell, y + shelfThickness / 2, -W / 2), v(depth * 0.94, y + shelfThickness / 2, -W / 2),
+          v(depth * 0.94, y + shelfThickness / 2, W / 2), v(-shell, y + shelfThickness / 2, W / 2)],
+        UP,
+      );
+      s.quad(
+        [v(-shell, y - shelfThickness / 2, -W / 2), v(depth * 0.94, y - shelfThickness / 2, -W / 2),
+          v(depth * 0.94, y + shelfThickness / 2, -W / 2), v(-shell, y + shelfThickness / 2, -W / 2)],
+        v(0, 0, 1),
+      );
+      push(s.geometry(), `shower-niche-shelf-${index}`);
+    }
+  }
   void back;
 
   return parts;
+}
+
+/** "PL-SN1639 Triple Shelf" -> 3. Unknown wording falls back to no shelves. */
+export function nicheShelfCount(name: string | null | undefined): number {
+  const text = (name ?? "").toLowerCase();
+  // "with 2 Shelves", "3 shelf", "1 Shelf" all describe the same thing.
+  const digit = text.match(/(\d+)\s*shel(?:f|ves)\b/);
+  if (digit) return Math.max(0, Math.min(3, Number(digit[1])));
+  if (/triple/.test(text)) return 3;
+  if (/double/.test(text)) return 2;
+  if (/single|one shelf/.test(text)) return 1;
+  return 0;
 }
