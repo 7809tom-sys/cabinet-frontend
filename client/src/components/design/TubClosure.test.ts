@@ -119,6 +119,7 @@ describe("Every placeable tub renders as a closed tub", () => {
  * so nothing caught it. These tests check the silhouette itself.
  */
 import { STRAIGHT_SIDED_MIN_BASE_SHARE, TUB_SIDE_PROFILES, isBoxTub, isStraightSided, tubSideProfile, tubWallShare, tubWidthShareAt } from "./tubSideProfiles";
+import { ALCOVE_TUB_SPECS, alcoveBasinLayout, alcoveTubSpecFor } from "./alcoveTubGeometry";
 
 const FREESTANDING_CODES = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES
   .filter((profile) => profile.kind === "freestanding-tub")
@@ -362,5 +363,149 @@ describe("Every alcove tub is a straight-sided rectangular box with a flat apron
     const published = furnitureFootprint(makeFurniture(definition.id, 0, 0), definition);
     expect(rim.widthIn).toBeCloseTo(published.w, 0);
     expect(rim.depthIn).toBeCloseTo(published.d, 0);
+  });
+});
+
+/**
+ * Alcove tubs to Pelican's published sheet.
+ *
+ * The owner supplied ElevenLabs reference renders and multi-view sheets for the
+ * form, and said to use those for shape only — every measurement must come from
+ * Pelican. The sheets also draw all three sizes as one 32"-wide tub, so the
+ * published widths (30", 32-1/64", 35-63/64") are what these tests hold to. A
+ * separate shape per size falls out of that: the widths and the bathing well
+ * differ on each model.
+ */
+const ALCOVE_PUBLISHED = [
+  { code: "PL-02849L", widthIn: 30, rimShortIn: 23 + 5 / 8, sumpShortIn: 16 + 59 / 64 },
+  { code: "PL-02849R", widthIn: 30, rimShortIn: 23 + 5 / 8, sumpShortIn: 16 + 59 / 64 },
+  { code: "PL-02850L", widthIn: 32 + 1 / 64, rimShortIn: 25 + 19 / 32, sumpShortIn: 19 + 11 / 16 },
+  { code: "PL-02850R", widthIn: 32 + 1 / 64, rimShortIn: 25 + 19 / 32, sumpShortIn: 19 + 11 / 16 },
+  { code: "PL-02851L", widthIn: 35 + 63 / 64, rimShortIn: 29 + 17 / 32, sumpShortIn: 23 + 5 / 8 },
+  { code: "PL-02851R", widthIn: 35 + 63 / 64, rimShortIn: 29 + 17 / 32, sumpShortIn: 23 + 5 / 8 },
+];
+
+/** The world-space box of one named part, in inches. */
+function partBoxIn(group: THREE.Group, part: string): THREE.Box3 | null {
+  const mesh = visibleMeshes(group).find((node) => node.userData.pelicanBathroomFixturePart === part);
+  if (!mesh) return null;
+  const box = new THREE.Box3().setFromObject(mesh);
+  box.min.multiplyScalar(12);
+  box.max.multiplyScalar(12);
+  return box;
+}
+
+describe("Alcove tubs match Pelican's published sheet, not the reference sheets", () => {
+  it("reads the family off the SKU for both drain hands", () => {
+    for (const code of ["PL-02849L", "PL-02849R", "PL-02850L", "PL-02850R", "PL-02851L", "PL-02851R"]) {
+      expect(alcoveTubSpecFor(code), `no published spec for ${code}`).toBeTruthy();
+    }
+    expect(alcoveTubSpecFor("PL-02849L")!.widthIn).toBe(30);
+    expect(alcoveTubSpecFor("PL-02850R")!.widthIn).toBeCloseTo(32 + 1 / 64, 6);
+    expect(alcoveTubSpecFor("PL-02851L")!.widthIn).toBeCloseTo(35 + 63 / 64, 6);
+    // The reference sheets' 32" is not a spec, so it must not be a family.
+    expect(alcoveTubSpecFor("PL-02852L")).toBeNull();
+  });
+
+  it("gives each size its own published envelope, so they are not one shape", () => {
+    const widths = new Set(Object.values(ALCOVE_TUB_SPECS).map((spec) => spec.widthIn.toFixed(3)));
+    expect(widths.size, "all three sizes share one width").toBe(3);
+    for (const spec of Object.values(ALCOVE_TUB_SPECS)) {
+      // Every model is 60" along the wall and 21-21/32" tall.
+      expect(spec.lengthIn).toBe(60);
+      expect(spec.heightIn).toBeCloseTo(21 + 21 / 32, 6);
+    }
+  });
+
+  it.each(ALCOVE_PUBLISHED)("$code is built to its published width and well", ({ code, widthIn, rimShortIn, sumpShortIn }) => {
+    const { group } = placedTub(code);
+    const exterior = partBoxIn(group, "freestanding-tub-exterior")!;
+    expect(exterior, "no exterior").toBeTruthy();
+    // The tub is modelled with its front-to-back width on X and the 60" run
+    // along the wall on Z, so measure each axis for what it is.
+    expect(exterior.max.x - exterior.min.x, `${code} width`).toBeCloseTo(widthIn, 2);
+    expect(exterior.max.z - exterior.min.z, `${code} length`).toBeCloseTo(60, 1);
+    // 21-21/32" overall, measured to the top of the tile flange.
+    const full = new THREE.Box3().setFromObject(group);
+    expect(full.max.y * 12).toBeCloseTo(21 + 21 / 32, 1);
+
+    // The basin is the published rectangle, not an arbitrary inset.
+    const well = partBoxIn(group, "alcove-tub-well")!;
+    expect(well.max.x - well.min.x, `${code} sump width`).toBeCloseTo(sumpShortIn, 1);
+    expect(well.max.z - well.min.z, `${code} sump length`).toBeCloseTo(alcoveTubSpecFor(code)!.basinSumpLongIn, 1);
+    // The deck ring's own box is the outer footprint; the basin opening is the
+    // interior shell's top edge, so measure that for the published rim size.
+    const interior = partBoxIn(group, "freestanding-tub-interior")!;
+    expect(interior.max.x - interior.min.x, `${code} rim opening width`).toBeCloseTo(rimShortIn, 0);
+    expect(interior.max.z - interior.min.z, `${code} rim opening length`)
+      .toBeCloseTo(alcoveTubSpecFor(code)!.basinRimLongIn, 0);
+  });
+
+  it.each(ALCOVE_PUBLISHED)("$code slopes its backrest more than its drain end", ({ code }) => {
+    const spec = alcoveTubSpecFor(code)!;
+    const layout = alcoveBasinLayout(spec);
+    // The published long sides differ by ~10"; the backrest takes the larger
+    // share of that run, which is what makes the tub recline.
+    expect(layout.drainRun + layout.backRun).toBeCloseTo(spec.basinRimLongIn - spec.basinSumpLongIn, 6);
+    expect(layout.backRun).toBeGreaterThan(layout.drainRun);
+    // The basin stays inside the deck on both axes.
+    expect(layout.sumpFrom).toBeGreaterThan(-layout.rimHalfLong);
+    expect(layout.sumpTo).toBeLessThan(layout.rimHalfLong);
+    expect(layout.sumpHalfShort).toBeLessThan(layout.rimHalfShort);
+  });
+
+  it.each(ALCOVE_PUBLISHED)("$code puts the drain and overflow on its own drain end", ({ code }) => {
+    const { group } = placedTub(code);
+    const isRight = code.endsWith("R");
+    const drain = partBoxIn(group, "alcove-tub-drain")!;
+    const overflow = partBoxIn(group, "alcove-tub-overflow")!;
+    // Measure from the tub's own centre, since the fixture is placed somewhere
+    // in the room and the group carries that offset.
+    const full = partBoxIn(group, "freestanding-tub-exterior")!;
+    const centreZ = (full.min.z + full.max.z) / 2;
+    const drainZ = (drain.min.z + drain.max.z) / 2 - centreZ;
+    const overflowZ = (overflow.min.z + overflow.max.z) / 2 - centreZ;
+
+    // Published drain offset is 8-7/8" from the drain-end face, i.e. 21.125"
+    // from the tub's centre on a 60" tub.
+    const expectedZ = (isRight ? 1 : -1) * (30 - (8 + 7 / 8));
+    expect(drainZ).toBeCloseTo(expectedZ, 1);
+    // The overflow shares that end, and sits under the deck.
+    expect(Math.sign(overflowZ)).toBe(Math.sign(expectedZ));
+    // The overflow sits on the end wall, i.e. nearer that end than the drain is.
+    expect(Math.abs(overflowZ)).toBeGreaterThan(Math.abs(drainZ));
+    expect(overflow.max.y).toBeLessThan((21 + 21 / 32));
+    // Drain is centred across the width.
+    const centreX = (full.min.x + full.max.x) / 2;
+    expect((drain.min.x + drain.max.x) / 2).toBeCloseTo(centreX, 1);
+  });
+
+  it("mirrors the left and right models rather than rebuilding them differently", () => {
+    const left = placedTub("PL-02851L").group;
+    const right = placedTub("PL-02851R").group;
+    const relativeDrainZ = (group: THREE.Group) => {
+      const shell = partBoxIn(group, "freestanding-tub-exterior")!;
+      const drain = partBoxIn(group, "alcove-tub-drain")!;
+      return (drain.min.z + drain.max.z) / 2 - (shell.min.z + shell.max.z) / 2;
+    };
+    const leftZ = relativeDrainZ(left);
+    const rightZ = relativeDrainZ(right);
+    expect(leftZ).toBeCloseTo(-rightZ, 2);
+    expect(Math.abs(leftZ)).toBeCloseTo(30 - (8 + 7 / 8), 1);
+    // Same tub otherwise: identical rim and well widths.
+    const rimWidth = (box: THREE.Box3) => box.max.x - box.min.x;
+    expect(rimWidth(partBoxIn(left, "freestanding-tub-rim")!))
+      .toBeCloseTo(rimWidth(partBoxIn(right, "freestanding-tub-rim")!), 3);
+  });
+
+  it.each(ALCOVE_PUBLISHED)("$code keeps a raised tile flange on three sides only", ({ code }) => {
+    const { group } = placedTub(code);
+    const flange = partBoxIn(group, "alcove-tub-flange");
+    expect(flange, `${code} has no tile flange`).toBeTruthy();
+    const full = new THREE.Box3().setFromObject(group);
+    // It is the tallest part on the tub: the published height is measured to it.
+    expect(flange!.max.y).toBeCloseTo(full.max.y * 12, 3);
+    const spec = alcoveTubSpecFor(code)!;
+    expect(flange!.max.y - flange!.min.y).toBeCloseTo(spec.tileFlangeIn, 2);
   });
 });
