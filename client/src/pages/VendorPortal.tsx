@@ -26,6 +26,7 @@ import { trpc } from "@/lib/trpc";
 import {
   httpImageUrlOrBlank,
   isStoredPelicanImagePath,
+  isWebPageUrl,
   pelicanItemSavePhotos,
   pelicanRoomSceneImageUrl,
   readPelicanProductImageBase64,
@@ -308,7 +309,9 @@ function PelicanVendorCatalogPage({
     setDraft((current) => {
       const pasted = current.imageUrl.trim();
       const baseline = imageUrlBaselineRef.current.trim();
-      if (isStoredPelicanImagePath(pasted) || (isStoredPelicanImagePath(imageUrl) && pasted === baseline)) {
+      // An uploaded photo is the catalog image. Clear the URL field so a page
+      // link cannot be sent back over it on the next Save.
+      if (isStoredPelicanImagePath(imageUrl) || isStoredPelicanImagePath(pasted) || pasted === baseline) {
         return { ...current, imageUrl: "" };
       }
       return current;
@@ -736,8 +739,21 @@ function PelicanVendorCatalogPage({
             )}
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-image">Image URL</Label>
-              <Input id="pelican-edit-image" value={draft.imageUrl} placeholder="https://…" onChange={(e) => setDraft((d) => ({ ...d, imageUrl: e.target.value }))} />
-              <p className="text-xs text-muted-foreground">Paste an http(s) image URL to replace the catalog photo. An uploaded photo stays on the preview and is not pasted back into this field.</p>
+              <Input
+                id="pelican-edit-image"
+                value={draft.imageUrl}
+                aria-invalid={isWebPageUrl(draft.imageUrl) || undefined}
+                className={isWebPageUrl(draft.imageUrl) ? "border-amber-500 focus-visible:ring-amber-500" : undefined}
+                placeholder="https://…"
+                onChange={(e) => setDraft((d) => ({ ...d, imageUrl: e.target.value }))}
+              />
+              {isWebPageUrl(draft.imageUrl) ? (
+                <p data-testid="pelican-edit-image-page-warning" className="text-xs font-medium text-amber-800">
+                  That is a web page, not an image. Use Upload regular photo, or paste a link that ends in .jpg, .png, or .webp. Saving will not use this address.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Paste an http(s) image URL to replace the catalog photo. An uploaded photo stays on the preview and is not pasted back into this field.</p>
+              )}
             </div>
             <div className="grid gap-2">
               <Label htmlFor="pelican-edit-name">Product name</Label>

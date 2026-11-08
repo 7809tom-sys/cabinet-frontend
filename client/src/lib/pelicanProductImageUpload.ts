@@ -98,6 +98,45 @@ export function isHttpImageUrl(value: string | null | undefined): boolean {
   return /^https?:\/\//i.test((value ?? "").trim());
 }
 
+/**
+ * A product page or other web page is not an image.
+ *
+ * The admin Image URL field held `https://buildpelican.com/products/pl-02141`,
+ * which is the Pelican product page. Saving it as a catalog photo stores a URL
+ * a browser cannot render, and it overwrote a real uploaded photo.
+ *
+ * A link is treated as a page when its path has no image extension and does not
+ * look like a CDN image route. That is deliberately conservative: real image
+ * URLs with a query string, a resize segment, or no extension at all still pass,
+ * so this only rejects obvious page links.
+ */
+export function isWebPageUrl(value: string | null | undefined): boolean {
+  const trimmed = (value ?? "").trim();
+  if (!isHttpImageUrl(trimmed)) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return false;
+  }
+  const path = parsed.pathname.toLowerCase();
+  // An image file extension anywhere at the end of the path.
+  if (/\.(?:avif|bmp|gif|ico|jpe?g|png|svg|tiff?|webp)$/.test(path)) return false;
+  // Shopify and similar CDNs serve images from these routes without an extension.
+  if (/\/(?:cdn|files|images?|media|assets)\//.test(path)) return false;
+  // A bare domain or a short page path: the product page case.
+  const segments = path.split("/").filter(Boolean);
+  const looksLikePage = /\/(?:products?|collections?|pages?|blogs?|shop|catalog|p?)\//.test(path)
+    || segments.length <= 1;
+  return looksLikePage;
+}
+
+/** A URL that can be a catalog photo: an http(s) image, not a web page. */
+export function isCatalogPhotoUrl(value: string | null | undefined): boolean {
+  const trimmed = (value ?? "").trim();
+  return isHttpImageUrl(trimmed) && !isWebPageUrl(trimmed);
+}
+
 /** Stored upload keys look like `/manus-storage/pelican/products/<id>/<ts>-<id>_<hash>.webp`. */
 export function isStoredPelicanImagePath(value: string | null | undefined): boolean {
   const path = (value ?? "").trim();
@@ -127,6 +166,19 @@ export type PelicanItemSavePhotos = {
  * paste field was not edited, `imageUrl` is omitted so the save does not
  * restore the previous catalog URL.
  */
+/**
+ * What Save should send for the three photo columns.
+ *
+ * Rules, in order:
+ *  1. An uploaded `/manus-storage/...` photo is already stored. It is never
+ *     overwritten by the Image URL field. That field held a product *page*
+ *     link, and sending it back replaced a real upload with an unrenderable
+ *     page URL — the reported "uploaded the image and saved it but did not
+ *     save" bug.
+ *  2. A page link is rejected with a message instead of being saved as a photo.
+ *  3. Otherwise a changed Image URL field wins, and an unchanged one leaves the
+ *     current value alone.
+ */
 export function pelicanItemSavePhotos(input: {
   pastedImageUrl: string;
   pastedImageUrlBaseline: string;
@@ -140,20 +192,27 @@ export function pelicanItemSavePhotos(input: {
   if (pasted && !isHttpImageUrl(pasted)) {
     return { error: "Image URL must start with http:// or https://." };
   }
+  if (pasted && isWebPageUrl(pasted)) {
+    return { error: "That is a web page, not an image. Use the Upload regular photo button, or paste a direct image link that ends in .jpg, .png, or .webp." };
+  }
   const storedImage = (input.storedImageUrl ?? "").trim();
+  const uploaded = isStoredPelicanImagePath(storedImage);
   const pasteChanged = pasted !== baseline;
   let imageUrl: string | null | undefined;
-  if (pasteChanged) {
-    imageUrl = pasted || null;
-  } else if (isStoredPelicanImagePath(storedImage)) {
+  if (uploaded) {
+    // The upload is the catalog photo. Never let the field replace it.
     imageUrl = undefined;
-  } else if (isHttpImageUrl(storedImage)) {
+  } else if (pasteChanged) {
+    imageUrl = pasted || null;
+  } else if (isHttpImageUrl(storedImage) && !isWebPageUrl(storedImage)) {
     imageUrl = storedImage;
   } else {
-    imageUrl = pasted || null;
+    // Nothing usable stored and the field was not edited: clear the page link
+    // rather than save it again.
+    imageUrl = pasted && isCatalogPhotoUrl(pasted) ? pasted : null;
   }
   const material = (input.storedMaterialImageUrl ?? "").trim();
-  const materialImageUrl = isStoredPelicanImagePath(material) || isHttpImageUrl(material) ? material : undefined;
+  const materialImageUrl = isStoredPelicanImagePath(material) || isCatalogPhotoUrl(material) ? material : undefined;
   const roomScene = pelicanRoomSceneImageUrl(input.storedRoomSceneImageUrl);
   const roomSceneBaseline = pelicanRoomSceneImageUrl(input.roomSceneImageUrlBaseline);
   const roomSceneImageUrl = roomScene === roomSceneBaseline ? undefined : roomScene;
