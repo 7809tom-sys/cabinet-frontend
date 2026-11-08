@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import type { VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 
 /**
@@ -79,7 +80,7 @@ function ringPointsAt(
   return points;
 }
 
-function loftRings(rings: THREE.Vector3[][]): THREE.BufferGeometry {
+function loftRings(rings: THREE.Vector3[][], options: { inward?: boolean } = {}): THREE.BufferGeometry {
   const vertices: number[] = [];
   const indices: number[] = [];
   const ringLength = rings[0]!.length;
@@ -93,7 +94,11 @@ function loftRings(rings: THREE.Vector3[][]): THREE.BufferGeometry {
       const b = ring * ringLength + next;
       const c = (ring + 1) * ringLength + next;
       const d = (ring + 1) * ringLength + index;
-      indices.push(a, d, b, b, d, c);
+      // The inner skin of a hollow shell must wind the opposite way, or its
+      // faces point outward and are culled from inside the basin. That turned
+      // the tub into an open scoop: you saw through the near wall.
+      if (options.inward) indices.push(a, b, d, b, c, d);
+      else indices.push(a, d, b, b, d, c);
     }
   }
   const geometry = new THREE.BufferGeometry();
@@ -103,7 +108,7 @@ function loftRings(rings: THREE.Vector3[][]): THREE.BufferGeometry {
   return geometry;
 }
 
-/** A flat band closing the rim between the outer and inner shells. */
+/** A flat band closing the rim between the outer and inner shells, facing up. */
 function rimBand(outer: THREE.Vector3[], inner: THREE.Vector3[]): THREE.BufferGeometry {
   const vertices: number[] = [];
   const indices: number[] = [];
@@ -117,7 +122,8 @@ function rimBand(outer: THREE.Vector3[], inner: THREE.Vector3[]): THREE.BufferGe
     const i0 = o0 + 1;
     const o1 = next * 2;
     const i1 = o1 + 1;
-    indices.push(o0, o1, i0, i0, o1, i1);
+    // Wound so the band's normal points up out of the rim.
+    indices.push(o0, i0, o1, i0, i1, o1);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
@@ -171,7 +177,9 @@ function roundedRingPoints(
  * A flat cap across a ring, so the shell is closed rather than open-ended.
  * Used for the basin floor and the underside.
  */
-function capRing(ring: THREE.Vector3[], yFor: (point: THREE.Vector3) => number): THREE.BufferGeometry {
+/** A flat cap across a ring, so the shell is closed rather than open-ended.
+ * `facing` says which way the visible side of the cap points. */
+function capRing(ring: THREE.Vector3[], yFor: (point: THREE.Vector3) => number, facing: "up" | "down" = "up"): THREE.BufferGeometry {
   const vertices: number[] = [];
   const indices: number[] = [];
   let cx = 0;
@@ -186,7 +194,9 @@ function capRing(ring: THREE.Vector3[], yFor: (point: THREE.Vector3) => number):
   for (const point of ring) vertices.push(point.x, yFor(point), point.z);
   for (let index = 0; index < ring.length; index += 1) {
     const next = (index + 1) % ring.length;
-    indices.push(0, index + 1, next + 1);
+    // The outline rings run clockwise, so the index order decides the facing.
+    if (facing === "up") indices.push(0, next + 1, index + 1);
+    else indices.push(0, index + 1, next + 1);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
@@ -205,7 +215,7 @@ function capRing(ring: THREE.Vector3[], yFor: (point: THREE.Vector3) => number):
 export function makeFreestandingTubParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: TubGeometryMaterials,
-  options: { slipper?: boolean } = {},
+  options: { slipper?: boolean; apronFront?: boolean } = {},
 ): FreestandingTubPart[] {
   const width = profile.widthIn / 12;
   const depth = profile.depthIn / 12;
@@ -213,8 +223,12 @@ export function makeFreestandingTubParts(
   const halfWidth = width / 2;
   const halfDepth = depth / 2;
   const slipper = options.slipper === true;
-  const rectangular = profile.tubShape === "rectangular" || profile.tubShape === "rounded-rectangular";
-  const radiusShare = profile.tubShape === "rounded-rectangular" ? 0.22 : 0.06;
+  const rectangular = profile.tubShape === "rectangular" || profile.tubShape === "rounded-rectangular"
+    // An alcove tub is a rectangle in plan too, with a wider corner radius.
+    || options.apronFront === true;
+  const radiusShare = profile.tubShape === "rounded-rectangular" || options.apronFront
+    ? 0.22
+    : 0.06;
   // The published height is the OVERALL height, measured at the backrest. The
   // foot end is therefore lower, not the backrest higher.
   const footShare = 1 / (1 + SLIPPER_BACK_RISE);
@@ -234,6 +248,10 @@ export function makeFreestandingTubParts(
   // bath rather than the room floor.
   const basinFloorShare = 0.16;
 
+  const isAlcove = options.apronFront === true;
+  const wellPart = isAlcove ? "alcove-tub-well" : "freestanding-tub-well";
+  const drainPart = isAlcove ? "alcove-tub-drain" : "freestanding-tub-drain";
+  const overflowPart = isAlcove ? "alcove-tub-overflow" : "freestanding-tub-overflow";
   const rimThickness = height * RIM_THICKNESS;
   const wall = width * 0.045;
   const levels = [0, 0.24, 0.46, 0.68, 0.86, 0.95, 1];
@@ -253,7 +271,7 @@ export function makeFreestandingTubParts(
   });
   push(loftRings(outer), "freestanding-tub-exterior");
   // Close the underside so no room floor is visible through the tub.
-  push(capRing(outer[0]!, (point) => 0.004), "freestanding-tub-base");
+  push(capRing(outer[0]!, () => 0.004, "down"), "freestanding-tub-base");
 
   // Inner shell: inset by the wall, and one rim thickness below the outer rim
   // at the same point, so the band between them is the flat top edge. It starts
@@ -265,15 +283,15 @@ export function makeFreestandingTubParts(
       Math.max(0.02, share * height * topShareAt(angle) - rimThickness)
     ));
   });
-  push(loftRings(inner), "freestanding-tub-interior");
+  push(loftRings(inner, { inward: true }), "freestanding-tub-interior");
 
   // A thin flat band closes the rim between the two shells.
   push(rimBand(outer[outer.length - 1]!, inner[inner.length - 1]!), "freestanding-tub-rim");
 
   // Floor of the basin: a real cap at the bottom of the inner shell.
   const basinRing = inner[0]!;
-  const well = capRing(basinRing, () => basinRing[0]!.y);
-  push(well, "freestanding-tub-well");
+  const well = capRing(basinRing, () => basinRing[0]!.y, "up");
+  push(well, wellPart);
   const wellY = basinRing[0]!.y;
 
   // Drain, at the foot end for a left/right drain, centred otherwise.
@@ -281,7 +299,7 @@ export function makeFreestandingTubParts(
   const drainZ = profile.drain === "left" ? -halfDepth * 0.62 : profile.drain === "right" ? halfDepth * 0.62 : 0;
   const drain = new THREE.Mesh(new THREE.CylinderGeometry(drainRadius, drainRadius, 0.014, 24), materials.dark);
   drain.position.set(0, wellY + 0.008, drainZ);
-  parts.push({ mesh: drain, part: "freestanding-tub-drain" });
+  parts.push({ mesh: drain, part: drainPart });
 
   // Overflow, on the back wall above the drain. A bathtub without one reads as
   // a moulded basin rather than a fixture.
@@ -292,7 +310,20 @@ export function makeFreestandingTubParts(
   overflow.rotation.z = Math.PI / 2;
   overflow.scale.set(1, 1, 0.42);
   overflow.position.set(0, Math.max(height * 0.62, wellY + drainRadius * 3), -halfDepth * 0.86);
-  parts.push({ mesh: overflow, part: "freestanding-tub-overflow" });
+  parts.push({ mesh: overflow, part: overflowPart });
+
+  // An alcove tub shows a finished apron across the room-facing side. It is a
+  // panel on the closed shell, not a separate wall, so the tub stays sealed.
+  if (options.apronFront === true) {
+    const apron = new THREE.Mesh(
+      new RoundedBoxGeometry(width * 0.9, height * 0.72, 0.06, 4, 0.03),
+      materials.shell,
+    );
+    apron.position.set(0, height * 0.40, halfDepth - 0.05);
+    apron.castShadow = true;
+    apron.receiveShadow = true;
+    parts.push({ mesh: apron, part: "alcove-tub-apron" });
+  }
 
   return parts;
 }

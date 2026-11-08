@@ -11023,38 +11023,21 @@ function addPelicanBathroomFixture(
     rim.scale.set(width * 0.67, depth * 0.43, 1);
     rim.position.y = height * 0.8;
     add(rim, "bidet-rim");
-  } else if (profile.kind === "freestanding-tub") {
-    // The supplier publishes the exterior envelope, drain side, and photos. The
-    // shell follows that outline: a slipper backrest where the photo shows one,
-    // a rounded-rectangle plan where the top view is rectangular, a thin rim, a
-    // tapered base flush to the floor, and a closed basin with a real drain and
-    // overflow so no room floor shows through the tub.
-    for (const { mesh, part } of makeFreestandingTubParts(profile, { shell, dark }, { slipper: isSlipperTub(profile) })) {
+  } else if (profile.kind === "freestanding-tub" || profile.kind === "alcove-tub") {
+    // The supplier publishes the exterior envelope, drain side, and photos. Both
+    // families build the same closed shell: a slipper backrest where the photo
+    // shows one, a rounded-rectangle plan where the top view is rectangular, a
+    // thin rim, a tapered base flush to the floor, a basin floor, and a real
+    // drain and overflow. An alcove tub adds its apron panel. No room floor can
+    // show through, and no wall is left open.
+    for (const { mesh, part } of makeFreestandingTubParts(profile, { shell, dark }, {
+      slipper: isSlipperTub(profile),
+      apronFront: profile.kind === "alcove-tub",
+    })) {
       add(mesh, part);
     }
   } else {
-    // Alcove models retain the exact published exterior envelope and left/right
-    // drain identity. The visible apron, raised rim and shallow inner well are
-    // illustrative acrylic details, entirely inside that envelope.
-    const apron = new THREE.Mesh(new RoundedBoxGeometry(width * 0.98, height * 0.84, depth * 0.12, Math.min(width, depth) * 0.035, 5), shell);
-    apron.position.set(0, height * 0.42, depth * 0.43);
-    add(apron, "alcove-tub-apron");
-    const rearShell = new THREE.Mesh(new RoundedBoxGeometry(width * 0.98, height * 0.82, depth * 0.12, Math.min(width, depth) * 0.035, 5), shell);
-    rearShell.position.set(0, height * 0.41, -depth * 0.43);
-    add(rearShell, "alcove-tub-rear-shell");
-    const leftEnd = new THREE.Mesh(new RoundedBoxGeometry(width * 0.12, height * 0.84, depth * 0.86, Math.min(width, depth) * 0.035, 5), shell);
-    leftEnd.position.set(-width * 0.43, height * 0.42, 0);
-    add(leftEnd, "alcove-tub-left-end");
-    const rightEnd = leftEnd.clone();
-    rightEnd.position.x = width * 0.43;
-    add(rightEnd, "alcove-tub-right-end");
-    const well = new THREE.Mesh(new RoundedBoxGeometry(width * 0.73, Math.max(0.02, height * 0.025), depth * 0.7, Math.min(width, depth) * 0.055, 6), water);
-    well.position.y = height * 0.84;
-    add(well, "alcove-tub-well");
-    const drainOffset = profile.drain === "left" ? -width * 0.25 : profile.drain === "right" ? width * 0.25 : 0;
-    const drain = new THREE.Mesh(new THREE.CylinderGeometry(Math.max(0.025, width * 0.032), Math.max(0.025, width * 0.032), 0.016, 20), dark);
-    drain.position.set(drainOffset, height * 0.86, depth * 0.13);
-    add(drain, "alcove-tub-drain");
+    // Any other Pelican bathroom fixture has its own measured mesh above.
   }
   root.add(group);
 }
