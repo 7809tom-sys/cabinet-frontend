@@ -11063,9 +11063,10 @@ function addPelicanBathroomFixture(
     // The supplier publishes the exterior envelope, drain side, and photos. Both
     // families build the same closed shell: a slipper backrest where the photo
     // shows one, a rounded-rectangle plan where the top view is rectangular, a
-    // thin rim, a tapered base flush to the floor, a basin floor, and a real
-    // drain and overflow. An alcove tub adds its apron panel. No room floor can
-    // show through, and no wall is left open.
+    // thin rim, a base flush to the floor, a basin floor, and a real drain and
+    // overflow. An alcove tub is a straight-sided box whose front IS the apron,
+    // so it adds no separate panel. No room floor can show through, and no wall
+    // is left open.
     for (const { mesh, part } of makeFreestandingTubParts(profile, { shell, dark }, {
       slipper: isSlipperTub(profile),
       apronFront: profile.kind === "alcove-tub",

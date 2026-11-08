@@ -43,6 +43,14 @@ export type TubSideProfile = {
   slipperRise: number;
   /** Flat top edge thickness, as a share of the tub height. */
   rimThickness: number;
+  /**
+   * "box" builds a straight rectangular prism — vertical walls right to the
+   * floor, square ends, flat deck and a full-height front apron that is part of
+   * the same shell. "profile" builds a lofted body whose wall follows
+   * `baseFootprint`/`waistMid`. An alcove tub is a box; a freestanding tub is
+   * not.
+   */
+  profile?: "profile" | "box";
   /** One-line note pointing at the photo the numbers came from. */
   source: string;
 };
@@ -58,6 +66,7 @@ const SOFT_RECTANGLE: TubSideProfile = {
   cornerRadiusShare: 0.17,
   slipperRise: 0,
   rimThickness: 0.014,
+  profile: "profile",
   source: "Catalog photo: soft rectangle, near-vertical sides, flat flush rim, base nearly the full footprint.",
 };
 
@@ -76,6 +85,7 @@ const SOFT_OVAL: TubSideProfile = {
   cornerRadiusShare: 0.5,
   slipperRise: 0,
   rimThickness: 0.014,
+  profile: "profile",
   source: "Catalog photo: oval plan, gently curved wall, broad flat floor contact, no pedestal.",
 };
 
@@ -90,18 +100,31 @@ const SLIPPER_OVAL: TubSideProfile = {
   cornerRadiusShare: 0.5,
   slipperRise: 0.17,
   rimThickness: 0.014,
+  profile: "profile",
   source: "Catalog photo: slipper oval — raised backrest end, gently curved straight-ish wall, broad base.",
 };
 
-/** Alcove tubs are set into a surround: a rectangle with a generous corner radius. */
-const ALCOVE_RECTANGLE: TubSideProfile = {
-  baseFootprint: 0.92,
+/**
+ * An alcove tub is a literal rectangular box: flat front apron at full height to
+ * the floor, square vertical ends, a flat rectangular top deck. Nothing about it
+ * tapers, flares or curves in plan, and it has no separate panel.
+ *
+ * The first attempt reused the freestanding oval profile with only a wider plan
+ * corner radius, so the alcove tubs still swept inward like a bowl and carried a
+ * detached apron slab. `profile: "box"` below marks the models that must be
+ * built as a true box, and the builder draws them as one prism with no apron
+ * part.
+ */
+const ALCOVE_BOX: TubSideProfile = {
+  baseFootprint: 1,
   rimFlare: 1.0,
-  waistMid: 0.98,
-  cornerRadiusShare: 0.22,
+  waistMid: 1,
+  // Square plan. A real alcove tub's deck meets the apron at a crisp corner.
+  cornerRadiusShare: 0,
   slipperRise: 0,
   rimThickness: 0.012,
-  source: "Alcove sheet: rectangular plan with a wide corner radius, vertical walls, flat base.",
+  profile: "box",
+  source: "Alcove sheet: rectangular box — vertical walls, square ends, flat deck, full-height apron.",
 };
 
 /**
@@ -137,7 +160,7 @@ export function tubSideProfile(input: {
   const key = tubProfileKey(input.pelicanCode);
   const explicit = TUB_SIDE_PROFILES[key];
   if (explicit) return explicit;
-  if (input.kind === "alcove-tub") return ALCOVE_RECTANGLE;
+  if (input.kind === "alcove-tub") return ALCOVE_BOX;
   if (input.tubShape === "rectangular") return CRISP_RECTANGLE;
   if (input.tubShape === "rounded-rectangular") return SOFT_RECTANGLE;
   return SOFT_OVAL;
@@ -160,6 +183,9 @@ export function tubWallShare(profile: TubSideProfile): number {
  * tub only moves a few percent across the whole height, which is the point.
  */
 export function tubWidthShareAt(profile: TubSideProfile, t: number): number {
+  // A box tub has vertical walls at full width from the floor to the deck.
+  // Nothing about it tapers, so there is no silhouette curve to apply.
+  if (isBoxTub(profile)) return 1;
   const clamped = Math.min(1, Math.max(0, t));
   const ease = (value: number) => value * value * (3 - 2 * value);
   // Rise quickly off the floor, then stay near vertical for the rest of the body.
@@ -176,4 +202,9 @@ export const STRAIGHT_SIDED_MIN_BASE_SHARE = 0.85;
 
 export function isStraightSided(profile: TubSideProfile): boolean {
   return profile.baseFootprint >= STRAIGHT_SIDED_MIN_BASE_SHARE;
+}
+
+/** True when this model must be built as a straight rectangular box (an alcove tub). */
+export function isBoxTub(profile: TubSideProfile): boolean {
+  return profile.profile === "box";
 }

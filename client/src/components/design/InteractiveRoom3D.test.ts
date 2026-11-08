@@ -244,8 +244,11 @@ describe("source-measured Pelican bathroom fixtures", () => {
       sourceEnvelopeIn: { width: 32 + 1 / 64, depth: 60, height: 21 + 21 / 32 },
     });
     expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "alcove-tub-well")).toBe(true);
-    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "alcove-tub-apron")).toBe(true);
     expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "alcove-tub-drain")).toBe(true);
+    // An alcove tub's front apron IS the front of the box, so there is no
+    // separate apron mesh. The old detached "alcove-tub-apron" slab read as a
+    // panel floating off the body; see TubClosure.test.ts.
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "alcove-tub-apron")).toBe(false);
   });
   it("renders a freestanding tub with an acrylic shell, rim, well, plinth, and source drain identity", () => {
     const root = new THREE.Group();

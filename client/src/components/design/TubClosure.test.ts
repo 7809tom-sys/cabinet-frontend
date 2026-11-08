@@ -118,7 +118,7 @@ describe("Every placeable tub renders as a closed tub", () => {
  * audit only checked closure and envelope, and a tapered shell satisfies both,
  * so nothing caught it. These tests check the silhouette itself.
  */
-import { STRAIGHT_SIDED_MIN_BASE_SHARE, TUB_SIDE_PROFILES, isStraightSided, tubSideProfile, tubWallShare, tubWidthShareAt } from "./tubSideProfiles";
+import { STRAIGHT_SIDED_MIN_BASE_SHARE, TUB_SIDE_PROFILES, isBoxTub, isStraightSided, tubSideProfile, tubWallShare, tubWidthShareAt } from "./tubSideProfiles";
 
 const FREESTANDING_CODES = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES
   .filter((profile) => profile.kind === "freestanding-tub")
@@ -219,5 +219,148 @@ describe("Every freestanding tub's side and end profile matches its catalog phot
     const box = new THREE.Box3().setFromObject(base);
     expect(box.min.y).toBeGreaterThanOrEqual(-0.02);
     expect(box.min.y).toBeLessThan(0.05);
+  });
+});
+
+/**
+ * Alcove tubs are rectangular boxes.
+ *
+ * Owner report (Nov 8 2026), from the 3D view of PL-02851L: the tub had a thin
+ * detached panel floating off one end, a right end that swept inward, and a soft
+ * bowl-like body. The catalog photo is a plain alcove tub: a flat front apron at
+ * full height to the floor, square vertical ends, a flat rectangular deck with a
+ * rectangular basin, sitting flat on the floor.
+ *
+ * Cause: the alcove models reused the freestanding oval silhouette (so their
+ * walls tapered inward like a bowl) and an extra "alcove-tub-apron" slab was
+ * pushed in front of the body as a separate mesh, 90% as wide and 72% as tall,
+ * standing proud of the front face. That slab was the floating panel.
+ *
+ * Alcove tubs are now built from `ALCOVE_BOX`: one prism, vertical walls at full
+ * width from the floor to the deck, square plan corners, level rim, and no
+ * separate apron part at all — the front of the box IS the apron.
+ */
+const ALCOVE_CODES = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES
+  .filter((profile) => profile.kind === "alcove-tub")
+  .map((profile) => profile.pelicanCode);
+
+/**
+ * The exterior shell's plan extent inside a horizontal slice of the body.
+ * Scene units are feet; results are converted to inches to compare with the
+ * published catalog dimensions. `lowShare`/`highShare` are fractions of the
+ * shell's own height, so this does not depend on where the mesh is parented.
+ */
+function shellExtentAtHeight(group: THREE.Group, lowShare: number, highShare: number): { widthIn: number; depthIn: number } | null {
+  const shell = visibleMeshes(group).find((node) => node.userData.pelicanBathroomFixturePart === "freestanding-tub-exterior");
+  if (!shell) return null;
+  const geometry = shell.geometry as THREE.BufferGeometry;
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const own = geometry.boundingBox!;
+  const low = own.min.y + (own.max.y - own.min.y) * lowShare;
+  const high = own.min.y + (own.max.y - own.min.y) * highShare;
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity, seen = 0;
+  for (let i = 0; i < positions.count; i += 1) {
+    const y = positions.getY(i);
+    if (y < low || y > high) continue;
+    seen += 1;
+    const x = positions.getX(i);
+    const z = positions.getZ(i);
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+  }
+  if (!seen) return null;
+  return { widthIn: (maxX - minX) * 12, depthIn: (maxZ - minZ) * 12 };
+}
+
+describe("Every alcove tub is a straight-sided rectangular box with a flat apron", () => {
+  it("covers all three alcove sheets in both drain hands", () => {
+    expect(ALCOVE_CODES.sort()).toEqual([
+      "PL-02849L", "PL-02849R", "PL-02850L", "PL-02850R", "PL-02851L", "PL-02851R",
+    ]);
+  });
+
+  it.each(ALCOVE_CODES)("%s uses the box profile, not an oval one", (code) => {
+    const profile = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((entry) => entry.pelicanCode === code)!;
+    const side = tubSideProfile(profile);
+    expect(isBoxTub(side), `${code} is not built as a box`).toBe(true);
+    // A box has no taper, no waist, no rim flare and no backrest rise.
+    expect(side.baseFootprint).toBe(1);
+    expect(side.waistMid).toBe(1);
+    expect(side.rimFlare).toBe(1);
+    expect(side.slipperRise).toBe(0);
+    expect(side.cornerRadiusShare).toBe(0);
+  });
+
+  it.each(ALCOVE_CODES)("%s has vertical walls at full width all the way down", (code) => {
+    const profile = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((entry) => entry.pelicanCode === code)!;
+    const side = tubSideProfile(profile);
+    // The silhouette never narrows at any height: 100% of the rim everywhere.
+    for (const t of [0, 0.1, 0.25, 0.5, 0.66, 0.75, 0.9, 1]) {
+      expect(tubWidthShareAt(side, t), `${code} narrows at ${(t * 100).toFixed(0)}% height`).toBe(1);
+    }
+  });
+
+  it.each(ALCOVE_CODES)("%s renders its base the full size of its rim", (code) => {
+    const { group, definition } = placedTub(code);
+
+    const rim = shellExtentAtHeight(group, 0.94, 1.001);
+    const waist = shellExtentAtHeight(group, 0.45, 0.55);
+    const base = shellExtentAtHeight(group, -0.001, 0.06);
+    expect(rim, "no rim ring").toBeTruthy();
+    expect(waist, "no mid-body ring").toBeTruthy();
+    expect(base, "no base ring").toBeTruthy();
+
+    // No taper anywhere: the body is the same size at the floor, the waist and
+    // the deck. Tolerance is 1% for the tiny radius where wall meets base.
+    for (const [label, slice] of [["mid-body", waist!], ["base", base!]] as const) {
+      const widthShare = slice.widthIn / rim!.widthIn;
+      const depthShare = slice.depthIn / rim!.depthIn;
+      expect(widthShare, `${code} ${label} is ${(widthShare * 100).toFixed(1)}% of the rim width`)
+        .toBeGreaterThanOrEqual(0.99);
+      expect(depthShare, `${code} ${label} is ${(depthShare * 100).toFixed(1)}% of the rim depth`)
+        .toBeGreaterThanOrEqual(0.99);
+    }
+
+    // And the body still fills the published envelope.
+    const published = furnitureFootprint(makeFurniture(definition.id, 0, 0), definition);
+    expect(rim!.widthIn).toBeGreaterThanOrEqual(published.w * 0.98);
+    expect(rim!.depthIn).toBeGreaterThanOrEqual(published.d * 0.98);
+  });
+
+  it.each(ALCOVE_CODES)("%s has no separate apron panel that can float off the body", (code) => {
+    const { group } = placedTub(code);
+    const parts = visibleMeshes(group).map((node) => String(node.userData.pelicanBathroomFixturePart ?? ""));
+    // The old builder pushed an "alcove-tub-apron" mesh in front of the shell.
+    // It was 90% as wide and 72% as tall as the tub, so it read as a detached
+    // panel. There must be no apron part at all now.
+    expect(parts.some((part) => part.includes("apron"))).toBe(false);
+  });
+
+  it.each(ALCOVE_CODES)("%s sits flat on the floor with level ends", (code) => {
+    const { group } = placedTub(code);
+    const profile = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((entry) => entry.pelicanCode === code)!;
+    const side = tubSideProfile(profile);
+    expect(side.slipperRise, `${code} ends are not level`).toBe(0);
+
+    const base = visibleMeshes(group).find((node) => node.userData.pelicanBathroomFixturePart === "freestanding-tub-base")!;
+    const box = new THREE.Box3().setFromObject(base);
+    // Flat on the floor, not hovering and not sunk.
+    expect(box.min.y).toBeGreaterThanOrEqual(-0.02);
+    expect(box.min.y).toBeLessThan(0.05);
+  });
+
+  it.each(ALCOVE_CODES)("%s has square plan corners, not rounded ones", (code) => {
+    const profile = VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES.find((entry) => entry.pelicanCode === code)!;
+    const side = tubSideProfile(profile);
+    expect(side.cornerRadiusShare, `${code} plan corners are rounded`).toBe(0);
+    const { group, definition } = placedTub(code);
+    const rim = shellExtentAtHeight(group, 0.94, 1.001)!;
+    // A square-cornered rectangle at the deck reaches the full published
+    // footprint in both directions. A rounded plan would measure short of the
+    // published corner and this would fail.
+    const published = furnitureFootprint(makeFurniture(definition.id, 0, 0), definition);
+    expect(rim.widthIn).toBeCloseTo(published.w, 0);
+    expect(rim.depthIn).toBeCloseTo(published.d, 0);
   });
 });

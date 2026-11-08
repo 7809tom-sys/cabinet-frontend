@@ -1,7 +1,6 @@
 import * as THREE from "three";
-import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import type { VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
-import { tubSideProfile, tubWidthShareAt, type TubSideProfile } from "./tubSideProfiles";
+import { isBoxTub, tubSideProfile, tubWidthShareAt, type TubSideProfile } from "./tubSideProfiles";
 
 /**
  * Freestanding bathtub geometry.
@@ -244,7 +243,7 @@ export function makeFreestandingTubParts(
   // bath rather than the room floor.
   const basinFloorShare = 0.16;
 
-  const isAlcove = options.apronFront === true;
+  const isAlcove = options.apronFront === true || isBoxTub(side);
   const wellPart = isAlcove ? "alcove-tub-well" : "freestanding-tub-well";
   const drainPart = isAlcove ? "alcove-tub-drain" : "freestanding-tub-drain";
   const overflowPart = isAlcove ? "alcove-tub-overflow" : "freestanding-tub-overflow";
@@ -308,18 +307,11 @@ export function makeFreestandingTubParts(
   overflow.position.set(0, Math.max(height * 0.62, wellY + drainRadius * 3), -halfDepth * 0.86);
   parts.push({ mesh: overflow, part: overflowPart });
 
-  // An alcove tub shows a finished apron across the room-facing side. It is a
-  // panel on the closed shell, not a separate wall, so the tub stays sealed.
-  if (options.apronFront === true) {
-    const apron = new THREE.Mesh(
-      new RoundedBoxGeometry(width * 0.9, height * 0.72, 0.06, 4, 0.03),
-      materials.shell,
-    );
-    apron.position.set(0, height * 0.40, halfDepth - 0.05);
-    apron.castShadow = true;
-    apron.receiveShadow = true;
-    parts.push({ mesh: apron, part: "alcove-tub-apron" });
-  }
+  // No separate apron part. An alcove tub's front IS the box: the shell built
+  // above already drops straight to the floor on all four sides, so the apron
+  // needs no extra geometry. The old code added a floating slab 90% as wide and
+  // 72% as tall, sitting proud of the front face — the detached panel the owner
+  // photographed.
 
   return parts;
 }
