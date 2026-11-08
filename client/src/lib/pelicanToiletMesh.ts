@@ -61,7 +61,7 @@ function rounderBowl(code: string): boolean {
   return baseCode(code).startsWith("PL-12005");
 }
 
-function roundedRectRing(width: number, depth: number, y: number, z: number, radius: number, cornerSegments = 5): THREE.Vector3[] {
+function roundedRectRing(width: number, depth: number, y: number, z: number, radius: number, cornerSegments = 18): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
   const clamped = Math.min(radius, width / 2, depth / 2);
   const corners: Array<[number, number, number]> = [
@@ -79,7 +79,7 @@ function roundedRectRing(width: number, depth: number, y: number, z: number, rad
   return points;
 }
 
-function ellipseRing(width: number, depth: number, y: number, z: number, segments = 28): THREE.Vector3[] {
+function ellipseRing(width: number, depth: number, y: number, z: number, segments = 96): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
   for (let step = 0; step < segments; step++) {
     const angle = (step / segments) * Math.PI * 2;
@@ -226,10 +226,11 @@ function spanRing(width: number, y: number, back: number, front: number, radiusF
 
 /** Closed loft. Ellipse rings read as a bowl; rounded rectangles read as a tank or smart body. */
 function loft(rings: Ring[], shape: "ellipse" | "rounded" = "ellipse"): THREE.BufferGeometry {
-  const segments = shape === "ellipse" ? 32 : 24;
+  // Smooth silhouettes: 96 on the ellipse body, 72 on the rounded-rect plan.
+  const segments = shape === "ellipse" ? 96 : 72;
   const ringPoints = rings.map((ring) => shape === "ellipse"
     ? ellipseRing(ring.width, ring.depth, ring.y, ring.z, segments)
-    : roundedRectRing(ring.width, ring.depth, ring.y, ring.z, ring.radius ?? Math.min(ring.width, ring.depth) * 0.18, 6));
+    : roundedRectRing(ring.width, ring.depth, ring.y, ring.z, ring.radius ?? Math.min(ring.width, ring.depth) * 0.18, 18));
   return loftRingPoints(ringPoints);
 }
 
@@ -396,27 +397,56 @@ function addPart(
   return mesh;
 }
 
-/** Glossy vitreous china. White stays white; matte black stays matte. */
-export function pelicanChinaMaterial(black: boolean): THREE.MeshPhysicalMaterial {
+/**
+ * Vitreous china, as a glazed physical material.
+ *
+ * The owner's complaint was that the fixtures read as flat matte plaster. The
+ * cause was two-fold: the white body carried a self-emissive tint that flattened
+ * every shading gradient, and the surface had no clearcoat, so the environment
+ * map produced almost no reflection. Glazed china is a thin transparent glaze
+ * over a white body: a strong specular highlight, a sharp clearcoat reflection of
+ * the room, and a little diffuse shading in the curves.
+ *
+ * White keeps a clean ceramic white with a clearcoat highlight. Matte black is
+ * deliberately matte — low clearcoat, higher roughness — because the MB models
+ * are matte in the supplier photos, not glossy.
+ */
+export function pelicanChinaMaterial(black: boolean, variant: "body" | "seat" = "body"): THREE.MeshPhysicalMaterial {
   if (black) {
     return new THREE.MeshPhysicalMaterial({
-      color: "#17191b",
-      roughness: 0.46,
+      // Matte black: no clearcoat sheen, and enough roughness to kill the
+      // hard highlight while keeping the soft one.
+      color: variant === "seat" ? "#1b1d20" : "#17191b",
+      roughness: variant === "seat" ? 0.52 : 0.44,
       metalness: 0,
-      clearcoat: 0.04,
-      clearcoatRoughness: 0.45,
+      clearcoat: 0.16,
+      clearcoatRoughness: 0.55,
+      envMapIntensity: 0.9,
+      ior: 1.5,
+      specularIntensity: 0.65,
     });
   }
   return new THREE.MeshPhysicalMaterial({
-    color: "#ffffff",
-    emissive: "#f4f5f3",
-    emissiveIntensity: 0.22,
-    roughness: 0.04,
+    // A faint warm-white body, no emissive: an emissive tint was what erased the
+    // form. The rim, basin and skirt now shade against each other.
+    // White glaze is not a perfect Lambertian white: the fired body sits near 0.80
+    // albedo and the *highlight* is what makes it look bright. Painting it at 0.98
+    // saturates the diffuse term under any normal room light, which is what erased
+    // every gradient and made the fixtures read as plaster.
+    color: variant === "seat" ? "#e9e7e2" : "#e4e2dd",
+    roughness: variant === "seat" ? 0.06 : 0.055,
     metalness: 0,
     clearcoat: 1,
-    clearcoatRoughness: 0.06,
-    reflectivity: 0.55,
-    ior: 1.5,
+    clearcoatRoughness: variant === "seat" ? 0.03 : 0.045,
+    reflectivity: 0.62,
+    envMapIntensity: 1.15,
+    ior: 1.52,
+    // A glaze is slightly translucent at grazing angles; sheen fakes the soft
+    // edge falloff without a real transmissive pass.
+    sheen: 0.25,
+    sheenRoughness: 0.5,
+    sheenColor: new THREE.Color("#f2f6f8"),
+    specularIntensity: 1,
   });
 }
 
@@ -460,7 +490,7 @@ function domedOvalLid(radiusX: number, radiusZ: number, thickness: number, crown
     new THREE.Vector2(radiusX * 0.40, thickness + crown * 0.92),
     new THREE.Vector2(0, thickness + crown),
   ];
-  const geometry = new THREE.LatheGeometry(points, 56);
+  const geometry = new THREE.LatheGeometry(points, 96);
   geometry.scale(1, 1, radiusZ / Math.max(radiusX, 0.001));
   geometry.computeVertexNormals();
   return geometry;
@@ -487,6 +517,7 @@ function addClosedSeatAndLid(
   group: THREE.Group,
   profile: PelicanToiletMeshProfile,
   seatMaterial: THREE.Material,
+  chrome: THREE.Material,
   water: THREE.Material,
   seatHeight: number,
   width: number,
@@ -502,28 +533,80 @@ function addClosedSeatAndLid(
   // lid on top of it. Flat discs and tori read as plates from across a room,
   // which is exactly what the owner saw.
   const seatThickness = squared ? 0.032 : 0.048;
+  // The seat is the wider of the two: it is the ring that rests on the china rim.
   const seat = addPart(
     group,
     profile,
     "toilet-seat",
-    ovalSeatRing(radiusX * 1.03, radiusZ * 1.03, seatThickness, 0.80),
+    ovalSeatRing(radiusX * 1.035, radiusZ * 1.035, seatThickness, 0.80),
     seatMaterial,
   );
   // The ring hangs below its own origin, so placing it at the published seat
   // height puts the seat's top surface there and its underside on the china.
   seat.position.set(0, seatHeight, centerZ);
   seat.userData.seatProfile = round ? "closed-round-oval" : "closed-elongated-oval";
+
+  // The lid must be SMALLER than the seat, not larger. On a real closed toilet the
+  // lid rests inside the seat's outer edge, so a thin band of seat is visible all
+  // the way around it. Drawing the lid wider hid the seat completely and fused the
+  // pair into one plate, which is exactly what the owner saw.
+  const lidLift = squared ? 0.010 : 0.015;
+  const lidInset = 0.955;
   const lid = addPart(
     group,
     profile,
     "toilet-lid",
-    domedOvalLid(radiusX * 1.055, radiusZ * 1.045, squared ? 0.030 : 0.042, squared ? 0.010 : 0.030),
+    domedOvalLid(
+      radiusX * 1.035 * lidInset,
+      radiusZ * 1.035 * lidInset,
+      squared ? 0.030 : 0.042,
+      squared ? 0.010 : 0.030,
+    ),
     seatMaterial,
   );
-  lid.position.set(0, seatHeight, centerZ);
+  lid.position.set(0, seatHeight + lidLift, centerZ);
   lid.userData.lidProfile = squared ? "flat-rounded-rectangle" : "soft-elongated-oval";
 
-  const waterWell = addPart(group, profile, "toilet-bowl-water", new THREE.CircleGeometry(0.5, 28), water);
+  // A soft-close seat has a silicone bumper pad under the lid, which holds it a
+  // few millimetres proud of the seat. That gap, in shadow, is the seam line you
+  // see across the top of every real closed toilet.
+  const seamMaterial = new THREE.MeshPhysicalMaterial({
+    color: "#5d6367",
+    roughness: 0.85,
+    metalness: 0,
+    envMapIntensity: 0.15,
+  });
+  const seam = addPart(
+    group,
+    profile,
+    "toilet-seat-lid-seam",
+    ovalSeatRing(radiusX * 1.035 * 0.985, radiusZ * 1.035 * 0.985, 0.007, 0.93),
+    seamMaterial,
+  );
+  seam.position.set(0, seatHeight + lidLift * 0.45, centerZ);
+
+  // Hinges: two short barrels at the rear where the lid pivots, sitting in the
+  // notch between the seat and the deck. Their shadow is what tells the eye that
+  // the lid can lift.
+  const hingeZ = centerZ - radiusZ * 0.90;
+  for (const side of [-1, 1]) {
+    const hinge = addPart(
+      group,
+      profile,
+      "toilet-hinge",
+      new THREE.CylinderGeometry(0.021, 0.021, radiusX * 0.26, 32),
+      chrome,
+    );
+    hinge.rotation.z = Math.PI / 2;
+    hinge.position.set(side * radiusX * 0.42, seatHeight + lidLift * 0.60, hingeZ);
+  }
+
+  // The lid is a lathe with an open underside; seen from a low angle that open rim
+  // reads as a dark slot, so close it.
+  if (Array.isArray(lid.material)) lid.material.forEach((m) => (m.side = THREE.DoubleSide));
+  else lid.material.side = THREE.DoubleSide;
+
+  const waterWell = addPart(group, profile, "toilet-bowl-water", new THREE.CircleGeometry(0.5, 64), water);
   waterWell.rotation.x = -Math.PI / 2;
   waterWell.scale.set(radiusX * 0.72, radiusZ * 0.62, 1);
   waterWell.position.set(0, seatHeight - 0.02, centerZ);
@@ -693,7 +776,7 @@ function addSkirtedOnePiece(
   const radiusX = width * 0.40;
   const radiusZ = Math.min(depth * 0.30, radiusX * 1.35);
   const bowlCenterZ = THREE.MathUtils.clamp(depth * 0.12, -halfD + radiusZ, halfD - radiusZ - 0.02);
-  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth, false, {
+  addClosedSeatAndLid(group, profile, seatMaterial, chrome, water, seatHeight, width, depth, false, {
     radiusX,
     radiusZ,
     centerZ: bowlCenterZ,
@@ -931,7 +1014,7 @@ function addPedestalOnePiece(
   addPedestalBowl(group, profile, shell, seatHeight, width, depth);
   const pedestalCentreZ = depth * 0.06;
   addBowlRim(group, profile, shell, seatHeight, width, depth, pedestalCentreZ);
-  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth, false, {
+  addClosedSeatAndLid(group, profile, seatMaterial, chrome, water, seatHeight, width, depth, false, {
     radiusX: width * 0.42,
     radiusZ: width * 0.50,
     centerZ: pedestalCentreZ,
@@ -978,7 +1061,7 @@ function addTwoPiece(
   const base = group.children.find((child) => child.userData.pelicanBathroomFixturePart === "toilet-ceramic-base");
   if (base) base.userData.silhouette = "exposed-trapway-pedestal";
   addBowlRim(group, profile, shell, seatHeight, width, depth, depth * 0.08);
-  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth);
+  addClosedSeatAndLid(group, profile, seatMaterial, chrome, water, seatHeight, width, depth);
 
   const trap = addPart(group, profile, "toilet-exposed-trapway", new THREE.TorusGeometry(depth * 0.11, width * 0.055, 10, 18, Math.PI * 1.15), shell);
   trap.rotation.set(Math.PI / 2.4, 0.4, 0.2);
@@ -1157,7 +1240,7 @@ function addSmartEgg(
   const radiusX = width * 0.38;
   const radiusZ = Math.min(depth * 0.29, radiusX * 1.45);
   const centerZ = THREE.MathUtils.clamp(depth * 0.10, -halfD + radiusZ, halfD - radiusZ - 0.02);
-  addClosedSeatAndLid(group, profile, seatMaterial, water, seatHeight, width, depth, false, {
+  addClosedSeatAndLid(group, profile, seatMaterial, dark, water, seatHeight, width, depth, false, {
     radiusX,
     radiusZ,
     centerZ,
@@ -1198,6 +1281,97 @@ function addSmartEgg(
 }
 
 /**
+ * The showroom details on a smart toilet: the light line under the skirt, the
+ * button pad on the side, and the dark sensor window on the rear deck.
+ *
+ * These are what make a smart model legible at a glance in the catalogue photos,
+ * so a plain white egg-shaped body reads as unfinished next to them.
+ */
+function attachSmartDetails(
+  group: THREE.Group,
+  profile: PelicanToiletMeshProfile,
+  shell: THREE.Material,
+  black: boolean,
+): void {
+  const width = profile.widthIn * INCH;
+  const depth = profile.depthIn * INCH;
+  const height = profile.heightIn * INCH;
+
+  // LED status strip: a thin emissive line around the base, just above the floor.
+  const led = new THREE.MeshPhysicalMaterial({
+    color: black ? "#7fd4ff" : "#cfeaff",
+    emissive: new THREE.Color("#63c8ff"),
+    emissiveIntensity: black ? 1.15 : 0.55,
+    roughness: 0.25,
+    metalness: 0,
+    toneMapped: false,
+  });
+  const strip = addPart(
+    group,
+    profile,
+    "toilet-led-status-strip",
+    new THREE.TorusGeometry(0.5, 0.012, 12, 96),
+    led,
+  );
+  strip.rotation.x = Math.PI / 2;
+  strip.scale.set(width * 0.86, depth * 0.80, 1);
+  strip.position.set(0, 0.055, 0.0);
+  strip.userData.emissiveDetail = true;
+
+  // Side control pad on the right flank, angled to face out.
+  const padMaterial = new THREE.MeshPhysicalMaterial({
+    color: black ? "#0b0d0f" : "#2a2f34",
+    roughness: 0.18,
+    metalness: 0.15,
+    clearcoat: 0.7,
+    clearcoatRoughness: 0.15,
+  });
+  const pad = addPart(
+    group,
+    profile,
+    "toilet-smart-side-keypad",
+    new RoundedBoxGeometry(width * 0.16, height * 0.11, 0.016, 4, 0.006),
+    padMaterial,
+  );
+  // The keypad must stay inside the published width: the envelope test measures
+  // the finished body against the sheet, and a pad proud of the flank pushed real
+  // SKUs 4-10 mm over. Sink it so the panel's outer face lands on the skirt.
+  pad.position.set(width * 0.47, height * 0.52, depth * 0.02);
+  pad.rotation.y = Math.PI / 2;
+
+  // Button dots on the pad, so it does not read as a blank tile.
+  const keyMaterial = new THREE.MeshStandardMaterial({ color: black ? "#3a4046" : "#8e979e", roughness: 0.5 });
+  for (let i = 0; i < 3; i += 1) {
+    const key = addPart(
+      group,
+      profile,
+      `toilet-smart-keypad-button-${i}`,
+      new THREE.CylinderGeometry(0.012, 0.012, 0.006, 24),
+      keyMaterial,
+    );
+    key.rotation.z = Math.PI / 2;
+    key.position.set(width * 0.478, height * (0.485 + i * 0.036), depth * 0.02);
+  }
+
+  // Sensor window on the rear deck.
+  const sensor = addPart(
+    group,
+    profile,
+    "toilet-smart-sensor-window",
+    new RoundedBoxGeometry(width * 0.22, 0.008, depth * 0.07, 3, 0.004),
+    new THREE.MeshPhysicalMaterial({
+      color: "#0b1114",
+      roughness: 0.08,
+      metalness: 0.3,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05,
+    }),
+  );
+  sensor.position.set(0, height * 0.985, -depth * 0.31);
+  sensor.userData.sensorWindow = true;
+}
+
+/**
  * Standalone toilet in feet. Every mesh stays inside the profile envelope.
  */
 export function makePelicanToiletGroup(profile: PelicanToiletMeshProfile): THREE.Group {
@@ -1221,6 +1395,13 @@ export function makePelicanToiletGroup(profile: PelicanToiletMeshProfile): THREE
     visualOnly: true,
     illustrativeContours: true,
   };
+
+  // Smart models carry the details you actually see on the showroom photos: a
+  // lit status strip at the base, a side keypad, and a rear deck panel. These are
+  // surface details, not structure, so they go on after the body is built.
+  if (form === "smart-wedge" || form === "smart-egg") {
+    attachSmartDetails(group, profile, shell, black);
+  }
 
   if (form === "smart-wedge") addSmartWedge(group, profile, shell, seatMaterial, water, dark, seatHeight);
   else if (form === "smart-egg") addSmartEgg(group, profile, shell, seatMaterial, water, dark, seatHeight);
