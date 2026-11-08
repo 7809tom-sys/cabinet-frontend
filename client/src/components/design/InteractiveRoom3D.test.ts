@@ -2959,10 +2959,11 @@ describe("interactive 3D room scene helpers", () => {
     expect(rendererSource).toContain('data-testid="three-d-mobile-navigation-launcher"');
     expect(rendererSource).toContain('data-testid="three-d-mobile-navigation-popup"');
     expect(rendererSource).toContain('h-[0.5in] w-[0.5in]');
-    // The right-hand controls are one column under the immersive toggle, not a
-    // separate panel pinned to the bottom corner. PAN keeps its own pad last.
+    // The right-hand controls are ONE column anchored to the bottom of the
+    // drawing surface, with the PAN pad last so it sits at the very bottom.
     expect(rendererSource).toContain("THREE_D_VIEWER_COLUMN_CLASS");
-    expect(rendererSource).toContain('className={`${THREE_D_VIEWER_COLUMN_CLASS} hidden sm:flex`}');
+    expect(rendererSource).toContain('className={`${THREE_D_VIEWER_COLUMN_CLASS} ${tabletOverlay ? "" : "hidden sm:flex"}`}');
+    expect(rendererSource).toContain("data-testid={THREE_D_FLOATING_COLUMN_TEST_ID}");
     expect(rendererSource).toContain('data-testid="three-d-pan-pad"');
     expect(rendererSource).toContain('data-testid="three-d-zoom-in"');
     expect(rendererSource).toContain('data-testid="three-d-zoom-out"');

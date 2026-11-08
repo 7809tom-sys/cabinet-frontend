@@ -17,6 +17,11 @@ import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, MoonStar, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Sun, Trash2 } from "lucide-react";
 import { immersiveToggleLabel } from "@/lib/designerImmersive";
+import {
+  THREE_D_FLOATING_COLUMN_TEST_ID,
+  THREE_D_VIEWER_COLUMN_CLASS,
+  FloatingColumnButton,
+} from "./floatingColumn";
 import { Button } from "@/components/ui/button";
 import { FlooringRotationControl } from "./FlooringLayoutPicker";
 import { MosaicFloorPatternControl } from "./MosaicFloorPatternDialog";
@@ -1155,8 +1160,19 @@ interface Props {
    * top-right corner, so the way out is always on screen.
    */
   immersive?: boolean;
-  /** Toggles `immersive`. Rendered as the small square top-right button when provided. */
+  /** Toggles `immersive`. Rendered as the first button in the floating column when provided. */
   onToggleImmersive?: () => void;
+  /**
+   * The page's own quick adds (Add cabinet, Add hardware), rendered in the same
+   * floating column right after the zoom pair. The page passes the same buttons
+   * and handlers it uses elsewhere, so nothing about adding changes.
+   */
+  floatingQuickActions?: ReactNode;
+  /**
+   * The page's Auto-Design action, rendered in the same column just above the
+   * PAN pad so it stays reachable in fullscreen on a tablet.
+   */
+  floatingAutoDesignAction?: ReactNode;
   className?: string;
 }
 
@@ -12051,45 +12067,20 @@ type ThreeDViewerNavigationActions = {
 };
 
 /**
- * One button style for the whole right-hand column.
+ * The navigation half of the one floating column on the right edge of the
+ * drawing surface.
  *
- * The owner's ask was that zoom, reset, share, auto-design and the new Shadows
- * control look like the four square buttons already at the top of the canvas
- * rather than a second, differently-shaped panel. So this is a single square
- * target with a thin border on white — no filled gold share bar, no dark pill.
- * `h-11 w-11` keeps the 44px touch target the rail already promised; the whole
- * column fits a 768px-tall laptop with room to spare (see
- * THREE_D_VIEWER_COLUMN_MAX_HEIGHT_PX).
- */
-export const THREE_D_VIEWER_BUTTON_CLASS =
-  "flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] shadow-sm transition hover:bg-slate-50 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] focus-visible:ring-offset-1";
-
-/** Auto-Design keeps the gold accent so it still reads as the AI action. */
-export const THREE_D_VIEWER_ACCENT_BUTTON_CLASS =
-  `${THREE_D_VIEWER_BUTTON_CLASS} border-[#d4a75a] text-[#765416] hover:bg-[#fffaf1]`;
-
-/**
- * Column geometry. Six square buttons plus the PAN cluster is the tallest this
- * rail gets; at 44px each with 6px gaps and the PAN pad that is ~360px, which
- * clears the 768px laptop floor once the 3rem page header is taken off. The
- * column is capped and scrolls internally rather than overlapping the drawing.
- */
-export const THREE_D_VIEWER_COLUMN_MAX_HEIGHT_PX = 430;
-
-/**
- * Where the whole column lives: directly under the immersive toggle at the top
- * of the canvas, as one uninterrupted run of square buttons down the right edge,
- * with the pan pad last so the PAN cluster keeps its old place in the visual
- * order (bottom of the stack).
+ * Every control is the same square button in one vertical run, and the PAN pad
+ * is the last child, so it sits at the bottom of the canvas with everything else
+ * stacked above it. Three optional slots let the caller put its own controls in
+ * the same column — `leading` above the zoom pair, `quickActions` after it, and
+ * `trailing` just above the PAN pad — and because every slot renders the same
+ * `FloatingColumnButton`, none of them can drift out to the side the way the old
+ * separate rails did.
  *
- * `top-[3.9rem]` tucks it just under the 44px immersive button at `top-3`.
- * `max-h` is measured from the canvas, not the viewport, so on a short laptop
- * the column scrolls inside itself instead of spilling over the drawing or
- * being clipped by the stage's `overflow-hidden`.
+ * The wrapper is `display: contents`: it keeps the stable test id without adding
+ * a second flex container inside the column.
  */
-export const THREE_D_VIEWER_COLUMN_CLASS =
-  "absolute right-3 top-[3.9rem] bottom-3 z-20 items-center overflow-y-auto pb-1";
-
 export function ThreeDViewerNavigationControls({
   onZoom,
   onReset,
@@ -12098,53 +12089,64 @@ export function ThreeDViewerNavigationControls({
   onPan,
   shadowStrength,
   onShadowStrengthChange,
-  className = "",
   testId = "three-d-viewer-navigation",
-  compact = false,
   hidePan = false,
-}: ThreeDViewerNavigationActions & { className?: string; testId?: string; compact?: boolean; hidePan?: boolean }) {
+  leading,
+  quickActions,
+  trailing,
+}: ThreeDViewerNavigationActions & {
+  testId?: string;
+  hidePan?: boolean;
+  /** Controls that belong at the top of the column, above the zoom pair. */
+  leading?: ReactNode;
+  /** The page's own quick adds (Add cabinet, Add hardware). */
+  quickActions?: ReactNode;
+  /** Actions that belong at the bottom of the stack, just above the PAN pad. */
+  trailing?: ReactNode;
+}) {
   const [shadowsOpen, setShadowsOpen] = useState(false);
   const shadowValue = normalizeShadowStrength(shadowStrength);
   const showShadows = typeof onShadowStrengthChange === "function";
-  const buttonClass = compact ? THREE_D_VIEWER_BUTTON_CLASS : THREE_D_VIEWER_BUTTON_CLASS;
-
-  const shadowsButton = showShadows ? (
-    <button
-      type="button"
-      data-testid="three-d-shadows-toggle"
-      onClick={() => setShadowsOpen((open) => !open)}
-      aria-expanded={shadowsOpen}
-      aria-label={shadowStrengthLabel(shadowValue)}
-      title="Shadows"
-      aria-pressed={shadowValue > 0}
-      className={`${buttonClass} ${shadowsOpen || shadowValue < SHADOW_STRENGTH_MAX ? "border-[#a87f33] bg-[#fffaf1] text-[#765416]" : ""}`}
-    >
-      {shadowValue === 0 ? <MoonStar className="h-5 w-5" aria-hidden="true" /> : <Sun className="h-5 w-5" aria-hidden="true" />}
-    </button>
-  ) : null;
+  const lightingTooltip = `Lighting — shadow strength ${shadowValue}%`;
 
   return (
-    <div
-      data-testid={testId}
-      aria-label="3D viewer controls"
-      className={`flex flex-col items-center gap-1 ${className}`}
-    >
-      <button data-testid="three-d-zoom-in" type="button" onClick={() => onZoom("in")} aria-label="Zoom in for a closer cabinet view" title="Zoom in" className={buttonClass}><Plus className="h-5 w-5" aria-hidden="true" /></button>
-      <button data-testid="three-d-zoom-out" type="button" onClick={() => onZoom("out")} aria-label="Zoom out for a wider room view" title="Zoom out" className={buttonClass}><Minus className="h-5 w-5" aria-hidden="true" /></button>
-      <button data-testid="three-d-reset-view" type="button" onClick={onReset} aria-label="Reset 3D room view" title="Reset view" className={buttonClass}><RefreshCw className="h-5 w-5" aria-hidden="true" /></button>
-      <button data-testid="three-d-share-view" type="button" onClick={() => void onShare()} aria-label="Share the current 3D zoom and pan perspective" title="Share current view" className={buttonClass}><Share2 className="h-5 w-5" aria-hidden="true" /></button>
+    <div data-testid={testId} className="contents">
+      {leading}
+      <FloatingColumnButton data-testid="three-d-zoom-in" label="Zoom in" tooltip="Zoom in — move the camera closer to the cabinets" onClick={() => onZoom("in")}>
+        <Plus className="h-5 w-5" aria-hidden="true" />
+      </FloatingColumnButton>
+      <FloatingColumnButton data-testid="three-d-zoom-out" label="Zoom out" tooltip="Zoom out — pull the camera back for a wider room view" onClick={() => onZoom("out")}>
+        <Minus className="h-5 w-5" aria-hidden="true" />
+      </FloatingColumnButton>
+      {quickActions}
+      <FloatingColumnButton data-testid="three-d-reset-view" label="Reset view" tooltip="Reset view — return to the presentation camera" onClick={onReset}>
+        <RefreshCw className="h-5 w-5" aria-hidden="true" />
+      </FloatingColumnButton>
+      <FloatingColumnButton data-testid="three-d-share-view" label="Share view" tooltip="Share view — copy a link to this exact camera angle" onClick={() => void onShare()}>
+        <Share2 className="h-5 w-5" aria-hidden="true" />
+      </FloatingColumnButton>
       {showShadows && (
         <div className="relative">
-          {shadowsButton}
+          <FloatingColumnButton
+            data-testid="three-d-shadows-toggle"
+            label="Lighting"
+            tooltip={lightingTooltip}
+            onClick={() => setShadowsOpen((open) => !open)}
+            aria-expanded={shadowsOpen}
+            aria-pressed={shadowValue > 0}
+            className={shadowsOpen || shadowValue < SHADOW_STRENGTH_MAX ? "border-[#a87f33] bg-[#fffaf1] text-[#765416]" : undefined}
+          >
+            {shadowValue === 0 ? <MoonStar className="h-5 w-5" aria-hidden="true" /> : <Sun className="h-5 w-5" aria-hidden="true" />}
+          </FloatingColumnButton>
           {shadowsOpen && (
             <div
               data-testid="three-d-shadows-panel"
-              className="absolute right-[3.25rem] top-0 z-30 w-52 rounded-lg border border-slate-300 bg-white/98 p-2.5 text-[#1a2744] shadow-xl backdrop-blur"
+              className="absolute right-full top-0 z-30 mr-1 w-52 rounded-lg border border-slate-300 bg-white/98 p-2.5 text-[#1a2744] shadow-xl backdrop-blur"
               onPointerDown={(event) => event.stopPropagation()}
               onPointerUp={(event) => event.stopPropagation()}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <label htmlFor="three-d-shadows-slider" className="text-[11px] font-semibold">Shadows</label>
+                <label htmlFor="three-d-shadows-slider" className="text-[11px] font-semibold">Lighting</label>
                 <span data-testid="three-d-shadows-value" className="text-[11px] font-bold tabular-nums text-[#765416]">{shadowValue}%</span>
               </div>
               <input
@@ -12165,32 +12167,57 @@ export function ThreeDViewerNavigationControls({
           )}
         </div>
       )}
-      {onPhotoRender && <button data-testid="three-d-photo-render" type="button" onClick={onPhotoRender} aria-label="Create a final photo-quality image from this exact completed 3D view" title="Photo Quality — final review image" className={THREE_D_VIEWER_ACCENT_BUTTON_CLASS}><Sparkles className="h-5 w-5" aria-hidden="true" /></button>}
+      {trailing}
+      {onPhotoRender && (
+        <FloatingColumnButton data-testid="three-d-photo-render" label="Final preview" tooltip="Final preview — create a photo-quality image of this exact 3D view" onClick={onPhotoRender} accent>
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </FloatingColumnButton>
+      )}
       {!hidePan && (
         <div
           data-testid="three-d-pan-pad"
-          className="mt-0.5 grid grid-cols-3 gap-0.5 rounded-md border border-slate-300 bg-white/95 p-0.5"
+          role="group"
           aria-label="Pan the 3D room view"
+          className="grid grid-cols-3 gap-0.5 rounded-md border border-slate-300 bg-white/95 p-0.5"
         >
-          <span /><button data-testid="three-d-pan-up" type="button" onClick={() => onPan("up")} aria-label="Pan view up" title="Pan up" className="flex h-8 w-8 items-center justify-center rounded-t-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button><span />
-          <button data-testid="three-d-pan-left" type="button" onClick={() => onPan("left")} aria-label="Pan view left" title="Pan left" className="flex h-8 w-8 items-center justify-center rounded-l-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button>
+          <span />
+          <FloatingColumnButton data-testid="three-d-pan-up" label="Pan up" tooltip="Pan up — move the 3D view up" onClick={() => onPan("up")} shape="cell" className="rounded-t">
+            <ArrowUp className="h-4 w-4" aria-hidden="true" />
+          </FloatingColumnButton>
+          <span />
+          <FloatingColumnButton data-testid="three-d-pan-left" label="Pan left" tooltip="Pan left — move the 3D view left" onClick={() => onPan("left")} shape="cell" className="rounded-l">
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </FloatingColumnButton>
           <span className="flex items-center justify-center text-[9px] font-bold text-slate-500">PAN</span>
-          <button data-testid="three-d-pan-right" type="button" onClick={() => onPan("right")} aria-label="Pan view right" title="Pan right" className="flex h-8 w-8 items-center justify-center rounded-r-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
-          <span /><button data-testid="three-d-pan-down" type="button" onClick={() => onPan("down")} aria-label="Pan view down" title="Pan down" className="flex h-8 w-8 items-center justify-center rounded-b-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button><span />
+          <FloatingColumnButton data-testid="three-d-pan-right" label="Pan right" tooltip="Pan right — move the 3D view right" onClick={() => onPan("right")} shape="cell" className="rounded-r">
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </FloatingColumnButton>
+          <span />
+          <FloatingColumnButton data-testid="three-d-pan-down" label="Pan down" tooltip="Pan down — move the 3D view down" onClick={() => onPan("down")} shape="cell" className="rounded-b">
+            <ArrowDown className="h-4 w-4" aria-hidden="true" />
+          </FloatingColumnButton>
+          <span />
         </div>
       )}
     </div>
   );
 }
 
-export function MobileThreeDViewerNavigation(actions: ThreeDViewerNavigationActions) {
+export function MobileThreeDViewerNavigation(
+  actions: ThreeDViewerNavigationActions & {
+    /** The page's quick adds and Auto-Design, so a phone keeps them in the popup. */
+    quickActions?: ReactNode;
+    trailing?: ReactNode;
+  },
+) {
+  const { quickActions, trailing, ...navigation } = actions;
   const [open, setOpen] = useState(false);
   return (
     <div data-testid="three-d-mobile-navigation" className="absolute bottom-3 right-3 z-30 sm:hidden" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
       {open && (
         <div data-testid="three-d-mobile-navigation-popup" role="dialog" aria-label="3D view controls" className="absolute bottom-[calc(0.5in+0.375rem)] right-0 w-[8.75rem] rounded-xl border border-slate-300 bg-white/98 p-2 shadow-xl backdrop-blur">
           <button type="button" onClick={() => setOpen(false)} aria-label="Close 3D view controls" className="mb-1 ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-base font-bold text-[#1a2744] active:scale-95">×</button>
-          <ThreeDViewerNavigationControls {...actions} testId="three-d-mobile-navigation-controls" className="p-0" />
+          <ThreeDViewerNavigationControls {...navigation} quickActions={quickActions} trailing={trailing} testId="three-d-mobile-navigation-controls" />
         </div>
       )}
       <button type="button" data-testid="three-d-mobile-navigation-launcher" onClick={() => setOpen((current) => !current)} aria-label="Open 3D view controls" aria-expanded={open} className="flex h-[0.5in] w-[0.5in] items-center justify-center rounded-lg border border-[#a87f33]/60 bg-white/95 text-[#1a2744] shadow-lg backdrop-blur active:scale-95"><Move3D className="h-5 w-5" /></button>
@@ -12220,7 +12247,7 @@ function ThreeDFloorMaterialControl({
   return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -14908,6 +14935,59 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     openings,
   );
 
+  /**
+   * The canvas controls that used to sit in their own rows at the top of the
+   * canvas: the color preview toggle, the flooring pattern, the wall heights,
+   * the room-walls context and the wall-cabinet layer. They are now one menu
+   * button in the floating column, so the right edge is a single line of
+   * buttons and nothing juts out. The menu keeps every action and its wording.
+   */
+  const floatingCanvasMenu = embedded ? (
+    <div className="relative">
+      <FloatingColumnButton
+        data-testid="three-d-mobile-canvas-tools-trigger"
+        label="Canvas controls"
+        tooltip="Canvas controls — color preview, flooring, wall heights, room walls, wall cabinets"
+        onClick={() => setMobileCanvasToolsOpen((open) => !open)}
+        aria-expanded={mobileCanvasToolsOpen}
+        aria-haspopup="true"
+      >
+        <PanelTop className="h-5 w-5" aria-hidden="true" />
+      </FloatingColumnButton>
+      {mobileCanvasToolsOpen && (
+        <div
+          data-testid="three-d-mobile-canvas-tools-menu"
+          className="absolute right-full top-0 z-40 mr-1 w-60 rounded-lg border border-slate-300 bg-white/98 p-1.5 text-xs text-[#1a2744] shadow-xl backdrop-blur"
+        >
+          {cabinetFinishPreviewOptions.length > 1 && (
+            <button type="button" data-testid="three-d-mobile-cabinet-color-toggle" onClick={() => { cycleCabinetPreviewFinish(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={Boolean(selectedCabinetPreviewFinish)}>
+              <Palette className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} />
+              <span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span>
+            </button>
+          )}
+          <button type="button" data-testid="three-d-mobile-wall-heights" onClick={() => { setWorkspacePanel("room"); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted">
+            <Rotate3D className="h-3.5 w-3.5" aria-hidden="true" />Move wall
+          </button>
+          <button type="button" data-testid="three-d-room-context-toggle" onClick={() => { setShowRoomContext((current) => !current); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={showRoomContext}>
+            <Eye className="h-3.5 w-3.5" aria-hidden="true" />{showRoomContext ? "Hide room walls" : "Show room walls"}
+          </button>
+          {onToggleWallLayer && (
+            <button type="button" data-testid="three-d-mobile-toggle-wall-cabinets" onClick={() => { onToggleWallLayer(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={showWallLayer}>
+              <PanelTop className="h-3.5 w-3.5" aria-hidden="true" />{showWallLayer ? "Hide walls" : "Show walls"}
+            </button>
+          )}
+          {fillerNoticeEntries.length > 0 && (
+            <div data-testid="three-d-mobile-filler-notice" className={`mt-1 border-t px-2.5 pt-2 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#ead9b6] text-[#634b20]"}`}>
+              <p className="font-semibold">Fillers</p>
+              {fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-1 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <section ref={previewRootRef} onDragOver={(event) => event.preventDefault()} data-immersive={immersive ? "true" : undefined} className={`relative ${embedded ? "flex h-full min-h-0 flex-col" : ""} ${isFullscreen ? "h-screen w-screen overflow-y-auto bg-background p-3 sm:p-5" : ""} ${immersive ? "h-full min-h-0 flex-col bg-background" : ""} ${className ?? ""}`} aria-label="Interactive three-dimensional room preview">
 	  {backsplashTextureWarning && <div role="alert" data-testid="backsplash-texture-warning" className="absolute left-1/2 top-3 z-40 max-w-[min(36rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg border border-amber-600 bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-950 shadow-lg">{backsplashTextureWarning}</div>}
@@ -14955,22 +15035,6 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        setCatalogDragMeasurement(fit ? { item, fit, wall, freehand: event.shiftKey } : null);
 	      }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setCatalogDragMeasurement(null); }} onDrop={(event) => { event.preventDefault(); const key = event.dataTransfer.getData("text/plain"); const item = catalogItems.find((candidate) => `${candidate.category}:${candidate.id}` === key) ?? catalogDragItem; if (item) onAddCatalogItem?.(item, catalogDropTargetAtPoint(event.clientX, event.clientY), event.shiftKey); setDraggedCatalogId(null); setCatalogDragMeasurement(null); }}>
 			        <div ref={mountRef} className="h-full w-full" />
-			        {onToggleImmersive && (
-			          <button
-			            type="button"
-			            data-testid="three-d-immersive-toggle"
-			            data-immersive={immersive ? "true" : "false"}
-			            onClick={onToggleImmersive}
-			            onPointerDown={(event) => event.stopPropagation()}
-			            onPointerUp={(event) => event.stopPropagation()}
-			            aria-pressed={immersive}
-			            aria-label={immersiveToggleLabel(immersive).ariaLabel}
-			            title={immersiveToggleLabel(immersive).title}
-			            className={`absolute right-3 top-3 z-40 inline-flex h-11 w-11 items-center justify-center rounded-lg border shadow-sm backdrop-blur transition active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] focus-visible:ring-offset-1 ${immersive ? "border-[#1a2744] bg-[#1a2744] text-white hover:bg-[#24375f]" : "border-slate-300 bg-white/95 text-[#1a2744] hover:bg-white"}`}
-			          >
-			            {immersive ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
-			          </button>
-			        )}
 			        {placedItemMenu && <PlacedItemContextMenu menu={placedItemMenu} onEdit={onOpenCabinetEditor ? (uid) => { setPlacedItemMenu(null); onOpenCabinetEditor(uid); } : undefined} onMove={onMoveCabinet ? (uid) => { setPlacedItemMenu(null); onSelectCabinet?.(uid); setMovePanelOpen(true); } : undefined} onRemove={onRemoveCabinet ? (uid) => { setPlacedItemMenu(null); preserveCurrentCameraView(); onRemoveCabinet(uid); setSelectedCabinet(null); setMovePanelOpen(false); } : undefined} onClose={() => setPlacedItemMenu(null)} />}
 			        {faucetWindowWarning && (
 			          <div data-testid="faucet-window-conflict" role="alert" className="pointer-events-none absolute bottom-16 left-3 z-30 max-w-sm rounded-lg border border-amber-500 bg-amber-50/95 px-3 py-2 text-xs font-semibold leading-snug text-amber-950 shadow-lg">
@@ -14998,7 +15062,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 		        {hybridPlanUnderlay && <div data-testid="three-d-plan-underlay-badge" className="pointer-events-none absolute left-3 top-3 z-20 rounded-md border border-[#d9c196] bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-[#634b20] shadow-sm backdrop-blur">3D over plan · same placement rules</div>}
 	        {temporaryPreviewMessage && <div data-testid="three-d-preview-fade" aria-hidden="true" className={`pointer-events-none absolute inset-0 z-10 bg-background transition-opacity duration-200 motion-reduce:hidden ${temporaryPreviewFading ? "opacity-40" : "opacity-0"}`} />}
         {embedded && onDoorStyleChange && isFullscreen && <div className="absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)]" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><ColorStyleQuickPicker testId="three-d-color-style-picker" styles={doorStyleChoices} value={selectedDoorStyleId} onChange={onDoorStyleChange} /></div>}
-        {embedded && <><div className={`${THREE_D_EMBEDDED_TOOLBAR_CLASS} ${tabletOverlay ? "hidden" : "hidden sm:flex"} ${onToggleImmersive ? "top-[3.75rem]" : ""}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><button type="button" data-testid="three-d-add-cabinet" onClick={() => setWorkspacePanel("catalog")} className="inline-flex items-center gap-1.5 rounded-md bg-[#1a2744] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#1a2744]/85 active:scale-95"><Plus className="h-3.5 w-3.5" />Add cabinet</button>{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-cabinet-color-toggle" onClick={cycleCabinetPreviewFinish} aria-pressed={Boolean(selectedCabinetPreviewFinish)} className={`inline-flex max-w-52 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${selectedCabinetPreviewFinish ? "border-[#a87f33] bg-[#fff7e8] text-[#614512]" : "bg-background text-[#1a2744] hover:bg-muted"}`} title="Temporarily show every cabinet and rear filler in the next selected finish"><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<ThreeDFloorMaterialControl mosaicFloor={isMosaicFloorProduct({ name: catalogFlooringName, category: catalogFlooringCategory, subCategory: catalogFlooringSubCategory })} mosaicFloorPattern={mosaicFloorPattern} onMosaicFloorPatternChange={onMosaicFloorPatternChange} rotation={flooringRotationDeg} onRotationChange={onFlooringRotationChange} testId="three-d-flooring-rotation" /><button type="button" data-testid="three-d-wall-heights" onClick={() => setWorkspacePanel("room")} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-label="Set individual wall heights"><Rotate3D className="h-3.5 w-3.5" />Wall heights</button><button type="button" data-testid="three-d-room-context-toggle" onClick={() => setShowRoomContext((current) => !current)} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showRoomContext} title={showRoomContext ? "Hide the room walls for an unobstructed cabinet view" : "Show the finished-thickness room walls and mitered corners"}><Eye className="h-3.5 w-3.5" />{showRoomContext ? "Hide room walls" : "Show room walls"}</button>{onToggleWallLayer && <button type="button" data-testid="three-d-toggle-wall-cabinets" onClick={onToggleWallLayer} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide wall cabinets" : "Show wall cabinets"}</button>}</div><div data-testid="three-d-mobile-canvas-tools" className={`absolute right-3 ${onToggleImmersive ? "top-[3.75rem]" : "top-3"} z-20 flex items-start gap-1 ${tabletOverlay ? "" : "sm:hidden"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>{!tabletOverlay && <button type="button" data-testid="three-d-add-cabinet-mobile" onClick={() => setWorkspacePanel("catalog")} className="inline-flex h-10 items-center gap-1.5 rounded-md bg-[#1a2744] px-3 text-xs font-semibold text-white shadow-sm active:scale-95"><Plus className="h-4 w-4" />Add</button>}<div className="relative"><button type="button" data-testid="three-d-mobile-canvas-tools-trigger" onClick={() => setMobileCanvasToolsOpen((open) => !open)} aria-expanded={mobileCanvasToolsOpen} aria-label="Canvas controls" className="inline-flex h-11 w-11 items-center justify-center rounded-md border bg-background/95 text-[#1a2744] shadow-sm active:scale-95"><PanelTop className="h-4 w-4" /></button>{mobileCanvasToolsOpen && <div data-testid="three-d-mobile-canvas-tools-menu" className="absolute right-0 top-11 w-56 rounded-lg border bg-background/95 p-2 text-xs shadow-lg backdrop-blur">{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-mobile-cabinet-color-toggle" onClick={() => { cycleCabinetPreviewFinish(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={Boolean(selectedCabinetPreviewFinish)}><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<button type="button" data-testid="three-d-mobile-wall-heights" onClick={() => { setWorkspacePanel("room"); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted"><Rotate3D className="h-3.5 w-3.5" />Move wall</button>{onToggleWallLayer && <button type="button" data-testid="three-d-mobile-toggle-wall-cabinets" onClick={() => { onToggleWallLayer(); setMobileCanvasToolsOpen(false); }} className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left font-semibold text-[#1a2744] hover:bg-muted" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide walls" : "Show walls"}</button>}{fillerNoticeEntries.length > 0 && <div data-testid="three-d-mobile-filler-notice" className={`mt-1 border-t px-2.5 pt-2 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#ead9b6] text-[#634b20]"}`}><p className="font-semibold">Fillers</p>{fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-1 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}</div>}</div>}</div></div></>}
+        {embedded && <div className={`${THREE_D_EMBEDDED_TOOLBAR_CLASS} ${tabletOverlay ? "hidden" : "hidden sm:flex"} ${onToggleImmersive ? "top-[3.75rem]" : ""}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><button type="button" data-testid="three-d-add-cabinet" onClick={() => setWorkspacePanel("catalog")} className="inline-flex items-center gap-1.5 rounded-md bg-[#1a2744] px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#1a2744]/85 active:scale-95"><Plus className="h-3.5 w-3.5" />Add cabinet</button>{cabinetFinishPreviewOptions.length > 1 && <button type="button" data-testid="three-d-cabinet-color-toggle" onClick={cycleCabinetPreviewFinish} aria-pressed={Boolean(selectedCabinetPreviewFinish)} className={`inline-flex max-w-52 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition active:scale-95 ${selectedCabinetPreviewFinish ? "border-[#a87f33] bg-[#fff7e8] text-[#614512]" : "bg-background text-[#1a2744] hover:bg-muted"}`} title="Temporarily show every cabinet and rear filler in the next selected finish"><Palette className="h-3.5 w-3.5" /><span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: selectedCabinetPreviewFinish?.color ?? catalogFinish }} /><span className="truncate">Color: {selectedCabinetPreviewFinish?.name ?? "Plan colors"}</span></button>}<ThreeDFloorMaterialControl mosaicFloor={isMosaicFloorProduct({ name: catalogFlooringName, category: catalogFlooringCategory, subCategory: catalogFlooringSubCategory })} mosaicFloorPattern={mosaicFloorPattern} onMosaicFloorPatternChange={onMosaicFloorPatternChange} rotation={flooringRotationDeg} onRotationChange={onFlooringRotationChange} testId="three-d-flooring-rotation" /><button type="button" data-testid="three-d-wall-heights" onClick={() => setWorkspacePanel("room")} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-label="Set individual wall heights"><Rotate3D className="h-3.5 w-3.5" />Wall heights</button><button type="button" data-testid="three-d-room-context-toggle" onClick={() => setShowRoomContext((current) => !current)} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showRoomContext} title={showRoomContext ? "Hide the room walls for an unobstructed cabinet view" : "Show the finished-thickness room walls and mitered corners"}><Eye className="h-3.5 w-3.5" />{showRoomContext ? "Hide room walls" : "Show room walls"}</button>{onToggleWallLayer && <button type="button" data-testid="three-d-toggle-wall-cabinets" onClick={onToggleWallLayer} className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] transition hover:bg-muted active:scale-95" aria-pressed={showWallLayer}><PanelTop className="h-3.5 w-3.5" />{showWallLayer ? "Hide wall cabinets" : "Show wall cabinets"}</button>}</div>}
         {fillerNoticeEntries.length > 0 && <div data-testid="three-d-filler-notice-chip" className={`absolute left-3 z-20 ${tabletOverlay ? "top-3" : "bottom-16"}`} onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}>
           <button type="button" onClick={() => setFillerChipOpen((open) => !open)} aria-expanded={fillerChipOpen} className={`inline-flex h-11 items-center gap-1.5 rounded-full border bg-[#fffaf1]/95 px-3 text-xs font-semibold shadow-sm backdrop-blur active:scale-95 ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#d9c196] text-[#634b20]"}`}>Fillers ({fillerNoticePieceCount})</button>
           {fillerChipOpen && <div className={`mt-1 w-56 rounded-lg border bg-[#fffaf1]/98 px-2.5 py-2 text-xs shadow-lg backdrop-blur ${hasOverMaximumFiller ? "border-red-300 text-red-950" : "border-[#d9c196] text-[#634b20]"}`}><p className="font-semibold">Fillers</p>{fillerNoticeEntries.map((label) => <p key={`${label.masterCode}-${label.installedWidth}-${label.maximum}-${label.over}`} className="mt-0.5 truncate font-medium">{label.masterCode} · {formatEighthInches(label.installedWidth)} installed · {formatEighthInches(label.maximum)} max{label.over ? " · OVER MAX" : ""}{label.quantity > 1 ? <> · ×{label.quantity}</> : null}</p>)}</div>}
@@ -15008,12 +15072,52 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        </div>}
 	        {materialTransitioning && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/25 backdrop-blur-[1px]"><span className="inline-flex items-center gap-2 rounded-full bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm"><LoaderCircle className="h-3.5 w-3.5 animate-spin text-[#a87f33]" />Updating preview</span></div>}
         {renderExistingDesign && rangeHoodStatus.needs2DPlacement && <div data-testid="three-d-range-hood-status" className="absolute left-3 top-3 max-w-[calc(100%-1.5rem)] rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs text-amber-900 shadow-sm backdrop-blur"><span>Add a range hood in the catalog to show it above this saved range.</span>{onAddRangeHood && <button type="button" onClick={onAddRangeHood} className="ml-1 font-semibold underline underline-offset-2">Add now</button>}</div>}
-	        {tabletOverlay
-	          ? <ThreeDViewerNavigationControls onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} compact hidePan={tabletTier.touch} testId="three-d-tablet-navigation" className={THREE_D_VIEWER_COLUMN_CLASS} />
-	          : <>
-	            <ThreeDViewerNavigationControls onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} className={`${THREE_D_VIEWER_COLUMN_CLASS} hidden sm:flex`} />
-	            <MobileThreeDViewerNavigation onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} />
-	          </>}
+	        {/* One column, one axis. Every floating control on the right edge of
+	            the drawing surface lives here: fullscreen, the canvas controls
+	            menu, zoom, the page's quick adds, reset, share, lighting, the
+	            final preview, and the PAN pad last at the bottom. */}
+	        <div
+	          data-testid={THREE_D_FLOATING_COLUMN_TEST_ID}
+	          role="group"
+	          aria-label="3D view controls"
+	          className={`${THREE_D_VIEWER_COLUMN_CLASS} ${tabletOverlay ? "" : "hidden sm:flex"}`}
+	          onPointerDown={(event) => event.stopPropagation()}
+	          onPointerUp={(event) => event.stopPropagation()}
+	        >
+	          <ThreeDViewerNavigationControls
+	            onZoom={zoomViewer}
+	            onReset={resetViewerNavigation}
+	            onShare={shareCurrentView}
+	            onPhotoRender={openPhotoRenderDialog}
+	            onPan={panViewer}
+	            shadowStrength={shadowStrength}
+	            onShadowStrengthChange={setShadowStrength}
+	            hidePan={tabletTier.touch}
+	            {...(tabletOverlay ? { testId: "three-d-tablet-navigation" } : {})}
+	            leading={
+	              <>
+	                {onToggleImmersive && (
+	                  <FloatingColumnButton
+	                    data-testid="three-d-immersive-toggle"
+	                    data-immersive={immersive ? "true" : "false"}
+	                    label={immersiveToggleLabel(immersive).ariaLabel}
+	                    tooltip={immersiveToggleLabel(immersive).title}
+	                    onClick={onToggleImmersive}
+	                    aria-pressed={immersive}
+	                  >
+	                    {immersive ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
+	                  </FloatingColumnButton>
+	                )}
+	                {floatingCanvasMenu}
+	              </>
+	            }
+	            quickActions={floatingQuickActions}
+	            trailing={floatingAutoDesignAction}
+	          />
+	        </div>
+	        {!tabletOverlay && (
+	          <MobileThreeDViewerNavigation onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} quickActions={floatingQuickActions} trailing={floatingAutoDesignAction} />
+	        )}
 	      </div>
 	      {selectedCabinet && (() => {
 		        const line = threeDOrderLineForSelectedCabinet(orderLines, selectedCabinet);

@@ -6,7 +6,7 @@ const picker = readFileSync(new URL("../components/design/HardwareCatalogPicker.
 const css = readFileSync(new URL("./DesignTool.toolbar.css", import.meta.url), "utf8");
 
 describe("floating canvas action rail wiring", () => {
-  it("mounts inside the canvas so it floats over the 3D stage", () => {
+  it("renders the 2D/elevation rail inside the canvas, and hands the 3D view the same buttons inline", () => {
     const canvas = designTool.slice(designTool.indexOf('data-testid="designer-canvas"'));
     const rail = canvas.indexOf("<CanvasActionRail");
     const firstPlanBlock = canvas.indexOf("{showCountertopToast");
@@ -15,7 +15,7 @@ describe("floating canvas action rail wiring", () => {
   });
 
   it("routes Add cabinet to the existing catalog affordance instead of a second add path", () => {
-    const rail = designTool.slice(designTool.indexOf("<CanvasActionRail"), designTool.indexOf("/>", designTool.indexOf("<CanvasActionRail")));
+    const rail = designTool.slice(designTool.indexOf("const threeDFloatingQuickActions"), designTool.indexOf("const renderNativeThreeDCanvas"));
     // Same drawer the toolbar "Add cabinet" button opens.
     expect(rail).toContain('setMobilePanel("catalog")');
     // No new cabinet-creation logic: the rail never calls addCabinet itself.
@@ -37,21 +37,28 @@ describe("floating canvas action rail wiring", () => {
     // The existing triggers stay exactly where they were — this is additive.
     expect(picker).toContain('data-testid="designer-real-hardware-trigger"');
     expect(designTool).toContain('data-testid="tablet-add-cabinet"');
-    // The rail's own test ids live in the rail component.
+    // The rail's own test ids live in the rail component, built from the caller's
+    // prefix so the column copy and this copy stay individually addressable.
     const railSource = readFileSync(new URL("../components/design/CanvasActionRail.tsx", import.meta.url), "utf8");
-    expect(railSource).toContain('data-testid="canvas-quick-add-cabinet"');
-    expect(railSource).toContain('data-testid="canvas-quick-add-hardware"');
+    expect(railSource).toContain("data-testid={`${testIdPrefix}-add-cabinet`}");
+    expect(railSource).toContain("data-testid={`${testIdPrefix}-add-hardware`}");
+    expect(railSource).toContain("testIdPrefix = \"canvas-quick\"");
   });
 
-  it("stays visible in canvas-only mode", () => {
-    // Only the Designer's own bars are hidden; the rail is never guarded by
-    // canvasOnly. On a phone/tablet-portrait width it is hidden alongside the
-    // bottom strip — but NOT in canvas-only mode, where that strip is gone and
-    // this rail is the only control left (Auto Design must stay reachable).
-    const rail = designTool.slice(designTool.indexOf("<CanvasActionRail"), designTool.indexOf("/>", designTool.indexOf("<CanvasActionRail")));
-    expect(rail).toContain("hidden={isMobile && !canvasOnly}");
-    expect(rail).not.toContain("hidden={isMobile}");
-    // A bare canvasOnly guard would hide the rail exactly when it is needed.
+  it("keeps the 3D quick adds in the one floating column instead of a second rail", () => {
+    // The 3D viewer owns the right-edge column, so the standalone rail must not
+    // also draw over the 3D stage: two rails on the same edge is exactly the
+    // staggered layout the owner asked us to remove.
+    // The positioned rail is the one rendered from inside the canvas; the two
+    // `inline` copies that feed the 3D column come first in the file.
+    const canvas = designTool.slice(designTool.indexOf('data-testid="designer-canvas"'));
+    const railStart = canvas.indexOf("<CanvasActionRail");
+    const rail = canvas.slice(railStart, canvas.indexOf("/>", railStart));
+    expect(rail).toContain('hidden={isMobile || viewMode === "threeD" || viewMode === "hybrid"}');
+    // The same handlers are handed to the viewer's column as inline buttons.
+    expect(designTool).toContain("floatingQuickActions={threeDFloatingQuickActions}");
+    expect(designTool).toContain("floatingAutoDesignAction={threeDFloatingAutoDesignAction}");
+    // Never gated by canvasOnly: in that mode the column is the only control left.
     expect(rail).not.toContain("hidden={canvasOnly}");
   });
 
