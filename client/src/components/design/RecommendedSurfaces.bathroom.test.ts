@@ -35,6 +35,9 @@ describe("RecommendedSurfaces bathroom palette", () => {
       "shower-system",
       "shower-door",
       "shower-niche",
+      // Accessories are their own destination: towel bars and accessory sets used
+      // to appear on the Bathtubs tab.
+      "bathroom-accessory",
     ]);
     expect(BATHROOM_RECOMMENDED_SECTIONS).toBe(BATHROOM_FIXTURE_RECOMMENDED_SECTIONS);
     expect(BATHROOM_FIXTURE_RECOMMENDED_SECTIONS.map((section) => section.label)).toEqual(expect.arrayContaining([
@@ -43,6 +46,7 @@ describe("RecommendedSurfaces bathroom palette", () => {
       "Bathtubs",
       "Shower Pans (floors)",
       "Shower Panels & Surrounds",
+      "Other Bathroom Accessories",
       "Shower Tile",
       "Shower Heads & Faucets",
       "Glass Doors",

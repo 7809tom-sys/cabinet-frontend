@@ -263,6 +263,7 @@ export function placeSinkOnBase(input: {
       pelicanProductImage: product.imageUrl ?? undefined,
       ...(profile ? {
         pelicanProfileId: profile.id,
+        bowlShape: profile.basinShape,
         bowlWidth: profile.bowlWidthIn,
         bowlDepth: profile.bowlDepthIn,
         bowlHeight: profile.bowlHeightIn,
@@ -291,6 +292,7 @@ export function placeSinkOnBase(input: {
     bathroomVanitySink: family === "vanity" ? true : undefined,
     ...(!product && defaultBasinProfile ? {
       pelicanProfileId: defaultBasinProfile.id,
+      bowlShape: defaultBasinProfile.basinShape,
       bowlWidth: defaultBasinProfile.bowlWidthIn,
       bowlDepth: defaultBasinProfile.bowlDepthIn,
       bowlHeight: defaultBasinProfile.bowlHeightIn,

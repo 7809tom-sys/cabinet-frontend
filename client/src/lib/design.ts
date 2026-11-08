@@ -14905,6 +14905,13 @@ export interface SinkFixture {
   pelicanProductImage?: string;
   /** Source-verified parametric profile identifier, when a real Pelican fixture has one. */
   pelicanProfileId?: string;
+  /**
+   * Plan shape of the basin from the selected product's specification sheet.
+   * Unset on a kitchen sink, whose rectangular bowl is correct as drawn. A
+   * bathroom vanity basin records it so a round or oval product is not drawn as
+   * a rectangle.
+   */
+  bowlShape?: "oval" | "rectangle" | "circle";
   /** Verified bowl dimensions in inches for the selected Pelican sink profile. */
   bowlWidth?: number;
   bowlDepth?: number;

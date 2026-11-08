@@ -184,6 +184,9 @@ describe("Recommended categories are destinations, not accordions", () => {
       "shower-system",
       "shower-door",
       "shower-niche",
+      // Accessories are their own destination. Towel bars and accessory sets used
+      // to appear on the Bathtubs tab, which only shows tubs.
+      "bathroom-accessory",
     ]);
     // Each row is its own destination, including every new shower category.
     fireEvent.click(screen.getByTestId("recommended-category-shower-pan"));
