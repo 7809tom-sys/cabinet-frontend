@@ -309,13 +309,15 @@ export function buildPelicanSinkOnCabinet(
   item: PelicanPlacedProduct,
   cabinet: PlacedCabinet,
   room: RoomData,
+  /** Front setback from the finished countertop front; 2"–2½" is the approved band. */
+  options?: { frontSetbackIn?: number },
 ): SinkFixture {
   const profile = verifiedPelicanSinkProfile(item.pelicanCode);
   const parsed = parsePelicanPlanSize(item.size);
   const width = profile?.exteriorWidthIn ?? parsed?.width ?? 30;
   const depth = profile?.exteriorDepthIn ?? parsed?.depth ?? 18;
   const type = profile?.sinkType === "farmhouse" || pelicanSinkBaseKind(item) === "farmhouse" ? "farmhouse" : "single";
-  const sink = makeSinkForCabinet(type, cabinet, room, { width, depth });
+  const sink = makeSinkForCabinet(type, cabinet, room, { width, depth }, options);
   return {
     ...sink,
     faucet: false,

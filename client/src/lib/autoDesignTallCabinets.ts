@@ -35,6 +35,7 @@ import {
   type WallSide,
 } from "./design";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { sinkLandingGaps } from "./autoDesignSinkLanding";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { boundedWallPlacementAt } from "./designerBounds";
 
@@ -276,6 +277,12 @@ export type AutoDesignTallFitInput = {
    * still gets a real free span.
    */
   allowMultiple?: boolean;
+  /**
+   * Clear counter the sink base keeps between itself and this box. A tall box
+   * that would leave the sink base as the last floor box at the end of a run is
+   * not a legal seat: the sink needs a real landing cabinet beside it.
+   */
+  sinkLandingIn?: number;
 };
 
 /**
@@ -310,6 +317,8 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
   // True when the only run ends left for this box are inside corners another run
   // already occupies. Reported specifically, so a "not placed" tall is explained.
   let insideCornerBlocked = false;
+  // True when the only seats left would jam the sink base against this box.
+  let landingBlocked = false;
   // Best candidate seen so far, so a blocked span does not hide a later fit.
   let best: { wallId: string; alongIn: number; seat: AutoDesignTallSeat; spot: ReturnType<typeof wallPlacementAt>; score: number } | null = null;
   for (const wallId of walls) {
@@ -407,6 +416,15 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
         }
         const probe = tallPlacement(product, wallId, spot, seatAlong);
         if (appendCollisionFreePlacements([...input.placed], [probe], room).rejected.length > 0) continue;
+        // A tall box is a run terminator, so it must not take the counter the set
+        // needs. A seat that would leave the sink base as the last floor box at a
+        // run end (jam the basin against this tall unit) is refused; another seat,
+        // or none, is chosen instead so the sink keeps its landing.
+        const landingIn = input.sinkLandingIn ?? 0;
+        if (landingIn > 0 && sinkLandingGaps([...input.placed, probe], room, landingIn).length > 0) {
+          landingBlocked = true;
+          continue;
+        }
         // Keep the best-scoring seat across every candidate: a lower-scoring end can
         // follow a higher-scoring one in this list, so the first accepted candidate
         // is not necessarily the right one.
@@ -438,6 +456,13 @@ export function planAutoDesignTallFit(input: AutoDesignTallFitInput): AutoDesign
       ok: false,
       code: "tall-cabinet-blocked",
       reason: `The only free ${product.widthIn}″ span for ${product.masterCode} is an inside corner another run already occupies, and a tall box closes a run rather than a shared corner. Shorten a run so a run end is free; nothing was placed.`,
+    };
+  }
+  if (landingBlocked) {
+    return {
+      ok: false,
+      code: "tall-cabinet-blocked",
+      reason: `${product.masterCode} would close the run beside the sink base and leave no counter landing between the basin and the tall unit. A sink needs at least ${input.sinkLandingIn ?? 0}″ of base cabinet beside it, so nothing was placed. Shorten the run or move the sink base, then pick the tall cabinet again.`,
     };
   }
   return {

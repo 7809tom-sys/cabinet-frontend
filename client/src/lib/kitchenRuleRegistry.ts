@@ -61,6 +61,7 @@ export const KITCHEN_RULE_APPLIED_BY_LABEL: Record<string, string> = {
   autoDesignRangeHood: "Auto-Design hood height",
   dishwasherPanelRule: "Auto-Design dishwasher panel",
   autoDesignTallCabinets: "Auto-Design tall cabinet seating",
+  autoDesignSinkLanding: "Auto-Design sink landing and sink seating",
   designerFaceRules: "Upper height pass",
   exposedSidePanels: "Exposed-side panel engine",
   design: "Designer geometry",
@@ -597,6 +598,34 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
     appliedBy: "kitchenAdjacency",
   },
   {
+    key: "sink_tall_landing_in",
+    title: "Landing between the sink base and a tall unit",
+    description:
+      "A real base cabinet (and its countertop) stands between the sink base and a tall cabinet or refrigerator. The sink base is never the last box at the end of a run that butts a tall unit; it keeps at least this much usable counter between the two.",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 18,
+    unit: "in",
+    step: 1,
+    min: 0,
+    max: 48,
+    appliedBy: "autoDesignSinkLanding",
+  },
+  {
+    key: "sink_front_setback_in",
+    title: "Sink front setback",
+    description:
+      "How far the basin sits back from the finished countertop front edge. The approved range is 2 to 2½ inches; 2 inches is the default. The sink stays centered on its own sink base.",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 2,
+    unit: "in",
+    step: 0.25,
+    min: 2,
+    max: 2.5,
+    appliedBy: "autoDesignSinkLanding",
+  },
+  {
     key: "fridge_landing_in",
     title: "Refrigerator landing",
     description: "The refrigerator handle side needs this much counter, or the same amount across an aisle.",
@@ -844,6 +873,8 @@ export type KitchenRuleNumericKey =
   | "dishwasher_corner_min_in"
   | "sink_landing_long_in"
   | "sink_landing_short_in"
+  | "sink_tall_landing_in"
+  | "sink_front_setback_in"
   | "fridge_landing_in"
   | "fridge_hinge_clear_in"
   | "baking_zone_min_in"
@@ -907,6 +938,8 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS: Record<KitchenRuleNumericKey, numb
   dishwasher_corner_min_in: defaultNumber("dishwasher_corner_min_in"),
   sink_landing_long_in: defaultNumber("sink_landing_long_in"),
   sink_landing_short_in: defaultNumber("sink_landing_short_in"),
+  sink_tall_landing_in: defaultNumber("sink_tall_landing_in"),
+  sink_front_setback_in: defaultNumber("sink_front_setback_in"),
   fridge_landing_in: defaultNumber("fridge_landing_in"),
   fridge_hinge_clear_in: defaultNumber("fridge_hinge_clear_in"),
   baking_zone_min_in: defaultNumber("baking_zone_min_in"),
