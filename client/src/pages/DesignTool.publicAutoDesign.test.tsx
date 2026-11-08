@@ -18,6 +18,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import type { ReactNode } from "react";
 import DesignTool from "./DesignTool";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { CartProvider } from "@/contexts/CartContext";
@@ -83,28 +84,37 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/components/design/InteractiveRoom3D", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   // The real viewer needs WebGL, so jsdom gets a stand-in that renders the same
-  // fullscreen toggle the real component puts in its top-right corner.
+  // floating column the real component owns: the fullscreen toggle plus the slots
+  // the page passes in (its quick adds and Auto-Design).
   return {
     ...actual,
     InteractiveRoom3D: ({
       immersive,
       onToggleImmersive,
+      floatingQuickActions,
+      floatingAutoDesignAction,
     }: {
       immersive?: boolean;
       onToggleImmersive?: () => void;
+      floatingQuickActions?: ReactNode;
+      floatingAutoDesignAction?: ReactNode;
     }) => (
       <div data-testid="mock-3d">
-        {onToggleImmersive && (
-          <button
-            type="button"
-            data-testid="three-d-immersive-toggle"
-            aria-pressed={Boolean(immersive)}
-            aria-label={immersive ? "Exit fullscreen" : "Fullscreen view"}
-            onClick={onToggleImmersive}
-          >
-            {immersive ? "Exit fullscreen" : null}
-          </button>
-        )}
+        <div data-testid="three-d-floating-column">
+          {onToggleImmersive && (
+            <button
+              type="button"
+              data-testid="three-d-immersive-toggle"
+              aria-pressed={Boolean(immersive)}
+              aria-label={immersive ? "Exit fullscreen" : "Fullscreen view"}
+              onClick={onToggleImmersive}
+            >
+              {immersive ? "Exit fullscreen" : null}
+            </button>
+          )}
+          {floatingQuickActions}
+          {floatingAutoDesignAction}
+        </div>
       </div>
     ),
   };
@@ -284,7 +294,7 @@ describe("Auto-Design is public", () => {
 
     expect(screen.queryByTestId("admin-auto-design-auto-build")).toBeNull();
     expect(screen.queryByTestId("mobile-auto-design-auto-build")).toBeNull();
-    expect(screen.queryByTestId("canvas-quick-auto-design")).toBeNull();
+    expect(screen.queryByTestId("three-d-floating-auto-design")).toBeNull();
   });
 
   it("opens the measured build from the toolbar for a visitor", async () => {
@@ -299,19 +309,25 @@ describe("Auto-Design is public", () => {
   });
 });
 
-describe("Auto-Design is reachable from the floating rail (fullscreen)", () => {
-  it("puts an Auto-Design action on the canvas rail next to Cabinet and Hardware", async () => {
+describe("Auto-Design is reachable from the floating column (fullscreen)", () => {
+  it("puts Auto-Design in the one floating column with Add cabinet and Add hardware", { timeout: 60_000 }, async () => {
+    seedDraft();
     await renderDesigner(1280);
     await signInAsVisitor();
+    // The column belongs to the 3D stage, which only mounts in the 3D view.
+    fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
+    await act(async () => {});
 
-    const rail = screen.getByTestId("designer-canvas-action-rail");
-    expect(within(rail).getByTestId("canvas-quick-add-cabinet")).toBeTruthy();
-    expect(within(rail).getByTestId("canvas-quick-add-hardware")).toBeTruthy();
-    const auto = within(rail).getByTestId(
-      "canvas-quick-auto-design",
+    const column = screen.getByTestId("three-d-floating-column");
+    expect(within(column).getByTestId("three-d-floating-add-cabinet")).toBeTruthy();
+    expect(within(column).getByTestId("three-d-floating-add-hardware")).toBeTruthy();
+    const auto = within(column).getByTestId(
+      "three-d-floating-auto-design",
     ) as HTMLButtonElement;
     expect(auto.disabled).toBe(false);
     expect(auto.getAttribute("aria-label")).toBe("Auto-Design");
+    // One column only: the standalone 2D rail never also draws over the 3D stage.
+    expect(screen.queryByTestId("designer-canvas-action-rail")).toBeNull();
   });
 
   // Mounting the full Designer is expensive (a 20k-line page with a WebGL viewer
@@ -336,10 +352,10 @@ describe("Auto-Design is reachable from the floating rail (fullscreen)", () => {
       expect(
         visibleAt(screen.getByTestId("admin-auto-design-auto-build"), 1280),
       ).toBe(false);
-      // …and the rail is the remaining way in, exactly as the owner asked.
-      const rail = screen.getByTestId("designer-canvas-action-rail");
-      expect(visibleAt(rail, 1280)).toBe(true);
-      const auto = within(rail).getByTestId("canvas-quick-auto-design");
+      // …and the floating column is the remaining way in, exactly as the owner asked.
+      const column = screen.getByTestId("three-d-floating-column");
+      expect(visibleAt(column, 1280)).toBe(true);
+      const auto = within(column).getByTestId("three-d-floating-auto-design");
       expect(visibleAt(auto, 1280)).toBe(true);
     },
   );
@@ -354,7 +370,7 @@ describe("Auto-Design is reachable from the floating rail (fullscreen)", () => {
 
       fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
       await act(async () => {});
-      fireEvent.click(screen.getByTestId("canvas-quick-auto-design"));
+      fireEvent.click(screen.getByTestId("three-d-floating-auto-design"));
       await act(async () => {});
 
       expect(
@@ -374,7 +390,8 @@ describe("Auto-Design is reachable from the floating rail (fullscreen)", () => {
       await renderDesigner(834);
       await signInAsVisitor();
 
-      // Not in fullscreen, the bottom strip carries the actions and the rail stays out of the way.
+      // Not in fullscreen, the bottom strip carries the actions and the standalone
+      // 2D rail stays out of the way. The 3D column is hidden at this width.
       expect(screen.queryByTestId("designer-canvas-action-rail")).toBeNull();
 
       fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
@@ -388,8 +405,8 @@ describe("Auto-Design is reachable from the floating rail (fullscreen)", () => {
           ?.getAttribute("data-canvas-only-hidden"),
       ).toBe("true");
       const auto = within(
-        screen.getByTestId("designer-canvas-action-rail"),
-      ).getByTestId("canvas-quick-auto-design");
+        screen.getByTestId("three-d-floating-column"),
+      ).getByTestId("three-d-floating-auto-design");
       expect(visibleAt(auto, 834)).toBe(true);
 
       fireEvent.click(auto);

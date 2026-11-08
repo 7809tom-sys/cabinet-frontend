@@ -47,13 +47,16 @@ describe("tablet workspace layout (1024–1366px or touch)", () => {
     expect(designTool).toContain('{isTabletWorkspace ? "Peninsula" : "Peninsula Wizard"}');
   });
 
-  it("collapses the 3D floating row, fitted fillers, and pan pad on tablets", () => {
+  it("keeps the one floating column on a tablet instead of collapsing it into rows", () => {
     expect(room3d).toContain("const tabletOverlay = embedded;");
     expect(room3d).toContain('${tabletOverlay ? "hidden" : "hidden sm:flex"}');
-    expect(room3d).toContain('data-testid="three-d-fitted-filler-chip"');
-    expect(room3d).toContain("Fillers ({fittedFillerLabels.length})");
-    expect(room3d).toContain('compact hidePan={tabletTier.touch} testId="three-d-tablet-navigation"');
-    expect(room3d).toContain("{!tabletOverlay && <button type=\"button\" data-testid=\"three-d-add-cabinet-mobile\"");
+    // The column is the same single stack on every size; a tablet gets the same
+    // buttons on the same axis, only the PAN pad is dropped where the device
+    // already pinches to pan.
+    expect(room3d).toContain('{...(tabletOverlay ? { testId: "three-d-tablet-navigation" } : {})}');
+    expect(room3d).toContain("hidePan={tabletTier.touch}");
+    expect(room3d).toContain("THREE_D_FLOATING_COLUMN_TEST_ID");
+    expect(room3d).toContain('data-testid="three-d-mobile-canvas-tools-trigger"');
   });
 
   it("hides the site header behind a CD button in full-screen design mode", () => {

@@ -8,21 +8,26 @@ const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("./DesignTool.toolbar.css", import.meta.url), "utf8");
 
 describe("Designer canvas-only mode wiring", () => {
-  it("puts one square toggle in the top right of the 3D viewer", () => {
-    const toggle = room3d.slice(room3d.indexOf('data-testid="three-d-immersive-toggle"') - 400);
-    expect(room3d).toContain('data-testid="three-d-immersive-toggle"');
-    // Square, thumb-sized, and pinned to the viewer's own top-right corner.
-    expect(toggle).toContain("h-11 w-11");
-    expect(toggle).toContain("absolute right-3 top-3");
+  it("puts one square toggle at the top of the floating column", () => {
+    const start = room3d.indexOf('data-testid="three-d-immersive-toggle"');
+    expect(start).toBeGreaterThan(-1);
+    const toggle = room3d.slice(start, start + 700);
+    // Square and thumb-sized, exactly like the rest of the column: it is the
+    // column's first button rather than a separate control pinned to a corner.
+    expect(toggle).toContain("label={immersiveToggleLabel(immersive).ariaLabel}");
+    expect(toggle).toContain("tooltip={immersiveToggleLabel(immersive).title}");
+    expect(toggle).toContain("aria-pressed={immersive}");
+    // The shared column button class is what keeps it the same size as the rest.
+    expect(room3d).toContain("FloatingColumnButton");
+    const floating = readFileSync(new URL("../components/design/floatingColumn.tsx", import.meta.url), "utf8");
+    expect(floating).toContain("h-11 w-11");
+    expect(floating).toContain("THREE_D_VIEWER_COLUMN_CLASS");
+    // The column is bottom-anchored on the canvas, not pinned under a header.
+    expect(floating).toContain("bottom-3");
+    expect(floating).not.toContain("top-[3.9rem]");
     // The icon pair matches the rest of the viewer.
     expect(toggle).toContain("<Maximize2");
     expect(toggle).toContain("<Minimize2");
-    // Accessible label and tooltip change with state.
-    expect(toggle).toContain("aria-label={immersiveToggleLabel(immersive).ariaLabel}");
-    expect(toggle).toContain("title={immersiveToggleLabel(immersive).title}");
-    expect(toggle).toContain("aria-pressed={immersive}");
-    // The stage must not treat the toggle as a canvas click.
-    expect(toggle).toContain("onPointerDown={(event) => event.stopPropagation()}");
   });
 
   it("renders the toggle only where the Designer can actually hide the chrome", () => {

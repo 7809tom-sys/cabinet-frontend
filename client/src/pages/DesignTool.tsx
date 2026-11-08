@@ -15968,6 +15968,34 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     } : null;
   }, [activeFlooringSurface]);
 
+  // Add cabinet / Add hardware / Auto-Design, rendered inside the 3D viewer's
+  // single floating column so they line up with zoom, pan and the rest instead
+  // of floating in separate rows. Same handlers, same shared enable rule.
+  const threeDFloatingQuickActions = (
+    <CanvasActionRail
+      inline
+      testIdPrefix="three-d-floating"
+      actions={["cabinet", "hardware"]}
+      onAddCabinet={() => {
+        setPaletteType(paletteType === "closetparts" ? "closetparts" : paletteType);
+        setMobilePanel("catalog");
+      }}
+      onAddHardware={() => setHardwarePickerSignal((signal) => signal + 1)}
+      addCabinetLabel={paletteType === "closetparts" ? "Add closet parts" : "Add cabinet"}
+    />
+  );
+  const threeDFloatingAutoDesignAction = autoDesignAvailable ? (
+    <CanvasActionRail
+      inline
+      testIdPrefix="three-d-floating"
+      actions={["autoDesign"]}
+      onAddCabinet={() => {}}
+      onAddHardware={() => {}}
+      onAutoDesign={openAutoDesign}
+      autoDesignDisabled={!autoDesignControl.enabled}
+      autoDesignDisabledReason={autoDesignControl.title || undefined}
+    />
+  ) : undefined;
   const renderNativeThreeDCanvas = (hybridPlanUnderlay = false) => {
     if (cornerTowerBoard) return <MasterTracCorner3D placed={placed} wall={cornerTowerBoard.wallId as WallSide} onEdit={editCornerTower} />;
     if (rodTowerBoard) return <MasterTracRod3D placed={placed} wall={rodTowerBoard.wallId as WallSide} onEdit={editRodTower} />;
@@ -15984,6 +16012,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      className="h-full min-h-0"
 	      immersive={canvasOnly}
 	      onToggleImmersive={toggleCanvasOnly}
+	      floatingQuickActions={threeDFloatingQuickActions}
+	      floatingAutoDesignAction={threeDFloatingAutoDesignAction}
 	      scene={resolvedInteractive3dScene}
 	      placed={deferredCountertopGeometry.threeDPlaced}
 	      onGeometryRendered={() => setPaintedCountertopGeometry(deferredCountertopGeometry)}
@@ -19559,16 +19589,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            side-panel margins so the 3D stage fills the viewport; the renderer
 	            re-measures through its own ResizeObserver. */}
 	        <div ref={canvasExportRef} data-testid="designer-canvas" className={canvasOnly ? "relative flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : DESIGNER_CANVAS_CONTAINER_CLASS}>
-	          {/* Fast path for the actions the owner uses most. It floats over
-	              the canvas, stays visible in canvas-only mode, and calls the same
-	              handlers as the toolbar buttons. Hidden where the phone/tablet
-	              bottom action strip already carries the same actions — except in
-	              canvas-only mode, where that strip and the whole toolbar are
-	              hidden. There the rail is the only control left, so a tablet in
-	              portrait (under the 1024px mobile breakpoint) keeps a way into
-	              Auto-Design instead of a fullscreen canvas with no controls. */}
+	          {/* The 3D viewer now owns the whole right-edge column, so this rail
+	              only renders over the 2D plan and elevation views, which have no
+	              floating column of their own. It stays visible in canvas-only
+	              mode: there the whole toolbar and the phone bottom strip are
+	              hidden, and this rail is the only control left. */}
 	          <CanvasActionRail
-	            hidden={isMobile && !canvasOnly}
+	            hidden={isMobile || viewMode === "threeD" || viewMode === "hybrid"}
 	            onAddCabinet={() => {
 	              setPaletteType(paletteType === "closetparts" ? "closetparts" : paletteType);
 	              setMobilePanel("catalog");
@@ -19675,7 +19702,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            </div>
 	          )}
 	          {autoDesignReviewFindings.length > 0 && (
-	            <div className="absolute bottom-3 right-3 z-40 max-w-md" data-testid="designer-review-list">
+	            <div className="absolute bottom-3 right-28 z-40 max-w-md" data-testid="designer-review-list">
 	              <div role="alert" className="rounded-lg border border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-950 shadow-md">
 	                <p className="font-semibold">Design questions needing review</p>
 	                <ul className="mt-1 space-y-1">

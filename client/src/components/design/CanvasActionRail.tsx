@@ -1,26 +1,29 @@
 import { Boxes, Ruler, Wrench } from "lucide-react";
+import {
+  FloatingColumnButton,
+  FloatingColumnLabel,
+} from "./floatingColumn";
 
 /**
- * The actions the owner actually uses, as thumb-sized icons floating on the
- * right edge of the canvas: Add a cabinet, Add hardware, and — in a kitchen —
- * Auto-Design.
+ * The actions the owner actually uses, as thumb-sized icons:
+ * add a cabinet, add hardware, and — in a kitchen — Auto-Design.
  *
  * This is an additive fast path, not a redesign. It owns no business logic — it
  * receives the same handlers the existing toolbar buttons call, so a cabinet
  * added here goes through the same validation, pricing and cart code.
  *
- * Auto-Design matters most HERE. Canvas-only ("fullscreen") mode hides the
- * Designer's own toolbars and bottom bar, so the rail is the only control left
- * on a tablet. `onAutoDesign` is the page's existing opener and is only passed
- * when Auto-Design is available for the current room (kitchen) and the plan is
- * empty enough to accept a build; the rest of that rule stays in the page.
+ * Two ways to render the same buttons:
+ * - `inline`: just the buttons, no positioning. The 3D viewer's floating column
+ *   uses this so the quick adds sit in the ONE right-edge column with zoom, pan
+ *   and the rest, all the same size.
+ * - default: the original positioned rail over the 2D plan and elevation views,
+ *   which have no floating column of their own.
  *
  * Layout notes:
- * - 44×44 minimum touch targets, stacked with an 8px gap, anchored to the top
- *   right so they clear the immersive toggle (top-right) and the zoom/pan rail
- *   (bottom-right) at every width.
+ * - 44×44 minimum touch targets, stacked with an 8px gap.
  * - The visible icon is paired with a small text label and a title/aria-label,
- *   so the action is readable on a tablet without hovering.
+ *   so the action is readable on a tablet without hovering; the column drops the
+ *   label automatically when it gets tight, and the tooltip still names it.
  * - It stays mounted in canvas-only mode; the Designer only hides its own bars.
  */
 export type CanvasActionRailProps = {
@@ -43,24 +46,21 @@ export type CanvasActionRailProps = {
   addCabinetLabel?: string;
   /** The phone/tablet bottom bar already carries these; hidden there to avoid two fast paths. */
   hidden?: boolean;
+  /** Render only the buttons, for the caller's own floating column. */
+  inline?: boolean;
+  /** Which actions to render. Defaults to all three. */
+  actions?: ReadonlyArray<"cabinet" | "hardware" | "autoDesign">;
+  /** Adds a test id prefix so the inline copy and the rail copy stay distinct. */
+  testIdPrefix?: string;
 };
-
-const ITEM_CLASS =
-  "group inline-flex h-11 w-11 flex-col items-center justify-center gap-0.5 rounded-xl border border-[#d9cdb4] bg-white/95 text-[8px] font-semibold leading-none text-[#1a2744] shadow-md backdrop-blur transition hover:bg-white hover:shadow-lg active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white/95 disabled:hover:shadow-md";
-
-/** Auto-Design keeps the gold outline the toolbar triggers use, so it reads the same. */
-const AUTO_DESIGN_ITEM_CLASS = `${ITEM_CLASS} border-[#d4a75a] text-[#765416]`;
 
 export const AUTO_DESIGN_DEFAULT_TITLE =
   "Auto-Design a kitchen from four fixed fixture anchors";
 
 /**
- * Shared rail geometry. Kept as data so the layout test pins it.
- *
- * Anchored near the TOP of the right edge, directly under the fullscreen toggle
- * and the canvas-tools row. The bottom-right corner already belongs to the
- * zoom / reset / pan rail, which is up to 380px tall, so a vertically centred
- * rail would sit on top of it at desktop and tablet heights.
+ * Shared rail geometry for the positioned copy. Anchored near the TOP of the
+ * right edge, because the bottom-right corner belongs to the 3D column and the
+ * floor-plan zoom controls.
  */
 export const CANVAS_ACTION_RAIL_CLASS =
   "absolute right-2 top-[6.75rem] z-30 flex flex-col items-center gap-2";
@@ -75,6 +75,9 @@ export function CanvasActionRail({
   addCabinetDisabledReason,
   addCabinetLabel = "Add cabinet",
   hidden = false,
+  inline = false,
+  actions = ["cabinet", "hardware", "autoDesign"],
+  testIdPrefix = "canvas-quick",
 }: CanvasActionRailProps) {
   if (hidden) return null;
   const cabinetTitle =
@@ -85,55 +88,74 @@ export function CanvasActionRail({
     autoDesignDisabled && autoDesignDisabledReason
       ? autoDesignDisabledReason
       : AUTO_DESIGN_DEFAULT_TITLE;
+
+  const buttons = (
+    <>
+      {actions.includes("cabinet") && (
+        <FloatingColumnButton
+          data-testid={`${testIdPrefix}-add-cabinet`}
+          onClick={onAddCabinet}
+          disabled={addCabinetDisabled}
+          label={addCabinetLabel}
+          tooltip={cabinetTitle}
+        >
+          <Boxes className="h-5 w-5" aria-hidden="true" />
+          <FloatingColumnLabel>Cabinet</FloatingColumnLabel>
+        </FloatingColumnButton>
+      )}
+      {actions.includes("hardware") && (
+        <FloatingColumnButton
+          data-testid={`${testIdPrefix}-add-hardware`}
+          onClick={onAddHardware}
+          label="Add hardware"
+          tooltip="Add hardware — choose real knobs, pulls, and cup pulls for this design"
+        >
+          <Wrench className="h-5 w-5" aria-hidden="true" />
+          <FloatingColumnLabel>Hardware</FloatingColumnLabel>
+        </FloatingColumnButton>
+      )}
+      {actions.includes("autoDesign") && onAutoDesign && (
+        <FloatingColumnButton
+          data-testid={`${testIdPrefix}-auto-design`}
+          onClick={onAutoDesign}
+          disabled={autoDesignDisabled}
+          label="Auto-Design"
+          tooltip={autoDesignTitle}
+          accent
+        >
+          <Ruler className="h-5 w-5" aria-hidden="true" />
+          <FloatingColumnLabel>Auto</FloatingColumnLabel>
+        </FloatingColumnButton>
+      )}
+    </>
+  );
+
+  if (inline) {
+    return (
+      <div
+        data-testid="designer-canvas-action-buttons"
+        className="contents"
+        // The column floats over the 3D stage, which treats pointer-down as a
+        // selection gesture. Stop the press so tapping a button never also
+        // selects or deselects a cabinet behind it.
+        onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
+      >
+        {buttons}
+      </div>
+    );
+  }
+
   return (
     <div
       data-testid="designer-canvas-action-rail"
       className={CANVAS_ACTION_RAIL_CLASS}
       role="group"
       aria-label="Quick canvas actions"
-      // The rail floats over the 3D stage, which treats pointer-down as a
-      // selection gesture. Stop the press so tapping a button never also
-      // selects or deselects a cabinet behind it.
       onPointerDown={(event) => event.stopPropagation()}
       onPointerUp={(event) => event.stopPropagation()}
     >
-      <button
-        type="button"
-        data-testid="canvas-quick-add-cabinet"
-        onClick={onAddCabinet}
-        disabled={addCabinetDisabled}
-        title={cabinetTitle}
-        aria-label={addCabinetLabel}
-        className={ITEM_CLASS}
-      >
-        <Boxes className="h-5 w-5" aria-hidden="true" />
-        <span aria-hidden="true">Cabinet</span>
-      </button>
-      <button
-        type="button"
-        data-testid="canvas-quick-add-hardware"
-        onClick={onAddHardware}
-        title="Add hardware — choose real knobs, pulls, and cup pulls for this design"
-        aria-label="Add hardware"
-        className={ITEM_CLASS}
-      >
-        <Wrench className="h-5 w-5" aria-hidden="true" />
-        <span aria-hidden="true">Hardware</span>
-      </button>
-      {onAutoDesign && (
-        <button
-          type="button"
-          data-testid="canvas-quick-auto-design"
-          onClick={onAutoDesign}
-          disabled={autoDesignDisabled}
-          title={autoDesignTitle}
-          aria-label="Auto-Design"
-          className={AUTO_DESIGN_ITEM_CLASS}
-        >
-          <Ruler className="h-5 w-5" aria-hidden="true" />
-          <span aria-hidden="true">Auto</span>
-        </button>
-      )}
+      {buttons}
     </div>
   );
 }
