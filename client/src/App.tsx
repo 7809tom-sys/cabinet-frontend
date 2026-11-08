@@ -69,7 +69,6 @@ const ContractorDashboard = lazy(() => import("@/pages/ContractorDashboard"));
 const Cart = lazy(() => import("@/pages/Cart"));
 const VendorPortal = lazy(() => import("@/pages/VendorPortal"));
 const CatalogDensityPreview = lazy(() => import("@/pages/CatalogDensityPreview"));
-const HardwareGlyphHarness = lazy(() => import("./hardwareGlyphHarness"));
 const VendorClosetStudio = lazy(() => import("@/pages/VendorClosetStudio"));
 const PhotoToCart = lazy(() => import("@/pages/PhotoToCart"));
 const FixturePhotoToCart = lazy(() => import("@/pages/FixturePhotoToCart"));
@@ -887,15 +886,6 @@ export default function App() {
 
         {/* Dev-only screenshot harness for the vendor catalog density work. It
             renders the same table markup the real catalog uses. */}
-        {/* Dev-only proof sheet for the straight-on elevation hardware glyphs. */}
-        <Route path="/hardware-glyph-preview">
-          {() => (
-            <Suspense fallback={<PageLoader />}>
-              <HardwareGlyphHarness />
-            </Suspense>
-          )}
-        </Route>
-
         <Route path="/catalog-density-preview">
           {() => (
             <Suspense fallback={<PageLoader />}>
