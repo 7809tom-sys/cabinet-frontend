@@ -26,6 +26,17 @@ export type PelicanVanitySinkKind = "vanity-basin" | "vanity-top";
 /** How the basin is installed, exactly as the Pelican specification sheet states it. */
 export type PelicanVanitySinkMount = "undermount" | "drop-in" | "vessel" | "integrated";
 
+/**
+ * The plan shape of the basin opening, as stated on the Pelican specification
+ * sheet ("Circular Basin", "Oval Basin", "Rectangular Basin") or, for the few
+ * sheets that publish no shape word, taken from the interior measurements.
+ *
+ * This is separate from `mount`: a vessel basin can be round, square or oval, and
+ * an undermount can be circular or rectangular. The designer draws the bowl from
+ * this, so a shopper who picks a round basin gets a round bowl.
+ */
+export type PelicanVanitySinkShape = "oval" | "rectangle" | "circle";
+
 export type PelicanVanitySink = {
   /** Base model, e.g. "PL-3099". Every finish/colour variant resolves to this. */
   model: string;
@@ -34,6 +45,12 @@ export type PelicanVanitySink = {
   mount: PelicanVanitySinkMount;
   /** Source-stated bowl count. Every Pelican vanity basin today is single-bowl. */
   bowlCount: 1 | 2;
+  /**
+   * Plan shape of the basin, from the specification sheet's own wording. Every
+   * basin record carries one so the 3D bowl matches the product photo; there is
+   * no "unknown" fallback to a rectangle.
+   */
+  basinShape: PelicanVanitySinkShape;
   /** Source-stated pre-drilled faucet holes, when the sheet publishes a count. */
   faucetHoles?: 1 | 3;
   /** Source-stated hole spacing in inches (3 holes only). */
@@ -105,52 +122,52 @@ const SPEC = {
  */
 export const PELICAN_VANITY_SINKS: readonly PelicanVanitySink[] = [
   // ── Undermount porcelain basins ──────────────────────────────────────────
-  { model: "PL-1606", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Sandbar Series", widthIn: 19, depthIn: 16, heightIn: 7, bowlWidthIn: 17, bowlDepthIn: 14, bowlHeightIn: 4.5, specificationUrl: SPEC.pl1606 },
-  { model: "PL-1634", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 21, depthIn: 15.75, heightIn: 5.25, bowlWidthIn: 18, bowlDepthIn: 13, bowlHeightIn: 3.375, specificationUrl: SPEC.pl1634 },
-  { model: "PL-1637", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Sandbar Series", widthIn: 19.5, depthIn: 15.5, heightIn: 7.25, bowlWidthIn: 17, bowlDepthIn: 13, bowlHeightIn: 5, specificationUrl: SPEC.pl1637 },
-  { model: "PL-1646", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Sandbar Series", widthIn: 21.5, depthIn: 15.125, heightIn: 6.5, bowlWidthIn: 19, bowlDepthIn: 13, bowlHeightIn: 4.5, specificationUrl: SPEC.pl1646 },
-  { model: "PL-1647", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Sandbar Series", widthIn: 24.375, depthIn: 16.625, heightIn: 7, bowlWidthIn: 22, bowlDepthIn: 14.25, bowlHeightIn: 4.75, specificationUrl: SPEC.pl1647 },
-  { model: "PL-3033", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 21, depthIn: 13.375, heightIn: 7, bowlWidthIn: 18.5, bowlDepthIn: 11, bowlHeightIn: 5.5, specificationUrl: SPEC.pl3033 },
-  { model: "PL-3044", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 21, depthIn: 14.5, heightIn: 8.5, bowlWidthIn: 18.25, bowlDepthIn: 12, bowlHeightIn: 6.25, specificationUrl: SPEC.pl3044 },
-  { model: "PL-3059", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 19, depthIn: 15.75, heightIn: 7.75, bowlWidthIn: 17.25, bowlDepthIn: 14, bowlHeightIn: 5.75, specificationUrl: SPEC.pl3059 },
-  { model: "PL-3064", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 18, depthIn: 15, heightIn: 7.5, bowlWidthIn: 16, bowlDepthIn: 13, bowlHeightIn: 6, specificationUrl: SPEC.pl3064 },
-  { model: "PL-3072", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 17.125, depthIn: 14, heightIn: 7.5, bowlWidthIn: 15.25, bowlDepthIn: 12, bowlHeightIn: 6, specificationUrl: SPEC.pl3072 },
-  { model: "PL-3088", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 18, depthIn: 13, heightIn: 7.25, bowlWidthIn: 16.25, bowlDepthIn: 11, bowlHeightIn: 5.5, specificationUrl: SPEC.pl3088 },
-  { model: "PL-3099", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 20.875, depthIn: 15.625, heightIn: 7.75, bowlWidthIn: 18, bowlDepthIn: 13, bowlHeightIn: 6, specificationUrl: SPEC.pl3099 },
-  { model: "PL-3608", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 19, depthIn: 16, heightIn: 5.5, bowlWidthIn: 16.5, bowlDepthIn: 13.5, bowlHeightIn: 3.5, specificationUrl: SPEC.pl3608 },
-  { model: "PL-3611", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 19.75, depthIn: 16, heightIn: 7.375, bowlWidthIn: 17.5, bowlDepthIn: 13, bowlHeightIn: 5.25, specificationUrl: SPEC.pl3611 },
-  { model: "PL-3639", kind: "vanity-basin", mount: "undermount", bowlCount: 1, series: "Pearl Series", widthIn: 17, depthIn: 13.75, heightIn: 5.25, bowlWidthIn: 14.5, bowlDepthIn: 11.5, bowlHeightIn: 3.375, specificationUrl: SPEC.pl3639 },
+  { model: "PL-1606", kind: "vanity-basin", mount: "undermount", basinShape: "circle", bowlCount: 1, series: "Sandbar Series", widthIn: 19, depthIn: 16, heightIn: 7, bowlWidthIn: 17, bowlDepthIn: 14, bowlHeightIn: 4.5, specificationUrl: SPEC.pl1606 },
+  { model: "PL-1634", kind: "vanity-basin", mount: "undermount", basinShape: "oval", bowlCount: 1, series: "Pearl Series", widthIn: 21, depthIn: 15.75, heightIn: 5.25, bowlWidthIn: 18, bowlDepthIn: 13, bowlHeightIn: 3.375, specificationUrl: SPEC.pl1634 },
+  { model: "PL-1637", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Sandbar Series", widthIn: 19.5, depthIn: 15.5, heightIn: 7.25, bowlWidthIn: 17, bowlDepthIn: 13, bowlHeightIn: 5, specificationUrl: SPEC.pl1637 },
+  { model: "PL-1646", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Sandbar Series", widthIn: 21.5, depthIn: 15.125, heightIn: 6.5, bowlWidthIn: 19, bowlDepthIn: 13, bowlHeightIn: 4.5, specificationUrl: SPEC.pl1646 },
+  { model: "PL-1647", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Sandbar Series", widthIn: 24.375, depthIn: 16.625, heightIn: 7, bowlWidthIn: 22, bowlDepthIn: 14.25, bowlHeightIn: 4.75, specificationUrl: SPEC.pl1647 },
+  { model: "PL-3033", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Pearl Series", widthIn: 21, depthIn: 13.375, heightIn: 7, bowlWidthIn: 18.5, bowlDepthIn: 11, bowlHeightIn: 5.5, specificationUrl: SPEC.pl3033 },
+  { model: "PL-3044", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Pearl Series", widthIn: 21, depthIn: 14.5, heightIn: 8.5, bowlWidthIn: 18.25, bowlDepthIn: 12, bowlHeightIn: 6.25, specificationUrl: SPEC.pl3044 },
+  { model: "PL-3059", kind: "vanity-basin", mount: "undermount", basinShape: "circle", bowlCount: 1, series: "Pearl Series", widthIn: 19, depthIn: 15.75, heightIn: 7.75, bowlWidthIn: 17.25, bowlDepthIn: 14, bowlHeightIn: 5.75, specificationUrl: SPEC.pl3059 },
+  { model: "PL-3064", kind: "vanity-basin", mount: "undermount", basinShape: "circle", bowlCount: 1, series: "Pearl Series", widthIn: 18, depthIn: 15, heightIn: 7.5, bowlWidthIn: 16, bowlDepthIn: 13, bowlHeightIn: 6, specificationUrl: SPEC.pl3064 },
+  { model: "PL-3072", kind: "vanity-basin", mount: "undermount", basinShape: "circle", bowlCount: 1, series: "Pearl Series", widthIn: 17.125, depthIn: 14, heightIn: 7.5, bowlWidthIn: 15.25, bowlDepthIn: 12, bowlHeightIn: 6, specificationUrl: SPEC.pl3072 },
+  { model: "PL-3088", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Pearl Series", widthIn: 18, depthIn: 13, heightIn: 7.25, bowlWidthIn: 16.25, bowlDepthIn: 11, bowlHeightIn: 5.5, specificationUrl: SPEC.pl3088 },
+  { model: "PL-3099", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Pearl Series", widthIn: 20.875, depthIn: 15.625, heightIn: 7.75, bowlWidthIn: 18, bowlDepthIn: 13, bowlHeightIn: 6, specificationUrl: SPEC.pl3099 },
+  { model: "PL-3608", kind: "vanity-basin", mount: "undermount", basinShape: "circle", bowlCount: 1, series: "Pearl Series", widthIn: 19, depthIn: 16, heightIn: 5.5, bowlWidthIn: 16.5, bowlDepthIn: 13.5, bowlHeightIn: 3.5, specificationUrl: SPEC.pl3608 },
+  { model: "PL-3611", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Pearl Series", widthIn: 19.75, depthIn: 16, heightIn: 7.375, bowlWidthIn: 17.5, bowlDepthIn: 13, bowlHeightIn: 5.25, specificationUrl: SPEC.pl3611 },
+  { model: "PL-3639", kind: "vanity-basin", mount: "undermount", basinShape: "rectangle", bowlCount: 1, series: "Pearl Series", widthIn: 17, depthIn: 13.75, heightIn: 5.25, bowlWidthIn: 14.5, bowlDepthIn: 11.5, bowlHeightIn: 3.375, specificationUrl: SPEC.pl3639 },
   // ── Vessel (above-counter) porcelain basins — height is above the counter ──
-  { model: "PL-3001", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 16, depthIn: 16, heightIn: 6.25, specificationUrl: SPEC.pl3001 },
-  { model: "PL-3002", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 22.75, depthIn: 14.75, heightIn: 7.5, specificationUrl: SPEC.pl3002 },
-  { model: "PL-3014", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 16.75, depthIn: 16.75, heightIn: 5.75, specificationUrl: SPEC.pl3014 },
-  { model: "PL-3053", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 17.75, depthIn: 17.75, heightIn: 7, specificationUrl: SPEC.pl3053 },
-  { model: "PL-3060", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 16, depthIn: 16, heightIn: 5.125, specificationUrl: SPEC.pl3060 },
-  { model: "PL-3079", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 18, depthIn: 18, heightIn: 6, specificationUrl: SPEC.pl3079 },
-  { model: "PL-3081", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 19.25, depthIn: 14, heightIn: 5.625, specificationUrl: SPEC.pl3081 },
-  { model: "PL-3082", kind: "vanity-basin", mount: "vessel", bowlCount: 1, series: "Shell Series", widthIn: 20.25, depthIn: 14.125, heightIn: 5.75, specificationUrl: SPEC.pl3082 },
+  { model: "PL-3001", kind: "vanity-basin", mount: "vessel", basinShape: "circle", bowlCount: 1, series: "Shell Series", widthIn: 16, depthIn: 16, heightIn: 6.25, specificationUrl: SPEC.pl3001 },
+  { model: "PL-3002", kind: "vanity-basin", mount: "vessel", basinShape: "oval", bowlCount: 1, series: "Shell Series", widthIn: 22.75, depthIn: 14.75, heightIn: 7.5, specificationUrl: SPEC.pl3002 },
+  { model: "PL-3014", kind: "vanity-basin", mount: "vessel", basinShape: "circle", bowlCount: 1, series: "Shell Series", widthIn: 16.75, depthIn: 16.75, heightIn: 5.75, specificationUrl: SPEC.pl3014 },
+  { model: "PL-3053", kind: "vanity-basin", mount: "vessel", basinShape: "circle", bowlCount: 1, series: "Shell Series", widthIn: 17.75, depthIn: 17.75, heightIn: 7, specificationUrl: SPEC.pl3053 },
+  { model: "PL-3060", kind: "vanity-basin", mount: "vessel", basinShape: "circle", bowlCount: 1, series: "Shell Series", widthIn: 16, depthIn: 16, heightIn: 5.125, specificationUrl: SPEC.pl3060 },
+  { model: "PL-3079", kind: "vanity-basin", mount: "vessel", basinShape: "circle", bowlCount: 1, series: "Shell Series", widthIn: 18, depthIn: 18, heightIn: 6, specificationUrl: SPEC.pl3079 },
+  { model: "PL-3081", kind: "vanity-basin", mount: "vessel", basinShape: "oval", bowlCount: 1, series: "Shell Series", widthIn: 19.25, depthIn: 14, heightIn: 5.625, specificationUrl: SPEC.pl3081 },
+  { model: "PL-3082", kind: "vanity-basin", mount: "vessel", basinShape: "oval", bowlCount: 1, series: "Shell Series", widthIn: 20.25, depthIn: 14.125, heightIn: 5.75, specificationUrl: SPEC.pl3082 },
   // ── Drop-in / self-rimming basins ────────────────────────────────────────
-  { model: "PL-3086", kind: "vanity-basin", mount: "drop-in", bowlCount: 1, series: "Pearl Series", widthIn: 18, depthIn: 18, heightIn: 7.5, bowlWidthIn: 16, bowlDepthIn: 16, bowlHeightIn: 6, specificationUrl: SPEC.pl3086 },
-  { model: "PL-5053", kind: "vanity-basin", mount: "drop-in", bowlCount: 1, faucetHoles: 1, series: "Pearl Series", widthIn: 21.25, depthIn: 18, heightIn: 7.5, bowlWidthIn: 16.5, bowlDepthIn: 11.25, bowlHeightIn: 5.5, specificationUrl: SPEC.pl5053 },
+  { model: "PL-3086", kind: "vanity-basin", mount: "drop-in", basinShape: "circle", bowlCount: 1, series: "Pearl Series", widthIn: 18, depthIn: 18, heightIn: 7.5, bowlWidthIn: 16, bowlDepthIn: 16, bowlHeightIn: 6, specificationUrl: SPEC.pl3086 },
+  { model: "PL-5053", kind: "vanity-basin", mount: "drop-in", basinShape: "rectangle", bowlCount: 1, faucetHoles: 1, series: "Pearl Series", widthIn: 21.25, depthIn: 18, heightIn: 7.5, bowlWidthIn: 16.5, bowlDepthIn: 11.25, bowlHeightIn: 5.5, specificationUrl: SPEC.pl5053 },
   // Two purchasable records, one per pre-drilled spread; the hole count is source-stated.
-  { model: "PL-1011", kind: "vanity-basin", mount: "drop-in", bowlCount: 1, faucetHoles: 3, faucetSpreadIn: 4, series: "Pearl Series", widthIn: 20.5, depthIn: 17.75, heightIn: 7.75, bowlWidthIn: 15.5, bowlDepthIn: 11.25, bowlHeightIn: 6.125, specificationUrl: SPEC.pl1011_4 },
-  { model: "PL-1011", kind: "vanity-basin", mount: "drop-in", bowlCount: 1, faucetHoles: 3, faucetSpreadIn: 8, series: "Pearl Series", widthIn: 20.5, depthIn: 17.75, heightIn: 7.75, bowlWidthIn: 15.5, bowlDepthIn: 11.25, bowlHeightIn: 6.125, specificationUrl: SPEC.pl1011_8 },
+  { model: "PL-1011", kind: "vanity-basin", mount: "drop-in", basinShape: "oval", bowlCount: 1, faucetHoles: 3, faucetSpreadIn: 4, series: "Pearl Series", widthIn: 20.5, depthIn: 17.75, heightIn: 7.75, bowlWidthIn: 15.5, bowlDepthIn: 11.25, bowlHeightIn: 6.125, specificationUrl: SPEC.pl1011_4 },
+  { model: "PL-1011", kind: "vanity-basin", mount: "drop-in", basinShape: "oval", bowlCount: 1, faucetHoles: 3, faucetSpreadIn: 8, series: "Pearl Series", widthIn: 20.5, depthIn: 17.75, heightIn: 7.75, bowlWidthIn: 15.5, bowlDepthIn: 11.25, bowlHeightIn: 6.125, specificationUrl: SPEC.pl1011_8 },
   // ── Integrated cultured-marble vanity tops (bowl is moulded into the top) ──
-  { model: "PL-R1917", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 18.969, depthIn: 17.016, heightIn: 6.109, bowlWidthIn: 12.984, bowlDepthIn: 9.844, bowlHeightIn: 4.531, specificationUrl: SPEC.plR1917 },
-  { model: "PL-R2519", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 18.969, heightIn: 6.656, bowlWidthIn: 18.969, bowlDepthIn: 10.984, bowlHeightIn: 4.953, specificationUrl: SPEC.plR2519 },
-  { model: "PL-R2522", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 22.016, heightIn: 6.656, bowlWidthIn: 18.031, bowlDepthIn: 13.5, bowlHeightIn: 4.953, specificationUrl: SPEC.plR2522 },
-  { model: "PL-R3119", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 30.984, depthIn: 18.969, heightIn: 6.656, bowlWidthIn: 18.969, bowlDepthIn: 10.938, bowlHeightIn: 4.953, specificationUrl: SPEC.plR3119 },
-  { model: "PL-R3122", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 30.984, depthIn: 22.047, heightIn: 6.609, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 4.922, specificationUrl: SPEC.plR3122 },
-  { model: "PL-R3722", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 37.016, depthIn: 22.047, heightIn: 6.609, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 4.922, specificationUrl: SPEC.plR3722 },
-  { model: "PL-R4322", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 42.984, depthIn: 22.047, heightIn: 6.609, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 5.156, specificationUrl: SPEC.plR4322 },
-  { model: "PL-R4922", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 49.016, depthIn: 22.047, heightIn: 6.812, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 5.156, specificationUrl: SPEC.plR4922 },
+  { model: "PL-R1917", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 18.969, depthIn: 17.016, heightIn: 6.109, bowlWidthIn: 12.984, bowlDepthIn: 9.844, bowlHeightIn: 4.531, specificationUrl: SPEC.plR1917 },
+  { model: "PL-R2519", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 18.969, heightIn: 6.656, bowlWidthIn: 18.969, bowlDepthIn: 10.984, bowlHeightIn: 4.953, specificationUrl: SPEC.plR2519 },
+  { model: "PL-R2522", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 22.016, heightIn: 6.656, bowlWidthIn: 18.031, bowlDepthIn: 13.5, bowlHeightIn: 4.953, specificationUrl: SPEC.plR2522 },
+  { model: "PL-R3119", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 30.984, depthIn: 18.969, heightIn: 6.656, bowlWidthIn: 18.969, bowlDepthIn: 10.938, bowlHeightIn: 4.953, specificationUrl: SPEC.plR3119 },
+  { model: "PL-R3122", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 30.984, depthIn: 22.047, heightIn: 6.609, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 4.922, specificationUrl: SPEC.plR3122 },
+  { model: "PL-R3722", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 37.016, depthIn: 22.047, heightIn: 6.609, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 4.922, specificationUrl: SPEC.plR3722 },
+  { model: "PL-R4322", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 42.984, depthIn: 22.047, heightIn: 6.609, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 5.156, specificationUrl: SPEC.plR4322 },
+  { model: "PL-R4922", kind: "vanity-top", mount: "integrated", basinShape: "rectangle", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 49.016, depthIn: 22.047, heightIn: 6.812, bowlWidthIn: 20.859, bowlDepthIn: 13.781, bowlHeightIn: 5.156, specificationUrl: SPEC.plR4922 },
   // The oval Cove tops carry a built-in backsplash; that is why the height is larger.
-  { model: "PL-O2519", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 19.016, heightIn: 10.234, bowlWidthIn: 16.141, bowlDepthIn: 10.469, bowlHeightIn: 4.453, specificationUrl: SPEC.plO2519 },
-  { model: "PL-O2522", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 22.016, heightIn: 11.297, bowlWidthIn: 16.844, bowlDepthIn: 11.562, bowlHeightIn: 5.547, specificationUrl: SPEC.plO2522 },
-  { model: "PL-O3122", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 30.984, depthIn: 22.016, heightIn: 11.344, bowlWidthIn: 17.125, bowlDepthIn: 11.688, bowlHeightIn: 5.625, specificationUrl: SPEC.plO3122 },
-  { model: "PL-O3719", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 37.016, depthIn: 19.016, heightIn: 10.906, bowlWidthIn: 17.281, bowlDepthIn: 10.312, bowlHeightIn: 5.203, specificationUrl: SPEC.plO3719 },
-  { model: "PL-O3722", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 37.016, depthIn: 22.016, heightIn: 10.906, bowlWidthIn: 18.312, bowlDepthIn: 12.203, bowlHeightIn: 5.203, specificationUrl: SPEC.plO3722 },
-  { model: "PL-O4922", kind: "vanity-top", mount: "integrated", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 49.016, depthIn: 22.016, heightIn: 11.219, bowlWidthIn: 16.844, bowlDepthIn: 11.609, bowlHeightIn: 5.547, specificationUrl: SPEC.plO4922 },
+  { model: "PL-O2519", kind: "vanity-top", mount: "integrated", basinShape: "oval", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 19.016, heightIn: 10.234, bowlWidthIn: 16.141, bowlDepthIn: 10.469, bowlHeightIn: 4.453, specificationUrl: SPEC.plO2519 },
+  { model: "PL-O2522", kind: "vanity-top", mount: "integrated", basinShape: "oval", bowlCount: 1, faucetHoles: 1, series: "Cove Series", widthIn: 25, depthIn: 22.016, heightIn: 11.297, bowlWidthIn: 16.844, bowlDepthIn: 11.562, bowlHeightIn: 5.547, specificationUrl: SPEC.plO2522 },
+  { model: "PL-O3122", kind: "vanity-top", mount: "integrated", basinShape: "oval", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 30.984, depthIn: 22.016, heightIn: 11.344, bowlWidthIn: 17.125, bowlDepthIn: 11.688, bowlHeightIn: 5.625, specificationUrl: SPEC.plO3122 },
+  { model: "PL-O3719", kind: "vanity-top", mount: "integrated", basinShape: "oval", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 37.016, depthIn: 19.016, heightIn: 10.906, bowlWidthIn: 17.281, bowlDepthIn: 10.312, bowlHeightIn: 5.203, specificationUrl: SPEC.plO3719 },
+  { model: "PL-O3722", kind: "vanity-top", mount: "integrated", basinShape: "oval", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 37.016, depthIn: 22.016, heightIn: 10.906, bowlWidthIn: 18.312, bowlDepthIn: 12.203, bowlHeightIn: 5.203, specificationUrl: SPEC.plO3722 },
+  { model: "PL-O4922", kind: "vanity-top", mount: "integrated", basinShape: "oval", bowlCount: 1, faucetHoles: 3, series: "Cove Series", widthIn: 49.016, depthIn: 22.016, heightIn: 11.219, bowlWidthIn: 16.844, bowlDepthIn: 11.609, bowlHeightIn: 5.547, specificationUrl: SPEC.plO4922 },
 ];
 
 /** How a vanity faucet is installed, exactly as the Pelican specification sheet states it. */

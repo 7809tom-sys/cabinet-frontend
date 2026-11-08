@@ -18,6 +18,7 @@ import {
   pelicanVanityFaucetProfile,
   pelicanVanitySinkProfile,
   type PelicanVanitySinkMount,
+  type PelicanVanitySinkShape,
 } from "@shared/pelicanBathroomFixtures";
 
 export type VerifiedPelicanSinkProfile = {
@@ -34,6 +35,13 @@ export type VerifiedPelicanSinkProfile = {
   vanityMount?: PelicanVanitySinkMount;
   /** Set only on a bathroom vanity item: separate bowl, or bowl moulded into its top. */
   vanityKind?: "vanity-basin" | "vanity-top";
+  /**
+   * Plan shape of the basin, straight from the Pelican specification sheet. Set
+   * only on a vanity basin or top: a kitchen sink has no vanity record, and its
+   * rectangular bowl is correct as drawn. The renderer draws the bowl from this,
+   * so a shopper who picks a round basin gets a round bowl instead of a rectangle.
+   */
+  basinShape?: PelicanVanitySinkShape;
   exteriorWidthIn: number;
   exteriorDepthIn: number;
   exteriorHeightIn: number;
@@ -743,6 +751,7 @@ function vanitySinkAsVerifiedProfile(
     apronFront: false,
     vanityMount: vanity.mount,
     vanityKind: vanity.kind,
+    basinShape: vanity.basinShape,
     exteriorWidthIn: vanity.widthIn,
     exteriorDepthIn: vanity.depthIn,
     exteriorHeightIn: vanity.heightIn,

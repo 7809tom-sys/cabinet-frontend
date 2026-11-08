@@ -9535,6 +9535,52 @@ export function recessedSinkBowlGeometry(width: number, depth: number, height: n
   return geometry;
 }
 
+/**
+ * A recessed bowl with an OVAL or CIRCULAR opening.
+ *
+ * `recessedSinkBowlGeometry` builds a rounded rectangle, which is why a shopper
+ * who picked the round PL-3608 got a rectangular basin: the renderer had no other
+ * shape. A bathroom vanity basin's plan shape comes from its specification sheet,
+ * so it is drawn as published.
+ */
+export function ellipticalSinkBowlGeometry(
+  width: number,
+  depth: number,
+  height: number,
+  segments = 72,
+) {
+  // The bowl walls draw in slightly as they descend, as a moulded china basin does.
+  const sideInset = Math.min(1.25 * INCH, width * 0.12, depth * 0.12);
+  const bottomWidth = Math.max(width * 0.58, width - sideInset * 2);
+  const bottomDepth = Math.max(depth * 0.58, depth - sideInset * 2);
+  const positions: number[] = [];
+  const indices: number[] = [];
+  for (let index = 0; index < segments; index += 1) {
+    const angle = (index / segments) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    positions.push((cos * width) / 2, 0, (sin * depth) / 2);
+  }
+  for (let index = 0; index < segments; index += 1) {
+    const angle = (index / segments) * Math.PI * 2;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    positions.push((cos * bottomWidth) / 2, -height, (sin * bottomDepth) / 2);
+  }
+  for (let index = 0; index < segments; index += 1) {
+    const next = (index + 1) % segments;
+    const bottomIndex = index + segments;
+    const bottomNext = next + segments;
+    indices.push(index, next, bottomIndex, next, bottomNext, bottomIndex);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.userData = { openSinkBowlGeometry: true, ellipticalSinkBowl: true, bottomWidth, bottomDepth, measuredDepth: height };
+  return geometry;
+}
+
 function sinkInteriorStencilMaterial<T extends THREE.Material>(material: T, stencilRef: number): T {
   material.depthTest = false;
   material.depthWrite = false;
@@ -9707,8 +9753,13 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   cutoutMaskMaterial.stencilFail = THREE.ReplaceStencilOp;
   cutoutMaskMaterial.stencilZFail = THREE.ReplaceStencilOp;
   cutoutMaskMaterial.stencilZPass = THREE.ReplaceStencilOp;
+  // The countertop opening has to match the bowl: an elliptical basin under a
+  // rectangular hole shows four slivers of the counter's underside.
+  const openingIsElliptical = sink.bathroomVanitySink === true && (sink.bowlShape === "oval" || sink.bowlShape === "circle");
   const openingShadow = new THREE.Mesh(
-    new RoundedBoxGeometry(openingWidth, 0.012, openingDepth, 3, Math.min(0.07, openingWidth * 0.08, openingDepth * 0.08)),
+    openingIsElliptical
+      ? ellipticalSinkBowlGeometry(openingWidth, openingDepth, 0.012, 72)
+      : new RoundedBoxGeometry(openingWidth, 0.012, openingDepth, 3, Math.min(0.07, openingWidth * 0.08, openingDepth * 0.08)),
     cutoutMaskMaterial,
   );
   openingShadow.position.set(openingCenterX, countertopTop + 0.012, openingCenterZ);
@@ -9743,7 +9794,14 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     const bowlInnerWidth = bowlDimensionsForIndex.width;
     const bowlInnerDepth = bowlDimensionsForIndex.depth;
     const bowlRadius = Math.min(0.12, bowlInnerWidth * 0.09, bowlInnerDepth * 0.09);
-    const bowlGeometry = recessedSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, bowlRadius);
+    // A vanity basin is drawn in the shape its specification sheet publishes.
+    // Without this every basin was a rounded rectangle, which is why the round
+    // PL-3608 appeared rectangular in the drawing.
+    const vanityBowlShape = sink.bathroomVanitySink === true ? sink.bowlShape : undefined;
+    const drawEllipticalBowl = vanityBowlShape === "oval" || vanityBowlShape === "circle";
+    const bowlGeometry = drawEllipticalBowl
+      ? ellipticalSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, 72)
+      : recessedSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, bowlRadius);
     const bowl = new THREE.Mesh(bowlGeometry, basinInterior);
     bowl.position.set(bowlX, countertopTop, bowlZ);
     bowl.renderOrder = 20;
