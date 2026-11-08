@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  Isolated shower render for judging realism.
+
+  Builds the surround, pan, system, door and niche from the SAME builders and
+  finishes the designer uses, in a lit room, so the look can be compared against the
+  reference bathrooms and iterated on without the whole designer app.
+
+  Served by the Vite dev server at /dev/shower-look.html. Nothing in the app imports
+  this file and no route points at it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shower realism</title>
+    <style>
+      html, body { margin: 0; background: #dcd8d1; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/showerLookHarness.tsx"></script>
+  </body>
+</html>
