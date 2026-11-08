@@ -120,13 +120,48 @@ describe("Designer window scenes", () => {
     expect(proud(sill, sillDepth)).toBeCloseTo(0.5, 2);
     expect(proud(glass, glassDepth)).toBeLessThan(0);
     const scene = group.children.find((node) => node.userData.windowScenePlane) as THREE.Mesh;
-    const backing = group.children.find((node) => node.userData.architecturalOpeningBacking) as THREE.Mesh;
-    const roomFace = (mesh: THREE.Mesh) => mesh.position.z + ((mesh.geometry as THREE.BoxGeometry).parameters.depth / 2);
-    expect(roomFace(scene)).toBeGreaterThan(roomFace(backing));
-    expect(roomFace(glass)).toBeGreaterThan(roomFace(backing));
+    // The window must not draw an opaque cap behind its own glass.
+    expect(group.children.some((node) => node.userData.architecturalOpeningBacking)).toBe(false);
+    // The exterior view sits at the back of the recess, still behind the glass.
+    expect(scene.position.z).toBeLessThan(glass.position.z);
   });
 
-  it("keeps the exterior scene in front of the wall cap on a side wall as well", () => {
+  it("renders see-through glass that reads from both sides", () => {
+    const root = new THREE.Group();
+    addWallOpening(root, {
+      uid: "glass-window",
+      kind: "window",
+      label: "Window",
+      side: "top",
+      offset: 24,
+      width: 36,
+      height: 42,
+      sill: 42,
+    }, { width: 144, depth: 120, ceilingHeight: 96 });
+    const group = root.children[0] as THREE.Group;
+    const glass = group.children.find((node) => node.userData.windowGlassReflection) as THREE.Mesh;
+    const material = glass.material as THREE.MeshPhysicalMaterial;
+    expect(glass.userData.transparentWindowGlass).toBe(true);
+    expect(material.transparent).toBe(true);
+    expect(material.opacity).toBeLessThan(0.25);
+    expect(material.depthWrite).toBe(false);
+    expect(material.side).toBe(THREE.DoubleSide);
+    // A transparent pane has to draw after opaque geometry.
+    expect(glass.renderOrder).toBeGreaterThan(0);
+    // Nothing opaque is allowed behind the glass inside the opening.
+    for (const child of group.children) {
+      const mesh = child as THREE.Mesh;
+      const childMaterial = mesh.material as THREE.Material | undefined;
+      if (!childMaterial || childMaterial.transparent) continue;
+      const isFacade = Boolean(mesh.userData.architecturalOpeningTrim
+        || mesh.userData.architecturalWindowSill
+        || mesh.userData.windowMuntin
+        || mesh.userData.windowScenePlane);
+      expect(isFacade).toBe(true);
+    }
+  });
+
+  it("keeps the exterior scene and the glass inside the recess on a side wall as well", () => {
     const root = new THREE.Group();
     addWallOpening(root, {
       uid: "kitchen-window",
@@ -140,9 +175,9 @@ describe("Designer window scenes", () => {
     }, { width: 144, depth: 120, ceilingHeight: 96 });
     const group = root.children[0] as THREE.Group;
     const scene = group.children.find((node) => node.userData.windowScenePlane) as THREE.Mesh;
-    const backing = group.children.find((node) => node.userData.architecturalOpeningBacking) as THREE.Mesh;
-    const roomFace = (mesh: THREE.Mesh) => mesh.position.z + ((mesh.geometry as THREE.BoxGeometry).parameters.depth / 2);
-    expect(roomFace(scene)).toBeGreaterThan(roomFace(backing));
+    const glass = group.children.find((node) => node.userData.windowGlassReflection) as THREE.Mesh;
+    expect(scene.position.z).toBeLessThan(glass.position.z);
+    expect(group.children.some((node) => node.userData.architecturalOpeningBacking)).toBe(false);
     expect(group.userData.kind).toBe("window");
   });
 });

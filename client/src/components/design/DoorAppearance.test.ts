@@ -54,7 +54,9 @@ describe("room door 3D appearance and attribute wiring", () => {
   it("preserves existing window glass and legacy closet bifold material", () => {
     const root = new THREE.Group();
     addWallOpening(root, { ...door, kind:"window" }, room);
-    expect(parts(root).find((m)=>m.userData.architecturalOpeningBacking)?.material).toMatchObject({ opacity:1 });
+    // A window is a hole in the wall, so it carries no opaque planning cap.
+    expect(parts(root).some((m)=>m.userData.architecturalOpeningBacking)).toBe(false);
+    expect(parts(root).find((m)=>m.userData.windowGlassReflection)?.material).toMatchObject({ transparent:true, depthWrite:false });
     const bifold = new THREE.Group();
     addWallOpening(bifold, { ...door, doorStyle:"bifold" }, room);
     expect(parts(bifold).find((m)=>m.userData.architecturalBifoldLeaf)?.material).toMatchObject({ opacity:.38 });
