@@ -5,6 +5,7 @@ import { calculateCartSubtotal } from "@/lib/cartTotals";
 import { combinedFillerNote, fillerCutSourceFor, isCombinedSmallFiller } from "@/lib/fillerBilling";
 import { fittedCatalogFillerDescription } from "@/lib/catalogFiller";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
+import { isRangeTopPlacement } from "@/lib/rangeTopDisplayOnly";
 
 type BuildDesignCabinetCartLinesArgs = {
   placed: PlacedCabinet[];
@@ -121,6 +122,11 @@ export function buildDesignCabinetCartLines({
   if (!styleId) return [];
   const lines = new Map<string, CartItem>();
   for (const cabinet of placed) {
+    // Owner rule (Tom): the eight range tops are drawn and rendered in the
+    // Designer but are never sold. Skip the display-only cooking surface here
+    // and in the preview below; the base cabinet under it is a separate
+    // placement and keeps its own billable line.
+    if (isRangeTopPlacement(cabinet)) continue;
     // Launch appliances are visual-only design context. They remain in the 2D
     // plan and 3D selling view but are intentionally excluded from all cabinet
     // cart/quote/invoice/checkout commerce until appliance sales are enabled.
@@ -278,6 +284,9 @@ export function buildDesignPreviewPricingLines({
   if (!styleId) return [];
   const lines = new Map<string, DesignPreviewPricingLine>();
   for (const cabinet of placed) {
+    // A display-only range top is never a sold line, so it must not appear in
+    // the 3D/quote overlay either. The cabinet under it stays billable.
+    if (isRangeTopPlacement(cabinet)) continue;
     const firstClassCooktop = cabinet.placement === "appliance" && cabinet.applianceRole === "countertop-opening" && Boolean(cabinet.applianceCatalogCode);
     if (
       (cabinet.placement === "appliance" && !firstClassCooktop) ||

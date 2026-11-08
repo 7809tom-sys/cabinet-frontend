@@ -4,6 +4,7 @@ import type { SelectedSurface } from "@/components/design/SurfacesPickerDialog";
 import { isApplianceCode } from "@/lib/design";
 import { isCatalogFiller } from "@/lib/catalogFiller";
 import { normalizeFinalMaterialSelections } from "@/lib/surfaceSelection";
+import { isRangeTopPlacement, isRangeTopSurfacePick } from "@/lib/rangeTopDisplayOnly";
 import { equivalentTrimMasterCodes } from "@/lib/trimCart";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
@@ -145,6 +146,9 @@ export function buildMaterialsListRows(args: MaterialsListArgs): MaterialsListRo
     // and backsplash. Retain independent historic PEL rows when this list does
     // not identify a replacement for that material role.
     .filter((line) => {
+      // Owner rule (Tom): a display-only range top is never a quote or invoice
+      // line, including a stale PEL row from an older saved design.
+      if (isRangeTopSurfacePick({ id: line.pelicanProductId ?? null, category: line.category ?? null, pelicanCode: line.masterCode })) return false;
       if (!line.masterCode.startsWith("PEL-")) return true;
       const category = line.category?.toLowerCase() ?? "";
       if (finalFloorCode != null && category.includes("floor")) return line.masterCode === `PEL-${finalFloorCode}`;
@@ -156,6 +160,10 @@ export function buildMaterialsListRows(args: MaterialsListArgs): MaterialsListRo
 
   for (const build of args.buildRows.filter((row) => {
     if (!(row.qty > 0)) return false;
+    // Owner rule (Tom): a range top is drawn and rendered but never sold, so it
+    // never becomes a materials, quote, or invoice line. The base under it is a
+    // separate row and stays billable.
+    if (isRangeTopPlacement({ masterCode: row.code, description: row.description, placement: row.placement })) return false;
     // Design cabinet price-locked lines already include the one-time custom-size
     // fee in their adjusted unit price. CUSTOM-ADJ remains on the fabrication
     // build sheet for transparency, but must not become a second priced material
@@ -227,6 +235,8 @@ export function buildMaterialsListRows(args: MaterialsListArgs): MaterialsListRo
   // This defensive normalization protects exports from legacy drafts that still
   // contain an earlier floor or backsplash after the customer picked a replacement.
   for (const surface of finalSelectedSurfaces) {
+    // A range top in the final selection is display-only and never a sold line.
+    if (isRangeTopSurfacePick(surface)) continue;
     const code = `PEL-${surface.id}`;
     if (pricedSurfaceCodes.has(code)) continue;
     // The Materials & Parts total is the exact merchandise total that will be
