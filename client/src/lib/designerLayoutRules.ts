@@ -46,6 +46,7 @@ import {
 import { normalizeOverApplianceWallMounts } from "./overApplianceMount";
 import { normalizeRefrigeratorBridgeDepth } from "./refrigeratorBridgeDepth";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import { removeIllegalFillers } from "./fillerPlacementRule";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
   effectiveSmallGapFillerMaxIn,
@@ -1081,6 +1082,12 @@ export function applyDesignerLayoutRules(input: {
     });
   }
   placed = normalizeInstalledFillersToAdjacentCabinets(placed, input.room);
+  // Owner rule: a filler is only ever a front-face board closing a cabinet-to-
+  // cabinet, cabinet-to-wall, or cabinet-to-appliance gap. A board cut against a
+  // refrigerator end panel, on a run's open outside face, or straight through a
+  // panel is removed here, so the plan and the 3D render agree.
+  const legalFillers = removeIllegalFillers({ placed, room: input.room, openings: input.openings });
+  placed = legalFillers.placed;
   placed = applyNineInchTrayBases(placed);
   // Rule 4: one continuous floor-to-top board per filler, never a base sliver plus an upper sliver.
   placed = normalizeContinuousVerticalFillers(placed, input.room).placed;

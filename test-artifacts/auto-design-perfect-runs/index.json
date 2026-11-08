@@ -210,20 +210,6 @@
     "file": "varied-2-u-shape-510004.json"
   },
   {
-    "id": "varied-3-single-wall-330002",
-    "section": "varied",
-    "seed": "81103",
-    "layout": "single-wall",
-    "styleId": 330002,
-    "styleName": "Classic Cream",
-    "room": {
-      "width": 192,
-      "depth": 120
-    },
-    "corners": "none",
-    "file": "varied-3-single-wall-330002.json"
-  },
-  {
     "id": "varied-4-galley-540005",
     "section": "varied",
     "seed": "81104",

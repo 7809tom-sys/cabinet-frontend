@@ -24,6 +24,7 @@ import {
 } from "@/lib/design";
 import { islandFaceFitMeasure, islandOffsetForPlaced } from "@/lib/islandScene";
 import { isWallBlindCornerCabinet } from "@/lib/cabinetGraphics";
+import { isFillableBoundary, seamBoundariesFor } from "@/lib/fillerPlacementRule";
 
 const EDGE_EPSILON_IN = 0.001;
 /**
@@ -265,6 +266,16 @@ export function findSmallGapFillerOpportunity(
 	}
 	const before = installableSmallGapRemainder(measurement.before);
 	const after = installableSmallGapRemainder(measurement.after);
+	// Owner rule: a filler only closes a gap between two cabinets, between a
+	// cabinet and a wall end, or between a cabinet and an appliance. A
+	// refrigerator end panel is deliberately exempt from the plan-collision test
+	// (`sharesPlanCollisionZone`), so the fit measurement above can report a
+	// "before" gap that actually runs straight through a 24-inch-deep, 84-inch
+	// panel. Reading the real boundaries is what stops the designer cutting a
+	// board for it (the white strip across the panel's outside face).
+	const seams = seamBoundariesFor({ cabinet, placed, room, openings });
+	const beforeBlocked = !isFillableBoundary(seams.start);
+	const afterBlocked = !isFillableBoundary(seams.end);
 	// Base-cabinet fit measurement ignores window clearance, so a window can be
 	// the real boundary of a short visible seam even though the free segment spans
 	// the whole wall. Treat only the cabinet-to-opening edge as a filler seam;
@@ -285,15 +296,17 @@ export function findSmallGapFillerOpportunity(
 	const measuredAfter = after ?? installableSmallGapRemainder(openingAfter ?? Number.NaN);
 	const beforeIsClear = before != null
 		&& !protectedLeadingClearance
+		&& !beforeBlocked
 		&& !gapCrossesWallOpening(openings, wall, leadingStart, measurement.before);
 	const afterIsClear = after != null
 		&& !protectedTrailingClearance
+		&& !afterBlocked
 		&& !gapCrossesWallOpening(openings, wall, cabinetEnd, measurement.after);
-	const openingBeforeIsClear = before == null && measuredBefore != null && !protectedLeadingClearance;
-	const openingAfterIsClear = after == null && measuredAfter != null && !protectedTrailingClearance;
+	const openingBeforeIsClear = before == null && measuredBefore != null && !protectedLeadingClearance && !beforeBlocked;
+	const openingAfterIsClear = after == null && measuredAfter != null && !protectedTrailingClearance && !afterBlocked;
 	const combined = installableSmallGapRemainder(
-		(protectedLeadingClearance ? 0 : measurement.before)
-		+ (protectedTrailingClearance ? 0 : measurement.after),
+		(protectedLeadingClearance || beforeBlocked ? 0 : measurement.before)
+		+ (protectedTrailingClearance || afterBlocked ? 0 : measurement.after),
 	);
 
 	  // When both adjoining seams are small, preserve the established single
