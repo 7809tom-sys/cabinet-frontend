@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import type { VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
+import { tubSideProfile, tubWidthShareAt, type TubSideProfile } from "./tubSideProfiles";
 
 /**
  * Freestanding bathtub geometry.
@@ -33,26 +34,19 @@ export type FreestandingTubPart = {
 
 const SEGMENTS = 96;
 
-/** How much higher the slipper backrest sits than the foot end. */
-const SLIPPER_BACK_RISE = 0.17;
-/** The rim's own thickness, as a share of the tub height. */
-const RIM_THICKNESS = 0.012;
-/** The floor footprint relative to the rim plan. */
-const BASE_TAPER = 0.74;
 /** The backrest influence begins at this share of the length from the foot. */
 const SLIPPER_BACK_SHARE = 0.42;
 
-function profilePoint(t: number): { width: number } {
-  // t: 0 at the floor, 1 at the rim. Taper out from a narrow base toward the
-  // full plan, the way an acrylic freestanding tub reads in profile. The curve
-  // is normalised so the rim is exactly the published plan and the body never
-  // exceeds it.
-  const ease = (value: number) => value * value * (3 - 2 * value);
-  const taper = BASE_TAPER + (1 - BASE_TAPER) * ease(Math.min(1, t / 0.7));
-  const belly = 1 + 0.012 * Math.sin(Math.min(1, t) * Math.PI);
-  const width = taper * belly;
-  // Keep the widest point at or inside the published envelope.
-  return { width: Math.min(width, 1) };
+/**
+ * Wall width at height share `t` for THIS model.
+ *
+ * This used to be one constant 0.74 taper for every tub, which made every model
+ * a narrow-footed bowl no matter what its catalog photo showed. The width now
+ * comes from the model's own side profile (see tubSideProfiles.ts), so a
+ * straight-sided tub stays straight and a slipper keeps its broad base.
+ */
+function profilePoint(profile: TubSideProfile, t: number): { width: number } {
+  return { width: tubWidthShareAt(profile, t) };
 }
 
 /**
@@ -62,13 +56,14 @@ function profilePoint(t: number): { width: number } {
  * inner shell sit one rim thickness below the outer one.
  */
 function ringPointsAt(
+  profile: TubSideProfile,
   halfWidth: number,
   halfDepth: number,
   t: number,
   heightAt: (angle: number, t: number) => number,
 ): THREE.Vector3[] {
   const points: THREE.Vector3[] = [];
-  const plan = profilePoint(t);
+  const plan = profilePoint(profile, t);
   for (let index = 0; index < SEGMENTS; index += 1) {
     const angle = (index / SEGMENTS) * Math.PI * 2;
     points.push(new THREE.Vector3(
@@ -137,14 +132,15 @@ function rimBand(outer: THREE.Vector3[], inner: THREE.Vector3[]): THREE.BufferGe
  * published top view. `radiusShare` is how round the corners are.
  */
 function roundedRingPoints(
+  profile: TubSideProfile,
   halfWidth: number,
   halfDepth: number,
   t: number,
   radiusShare: number,
   heightAt: (angle: number, t: number) => number,
-  cornerSegments = 10,
+  cornerSegments = 14,
 ): THREE.Vector3[] {
-  const plan = profilePoint(t);
+  const plan = profilePoint(profile, t);
   const w = halfWidth * 2 * plan.width;
   const d = halfDepth * 2 * plan.width;
   const radius = Math.min(w, d) * radiusShare;
@@ -222,16 +218,16 @@ export function makeFreestandingTubParts(
   const height = profile.heightIn / 12;
   const halfWidth = width / 2;
   const halfDepth = depth / 2;
-  const slipper = options.slipper === true;
+  // This model's own side/end silhouette, read from its catalog photo.
+  const side = tubSideProfile(profile);
+  const slipper = options.slipper === true && side.slipperRise > 0;
   const rectangular = profile.tubShape === "rectangular" || profile.tubShape === "rounded-rectangular"
     // An alcove tub is a rectangle in plan too, with a wider corner radius.
     || options.apronFront === true;
-  const radiusShare = profile.tubShape === "rounded-rectangular" || options.apronFront
-    ? 0.22
-    : 0.06;
+  const radiusShare = side.cornerRadiusShare;
   // The published height is the OVERALL height, measured at the backrest. The
   // foot end is therefore lower, not the backrest higher.
-  const footShare = 1 / (1 + SLIPPER_BACK_RISE);
+  const footShare = 1 / (1 + side.slipperRise);
   // The backrest end is +Z. A tub with no backrest keeps one rim height.
   const topShareAt = (angle: number) => {
     if (!slipper) return 1;
@@ -241,8 +237,8 @@ export function makeFreestandingTubParts(
   };
   const ringAt = (hw: number, hd: number, t: number, heightAt: (angle: number, share: number) => number) => (
     rectangular
-      ? roundedRingPoints(hw, hd, t, radiusShare, heightAt)
-      : ringPointsAt(hw, hd, t, heightAt)
+      ? roundedRingPoints(side, hw, hd, t, radiusShare, heightAt)
+      : ringPointsAt(side, hw, hd, t, heightAt)
   );
   // The basin floor is a real surface, high enough to read as the bottom of a
   // bath rather than the room floor.
@@ -252,7 +248,7 @@ export function makeFreestandingTubParts(
   const wellPart = isAlcove ? "alcove-tub-well" : "freestanding-tub-well";
   const drainPart = isAlcove ? "alcove-tub-drain" : "freestanding-tub-drain";
   const overflowPart = isAlcove ? "alcove-tub-overflow" : "freestanding-tub-overflow";
-  const rimThickness = height * RIM_THICKNESS;
+  const rimThickness = height * side.rimThickness;
   const wall = width * 0.045;
   const levels = [0, 0.24, 0.46, 0.68, 0.86, 0.95, 1];
   const parts: FreestandingTubPart[] = [];
