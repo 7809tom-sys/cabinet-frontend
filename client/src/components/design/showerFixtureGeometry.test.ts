@@ -36,6 +36,10 @@ const PAN_CODES = [
   "PL-SMC6030C", "PL-SMC6030L", "PL-SMC6030R",
   "PL-SMC6032C", "PL-SMC6032L", "PL-SMC6032R",
   "PL-SMC6036C", "PL-SMC6036L", "PL-SMC6036R",
+  // Sizes the live catalog also sells, added so every purchasable pan can be placed.
+  "PL-013636C", "PL-013838ADA", "PL-014236C", "PL-014242C", "PL-014832C",
+  "PL-016034C", "PL-016034L", "PL-016034R", "PL-016038C",
+  "PL-016236ADA", "PL-016238ADA",
 ];
 
 describe("Shower pan geometry", () => {
@@ -45,9 +49,11 @@ describe("Shower pan geometry", () => {
       expect(profile, `${code} does not resolve to a shower pan`).toBeTruthy();
       expect(profile!.kind).toBe("shower-pan");
     }
-    // Every pan family present in the catalog list is covered.
+    // Every pan profile in the catalog list is one this test exercises, so a newly
+    // added pan cannot go untested.
     const pans = ALL_PELICAN_BATHROOM_FIXTURE_PROFILES.filter((entry) => entry.kind === "shower-pan");
-    expect(pans.length).toBe(PAN_CODES.length);
+    expect(new Set(PAN_CODES).size).toBe(PAN_CODES.length);
+    expect(pans.every((entry) => PAN_CODES.includes(entry.pelicanCode))).toBe(true);
   });
 
   it.each(PAN_CODES)("%s builds inside its published envelope", (code) => {

@@ -397,6 +397,18 @@ import { CountertopQuoteDialog } from "@/components/design/CountertopQuoteDialog
 import { CountertopFabricationSheetActions } from "@/components/design/CountertopFabricationSheetActions";
 import type { CountertopFabricationInput } from "@/lib/countertopFabricationSheet";
 import { SurfacesPickerDialog, type SelectedSurface } from "@/components/design/SurfacesPickerDialog";
+import { ShowerBuilderWizard } from "@/components/shower/ShowerBuilderWizard";
+import {
+  bayForWall,
+  openingForSurround,
+  panFitsOpening,
+  placeShowerDoor,
+  placeShowerPanInsideOpening,
+  placeShowerSurround,
+  placeWallFitting,
+  clampShowerHeight,
+} from "@/lib/showerPlacementAssembly";
+import type { ShowerStepId, ShowerWall } from "@/lib/showerBuilder";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
 import { FlooringAccessorySuggestionsDialog } from "@/components/design/FlooringAccessorySuggestionsDialog";
@@ -1576,6 +1588,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [proDesignerOpen, setProDesignerOpen] = useState(false);
   const [surfacesOpen, setSurfacesOpen] = useState(false);
+  const [showerWizardOpen, setShowerWizardOpen] = useState(false);
   const forcedOpenSinkRef = useRef<OpenSinkBasePlacement | null>(null);
   const pelicanSinkDraftRef = useRef<PelicanPlacedProduct | null>(null);
   const [tabletPreviewMode, setTabletPreviewMode] = useState<TabletPreviewMode | null>(null);
@@ -2630,6 +2643,139 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     bathroomFurnitureRef.current = furniture;
   }, [furniture]);
   const [selectedFurnUid, setSelectedFurnUid] = useState<string | null>(null);
+  // ─── Build Shower wizard ────────────────────────────────────────────────────
+  // The wizard places the shower as ordinary furniture, so every part shows in Floor
+  // Plan and 3D, obeys the no-overlap rule, and reaches the cart through the same
+  // placed-fixture path as every other bathroom fixture. A part that is not placed is
+  // not billed, so skipping a step or deleting a part takes it out of the cart.
+  const [showerWarnings, setShowerWarnings] = useState<Partial<Record<ShowerStepId, string[]>>>({});
+  /** The surround's opening, which the pan, fittings and door are all built inside. */
+  const showerOpening = useRef<ReturnType<typeof openingForSurround>>(null);
+
+
+  /**
+   * Add a placed shower part to the design's product selection.
+   *
+   * The cart is built from `selectedSurfaces`, and `placedFixtureQuantityByProduct`
+   * only counts products that a real placement owns. Recording the part here is
+   * therefore what makes it billable — and because the count comes from the
+   * placement, deleting the part drops it from the cart with it.
+   */
+  const selectShowerPart = useCallback((part: { code: string; id: number; price: number; name: string }, stepId: ShowerStepId) => {
+    setSelectedSurfaces((current) => [
+      ...current.filter((surface) => surface.showerStepId !== stepId),
+      {
+        id: part.id,
+        pelicanCode: part.code,
+        slug: part.code,
+        name: part.name,
+        category: "Shower & Bath",
+        subCategory: stepId === "pan" ? "Shower Base" : stepId === "door" ? "Shower & Tub Doors" : stepId === "niche" ? "Shower Niche" : stepId === "heads" ? "Shower Valves & Systems" : "Shower Surrounds",
+        size: null,
+        imageUrl: null,
+        sellPrice: part.price,
+        showerStepId: stepId,
+      },
+    ]);
+  }, []);
+  /**
+   * Place (or replace) one shower step.
+   *
+   * Order matters: the surround defines the opening, the pan is fitted inside it, the
+   * wall fittings mount on their own walls, and the door hangs last on the open side.
+   */
+  const placeShowerPart = useCallback((input: {
+    stepId: ShowerStepId;
+    part: { code: string; id: number; price: number; name: string };
+    wall: ShowerWall | null;
+    heightIn?: number;
+  }) => {
+    const { stepId, part, wall } = input;
+    const nextWarnings: string[] = [];
+
+    // Whatever this step already put in the plan is replaced, not duplicated: every
+    // setFurniture below filters out this step first.
+
+    if (stepId === "surround") {
+      const bay = bayForWall(room, wall ?? "top");
+      if (!bay) {
+        nextWarnings.push("This room has no three-wall alcove for a shower. Add walls so there is a back wall with a side wall at each end.");
+        setShowerWarnings((current) => ({ ...current, surround: nextWarnings }));
+        return;
+      }
+      const placed = placeShowerSurround(part.code, bay);
+      if (!placed) return;
+      showerOpening.current = openingForSurround(placed, room);
+      setFurniture((current) => [
+        ...current.filter((item) => item.showerStepId !== stepId),
+        { ...placed, showerStepId: stepId, pelicanSellPrice: part.price, pelicanProductId: part.id },
+      ]);
+      selectShowerPart(part, stepId);
+      setShowerWarnings((current) => ({ ...current, surround: nextWarnings }));
+      return;
+    }
+
+    if (stepId === "pan") {
+      const opening = showerOpening.current;
+      if (!opening) {
+        nextWarnings.push("Choose the wall panels first — the pan is sized and snapped to the opening they define.");
+      }
+      const profile = verifiedPelicanBathroomFixtureProfile(part.code);
+      if (opening && profile) {
+        const fit = panFitsOpening(profile.widthIn, profile.depthIn, opening);
+        if (!fit.ok && fit.message) nextWarnings.push(fit.message);
+      }
+      const placed = opening ? placeShowerPanInsideOpening(part.code, opening) : null;
+      if (!placed) {
+        setShowerWarnings((current) => ({ ...current, pan: nextWarnings }));
+        return;
+      }
+      setFurniture((current) => [
+        ...current.filter((item) => item.showerStepId !== stepId),
+        { ...placed, showerStepId: stepId, pelicanSellPrice: part.price, pelicanProductId: part.id },
+      ]);
+      selectShowerPart(part, stepId);
+      setShowerWarnings((current) => ({ ...current, pan: nextWarnings }));
+      return;
+    }
+
+    if (stepId === "heads" || stepId === "niche") {
+      const placed = placeWallFitting(part.code, wall ?? "top", room, clampShowerHeight(input.heightIn ?? 48));
+      if (!placed) return;
+      setFurniture((current) => [
+        ...current.filter((item) => item.showerStepId !== stepId),
+        { ...placed, showerStepId: stepId, pelicanSellPrice: part.price, pelicanProductId: part.id },
+      ]);
+      selectShowerPart(part, stepId);
+      return;
+    }
+
+    if (stepId === "door") {
+      const opening = showerOpening.current;
+      if (!opening) {
+        nextWarnings.push("Choose the wall panels first so the door knows the opening it hangs in.");
+        setShowerWarnings((current) => ({ ...current, door: nextWarnings }));
+        return;
+      }
+      const placed = placeShowerDoor(part.code, opening);
+      if (!placed) return;
+      setFurniture((current) => [
+        ...current.filter((item) => item.showerStepId !== stepId),
+        { ...placed, showerStepId: stepId, pelicanSellPrice: part.price, pelicanProductId: part.id },
+      ]);
+      selectShowerPart(part, stepId);
+      setShowerWarnings((current) => ({ ...current, door: nextWarnings }));
+    }
+  }, [furniture, room, selectShowerPart]);
+
+  /** Remove one shower step from the plan, and therefore from the cart. */
+  const removeShowerPart = useCallback((stepId: ShowerStepId) => {
+    setFurniture((current) => current.filter((item) => item.showerStepId !== stepId));
+    setSelectedSurfaces((current) => current.filter((surface) => surface.showerStepId !== stepId));
+    if (stepId === "surround") showerOpening.current = null;
+  }, []);
+
+
   const rotateFurniture = useCallback((uid: string) => {
     if (layoutLocked) return;
     setFurniture((previous) => previous.map((item) => {
@@ -19051,7 +19197,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             {/* Catalog tabs. Closet mode leads with the Closet parts tab but
                 still exposes cabinets + the Door/Win tool so a closet can hold
                 cabinets and an entry door. Kitchen mode keeps its tab set. */}
-            <div data-testid="designer-catalog-tabs" className="flex flex-wrap rounded-lg border border-border p-0.5 bg-muted/30 mb-2">
+            <div data-testid="designer-catalog-tabs" className="flex flex-wrap content-start rounded-lg border border-border p-0.5 bg-muted/30 mb-2">
               {(roomType === "closet"
                 ? (["closetparts", "base", "corner", "wall", "tall", "appliance", "opening", "panel", "accessory"] as const)
                 : roomType === "bathroom"
@@ -19097,6 +19243,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     : tab}
                 </button>
               ))}
+              {/* Build Shower sits on the same row as Accessories & Trim, to its
+                  right. It is an ACTION, not a catalog tab: it opens the shower
+                  wizard instead of switching the palette. Only offered in the
+                  bathroom, where a shower belongs. */}
+              {roomType === "bathroom" && (
+                <button
+                  type="button"
+                  data-testid="open-build-shower"
+                  onClick={() => setShowerWizardOpen(true)}
+                  className="shrink-0 whitespace-nowrap rounded-md border border-[#1a2744] px-2.5 py-1.5 text-[11px] font-semibold text-[#1a2744] transition-colors hover:bg-[#1a2744] hover:text-white lg:flex-1"
+                >
+                  Build Shower
+                </button>
+              )}
             </div>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -22233,6 +22393,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          }}
 	        />
 	      )}
+      {/* Build Shower: a step-by-step wizard opened from the bathroom category box.
+          It places each part into the plan as it is chosen, so the drawing and the
+          cart stay in step. */}
+      <Dialog open={showerWizardOpen} onOpenChange={setShowerWizardOpen}>
+        <DialogContent className="max-h-[92dvh] w-[min(1120px,96vw)] max-w-none overflow-y-auto" data-testid="shower-wizard-dialog">
+          <DialogHeader>
+            <DialogTitle>Build Shower</DialogTitle>
+          </DialogHeader>
+          <ShowerBuilderWizard
+            onPlacePart={placeShowerPart}
+            onRemovePart={removeShowerPart}
+            warningsByStep={showerWarnings}
+            onDone={() => setShowerWizardOpen(false)}
+            onClose={() => setShowerWizardOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
       <SurfacesPickerDialog
 	        open={surfacesOpen}
 	        onOpenChange={setSurfacesOpen}
