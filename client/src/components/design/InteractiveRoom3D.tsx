@@ -15,7 +15,7 @@ import { ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, MoonStar, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Sun, Trash2 } from "lucide-react";
 import { immersiveToggleLabel } from "@/lib/designerImmersive";
 import { Button } from "@/components/ui/button";
 import { FlooringRotationControl } from "./FlooringLayoutPicker";
@@ -99,6 +99,7 @@ import type { ApplianceFacingFacts } from "@shared/applianceFacing";
 import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValidationIssues, serializeGeminiImageTestProvenanceForWire, serializeGeminiMaterialManifestForWire } from "@shared/geminiMaterialManifest";
 import { resolvePelicanDesignerMaterial } from "@/lib/pelicanQuartzMaterialMaps";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
+import { SHADOW_STRENGTH_MAX, normalizeShadowStrength, readShadowStrengthPreference, shadowStrengthDescription, shadowStrengthLabel, shadowStrengthScale, writeShadowStrengthPreference } from "@/lib/shadowStrength";
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
 import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
@@ -11850,36 +11851,140 @@ type ThreeDViewerNavigationActions = {
   onShare: () => void | Promise<void>;
   onPhotoRender?: () => void;
   onPan: (direction: "up" | "down" | "left" | "right") => void;
+  /** Current shadow strength as a percentage of full strength, 0–100. */
+  shadowStrength?: number;
+  onShadowStrengthChange?: (percent: number) => void;
 };
 
-export function ThreeDViewerNavigationControls({ onZoom, onReset, onShare, onPhotoRender, onPan, className = "", testId = "three-d-viewer-navigation", compact = false, hidePan = false }: ThreeDViewerNavigationActions & { className?: string; testId?: string; compact?: boolean; hidePan?: boolean }) {
-  if (compact) {
-    const tap = "flex h-11 w-11 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] shadow-sm transition hover:bg-slate-50 active:scale-95";
-    return (
-      <div data-testid={testId} aria-label="3D viewer zoom and pan controls" className={`flex-col items-center gap-1.5 rounded-lg border border-slate-300 bg-white/95 p-1.5 shadow-lg backdrop-blur ${className}`}>
-        <button data-testid="three-d-zoom-in" type="button" onClick={() => onZoom("in")} aria-label="Zoom in for a closer cabinet view" title="Zoom in" className={tap}><Plus className="h-5 w-5" aria-hidden="true" /></button>
-        <button data-testid="three-d-zoom-out" type="button" onClick={() => onZoom("out")} aria-label="Zoom out for a wider room view" title="Zoom out" className={tap}><Minus className="h-5 w-5" aria-hidden="true" /></button>
-        <button data-testid="three-d-reset-view" type="button" onClick={onReset} aria-label="Reset 3D room view" title="Reset view" className={tap}><RefreshCw className="h-4 w-4" aria-hidden="true" /></button>
-        <button data-testid="three-d-share-view" type="button" onClick={() => void onShare()} aria-label="Share the current 3D zoom and pan perspective" title="Share current view" className={tap}><Share2 className="h-4 w-4" aria-hidden="true" /></button>
-        {onPhotoRender && <button data-testid="three-d-photo-render" type="button" onClick={onPhotoRender} aria-label="Create a final photo-quality image from this exact completed 3D view" title="Photo Quality — final review image" className="flex h-11 w-11 items-center justify-center rounded-md border border-[#1a2744] bg-[#1a2744] text-white shadow-sm transition hover:bg-[#24375f] active:scale-95"><Sparkles className="h-4 w-4" aria-hidden="true" /></button>}
-        {!hidePan && (
-          <div className="grid grid-cols-3 gap-1" aria-label="Pan the 3D room view">
-            <span /><button data-testid="three-d-pan-up" type="button" onClick={() => onPan("up")} aria-label="Pan view up" title="Pan up" className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] active:scale-95"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button><span />
-            <button data-testid="three-d-pan-left" type="button" onClick={() => onPan("left")} aria-label="Pan view left" title="Pan left" className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] active:scale-95"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button>
-            <span className="flex items-center justify-center text-[9px] font-bold text-slate-500">PAN</span>
-            <button data-testid="three-d-pan-right" type="button" onClick={() => onPan("right")} aria-label="Pan view right" title="Pan right" className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] active:scale-95"><ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
-            <span /><button data-testid="three-d-pan-down" type="button" onClick={() => onPan("down")} aria-label="Pan view down" title="Pan down" className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] active:scale-95"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button><span />
-          </div>
-        )}
-      </div>
-    );
-  }
+/**
+ * One button style for the whole right-hand column.
+ *
+ * The owner's ask was that zoom, reset, share, auto-design and the new Shadows
+ * control look like the four square buttons already at the top of the canvas
+ * rather than a second, differently-shaped panel. So this is a single square
+ * target with a thin border on white — no filled gold share bar, no dark pill.
+ * `h-11 w-11` keeps the 44px touch target the rail already promised; the whole
+ * column fits a 768px-tall laptop with room to spare (see
+ * THREE_D_VIEWER_COLUMN_MAX_HEIGHT_PX).
+ */
+export const THREE_D_VIEWER_BUTTON_CLASS =
+  "flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] shadow-sm transition hover:bg-slate-50 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] focus-visible:ring-offset-1";
+
+/** Auto-Design keeps the gold accent so it still reads as the AI action. */
+export const THREE_D_VIEWER_ACCENT_BUTTON_CLASS =
+  `${THREE_D_VIEWER_BUTTON_CLASS} border-[#d4a75a] text-[#765416] hover:bg-[#fffaf1]`;
+
+/**
+ * Column geometry. Six square buttons plus the PAN cluster is the tallest this
+ * rail gets; at 44px each with 6px gaps and the PAN pad that is ~360px, which
+ * clears the 768px laptop floor once the 3rem page header is taken off. The
+ * column is capped and scrolls internally rather than overlapping the drawing.
+ */
+export const THREE_D_VIEWER_COLUMN_MAX_HEIGHT_PX = 430;
+
+/**
+ * Where the whole column lives: directly under the immersive toggle at the top
+ * of the canvas, as one uninterrupted run of square buttons down the right edge,
+ * with the pan pad last so the PAN cluster keeps its old place in the visual
+ * order (bottom of the stack).
+ *
+ * `top-[3.9rem]` tucks it just under the 44px immersive button at `top-3`.
+ * `max-h` is measured from the canvas, not the viewport, so on a short laptop
+ * the column scrolls inside itself instead of spilling over the drawing or
+ * being clipped by the stage's `overflow-hidden`.
+ */
+export const THREE_D_VIEWER_COLUMN_CLASS =
+  "absolute right-3 top-[3.9rem] bottom-3 z-20 items-center overflow-y-auto pb-1";
+
+export function ThreeDViewerNavigationControls({
+  onZoom,
+  onReset,
+  onShare,
+  onPhotoRender,
+  onPan,
+  shadowStrength,
+  onShadowStrengthChange,
+  className = "",
+  testId = "three-d-viewer-navigation",
+  compact = false,
+  hidePan = false,
+}: ThreeDViewerNavigationActions & { className?: string; testId?: string; compact?: boolean; hidePan?: boolean }) {
+  const [shadowsOpen, setShadowsOpen] = useState(false);
+  const shadowValue = normalizeShadowStrength(shadowStrength);
+  const showShadows = typeof onShadowStrengthChange === "function";
+  const buttonClass = compact ? THREE_D_VIEWER_BUTTON_CLASS : THREE_D_VIEWER_BUTTON_CLASS;
+
+  const shadowsButton = showShadows ? (
+    <button
+      type="button"
+      data-testid="three-d-shadows-toggle"
+      onClick={() => setShadowsOpen((open) => !open)}
+      aria-expanded={shadowsOpen}
+      aria-label={shadowStrengthLabel(shadowValue)}
+      title="Shadows"
+      aria-pressed={shadowValue > 0}
+      className={`${buttonClass} ${shadowsOpen || shadowValue < SHADOW_STRENGTH_MAX ? "border-[#a87f33] bg-[#fffaf1] text-[#765416]" : ""}`}
+    >
+      {shadowValue === 0 ? <MoonStar className="h-5 w-5" aria-hidden="true" /> : <Sun className="h-5 w-5" aria-hidden="true" />}
+    </button>
+  ) : null;
+
   return (
-    <div data-testid={testId} aria-label="3D viewer zoom and pan controls" className={`flex flex-col items-center gap-1 rounded-lg border border-slate-300 bg-white/95 p-1.5 shadow-lg backdrop-blur ${className}`}>
-      <div className="flex gap-1"><button data-testid="three-d-zoom-in" type="button" onClick={() => onZoom("in")} aria-label="Zoom in for a closer cabinet view" title="Zoom in" className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><Plus className="h-4 w-4" /></button><button data-testid="three-d-zoom-out" type="button" onClick={() => onZoom("out")} aria-label="Zoom out for a wider room view" title="Zoom out" className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><Minus className="h-4 w-4" /></button><button data-testid="three-d-reset-view" type="button" onClick={onReset} aria-label="Reset 3D room view" title="Reset view" className="flex h-9 w-9 items-center justify-center rounded-md border border-[#a87f33]/50 bg-[#fffaf1] text-[#765416] transition hover:bg-amber-100 active:scale-95"><RefreshCw className="h-4 w-4" /></button></div>
-      <button data-testid="three-d-share-view" type="button" onClick={() => void onShare()} aria-label="Share the current 3D zoom and pan perspective" title="Share current view" className="inline-flex h-8 w-full items-center justify-center gap-1 rounded-md border border-[#a87f33]/45 bg-[#fffaf1] px-2 text-[11px] font-semibold text-[#765416] transition hover:bg-amber-100 active:scale-95"><Share2 className="h-3.5 w-3.5" />Share View</button>
-      {onPhotoRender && <button data-testid="three-d-photo-render" type="button" onClick={onPhotoRender} aria-label="Create a final photo-quality image from this exact completed 3D view" title="Photo Quality — final review image" className="inline-flex h-8 w-full items-center justify-center gap-1 rounded-md border border-[#1a2744]/35 bg-[#1a2744] px-2 text-[11px] font-semibold text-white transition hover:bg-[#24375f] active:scale-95"><Sparkles className="h-3.5 w-3.5" />Photo Quality</button>}
-      <div className="grid grid-cols-3 gap-1" aria-label="Pan the 3D room view"><span /><button data-testid="three-d-pan-up" type="button" onClick={() => onPan("up")} aria-label="Pan view up" title="Pan up" className="flex h-8 w-8 items-center justify-center rounded-t-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowUp className="h-4 w-4" /></button><span /><button data-testid="three-d-pan-left" type="button" onClick={() => onPan("left")} aria-label="Pan view left" title="Pan left" className="flex h-8 w-8 items-center justify-center rounded-l-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowLeft className="h-4 w-4" /></button><span className="flex h-8 w-8 items-center justify-center text-[9px] font-bold text-slate-500">PAN</span><button data-testid="three-d-pan-right" type="button" onClick={() => onPan("right")} aria-label="Pan view right" title="Pan right" className="flex h-8 w-8 items-center justify-center rounded-r-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowRight className="h-4 w-4" /></button><span /><button data-testid="three-d-pan-down" type="button" onClick={() => onPan("down")} aria-label="Pan view down" title="Pan down" className="flex h-8 w-8 items-center justify-center rounded-b-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowDown className="h-4 w-4" /></button><span /></div>
+    <div
+      data-testid={testId}
+      aria-label="3D viewer controls"
+      className={`flex flex-col items-center gap-1 ${className}`}
+    >
+      <button data-testid="three-d-zoom-in" type="button" onClick={() => onZoom("in")} aria-label="Zoom in for a closer cabinet view" title="Zoom in" className={buttonClass}><Plus className="h-5 w-5" aria-hidden="true" /></button>
+      <button data-testid="three-d-zoom-out" type="button" onClick={() => onZoom("out")} aria-label="Zoom out for a wider room view" title="Zoom out" className={buttonClass}><Minus className="h-5 w-5" aria-hidden="true" /></button>
+      <button data-testid="three-d-reset-view" type="button" onClick={onReset} aria-label="Reset 3D room view" title="Reset view" className={buttonClass}><RefreshCw className="h-5 w-5" aria-hidden="true" /></button>
+      <button data-testid="three-d-share-view" type="button" onClick={() => void onShare()} aria-label="Share the current 3D zoom and pan perspective" title="Share current view" className={buttonClass}><Share2 className="h-5 w-5" aria-hidden="true" /></button>
+      {showShadows && (
+        <div className="relative">
+          {shadowsButton}
+          {shadowsOpen && (
+            <div
+              data-testid="three-d-shadows-panel"
+              className="absolute right-[3.25rem] top-0 z-30 w-52 rounded-lg border border-slate-300 bg-white/98 p-2.5 text-[#1a2744] shadow-xl backdrop-blur"
+              onPointerDown={(event) => event.stopPropagation()}
+              onPointerUp={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <label htmlFor="three-d-shadows-slider" className="text-[11px] font-semibold">Shadows</label>
+                <span data-testid="three-d-shadows-value" className="text-[11px] font-bold tabular-nums text-[#765416]">{shadowValue}%</span>
+              </div>
+              <input
+                id="three-d-shadows-slider"
+                data-testid="three-d-shadows-slider"
+                type="range"
+                min={0}
+                max={SHADOW_STRENGTH_MAX}
+                step={1}
+                value={shadowValue}
+                aria-label="Shadow strength"
+                aria-valuetext={shadowStrengthDescription(shadowValue)}
+                onChange={(event) => onShadowStrengthChange?.(normalizeShadowStrength(event.target.value))}
+                className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-[#a87f33]"
+              />
+              <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{shadowStrengthDescription(shadowValue)}</p>
+            </div>
+          )}
+        </div>
+      )}
+      {onPhotoRender && <button data-testid="three-d-photo-render" type="button" onClick={onPhotoRender} aria-label="Create a final photo-quality image from this exact completed 3D view" title="Photo Quality — final review image" className={THREE_D_VIEWER_ACCENT_BUTTON_CLASS}><Sparkles className="h-5 w-5" aria-hidden="true" /></button>}
+      {!hidePan && (
+        <div
+          data-testid="three-d-pan-pad"
+          className="mt-0.5 grid grid-cols-3 gap-0.5 rounded-md border border-slate-300 bg-white/95 p-0.5"
+          aria-label="Pan the 3D room view"
+        >
+          <span /><button data-testid="three-d-pan-up" type="button" onClick={() => onPan("up")} aria-label="Pan view up" title="Pan up" className="flex h-8 w-8 items-center justify-center rounded-t-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowUp className="h-4 w-4" aria-hidden="true" /></button><span />
+          <button data-testid="three-d-pan-left" type="button" onClick={() => onPan("left")} aria-label="Pan view left" title="Pan left" className="flex h-8 w-8 items-center justify-center rounded-l-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowLeft className="h-4 w-4" aria-hidden="true" /></button>
+          <span className="flex items-center justify-center text-[9px] font-bold text-slate-500">PAN</span>
+          <button data-testid="three-d-pan-right" type="button" onClick={() => onPan("right")} aria-label="Pan view right" title="Pan right" className="flex h-8 w-8 items-center justify-center rounded-r-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowRight className="h-4 w-4" aria-hidden="true" /></button>
+          <span /><button data-testid="three-d-pan-down" type="button" onClick={() => onPan("down")} aria-label="Pan view down" title="Pan down" className="flex h-8 w-8 items-center justify-center rounded-b-md border border-slate-300 bg-white text-[#1a2744] transition hover:bg-slate-50 active:scale-95"><ArrowDown className="h-4 w-4" aria-hidden="true" /></button><span />
+        </div>
+      )}
     </div>
   );
 }
@@ -11891,7 +11996,7 @@ export function MobileThreeDViewerNavigation(actions: ThreeDViewerNavigationActi
       {open && (
         <div data-testid="three-d-mobile-navigation-popup" role="dialog" aria-label="3D view controls" className="absolute bottom-[calc(0.5in+0.375rem)] right-0 w-[8.75rem] rounded-xl border border-slate-300 bg-white/98 p-2 shadow-xl backdrop-blur">
           <button type="button" onClick={() => setOpen(false)} aria-label="Close 3D view controls" className="mb-1 ml-auto flex h-7 w-7 items-center justify-center rounded-md border border-slate-300 bg-white text-base font-bold text-[#1a2744] active:scale-95">×</button>
-          <ThreeDViewerNavigationControls {...actions} testId="three-d-mobile-navigation-controls" className="border-0 bg-transparent p-0 shadow-none" />
+          <ThreeDViewerNavigationControls {...actions} testId="three-d-mobile-navigation-controls" className="p-0" />
         </div>
       )}
       <button type="button" data-testid="three-d-mobile-navigation-launcher" onClick={() => setOpen((current) => !current)} aria-label="Open 3D view controls" aria-expanded={open} className="flex h-[0.5in] w-[0.5in] items-center justify-center rounded-lg border border-[#a87f33]/60 bg-white/95 text-[#1a2744] shadow-lg backdrop-blur active:scale-95"><Move3D className="h-5 w-5" /></button>
@@ -11929,6 +12034,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   // last painted frame stays visible until the new scene renders.
   const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
+  // The one light that casts shadows. Kept in a ref so the slider can change
+  // strength live instead of rebuilding the whole scene.
+  const shadowLightRef = useRef<THREE.DirectionalLight | null>(null);
   // Keep the callback fresh without rebuilding the WebGL scene on every parent render.
   const onGeometryRenderedRef = useRef(onGeometryRendered);
   onGeometryRenderedRef.current = onGeometryRendered;
@@ -11955,6 +12063,32 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   const suppressContextMenuRef = useRef(false);
   const lastEmittedPresentationRef = useRef<string | null>(null);
 	  const [autoRotate, setAutoRotate] = useState(false);
+	  // Shadow strength for the 3D stage, 0–100% of the renderer's own strength.
+	  // A display preference, so it is remembered per browser rather than saved
+	  // into the plan (see @/lib/shadowStrength).
+	  const [shadowStrength, setShadowStrength] = useState(() => readShadowStrengthPreference());
+	  useEffect(() => { writeShadowStrengthPreference(shadowStrength); }, [shadowStrength]);
+	  // The scene is built once per dependency change, so the live value is
+	  // mirrored into a ref: moving the slider then only retunes the shadow
+	  // intensity on the existing light instead of rebuilding the room.
+	  const shadowStrengthRef = useRef(shadowStrength);
+	  useEffect(() => {
+	    shadowStrengthRef.current = shadowStrength;
+	    const light = shadowLightRef.current;
+	    if (!light) return;
+	    light.shadow.intensity = shadowStrengthScale(shadowStrength);
+	    // Keep castShadow on and drive the strength through shadow.intensity.
+	    // three.js only uploads the shadowIntensity uniform while castShadow is
+	    // true, so toggling the flag off would drop the light out of the shadow
+	    // program entirely instead of fading it — and switching it back on can
+	    // leave the cached material compiled without the shadow path.
+	    light.castShadow = true;
+	    const renderer = rendererRef.current;
+	    if (renderer) {
+	      renderer.shadowMap.enabled = true;
+	      renderer.shadowMap.needsUpdate = true;
+	    }
+	  }, [shadowStrength]);
 	  const [resetKey, setResetKey] = useState(0);
 	  const [cameraReadyKey, setCameraReadyKey] = useState(0);
 	  const [cameraPreset, setCameraPreset] = useState<ThreeDCameraPreset>("presentation");
@@ -12474,6 +12608,9 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    keyLight.shadow.camera.bottom = -maxSpan * 1.15;
 	    keyLight.shadow.bias = -0.00018;
 	    keyLight.shadow.normalBias = 0.018;
+	    // Start at the saved strength so the first frame already matches the slider.
+	    keyLight.shadow.intensity = shadowStrengthScale(shadowStrengthRef.current);
+	    shadowLightRef.current = keyLight;
 	    threeScene.add(keyLight);
 	    const fillLight = new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity);
 	    fillLight.position.set(-maxSpan, maxSpan, maxSpan);
@@ -14674,10 +14811,10 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	        {materialTransitioning && <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/25 backdrop-blur-[1px]"><span className="inline-flex items-center gap-2 rounded-full bg-background/95 px-3 py-1.5 text-xs font-medium shadow-sm"><LoaderCircle className="h-3.5 w-3.5 animate-spin text-[#a87f33]" />Updating preview</span></div>}
         {renderExistingDesign && rangeHoodStatus.needs2DPlacement && <div data-testid="three-d-range-hood-status" className="absolute left-3 top-3 max-w-[calc(100%-1.5rem)] rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs text-amber-900 shadow-sm backdrop-blur"><span>Add a range hood in the catalog to show it above this saved range.</span>{onAddRangeHood && <button type="button" onClick={onAddRangeHood} className="ml-1 font-semibold underline underline-offset-2">Add now</button>}</div>}
 	        {tabletOverlay
-	          ? <ThreeDViewerNavigationControls onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} compact hidePan={tabletTier.touch} testId="three-d-tablet-navigation" className="absolute bottom-3 right-3 z-20 flex max-h-[calc(100%-4.75rem)] overflow-y-auto" />
+	          ? <ThreeDViewerNavigationControls onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} compact hidePan={tabletTier.touch} testId="three-d-tablet-navigation" className={THREE_D_VIEWER_COLUMN_CLASS} />
 	          : <>
-	            <ThreeDViewerNavigationControls onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} className="absolute bottom-3 right-3 z-20 hidden sm:flex" />
-	            <MobileThreeDViewerNavigation onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} />
+	            <ThreeDViewerNavigationControls onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} className={`${THREE_D_VIEWER_COLUMN_CLASS} hidden sm:flex`} />
+	            <MobileThreeDViewerNavigation onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} />
 	          </>}
 	      </div>
 	      {selectedCabinet && (() => {
