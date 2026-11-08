@@ -5452,7 +5452,7 @@ export function isSinkBaseCabinet(c: {
     /\bsink\s*base\b/.test(hay) ||                      // "Sink Base", "Corner Sink Base"
     /\bvanity\s*sink\b/.test(hay) ||                    // "Vanity Sink Base"
     /\bsink\s*(?:floor|front)\b/.test(hay) ||           // "Diagonal Sink Floor"
-    /\b(?:farm(?:house)?|apron)\b[^.]*\bsink\b/.test(hay) ||
+    /\b(?:farm(?:house|er)?|apron)\b[^.]*\bsink\b/.test(hay) ||
     /\bsink\b[^.]*\b(?:base|cabinet|floor|front)\b/.test(hay);
   if (descIsSink) return true;
   // Unambiguous sink-base code stems only (each requires a following size digit
@@ -5477,7 +5477,9 @@ export function isFarmSinkBasePaletteItem(c: {
   if (!isSinkBaseCabinet(c)) return false;
   const code = `${c.masterCode ?? ""}`.toLowerCase();
   const hay = `${c.description ?? ""} ${c.subCategory ?? ""}`.toLowerCase();
-  return /^fsb[-_]?\d/.test(code) || /farm(?:house)?\s+sink/.test(hay);
+  // "Farmer" is the owner's word for the same apron-front base, so a line that
+  // prints it reaches the same farmhouse path.
+  return /^fsb[-_]?\d/.test(code) || /farm(?:house|er)?'?s?\s+sink/.test(hay);
 }
 
 /** A sink fixture belongs to a sink base when its center lies inside that cabinet's true footprint. */
@@ -5502,6 +5504,10 @@ export function fixtureBelongsToCabinet(fixture: SinkFixture, cabinet: PlacedCab
 /**
  * Returns true if the cabinet is a farmer's / apron-front sink base (FSB-*).
  * These have an exposed apron face below the countertop and no bottom rail.
+ *
+ * "Farmer" is the owner's word for this base, and some lines print the family
+ * that way ("Base Farmer Sink"), so the word is accepted alongside farmhouse
+ * and apron-front.
  */
 export function isFarmerSinkBase(c: {
   description?: string | null;
@@ -5510,8 +5516,8 @@ export function isFarmerSinkBase(c: {
 }): boolean {
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
   const descMatch =
-    /\b(?:farm(?:house)?|apron)\b[^.]*\bsink\b/.test(hay) ||
-    /\bsink\b[^.]*\b(?:farm(?:house)?|apron)\b/.test(hay);
+    /\b(?:farm(?:house|er)?'?s?|apron)\b[^.]*\bsink\b/.test(hay) ||
+    /\bsink\b[^.]*\b(?:farm(?:house|er)?'?s?|apron)\b/.test(hay);
   if (descMatch) return true;
   const code = (c.masterCode ?? "").toUpperCase();
   // FSB-30, FSB-33, FSB-36, ADA-FSB-30, etc.

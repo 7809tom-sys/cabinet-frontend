@@ -84,10 +84,18 @@ describe("Bathroom Designer reads the Pelican vanity tags", () => {
   });
 
   it("wires both pickers to the tags instead of the old three-SKU predicates", () => {
-    expect(designTool).toContain("isBathroomVanitySinkRow(product) && vanitySinkFitsVanityWidth(product, sinkBaseOpeningWidth)");
+    // What fits a base is decided in one module the picker also filters with, so
+    // the bathroom tags stay the authority for a vanity, and an apron-front base
+    // in the same bathroom still reads its own family.
+    const selection = readFileSync(new URL("./sinkBaseSelection.ts", import.meta.url), "utf8");
+    expect(designTool).toContain("isBathroomVanitySinkRow");
+    expect(designTool).toContain("sinkRowFitsBase");
+    expect(designTool).toContain("faucetRowFitsBase");
     expect(designTool).toContain("bathroomVanityFaucetOptions([product], pendingSinkProduct?.pelicanCode)");
-    expect(designTool).toContain("!isBathroomVanityFaucetRow(product)");
     expect(designTool).toContain("bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode)");
+    expect(selection).toContain("isBathroomVanitySinkRow");
+    expect(selection).toContain("isBathroomVanityFaucetRow");
+    expect(selection).toContain("vanitySinkFitsVanityWidth");
     expect(designTool).not.toContain("? isVerifiedPelicanVanitySink(product.pelicanCode)");
     expect(designTool).not.toContain("? isVerifiedPelicanVanityFaucet(product.pelicanCode)");
   });

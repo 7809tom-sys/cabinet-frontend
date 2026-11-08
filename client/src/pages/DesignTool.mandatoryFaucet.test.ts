@@ -40,9 +40,12 @@ describe("a faucet is placed on every build path", () => {
 
   it("runs as its own pass in the Designer, after build and on load", () => {
     const pass = between(designTool, "const faucetFillRanRef = useRef", "const product = defaultAutoDesignFaucet(autoDesignFaucetProducts);");
-    // The fallback fixture must match the room: a bathroom vanity gets the
-    // verified vanity faucet, not the 26" kitchen pull-down.
-    expect(pass).toContain('ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts, { bathroom: roomType === "bathroom" })');
+    // The fallback fixture must match the room and the BASE: a bathroom vanity
+    // gets the verified vanity faucet, not the 26" kitchen pull-down, and a
+    // farmhouse / apron-front base in that same bathroom still gets a kitchen one.
+    expect(pass).toContain("ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts, {");
+    expect(pass).toContain("bathroom: roomType === \"bathroom\",");
+    expect(pass).toContain("bathroomForSink:");
     expect(pass).toContain("if (everySinkHasFaucet(sinks)) return;");
     expect(pass).toContain("setSinks(result.sinks)");
     // The pass runs once per plan, not on every unrelated render.
@@ -89,7 +92,10 @@ describe("the faucet is add-only", () => {
     expect(faucetSource).toContain("sells no faucet");
     expect(faucetSource).toContain("DEFAULT_PELICAN_KITCHEN_FAUCET");
     expect(faucetSource).toContain("DEFAULT_PELICAN_VANITY_FAUCET");
-    expect(faucetSource).toContain("const fallback = options.bathroom === true ? DEFAULT_PELICAN_VANITY_FAUCET : DEFAULT_PELICAN_KITCHEN_FAUCET;");
+    // The fallback is chosen per SINK, so a bathroom with a vanity base and a
+    // farmhouse base gives each the right fixture.
+    expect(faucetSource).toContain("const fallback = attachedUids.some((uid) => {");
+    expect(faucetSource).toContain("options.bathroomForSink");
   });
 });
 

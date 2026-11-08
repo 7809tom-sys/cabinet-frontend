@@ -87,7 +87,7 @@ import {
   firstRestorableDraft,
   planGuestDraftAdoption,
 } from "@/lib/designDraftOwnership";
-import { isPelicanSinkCompatibleWithBase, pelicanSinkBaseKind, sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkFitsCabinet, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
+import { sinkBaseOpeningWidthIn, verifiedPelicanFaucetProfile, verifiedPelicanPotFillerProfile, verifiedPelicanSinkProfile } from "@/lib/pelicanFixtureProfiles";
 import {
   buildPelicanSinkOnCabinet,
   chooseSmallestPelicanSinkBase,
@@ -107,10 +107,20 @@ import {
   bathroomVanityFaucetMatchNote,
   bathroomVanityFaucetOptions,
   isBathroomVanityCabinet,
-  isBathroomVanityFaucetRow,
   isBathroomVanitySinkRow,
-  vanitySinkFitsVanityWidth,
 } from "@/lib/bathroomVanityCatalog";
+import {
+  autoSeedSinkForBase,
+  faucetCartQuantities,
+  faucetCatalogRoleForBase,
+  faucetFamilyForBase,
+  faucetRowFitsBase,
+  placeSinkOnBase,
+  sinkBaseConfig,
+  sinkCatalogRoleForBase,
+  sinkFamilyForBase,
+  sinkRowFitsBase,
+} from "@/lib/sinkBaseSelection";
 import { mergeBathroomFaucetRows } from "@/lib/bathroomFixtureCatalog";
 import { bottomGridsForSink } from "@/lib/sinkBottomGrid";
 import { canAdminReviewSavedDesign } from "@/lib/designAccess";
@@ -221,7 +231,7 @@ import {
   COUNTERTOP_MATERIALS, DEFAULT_COUNTERTOP_MATERIAL_ID, countertopMaterial,
   EDGE_PROFILES, DEFAULT_EDGE_PROFILE_ID, edgeProfile,
 	  type PlanAnnotation, type CabinetWallDragPreview, makeAnnotation,
-	  makeSink, makeSinkForCabinet, makeDefaultSinkForCabinet, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
+	  makeSink, makeSinkForCabinet, normalizeSinkFixturesToBases, potFillerMountedRange, isRangeOrCooktop, sinkPlanDimensions, SINK_PRESETS, type PotFillerFixture, type SinkFixture, type SinkType,
   snapToWall, snapPosition, nextFreeSpotOnWall, mountedMicrowaveOverRangeSpot, overRangeMicrowaveAttachment,
   clampCabinetsToRoom, clampOpeningsToRoom, clampIslandToRoom, clampRoomInches,
   WALL_LABELS, doorPanelKind,
@@ -281,7 +291,7 @@ import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize 
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
 import { AUTO_DESIGN_REFRIGERATOR_NOTE, autoDesignControlState, autoDesignShouldTurnOffForRefrigerator, isRefrigeratorAppliance, isSinkBasePlacement, refrigeratorBlocksAutoDesign } from "@/lib/autoDesignAvailability";
-import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, fillAutoFaucet, isCatalogFaucet, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
+import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, fillAutoFaucet, isCatalogFaucet, sinkFaucetIsSatisfied, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
 import { clampSinkDragForFaucet, raiseWindowsForDeckFaucet, type FaucetWindowClearanceNote } from "@/lib/faucetPlacement";
 import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowOpenings";
 import { useTransientNotice } from "@/components/design/useTransientNotice";
@@ -438,7 +448,7 @@ import { RollOutTrayPicker } from "@/components/design/RollOutTrayPicker";
 import { DoorDrawerDiagram } from "@/components/design/DoorDrawerDiagram";
 // PhotorealPreview removed — replaced by deterministic preview modes
 import type { PhotorealSceneInput } from "@/components/design/PhotorealPreview";
-import { FarmhouseSinkSelectionGuide, PelicanCountertopPicker, PelicanFaucetPicker, PelicanSinkPicker, type RecItem } from "@/components/design/PelicanProductPickers";
+import { PelicanCountertopPicker, PelicanFaucetPicker, PelicanSinkPicker, type RecItem } from "@/components/design/PelicanProductPickers";
 import { PelicanConfigurationCard } from "@/components/design/PelicanConfigurationCard";
 import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping";
 /** The sink-base chooser records one sink at a time, so no card starts out as already selected. */
@@ -1783,6 +1793,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             toast.error(`${item.name} is a vanity basin. Add a vanity base first — it is not dropped in as a kitchen sink.`);
             return;
           }
+        } else if (verifiedPelicanSinkProfile(item.pelicanCode)?.sinkType === "farmhouse") {
+          // An apron-front sink belongs on a sink base, not on a vanity. In a
+          // bathroom that base is the farmhouse / apron-front (FSB) base.
+          const farmHost = placedRef.current.find((cabinet) => (
+            cabinet.placement === "base" && isSinkBaseCabinet(cabinet) && isFarmSinkBasePaletteItem(cabinet)
+          ));
+          if (!farmHost) {
+            toast.error(`${item.name} is an apron-front sink. Add a farmhouse / apron-front sink base first.`);
+            return;
+          }
         }
         const host = openPelicanSinkHost(product, placedRef.current, sinks);
         if (host) {
@@ -2630,42 +2650,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     return quantities;
   }, [furniture, selectedSurfaces]);
-  const autoDesignFaucetQuantityByProduct = useMemo(() => {
-    const quantities = new Map<number, number>();
-    for (const sink of sinks) {
-      if (sink.pelicanFaucetProductId == null) continue;
-      // A faucet the Designer filled in to complete the drawing is not billed.
-      // Only a faucet the shopper actually chose reaches the cart.
-      if (sink.faucetAutoFilled === true) continue;
-      quantities.set(sink.pelicanFaucetProductId, (quantities.get(sink.pelicanFaucetProductId) ?? 0) + 1);
-    }
-    return quantities;
-  }, [sinks]);
   const placedFixtureQuantityByProduct = useMemo(() => {
     const quantities = new Map(potFillerQuantityByProduct);
     bathroomFixtureQuantityByProduct.forEach((quantity, productId) => {
       quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
     });
-    // A faucet the Designer filled in is drawn but not billed. Record which ids
-    // are billable at all, so a filled-in faucet cannot be charged even when its
-    // surface row is still selected; a faucet the shopper chose on any sink is
-    // billable and is counted below.
-    const chosenFaucetIds = new Set<number>();
-    for (const sink of sinks) {
-      if (sink.pelicanFaucetProductId == null || sink.faucetAutoFilled === true) continue;
-      chosenFaucetIds.add(sink.pelicanFaucetProductId);
-    }
-    for (const sink of sinks) {
-      if (sink.pelicanFaucetProductId == null) continue;
-      if (sink.faucetAutoFilled === true && !chosenFaucetIds.has(sink.pelicanFaucetProductId)) {
-        if (!quantities.has(sink.pelicanFaucetProductId)) quantities.set(sink.pelicanFaucetProductId, 0);
-      }
-    }
-    autoDesignFaucetQuantityByProduct.forEach((quantity, productId) => {
+    // A filled-in faucet is drawn but not billed. `faucetCartQuantities` seeds it
+    // at zero so a stale surface row cannot charge it, and counts only a pick.
+    faucetCartQuantities(sinks).forEach((quantity, productId) => {
       quantities.set(productId, (quantities.get(productId) ?? 0) + quantity);
     });
     return quantities;
-  }, [autoDesignFaucetQuantityByProduct, bathroomFixtureQuantityByProduct, potFillerQuantityByProduct, sinks]);
+  }, [bathroomFixtureQuantityByProduct, potFillerQuantityByProduct, sinks]);
   // Text annotations placed on the floor plan.
   const [annotations, setAnnotations] = useState<PlanAnnotation[]>([]);
   const [selectedAnnotationUid, setSelectedAnnotationUid] = useState<string | null>(null);
@@ -7231,12 +7227,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (wizardSinkBases.length || editingPeninsulaWizardRootId) {
       const seeded = wizardSinkBases
         .filter((cabinet) => !retainedWizardSinks.some((sink) => sink.cabinetUid === cabinet.uid))
-        .map((cabinet) => makeSinkForCabinet(
-          isFarmSinkBasePaletteItem(cabinet) ? "farmhouse" : cabinet.width >= 33 ? "double" : "single", cabinet, nextRoom,
-        ));
+        .map((cabinet) => autoSeedSinkForBase({ base: cabinet, room: nextRoom, roomType }));
       setSinks([...retainedWizardSinks, ...seeded]);
       setSelectedSinkUid(null);
-      setWizardSinkQueue(wizardSinkBases.filter((cabinet) => !isFarmSinkBasePaletteItem(cabinet)).map((cabinet) => cabinet.uid));
+      // Every sink base, a farmhouse / apron-front one included, gets the same
+      // sink + faucet chooser in the Wizard sequence.
+      setWizardSinkQueue(wizardSinkBases.map((cabinet) => cabinet.uid));
     }
     if (wizardStools.length || editingPeninsulaWizardRootId) setFurniture((previous) => [
       ...previous.filter((item) => !item.uid.startsWith(`peninsula-stool:${wizardRootId}:`)),
@@ -8986,10 +8982,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           }]);
           toast.success(`${pelicanSinkDraft.name} placed with a sink base. The faucet stays off until you add one behind the basin.`);
         } else if (!existingFixture) {
-          const defaultSinkType: SinkType = isFarmSinkBasePaletteItem(finalCab)
-            ? "farmhouse"
-            : finalCab.width >= 33 ? "double" : "single";
-          const defaultSink = adoptAutoDesignSinkRef.current(makeDefaultSinkForCabinet(finalCab, room, defaultSinkType));
+          // The seeded basin follows the base's own family: a vanity gets a
+          // porcelain vanity basin, an apron base gets an apron-front sink, and a
+          // kitchen base gets the standard basin. The faucet is drawn but is not
+          // billed until the shopper picks one.
+          const defaultSink = adoptAutoDesignSinkRef.current(autoSeedSinkForBase({ base: finalCab, room, roomType }));
 	          setSinks((current) => current.some((sink) => fixtureBelongsToCabinet(sink, finalCab))
 	            ? current
 	            : [...current, defaultSink]);
@@ -9000,16 +8997,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         if (pelicanSinkDraft) {
           setSinkBaseDialog(null);
           setMobilePanel(null);
-        } else if (isFarmSinkBasePaletteItem(finalCab)) {
-	          setSinkBaseDialog(null);
-	          setRangeTopStep("choose");
-	          toast.info("Farm Sink Base added. Choose a verified apron-front sink from the Sink Selection Guide in the side panel.");
-	        } else {
-	          setSinkBaseDialog({ cabinetUid: finalCab.uid });
-	          setRangeTopStep("choose");
-	          // Close the mobile catalog sheet so it doesn't intercept dialog touch events
-	          setMobilePanel(null);
-	        }
+        } else {
+          // Every sink base, farmhouse / apron-front included, opens the same
+          // Sink / Range Top chooser. Sending an FSB down a different path is what
+          // left it with no way to choose its apron-front sink in a bathroom.
+          setSinkBaseDialog({ cabinetUid: finalCab.uid });
+          setRangeTopStep("choose");
+          // Close the mobile catalog sheet so it doesn't intercept dialog touch events
+          setMobilePanel(null);
+          if (isFarmSinkBasePaletteItem(finalCab)) {
+            toast.info(`${finalCab.masterCode} is a farmhouse / apron-front sink base. Choose its apron-front sink, then its faucet.`);
+          }
+        }
       }
       if (isFloatingShelfItem(finalCab)) {
         setFloatingShelfAttrUid(finalCab.uid);
@@ -10274,27 +10273,31 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     { role: "range-top", limit: 6, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!sinkBaseDialog }
   );
-  // Bathroom vanities use Pelican's separately verified porcelain basin palette,
-  // never the kitchen sink list. The same distinction applies to vanity faucets.
-  const bathroomSinkDialog = Boolean(sinkBaseDialog && roomType === "bathroom");
-  // Recommended sink products fetched from the matching Pelican catalog role.
-  const selectedFarmSinkBaseForGuide = placed.some(
-    (cabinet) => cabinet.uid === selectedUid && isFarmSinkBasePaletteItem(cabinet),
+  // The sink and faucet families follow the SELECTED BASE, not the room. A
+  // farmhouse / apron-front base standing in a bathroom is still a farmhouse
+  // base, so it must read the ordinary sink rows; asking the bathroom-only
+  // `vanity-sink` role returned nothing and left the step empty.
+  const sinkDialogBase = useMemo(
+    () => (sinkBaseDialog ? placed.find((cabinet) => cabinet.uid === sinkBaseDialog.cabinetUid) ?? null : null),
+    [placed, sinkBaseDialog],
   );
+  // Recommended sink products fetched from the matching Pelican catalog role.
+  const selectedCabinetForGuide = placed.find((cabinet) => cabinet.uid === selectedUid) ?? null;
+  const sinkGuideEnabled = Boolean(sinkBaseDialog || (selectedCabinetForGuide && isSinkBaseCabinet(selectedCabinetForGuide)));
   const { data: sinkBaseProducts } = trpc.surfaces.recommended.useQuery(
     // Fetch a broader set only while the sink-base dialog is open so verified
     // compatible products can be prioritized without altering catalog ranking.
     // The whole role is requested (server cap 200): Pelican sells each gauge and
     // corner radius as its own SKU, and the dialog folds them into one card per
     // model after the exact-SKU compatibility and fit filters below.
-    { role: bathroomSinkDialog ? "vanity-sink" : "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
-    { enabled: !!sinkBaseDialog || selectedFarmSinkBaseForGuide }
+    { role: sinkCatalogRoleForBase(sinkDialogBase ?? selectedCabinetForGuide, roomType), limit: 200, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: sinkGuideEnabled }
   );
   // Fetch every source-priced, source-measured faucet supported by this
   // sink-mounted Designer workflow. The compact picker initially shows six,
   // then explicitly exposes the remaining verified choices.
   const { data: faucetBaseProducts, isLoading: faucetProductsLoading } = trpc.surfaces.recommended.useQuery(
-    { role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200, affiliateSlug: affiliateSlug ?? undefined },
+    { role: faucetCatalogRoleForBase(sinkDialogBase, roomType), limit: 200, affiliateSlug: affiliateSlug ?? undefined },
     { enabled: !!sinkBaseDialog }
   );
   // The server's "vanity-faucet" role accepts PL-8112 only, so the vanity step
@@ -10303,7 +10306,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // searches the Bathroom Fixtures browser uses, then keep only the SKUs that
   // carry a measured profile. These follow the step's existing price basis (the
   // `surfaces.recommended` rows), so one card is not priced on a different tier.
-  const vanityFaucetCatalogEnabled = Boolean(sinkBaseDialog && roomType === "bathroom");
+  const vanityFaucetCatalogEnabled = Boolean(sinkBaseDialog && faucetFamilyForBase(sinkDialogBase, roomType) === "vanity");
   const vanityFaucetByName = trpc.pelican.byCategory.useQuery(
     { category: "Sinks & Faucets", scope: "catalog" as const, search: "Bathroom Faucet", limit: 80, offset: 0 },
     { enabled: vanityFaucetCatalogEnabled },
@@ -10321,7 +10324,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // Kitchen sinks keep the server's kitchen faucet rows unchanged. Only the
       // bathroom step needs the extra catalog searches and the bathroom filter;
       // running kitchen rows through that filter removed every kitchen faucet.
-      if (!sinkBaseDialog || roomType === "bathroom") {
+      // A vanity faucet step needs the extra catalog searches and the bathroom
+      // filter. A farmhouse or kitchen base keeps the server's rows unchanged;
+      // running those rows through the bathroom filter removed every one.
+      if (vanityFaucetCatalogEnabled) {
         return mergeBathroomFaucetRows(
           (faucetBaseProducts ?? []) as Array<{ id: number; pelicanCode?: string | null; sellPrice?: number | null }>,
           [
@@ -10333,7 +10339,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
       return (faucetBaseProducts ?? []) as typeof faucetBaseProducts;
     },
-    [faucetBaseProducts, roomType, sinkBaseDialog, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
+    [faucetBaseProducts, vanityFaucetCatalogEnabled, vanityFaucetByName.data, vanityFaucetByTerm.data, vanityFaucetVesselTerm.data],
   );
   // Matching bottom grid for the sink just chosen. Pelican names each grid after
   // its sink model, so the match is the model code on the accessory row. Vanity
@@ -10439,7 +10445,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const fillKey = [faucetEpoch, autoDesignFaucetProducts.map((product) => product.id).join(","), sinks.map((sink) => sink.uid).sort().join(",")].join("|");
     if (faucetFillRanRef.current.has(fillKey)) return;
     faucetFillRanRef.current = new Set([fillKey]);
-    const result = ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts, { bathroom: roomType === "bathroom" });
+    const result = ensureMandatorySinkFaucets(sinks, autoDesignFaucetProducts, {
+      bathroom: roomType === "bathroom",
+      // A vanity basin takes the vanity fixture even when the plan also holds a
+      // farmhouse / apron-front sink base, whose fixture is a kitchen faucet.
+      bathroomForSink: (sink) => sinkFamilyForBase(
+        placed.find((cabinet) => cabinet.uid === sink.cabinetUid) ?? null,
+        roomType,
+      ) === "vanity",
+    });
     if (result.attachedUids.length === 0) return;
     setSinks(result.sinks);
     if (result.source === "catalog") {
@@ -10466,13 +10480,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const product = defaultAutoDesignFaucet(autoDesignFaucetProducts);
     defaultAutoDesignFaucetRef.current = product;
     if (!product) return;
-    const waiting = sinks.some((sink) => sink.autoDesignFaucet && sink.pelicanFaucetProductId == null);
-    if (!waiting) return;
-    const nextSinks = sinks.map((sink) => (
-      sink.autoDesignFaucet && sink.pelicanFaucetProductId == null
-        ? fillAutoFaucet(sink, product)
-        : sink
-    ));
+    // Only a sink with nothing drawable behind the basin is filled. A sink that
+    // already carries a faucet — including the vanity fixture a bathroom base was
+    // seeded with — keeps it, so a kitchen default can never land on a vanity.
+    const needsFaucet = (sink: SinkFixture) => !sinkFaucetIsSatisfied(sink);
+    if (!sinks.some(needsFaucet)) return;
+    const nextSinks = sinks.map((sink) => {
+      if (!needsFaucet(sink)) return sink;
+      const vanitySink = sinkFamilyForBase(
+        placed.find((cabinet) => cabinet.uid === sink.cabinetUid) ?? null,
+        roomType,
+      ) === "vanity";
+      // A vanity takes the verified vanity fixture; everything else takes the
+      // catalog default. Either way it is marked filled-in and is not billed.
+      return fillAutoFaucet(sink, vanitySink ? null : product, vanitySink);
+    });
     setSinks(nextSinks);
     const raised = raiseWindowsForDeckFaucet({
       sinks: nextSinks,
@@ -21613,7 +21635,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   </Button>
                 </TooltipTrigger><TooltipContent>Sink &amp; faucet options</TooltipContent></Tooltip>
               )}
-              {selectedCab && selectedCab.placement === "base" && isSinkBaseCabinet(selectedCab) && !isFarmSinkBasePaletteItem(selectedCab)
+              {selectedCab && sinkBaseConfig(selectedCab, roomType).swapToFarmSinkBase
                 && matchingFarmSinkBase(selectedCab, (liveMasterCabinets ?? []) as DesignCabinet[]) && (
                 <Tooltip><TooltipTrigger asChild>
                   <Button aria-label="Swap for farm sink base" data-testid="swap-farm-sink-base" variant="outline" className="aspect-square min-h-12 w-full border-[#a87f33] p-0 text-[11px] font-bold text-[#7a5c24] hover:bg-[#a87f33]/10" onClick={() => swapSelectedSinkBaseToFarmSink(selectedCab.uid)}>
@@ -21699,92 +21721,47 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     <DialogDescription>Select a compatible sink for the selected sink base, then add or remove its faucet.</DialogDescription>
                   </DialogHeader>
 
-	                {selectedCab && isFarmSinkBasePaletteItem(selectedCab) ? (
-	                  <FarmhouseSinkSelectionGuide
-	                    baseCode={selectedCab.masterCode || "Farm Sink Base"}
-	                    openingWidthIn={sinkBaseOpeningWidthIn(selectedCab)}
-                    products={(sinkBaseProducts ?? []) as RecItem[]}
-                    isLoading={!sinkBaseProducts}
-                    onSelect={(item) => {
-                      setPendingSinkProduct({
-                        id: item.id,
-                        pelicanCode: item.pelicanCode ?? null,
-                        slug: item.slug,
-                        name: item.name,
-                        description: null,
-                        category: item.category,
-                        subCategory: item.subCategory ?? null,
-                        size: item.size ?? null,
-                        imageUrl: item.imageUrl ?? null,
-                        sellPrice: item.sellPrice ?? null,
-                      });
-                      setSinkBaseDialog({ cabinetUid: selectedCab.uid });
-                      setRangeTopStep("faucet");
-                    }}
-	                    onBrowseAll={() => { setBathroomCatalogMode(roomType === "bathroom" ? "fixtures" : "surfaces"); setSurfacesOpen(true); }}
-	                  />
-	                ) : (
-	                  <>
-	                    <p className="text-xs font-semibold text-foreground mt-3 mb-2">{t("dt_bs_add_sink")}</p>
-	                    <PelicanSinkPicker
-                  affiliateSlug={affiliateSlug}
-                  selectedSurfaces={selectedSurfaces}
-                  onSelect={(item) => {
-                    const owner = selectedCab && isSinkBaseCabinet(selectedCab) ? selectedCab : null;
-                    if (!owner) {
-                      toast.info("Select a compatible sink base cabinet before choosing a Pelican sink.");
-                      return;
-                    }
-                    const baseKind = isFarmSinkBasePaletteItem(owner) ? "farmhouse" : "standard";
-                    if (!isPelicanSinkCompatibleWithBase(item, baseKind)) {
-                      toast.error(`${pelicanSinkBaseKind(item) === "farmhouse" ? "Farmhouse/apron-front" : "Standard"} sinks do not fit this ${baseKind === "farmhouse" ? "farmhouse/apron-front" : "standard"} sink base.`);
-                      return;
-                    }
-                    const verifiedProfile = verifiedPelicanSinkProfile(item.pelicanCode);
-                    if (!verifiedProfile) {
-                      toast.info("This sink is not yet a source-verified 3D profile. Choose one of the verified Pelican sinks shown in the palette.");
-                      return;
-                    }
-                    if (verifiedProfile && !verifiedPelicanSinkFitsCabinet(verifiedProfile, sinkBaseOpeningWidthIn(owner))) {
-                      toast.error(`${verifiedProfile.name} requires a sink base at least ${verifiedProfile.minimumCabinetWidthIn}" wide.`);
-                      return;
-                    }
-                    addRecommendedSurface(item, "sink");
-                    // Add the physical fixture only to the selected compatible sink base.
-                    const sizeStr = item.size || "";
-                    const wMatch = sizeStr.match(/(\d+)/); // first number = width
-                    const w = wMatch ? parseInt(wMatch[1], 10) : 30;
-                    const sinkW = verifiedProfile.exteriorWidthIn;
-                    const sinkD = verifiedProfile.exteriorDepthIn;
-                    const sinkType: SinkType = verifiedProfile.sinkType;
-                    const attached = makeSinkForCabinet(sinkType, owner, room, { width: sinkW, depth: sinkD });
-                    const sink: SinkFixture = {
-                      ...attached,
-                      faucet: false,
-                      pelicanProductId: item.id,
-                      pelicanProductName: item.name,
-                      pelicanProductImage: item.imageUrl ?? undefined,
-                      pelicanProfileId: verifiedProfile.id,
-                      bowlWidth: verifiedProfile.bowlWidthIn,
-                      bowlDepth: verifiedProfile.bowlDepthIn,
-                      bowlHeight: verifiedProfile.bowlHeightIn,
-                      bowlCount: verifiedProfile.bowlCount ?? 1,
-                      bowlWidths: verifiedProfile.bowlWidthsIn,
-                      bowlDepths: verifiedProfile.bowlDepthsIn,
-                      bowlHeights: verifiedProfile.bowlHeightsIn,
-                      drainInsetRight: verifiedProfile.drainInsetRightIn,
-                      drainInsetBack: verifiedProfile.drainInsetBackIn,
-                      exteriorHeight: verifiedProfile.exteriorHeightIn,
-                      apronFront: verifiedProfile.apronFront,
-                      surfaceFinish: verifiedProfile.surfaceFinish,
-                    };
-                    setSinks((prev) => [...prev, sink]);
-                    setSelectedSinkUid(sink.uid);
-                    setCountertop(true);
-                  }}
-                  onBrowseAll={() => { setBathroomCatalogMode(roomType === "bathroom" ? "fixtures" : "surfaces"); setSurfacesOpen(true); }}
+                {selectedCab && isSinkBaseCabinet(selectedCab) ? (
+                  <>
+                    <p className="text-xs font-semibold text-foreground mt-3 mb-2">
+                      {sinkFamilyForBase(selectedCab, roomType) === "farmhouse"
+                        ? "Choose the apron-front sink for this farmhouse sink base"
+                        : t("dt_bs_add_sink")}
+                    </p>
+                    <PelicanSinkPicker
+                      affiliateSlug={affiliateSlug}
+                      role={sinkCatalogRoleForBase(selectedCab, roomType)}
+                      selectedSurfaces={selectedSurfaces}
+                      filter={(item) => sinkRowFitsBase(item, selectedCab, roomType)}
+                      emptyMessage={sinkFamilyForBase(selectedCab, roomType) === "farmhouse"
+                        ? `No source-verified apron-front sink fits this ${sinkBaseOpeningWidthIn(selectedCab)}" farmhouse sink base yet.`
+                        : undefined}
+                      onSelect={(item) => {
+                        const owner = selectedCab && isSinkBaseCabinet(selectedCab) ? selectedCab : null;
+                        if (!owner) {
+                          toast.info("Select a compatible sink base cabinet before choosing a Pelican sink.");
+                          return;
+                        }
+                        // The same placement path the sink step uses: it decides the
+                        // family from the base, seats the basin, and marks the
+                        // filled-in faucet as not billed.
+                        const result = placeSinkOnBase({ base: owner, room, roomType, product: item, faucet: null });
+                        if (!result.ok) {
+                          toast.error(result.reason);
+                          return;
+                        }
+                        setSinks((prev) => [...prev.filter((sink) => !fixtureBelongsToCabinet(sink, owner)), result.sink]);
+                        setSelectedSinkUid(result.sink.uid);
+                        setSelectedSurfaces((previous) => previous.some((surface) => surface.id === item.id) ? previous : [...previous, item]);
+                        setCountertop(true);
+                      }}
+                      onBrowseAll={() => { setBathroomCatalogMode(roomType === "bathroom" ? "fixtures" : "surfaces"); setSurfacesOpen(true); }}
 	                    />
 	                  </>
+	                ) : (
+                  <p data-testid="sink-options-needs-base" className="mt-3 rounded-md border border-dashed border-border px-3 py-3 text-center text-[11px] text-muted-foreground">
+                    Select a sink base cabinet on the plan to choose its sink and faucet. Every sink base, including a farmhouse / apron-front base, is configured here.
+                  </p>
 	                )}
                 {sinks.length > 0 && (
                   <div className="mt-3 space-y-1.5">
@@ -22527,24 +22504,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           bathroomFixtureTags?: string | null;
         }>;
         const sinkBaseCabinet = placed.find((p) => p.uid === sinkBaseDialog.cabinetUid) ?? null;
-        // A selected sink base in the Bathroom room type always receives the
-        // bathroom-only fixture path. This prevents a legacy/general base from
-        // reopening the kitchen sink palette after it is used in a bath plan.
-        const isBathroomVanity = roomType === "bathroom";
-        const sinkBaseKind = !isBathroomVanity && sinkBaseCabinet && isFarmSinkBasePaletteItem(sinkBaseCabinet) ? "farmhouse" : "standard";
+        // What may go on this base follows the BASE, not the room. A farmhouse /
+        // apron-front base is placed in the bathroom, but its fixture is an
+        // apron-front sink, so filtering the bathroom-only vanity rows left the
+        // step with nothing to choose and no sink could be placed.
+        const isBathroomVanity = sinkFamilyForBase(sinkBaseCabinet, roomType) === "vanity";
+        const sinkBaseKind = sinkBaseCabinet && isFarmSinkBasePaletteItem(sinkBaseCabinet) ? "farmhouse" : "standard";
         const sinkBaseOpeningWidth = sinkBaseOpeningWidthIn(sinkBaseCabinet ?? undefined);
-        // The Bathroom Designer reads the Pelican catalog's bathroom fixture tags
-        // (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql), not a category label.
-        // A row tagged `bathroom-vanity-sink` is a vanity basin or integrated top;
-        // a double-bowl basin is only offered on a vanity wide enough for two.
+        // `sinkRowFitsBase` applies the Pelican bathroom fixture tags
+        // (docs/sql/0264_pelican_vanity_fixtures_tag.tidb.sql) for a vanity, the
+        // apron-front profile for a farmhouse base, and the standard compatibility
+        // rule for every other base, so this step and the side panel cannot differ.
         const filteredSinks = allRecommendedSinks
-          .filter((product) => isBathroomVanity
-            ? isBathroomVanitySinkRow(product) && vanitySinkFitsVanityWidth(product, sinkBaseOpeningWidth)
-            : isPelicanSinkCompatibleWithBase(product, sinkBaseKind))
-          .filter((product) => {
-            const profile = verifiedPelicanSinkProfile(product.pelicanCode);
-            return Boolean(profile && verifiedPelicanSinkFitsCabinet(profile, sinkBaseOpeningWidth));
-          })
+          .filter((product) => sinkRowFitsBase(product, sinkBaseCabinet, roomType))
           .sort((left, right) => Number(Boolean(verifiedPelicanSinkProfile(right.pelicanCode))) - Number(Boolean(verifiedPelicanSinkProfile(left.pelicanCode))));
         const applyRangeTop = (
           type: "gas" | "electric" | "induction" | "smooth-top",
@@ -22610,10 +22582,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const filteredFaucets = ((vanityFaucetCatalogRows ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
           bathroomFixtureTags?: string | null;
-        }>).filter((product) => Boolean(verifiedPelicanFaucetProfile(product.pelicanCode)))
+        }>).filter((product) => faucetRowFitsBase(product, sinkBaseCabinet, roomType))
           .filter((product) => isBathroomVanity
+            // A pre-drilled vanity top only receives faucets drilled to its own
+            // hole count and spread.
             ? bathroomVanityFaucetOptions([product], pendingSinkProduct?.pelicanCode).length > 0
-            : !isBathroomVanityFaucetRow(product));
+            : true);
         const applySink = (sinkProduct: typeof filteredSinks[0] | null, faucetProduct: typeof filteredFaucets[0] | null) => {
           // The grid chosen in the previous step, but only while it still fits the
           // sink being applied. A mismatched grid would be the wrong part.
@@ -22625,13 +22599,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           const previousRangeTopProductId = cab?.sinkTopType === "gas" || cab?.sinkTopType === "electric" || cab?.sinkTopType === "induction" || cab?.sinkTopType === "smooth-top"
             ? cab.sinkTopProductId
             : null;
-          const verifiedProfile = verifiedPelicanSinkProfile(sinkProduct?.pelicanCode);
           const verifiedFaucetProfile = verifiedPelicanFaucetProfile(faucetProduct?.pelicanCode);
           const isWallMountedFaucet = verifiedFaucetProfile?.installation === "wall-mounted-8-inch-center";
           const faucetWallMountHeightAboveCountertopIn = Number(faucetWallMountHeightText);
-          const cabinetWidth = sinkBaseOpeningWidthIn(cab ?? undefined);
-          const targetBaseKind = !isBathroomVanity && cab && isFarmSinkBasePaletteItem(cab) ? "farmhouse" : "standard";
-          if (!sinkProduct || !verifiedProfile) {
+          if (!sinkProduct) {
             toast.error(`Choose a source-verified Pelican ${isBathroomVanity ? "vanity sink" : "sink"} before adding it to this ${isBathroomVanity ? "bathroom" : "kitchen"} plan.`);
             return;
           }
@@ -22643,66 +22614,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             toast.error(`Enter the documented wall-mount datum above the finished countertop (greater than 0 and no more than ${formatEighthInches((room.ceilingHeight ?? 96) - STD.COUNTERTOP_HEIGHT)}).`);
             return;
           }
-          if (isBathroomVanity && !isBathroomVanitySinkRow(sinkProduct)) {
-            toast.error("This bathroom vanity requires a Pelican vanity sink.");
+          if (!cab) {
+            toast.error("Select a sink base cabinet before choosing a Pelican sink.");
+            setRangeTopStep("sink");
             return;
           }
-          if (isBathroomVanity && faucetProduct && !isBathroomVanityFaucetRow(faucetProduct)) {
-            toast.error("This bathroom vanity requires a Pelican vanity faucet.");
+          // One placement path for every sink base: it decides the family from
+          // the base, seats the basin, and enforces the faucet cart rule.
+          const placedSink = placeSinkOnBase({ base: cab, room, roomType, product: sinkProduct, faucet: faucetProduct });
+          if (!placedSink.ok) {
+            toast.error(placedSink.reason);
+            setPendingSinkProduct(null);
+            setRangeTopStep("sink");
             return;
           }
-          if (!isBathroomVanity && sinkProduct && !isPelicanSinkCompatibleWithBase(sinkProduct, targetBaseKind)) {
-            toast.error(`${pelicanSinkBaseKind(sinkProduct) === "farmhouse" ? "Farmhouse/apron-front" : "Standard"} sinks do not fit this ${targetBaseKind === "farmhouse" ? "farmhouse/apron-front" : "standard"} sink base.`);
-            return;
-          }
-	          if (!cab || !verifiedPelicanSinkFitsCabinet(verifiedProfile, cabinetWidth)) {
-	            toast.error(`${verifiedProfile.name} requires a sink base at least ${verifiedProfile.minimumCabinetWidthIn}" wide.`);
-	            setPendingSinkProduct(null);
-	            setRangeTopStep("sink");
-	            return;
-	          }
-	          const verifiedDimensions = { width: verifiedProfile.exteriorWidthIn, depth: verifiedProfile.exteriorDepthIn };
-	          // A narrow rear counter deck is informational only. Faucets are
-	          // universal across one- and two-hole deck mounts, so a catalog-valid
-	          // sink always places, and the surrounding cabinets are never moved
-	          // or redesigned to chase a deeper deck. The basin keeps its own
-	          // setback and the note is shown next to the placed fixture.
-	          const autoSink = cab
-	            ? makeSinkForCabinet(verifiedProfile.sinkType, cab, room, verifiedDimensions)
-	            : makeSink(verifiedProfile.sinkType, 0, 0, activeWall, verifiedDimensions);
-          const sinkWithFaucet: SinkFixture = {
-	            ...autoSink,
-	            faucet: Boolean(faucetProduct),
-	            faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined,
-            pelicanProductId: sinkProduct?.id,
-            pelicanProductName: sinkProduct?.name,
-            pelicanProductImage: sinkProduct?.imageUrl ?? undefined,
-            pelicanProfileId: verifiedProfile.id,
-            bowlWidth: verifiedProfile.bowlWidthIn,
-            bowlDepth: verifiedProfile.bowlDepthIn,
-            bowlHeight: verifiedProfile.bowlHeightIn,
-            bowlCount: verifiedProfile.bowlCount ?? 1,
-            bowlWidths: verifiedProfile.bowlWidthsIn,
-            bowlDepths: verifiedProfile.bowlDepthsIn,
-            bowlHeights: verifiedProfile.bowlHeightsIn,
-            drainInsetRight: verifiedProfile.drainInsetRightIn,
-            drainInsetBack: verifiedProfile.drainInsetBackIn,
-            exteriorHeight: verifiedProfile.exteriorHeightIn,
-            apronFront: verifiedProfile.apronFront,
-            surfaceFinish: verifiedProfile.surfaceFinish,
-            pelicanFaucetProductId: faucetProduct?.id,
-            pelicanFaucetProductName: faucetProduct?.name,
-            pelicanFaucetProductImage: faucetProduct?.imageUrl ?? undefined,
-            pelicanFaucetProfileId: verifiedFaucetProfile?.id,
-            faucetOverallHeight: verifiedFaucetProfile?.overallHeightIn,
-            faucetSpoutLength: verifiedFaucetProfile?.spoutLengthIn,
-            faucetSpoutHeight: verifiedFaucetProfile?.spoutHeightIn,
-            faucetFinish: verifiedFaucetProfile?.finish,
-            faucetForm: verifiedFaucetProfile?.profile,
-            faucetCenterSpread: verifiedFaucetProfile?.centerSpreadIn,
-            faucetWallMountHeightAboveCountertopIn: isWallMountedFaucet ? faucetWallMountHeightAboveCountertopIn : undefined,
-            requiresProjectSpecificMountHeight: verifiedFaucetProfile?.requiresProjectSpecificMountHeight,
-          };
+          const sinkWithFaucet: SinkFixture = isWallMountedFaucet
+            ? {
+              ...placedSink.sink,
+              faucetWallMountHeightAboveCountertopIn,
+              requiresProjectSpecificMountHeight: verifiedFaucetProfile?.requiresProjectSpecificMountHeight,
+            }
+            : placedSink.sink;
           if (previousRangeTopProductId != null) {
             setSelectedSurfaces((prevSurfaces) => prevSurfaces.filter((surface) => surface.id !== previousRangeTopProductId));
           }
@@ -22735,7 +22667,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           setPendingWallMountedFaucet(null);
           setFaucetWallMountHeightText("");
           const gridNote = bottomGridProduct ? ` · ${bottomGridProduct.pelicanCode} grid added to the cart` : "";
-          const faucetNote = faucetProduct ? "" : " · the standard Pelican faucet is added to complete it";
+          const faucetNote = faucetProduct ? "" : " · the standard Pelican faucet is drawn to complete it and is not added to the cart";
           toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${faucetNote}${gridNote}`);
         };
         return (

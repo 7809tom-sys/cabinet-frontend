@@ -242,22 +242,23 @@ describe("DesignTool island scene and glass catalog wiring", () => {
 
 		  it("requires a selected compatible sink base before the compact Pelican sink picker can place a fixture", () => {
     expect(source).toContain("Select a compatible sink base cabinet before choosing a Pelican sink.");
-    expect(source).toContain("isPelicanSinkCompatibleWithBase(item, baseKind)");
-    expect(source).toContain("const attached = makeSinkForCabinet(sinkType, owner, room");
+    // The compatibility rule lives in one module the picker also filters with, so
+    // the compact picker and the sink step cannot disagree about what fits.
+    expect(source).toContain("filter={(item) => sinkRowFitsBase(item, selectedCab, roomType)}");
+    expect(source).toContain("placeSinkOnBase({ base: owner, room, roomType, product: item, faucet: null })");
+    expect(source).toContain("const result = placeSinkOnBase({ base: owner, room, roomType, product: item, faucet: null });");
+    expect(source).toContain("const placedSink = placeSinkOnBase({ base: cab, room, roomType, product: sinkProduct, faucet: faucetProduct });");
     expect(source).not.toContain("makeSink(sinkType, Math.max(0, room.width / 2");
   });
 
   it("prioritizes verified compatible Pelican sinks in the sink-base dialog without changing catalog popularity data", () => {
     // The full role is requested so every gauge/radius of a model reaches its single card.
-    expect(source).toContain('{ role: bathroomSinkDialog ? "vanity-sink" : "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined }');
+    expect(source).toContain("{ role: sinkCatalogRoleForBase(sinkDialogBase ?? selectedCabinetForGuide, roomType), limit: 200, affiliateSlug: affiliateSlug ?? undefined }");
     expect(source).toContain("groupPelicanConfigurations(filteredSinks)");
-    expect(source).toContain('bathroomSinkDialog ? "vanity-faucet" : "faucet"');
-    // The bathroom path reads the Pelican bathroom tags, not a category label, and
-    // gates a double-bowl basin on the vanity's width (docs/sql/0264).
-    expect(source).toContain("? isBathroomVanitySinkRow(product) && vanitySinkFitsVanityWidth(product, sinkBaseOpeningWidth)");
-    expect(source).toContain(": isPelicanSinkCompatibleWithBase(product, sinkBaseKind))");
     expect(source).toContain("sinkBaseOpeningWidthIn(sinkBaseCabinet ?? undefined)");
-    expect(source).toContain("verifiedPelicanSinkFitsCabinet(profile, sinkBaseOpeningWidth)");
+    // What fits this base is decided by the base, in one place, so a farmhouse
+    // base in a bathroom still sees its apron-front sinks.
+    expect(source).toContain(".filter((product) => sinkRowFitsBase(product, sinkBaseCabinet, roomType))");
     expect(source).toContain("verifiedPelicanSinkProfile(right.pelicanCode)");
   });
 

@@ -2,12 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("./DesignTool.tsx", import.meta.url), "utf8");
+const selection = readFileSync(new URL("../lib/sinkBaseSelection.ts", import.meta.url), "utf8");
 
 describe("Designer visual faucet selection", () => {
   it("requests the complete bounded measured-faucet palette instead of six suggestions", () => {
     // The faucet list also carries the storefront scope, or an affiliate
-    // Designer shows the platform price for its own vanity faucets.
-    expect(source).toContain('{ role: bathroomSinkDialog ? "vanity-faucet" : "faucet", limit: 200, affiliateSlug: affiliateSlug ?? undefined }');
+    // Designer shows the platform price for its own vanity faucets. The role
+    // comes from the selected BASE, so an apron-front base in a bathroom asks
+    // for kitchen faucets rather than vanity faucets.
+    expect(source).toContain("{ role: faucetCatalogRoleForBase(sinkDialogBase, roomType), limit: 200, affiliateSlug: affiliateSlug ?? undefined }");
   });
 
   it("delegates every verified kitchen or vanity faucet to the reusable visual picker without a local six-card slice", () => {
@@ -17,11 +20,14 @@ describe("Designer visual faucet selection", () => {
   });
 
   it("keeps the chosen exact faucet identity and measured profile in the attached sink fixture and selected surfaces", () => {
-    expect(source).toContain("pelicanFaucetProductId: faucetProduct?.id");
-    expect(source).toContain("pelicanFaucetProductName: faucetProduct?.name");
-    expect(source).toContain("pelicanFaucetProductImage: faucetProduct?.imageUrl");
-    expect(source).toContain("pelicanFaucetProfileId: verifiedFaucetProfile?.id");
-    expect(source).toContain('"faucet"');
+    // Sink placement has ONE implementation, so the identity is written in one
+    // place and cannot drift between the dialog and the seeded default.
+    expect(source).toContain("placeSinkOnBase({ base: cab, room, roomType, product: sinkProduct, faucet: faucetProduct })");
+    expect(selection).toContain("pelicanFaucetProductId: faucet.id");
+    expect(selection).toContain("pelicanFaucetProductName: faucet.name");
+    expect(selection).toContain("pelicanFaucetProductImage: faucet.imageUrl ?? undefined");
+    expect(selection).toContain("pelicanFaucetProfileId: faucetProfile.id");
+    expect(selection).toContain("faucetOverallHeight: faucetProfile.overallHeightIn");
   });
 
   it("routes a source-measured wall-mounted faucet through its own documented mounting-height confirmation rather than treating it as a countertop single-hole faucet", () => {
@@ -37,7 +43,8 @@ describe("Designer visual faucet selection", () => {
     expect(source).not.toContain("!deckPlacement.faucetCanFit");
     expect(source).not.toContain("does not leave the required rear countertop deck for a faucet");
     expect(source).not.toContain("nonApronSinkDeckPlacement(cab, room, verifiedDimensions)");
-    // The sink still carries the advisory, and the sink itself still places.
-    expect(source).toContain("faucetDeckAdvisory: faucetProduct ? autoSink.faucetDeckAdvisory : undefined");
+    // The sink still places, and the fixture still carries the advisory.
+    expect(selection).toContain("makeSinkForCabinet(");
+    expect(source).not.toContain("faucetDeckConflict: \"shallow-countertop-deck\"");
   });
 });

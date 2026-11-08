@@ -241,19 +241,37 @@ export function PelicanSinkPicker({
   onSelect,
   onBrowseAll,
   affiliateSlug,
+  role = "sink",
+  filter,
+  emptyMessage,
 }: {
   selectedSurfaces: SelectedSurface[];
   onSelect: (item: SelectedSurface) => void;
   onBrowseAll: () => void;
   /** Storefront scope, so an affiliate Designer prices its own retail. */
   affiliateSlug?: string | null;
+  /**
+   * The catalog role this picker reads. A vanity step asks for `vanity-sink`, so
+   * the same picker serves a bathroom vanity and a kitchen or apron-front base
+   * without a second component that can drift out of step.
+   */
+  role?: "sink" | "vanity-sink";
+  /**
+   * Which rows may be placed on the sink base that is currently selected. The
+   * caller owns that rule (`sinkRowFitsBase`) so every surface uses one answer.
+   */
+  filter?: (item: RecItem) => boolean;
+  /** Message shown instead of the generic empty state. */
+  emptyMessage?: string;
 }) {
-  const { data, isLoading } = trpc.surfaces.recommended.useQuery({ role: "sink", limit: 200, affiliateSlug: affiliateSlug ?? undefined });
+  const { data, isLoading } = trpc.surfaces.recommended.useQuery({ role, limit: 200, affiliateSlug: affiliateSlug ?? undefined });
   // Only source-verified sinks are eligible, and that test runs on the exact SKU
   // before sinks are folded into one card per model.
   const configurations = useMemo(
-    () => groupPelicanConfigurations(((data ?? []) as RecItem[]).filter((item) => Boolean(verifiedPelicanSinkProfile(item.pelicanCode)))),
-    [data],
+    () => groupPelicanConfigurations(((data ?? []) as RecItem[])
+      .filter((item) => Boolean(verifiedPelicanSinkProfile(item.pelicanCode)))
+      .filter((item) => (filter ? filter(item) : true))),
+    [data, filter],
   );
   const selectedIds = useMemo(() => new Set(selectedSurfaces.map((s) => s.id)), [selectedSurfaces]);
 
@@ -283,7 +301,7 @@ export function PelicanSinkPicker({
           onClick={onBrowseAll}
           className="w-full rounded-lg border border-dashed border-border px-3 py-3 text-center text-[11px] text-muted-foreground hover:border-[#a87f33]/50 hover:text-foreground transition-colors"
         >
-          No sinks available — browse the full catalog
+          {emptyMessage ?? "No sinks available — browse the full catalog"}
         </button>
       ) : (
         <>
