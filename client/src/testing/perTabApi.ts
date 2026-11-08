@@ -56,6 +56,32 @@ export function meRowFor(accountId: string | null) {
       loginMethod: "email",
     };
   }
+  if (accountId === "admin-fcd") {
+    // An admin who is ALSO a linked affiliate. This is the reported case: the
+    // header must offer the Affiliate button as well as Admin.
+    return {
+      id: 7810,
+      openId: "supabase-admin-fcd",
+      name: "Tom (Admin + Affiliate)",
+      email: "admin@firstclass.example",
+      role: "admin" as const,
+      companyName: "First Class Cabinets",
+      pricingTier: "affiliate" as const,
+      loginMethod: "email",
+    };
+  }
+  if (accountId === "regular-customer") {
+    return {
+      id: 9001,
+      openId: "supabase-regular-customer",
+      name: "Regular Customer",
+      email: "customer@example.com",
+      role: "user" as const,
+      companyName: null,
+      pricingTier: "homeowner" as const,
+      loginMethod: "email",
+    };
+  }
   if (accountId === "affiliate-fcd") {
     return {
       id: 5730001,
@@ -232,6 +258,9 @@ function resolveProc(path: string, input: unknown, accountId: string | null): Tr
     case "affiliates.myReferrals":
       return ok({
         affiliate:
+          // The backend answers this only for a signed-in AFFILIATE. An admin is
+          // refused (that is why AffiliateDashboard disables the same query for
+          // admins and reads adminReferrals instead), so an admin gets null here.
           accountId === "affiliate-fcd"
             ? {
                 id: 5730001,
@@ -255,7 +284,9 @@ function resolveProc(path: string, input: unknown, accountId: string | null): Tr
       return ok(null);
 
     case "affiliates.adminSwitcherList":
-      return ok([]);
+      // An admin who owns a store sees it here; this is the documented admin path
+      // the header uses to decide whether to offer the Affiliate button.
+      return ok(accountId === "admin-fcd" ? [{ id: 5730001, slug: "firstclassfcd", storeName: "First Class Cabinets", status: "active" }] : []);
 
     case "design.myDesigns":
       return ok([]);
