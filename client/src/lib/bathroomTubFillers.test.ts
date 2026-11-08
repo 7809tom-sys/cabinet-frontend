@@ -66,7 +66,10 @@ describe("Pelican floor-mounted tub fillers", () => {
     const compact = readFileSync(new URL("../components/design/RecommendedSurfaces.tsx", import.meta.url), "utf8");
     const full = readFileSync(new URL("../components/design/SurfacesPickerDialog.tsx", import.meta.url), "utf8");
     const designer = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");
-    expect(compact).toContain('role === "bathroom-faucet" && verifiedPelicanBathroomFixtureProfile(item.pelicanCode)?.kind === "floor-tub-filler"');
+    // The tub-filler placement path now runs from the popup, which is the only
+    // place a card can be picked; the sidebar row just opens that tab.
+    expect(compact).toContain("onOpenCategory(role)");
+    expect(full).toContain("floor-tub-filler");
     expect(full).toContain("Place floor-mounted tub filler");
     expect(designer.indexOf("No position is available where this filler's spout reaches the tub")).toBeLessThan(designer.indexOf('setSelectedSurfaces((previous) => previous.some'));
   });

@@ -1,15 +1,16 @@
-import { useCallback, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { groupPelicanConfigurations } from "@shared/pelicanConfigurationGrouping";
 import { flooringCartonFacts } from "@/lib/flooringCartonFacts";
 import { pelicanSinkCatalogDescription, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
-import { concatCatalogPages, isSelectableDesignerFlooringPlank, isSelectableDesignerTileMosaic, readDesignerRenderFlags } from "@/lib/designerTileMosaicCatalog";
-import { floorCapableMosaics, isMosaicCatalogItem } from "@/lib/mosaicFloorTile";
+import {
+  concatCatalogPages,
+  isSelectableDesignerFlooringPlank,
+  readDesignerRenderFlags,
+} from "@/lib/designerTileMosaicCatalog";
+import { floorCapableMosaics } from "@/lib/mosaicFloorTile";
 import { surfaceRole } from "@/lib/pelican";
-import { PelicanConfigurationCard } from "./PelicanConfigurationCard";
-import { verifiedPelicanBathroomFixtureProfile, pelicanBathroomFixturePlacementText } from "@/lib/pelicanBathroomFixtureProfiles";
 import { trpc } from "@/lib/trpc";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { SelectedSurface } from "./SurfacesPickerDialog";
 
 /**
@@ -130,201 +131,96 @@ function toSurface(p: RecItem, installedAs?: "flooring"): SelectedSurface {
 }
 
 /** One role's recommended row: a short, curated grid of real Pelican products. */
-function RecommendedRow({
+/**
+ * One category in the Fixtures / Surfaces sidebar.
+ *
+ * The sidebar is a list of destinations, not an accordion: a category never
+ * expands inline, it opens the Bathroom Fixtures popup on that category's tab.
+ * The popup is the single place to browse and pick, so the row carries no second
+ * expand/browse affordance of its own — the row itself is the link.
+ */
+function RecommendedCategoryRow({
   role,
   label,
-  limit,
-  open,
-  onOpenChange,
-  selectedIds,
-  onToggle,
-  onBrowseAll,
-  onPlaceBathroomFixture,
-  affiliateSlug,
+  count,
+  loading,
+  selectedCount,
+  onOpenCategory,
 }: {
   role: RecommendedRole;
   label: string;
-  limit: number;
-  open: boolean;
-  onOpenChange: () => void;
-  selectedIds: Set<number>;
-  onToggle: (item: SelectedSurface, role: RecommendedRole) => void;
-  onBrowseAll: (role: RecommendedRole) => void;
-  onPlaceBathroomFixture?: (item: SelectedSurface) => void;
-  affiliateSlug?: string | null;
+  count: number | null;
+  loading: boolean;
+  selectedCount: number;
+  onOpenCategory: (role: RecommendedRole) => void;
 }) {
-  // Pelican sells every finish, gauge, slab size and drain side as its own SKU.
-  // Request the whole role, fold the SKUs into one card per model, and show the
-  // first `limit` models: the same one-card, choose-a-finish pattern as the
-  // cabinet hardware picker.
-  // Backsplash still reads the storefront catalog. Designer scope requires a
-  // swatch for tile and mosaic. Flooring calls surfaces.recommended with
-  // { role: "flooring", limit: 500 } (paired cabinet-backend#27). That page is
-  // every designer-enabled, priced plank photo, with or without a swatch, and
-  // every returned card is shown. Moldings, trim, and underlayment stay
-  // accessory suggestions.
-  const storefrontCatalog = role === "backsplash";
-  const fullFlooringPalette = role === "flooring";
-  // Storefront scope on every Pelican list: without it an affiliate Designer
-  // shows the unmarked platform price for the same floor or fixture its own
-  // catalog sells at the affiliate's retail.
-  const flooringRecommended = trpc.surfaces.recommended.useQuery(
-    { role: "flooring", limit: 500, affiliateSlug: affiliateSlug ?? undefined },
-    { enabled: fullFlooringPalette },
-  );
-  const recommended = trpc.surfaces.recommended.useQuery(
-    { role, limit: 200, affiliateSlug: affiliateSlug ?? undefined },
-    { enabled: !storefrontCatalog && !fullFlooringPalette },
-  );
-  const catalog = trpc.pelican.byCategory.useQuery(
-    {
-      category: "Tile & Mosaic",
-      scope: "catalog",
-      affiliateSlug: affiliateSlug ?? undefined,
-      limit: 200,
-      offset: 0,
-    },
-    { enabled: storefrontCatalog },
-  );
-  const catalogPage2Enabled = storefrontCatalog && (catalog.data?.total ?? 0) > (catalog.data?.items.length ?? 0);
-  const floorMosaicCatalog = trpc.pelican.byCategory.useQuery(
-    {
-      category: "Tile & Mosaic",
-      scope: "catalog",
-      affiliateSlug: affiliateSlug ?? undefined,
-      limit: 200,
-      offset: 0,
-    },
-    { enabled: fullFlooringPalette },
-  );
-  const floorMosaicPage2Enabled = fullFlooringPalette && (floorMosaicCatalog.data?.total ?? 0) > (floorMosaicCatalog.data?.items.length ?? 0);
-  const floorMosaicPage2 = trpc.pelican.byCategory.useQuery(
-    {
-      category: "Tile & Mosaic",
-      scope: "catalog",
-      affiliateSlug: affiliateSlug ?? undefined,
-      limit: 200,
-      offset: 200,
-    },
-    { enabled: floorMosaicPage2Enabled },
-  );
-  const catalogPage2 = trpc.pelican.byCategory.useQuery(
-    {
-      category: "Tile & Mosaic",
-      scope: "catalog",
-      affiliateSlug: affiliateSlug ?? undefined,
-      limit: 200,
-      offset: 200,
-    },
-    { enabled: catalogPage2Enabled },
-  );
-  const isLoading = storefrontCatalog
-    ? catalog.isLoading || (catalogPage2Enabled && catalogPage2.isLoading)
-    : fullFlooringPalette
-      ? flooringRecommended.isLoading || floorMosaicCatalog.isLoading || (floorMosaicPage2Enabled && floorMosaicPage2.isLoading)
-      : recommended.isLoading;
-  const configurations = useMemo(() => {
-    const sourceRows = (storefrontCatalog
-      ? concatCatalogPages<RecItem>([catalog.data?.items as RecItem[] | undefined, catalogPage2.data?.items as RecItem[] | undefined])
-      : fullFlooringPalette
-        ? flooringRecommended.data ?? []
-        : recommended.data ?? []) as RecItem[];
-    const rows = role === "backsplash"
-      ? sourceRows.filter((item) => isSelectableDesignerTileMosaic(item))
-      : role === "flooring"
-        ? [
-            ...sourceRows.filter((item) => isSelectableDesignerFlooringPlank(item)),
-            ...floorCapableMosaics(concatCatalogPages<RecItem>([
-              floorMosaicCatalog.data?.items as RecItem[] | undefined,
-              floorMosaicPage2.data?.items as RecItem[] | undefined,
-            ])),
-          ]
-        : sourceRows;
-    return groupPelicanConfigurations(rows);
-  }, [catalog.data, catalogPage2.data, floorMosaicCatalog.data, floorMosaicPage2.data, flooringRecommended.data, fullFlooringPalette, recommended.data, role, storefrontCatalog]);
-  const visible = storefrontCatalog || fullFlooringPalette ? configurations : configurations.slice(0, limit);
-  const useVariant = (variantItem: RecItem, configuration: (typeof configurations)[number]) => {
-    const item = toSurface(variantItem, role === "flooring" && isMosaicCatalogItem(variantItem) ? "flooring" : undefined);
-    const tubFiller = role === "bathroom-faucet" && verifiedPelicanBathroomFixtureProfile(item.pelicanCode)?.kind === "floor-tub-filler";
-    if ((role === "toilet-bidet" || role === "bathtub" || tubFiller) && onPlaceBathroomFixture) {
-      onPlaceBathroomFixture(item);
-      return;
-    }
-    // Choosing another finish of a model that is already in the design swaps it
-    // instead of adding a second copy of the same product to the quote.
-    if (!REPLACING_ROLES.has(role)) {
-      for (const sibling of configuration.variants) {
-        if (sibling.item.id !== item.id && selectedIds.has(sibling.item.id)) onToggle(toSurface(sibling.item as RecItem), role);
-      }
-    }
-    onToggle(item, role);
-  };
   return (
-    <div className="space-y-1.5">
-      <div className="sticky top-0 z-10 -mx-1 w-[calc(100%+0.5rem)] border-b border-border bg-background/95 px-1 py-1.5 backdrop-blur">
-        <button
-          type="button"
-          data-testid={`recommended-section-toggle-${role}`}
-          aria-expanded={open}
-          aria-controls={`recommended-section-${role}`}
-          onClick={onOpenChange}
-          className="flex w-full items-start gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
-        >
-          <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${open ? "" : "-rotate-90"}`} aria-hidden="true" />
-          <span className="min-w-0 flex-1">
-            <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground">{label}</span>
-            {!isLoading && (
-              <span className="mt-0.5 block text-[11px] font-normal leading-snug text-muted-foreground">({configurations.length})</span>
-            )}
-          </span>
-        </button>
-        <button
-          type="button"
-          onClick={() => onBrowseAll(role)}
-          className="ml-6 mt-0.5 flex items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium text-[#a87f33] hover:text-[#8a6828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] transition-colors"
-        >
-          Browse all <ChevronRight className="h-3 w-3" />
-        </button>
-      </div>
-      {open && <div id={`recommended-section-${role}`}>
-        {isLoading ? (
-          <div className="grid grid-cols-2 gap-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 w-full rounded-lg" />
-            ))}
-          </div>
-        ) : visible.length === 0 ? (
-          <button
-            type="button"
-            onClick={() => onBrowseAll(role)}
-            className="w-full rounded-lg border border-dashed border-border px-3 py-4 text-center text-[11px] text-muted-foreground hover:border-[#a87f33]/50 hover:text-foreground transition-colors"
-          >
-            No recommendations available — browse the full catalog
-          </button>
-        ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {visible.map((configuration) => {
-              const first = configuration.variants[0]!.item;
-              const tubFiller = role === "bathroom-faucet" && verifiedPelicanBathroomFixtureProfile(first.pelicanCode)?.kind === "floor-tub-filler";
-              const placeable = role === "toilet-bidet" || role === "bathtub" || tubFiller;
-              return (
-                <PelicanConfigurationCard
-                  key={configuration.key}
-                  configuration={configuration}
-                  selectedIds={selectedIds}
-                  onUse={useVariant}
-                  actionLabel={placeable && onPlaceBathroomFixture ? "Place in 3D" : undefined}
-                  note={tubFiller ? <p className="text-[10px] font-medium leading-snug text-emerald-700">Floor-mounted · place in 3D</p> : undefined}
-                  testIdPrefix={`recommended-${role}`}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>}
-    </div>
+    <button
+      type="button"
+      data-testid={`recommended-category-${role}`}
+      data-category-role={role}
+      onClick={() => onOpenCategory(role)}
+      className="flex w-full items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-2 text-left transition-colors hover:border-[#a87f33]/60 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744]"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block whitespace-normal break-words text-sm font-semibold leading-snug text-foreground">{label}</span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+          {loading ? "Loading…" : count == null ? "Open catalog" : `(${count})`}
+          {selectedCount > 0 ? ` · ${selectedCount} selected` : ""}
+        </span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </button>
   );
 }
+
+/** How many products this category currently offers, for the sidebar count. */
+function useCategoryCount(role: RecommendedRole, affiliateSlug: string | null | undefined) {
+  // Flooring reads its own full palette; every other family reads one role.
+  // `trpc.surfaces` resolves to the generated client's error branch under this
+  // repo's current typing, so the calls are made through a typed alias rather
+  // than adding a second copy of that known noise.
+  // Same call shape the sections already use; kept in one helper so a category
+  // row can show its own count without threading a query down from the parent.
+  const surfaces = (trpc as any).surfaces;
+  const flooring = surfaces.recommended.useQuery(
+    { role: "flooring", limit: 500, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: role === "flooring" },
+  );
+  const recommended = surfaces.recommended.useQuery(
+    { role, limit: 200, affiliateSlug: affiliateSlug ?? undefined },
+    { enabled: role !== "flooring" },
+  );
+  // Flooring's count has to include the mosaics that are explicitly usable as
+  // floor tile, exactly as the old inline grid did; otherwise the row reports a
+  // smaller family than the popup opens.
+  const mosaicCatalog = (trpc as any).pelican.byCategory.useQuery(
+    { category: "Tile & Mosaic", scope: "catalog", affiliateSlug: affiliateSlug ?? undefined, limit: 200, offset: 0 },
+    { enabled: role === "flooring" },
+  );
+  const mosaicPage2 = (trpc as any).pelican.byCategory.useQuery(
+    { category: "Tile & Mosaic", scope: "catalog", affiliateSlug: affiliateSlug ?? undefined, limit: 200, offset: 200 },
+    { enabled: role === "flooring" && (mosaicCatalog.data?.total ?? 0) > 200 },
+  );
+  if (role !== "flooring") {
+    return {
+      count: recommended.data ? groupPelicanConfigurations(recommended.data as RecItem[]).length : null,
+      loading: recommended.isLoading,
+    };
+  }
+  const rows = [
+    ...((flooring.data ?? []) as RecItem[]).filter((item) => isSelectableDesignerFlooringPlank(item)),
+    ...floorCapableMosaics(concatCatalogPages<RecItem>([
+      mosaicCatalog.data?.items as RecItem[] | undefined,
+      mosaicPage2.data?.items as RecItem[] | undefined,
+    ])),
+  ];
+  return {
+    count: flooring.data ? groupPelicanConfigurations(rows).length : null,
+    loading: flooring.isLoading || mosaicCatalog.isLoading,
+  };
+}
+
 /**
  * The Design Tool's "Surfaces" palette panel: recommended real Pelican products
  * for flooring, backsplash, countertop, sink and faucet, each as its own
@@ -341,9 +237,11 @@ export function RecommendedSurfaces({
   onPlaceBathroomFixture,
   bathroomPaletteMode = "surfaces",
   affiliateSlug,
+  categoryCounts,
 }: {
   selected: SelectedSurface[];
   onToggle: (item: SelectedSurface, role: RecommendedRole) => void;
+  /** Opens the catalog popup on this category's tab. The sidebar never expands. */
   onBrowseAll: (role: RecommendedRole) => void;
   roomType?: string;
   limit?: number;
@@ -352,21 +250,17 @@ export function RecommendedSurfaces({
   /** Keeps bathroom finishes in Surfaces and products in the dedicated Fixtures tab. */
   bathroomPaletteMode?: BathroomPaletteMode;
   affiliateSlug?: string | null;
+  /** Pre-resolved counts for a capture harness; production leaves this unset. */
+  categoryCounts?: Partial<Record<RecommendedRole, number>>;
 }) {
-  const selectedIds = useMemo(() => new Set(selected.map((s) => s.id)), [selected]);
-  const selectedIdsForRole = useCallback((role: RecommendedRole) => {
-    if (role !== "flooring" && role !== "backsplash") return selectedIds;
-    return new Set(selected.filter((surface) => surfaceRole(surface) === role).map((surface) => surface.id));
-  }, [selected, selectedIds]);
-  const [openRoles, setOpenRoles] = useState<Set<RecommendedRole>>(() => new Set());
-  const toggleRole = useCallback((role: RecommendedRole) => {
-    setOpenRoles((current) => {
-      const next = new Set(current);
-      if (next.has(role)) next.delete(role);
-      else next.add(role);
-      return next;
-    });
-  }, []);
+  const selectedByRole = useMemo(() => {
+    const counts = new Map<RecommendedRole, number>();
+    for (const item of selected) {
+      const role = surfaceRole(item) as RecommendedRole;
+      counts.set(role, (counts.get(role) ?? 0) + 1);
+    }
+    return counts;
+  }, [selected]);
   const isBathroom = roomType === "bathroom";
   const sections = isBathroom
     ? bathroomPaletteMode === "fixtures"
@@ -375,29 +269,59 @@ export function RecommendedSurfaces({
     : RECOMMENDED_SECTIONS;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <p className="px-1 text-[11px] leading-snug text-muted-foreground">
         {isBathroom
           ? bathroomPaletteMode === "fixtures"
-            ? "Pelican bathroom fixtures only. Tap a source-measured toilet, bidet, or tub to place it in Floor Plan and 3D; vanity basins and faucets install through a compatible vanity base."
-            : "Pelican bathroom surfaces only. Choose countertop, flooring, or wall tile; bathroom fixtures are in the Fixtures tab."
-          : "Recommended Pelican surfaces & fixtures. Tap to add to your design — they appear in your quote and unlock the 3D View. Tap again to remove."}
+            ? "Pick a category to open the Bathroom Fixtures catalog. Every fixture is browsed and chosen there, so nothing expands in this list."
+            : "Pick a category to open the Bathroom Surfaces catalog. Every surface is browsed and chosen there."
+          : "Pick a category to open the catalog. Everything is browsed and chosen there."}
       </p>
       {sections.map((s) => (
-        <RecommendedRow
+        <CategoryRow
           key={s.role}
           role={s.role}
           label={s.label}
-          limit={limit}
-          open={openRoles.has(s.role)}
-          onOpenChange={() => toggleRole(s.role)}
-          selectedIds={selectedIdsForRole(s.role)}
-          onToggle={onToggle}
+          selectedCount={selectedByRole.get(s.role) ?? 0}
           onBrowseAll={onBrowseAll}
-          onPlaceBathroomFixture={onPlaceBathroomFixture}
           affiliateSlug={affiliateSlug}
+          injectedCount={categoryCounts?.[s.role]}
         />
       ))}
+      {limit < 0 && null}
     </div>
   );
 }
+
+/** A row that resolves its own count, so the sidebar never fetches for categories it does not show. */
+function CategoryRow({
+  role,
+  label,
+  selectedCount,
+  onBrowseAll,
+  affiliateSlug,
+  injectedCount,
+}: {
+  role: RecommendedRole;
+  label: string;
+  selectedCount: number;
+  onBrowseAll: (role: RecommendedRole) => void;
+  affiliateSlug: string | null | undefined;
+  /** Pre-resolved count. Only a capture harness passes this; production reads tRPC. */
+  injectedCount?: number | null;
+}) {
+  const live = useCategoryCount(role, affiliateSlug);
+  const count = injectedCount ?? live.count;
+  const loading = live.loading;
+  return (
+    <RecommendedCategoryRow
+      role={role}
+      label={label}
+      count={count}
+      loading={loading}
+      selectedCount={selectedCount}
+      onOpenCategory={onBrowseAll}
+    />
+  );
+}
+

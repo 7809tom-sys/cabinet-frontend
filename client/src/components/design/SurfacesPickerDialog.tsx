@@ -215,6 +215,7 @@ export function SurfacesPickerDialog({
   bathroomPaletteMode = "fixtures",
   initialBathroomRole,
   affiliateSlug,
+  injectedBathroomRows,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -248,6 +249,12 @@ export function SurfacesPickerDialog({
   /** Active family requested from a compact row or a guided checklist step. */
   initialBathroomRole?: RecommendedRole;
   affiliateSlug?: string | null;
+  /**
+   * Pre-resolved bathroom catalog rows, keyed by role. Only a capture harness
+   * passes this so a screenshot can show the real grid without a session;
+   * production leaves it unset and reads the catalog through tRPC.
+   */
+  injectedBathroomRows?: Partial<Record<RecommendedRole, SelectedSurface[]>>;
 }) {
   const isBathroom = roomType === "bathroom";
   const [category, setCategory] = useState<PelicanCategory | "Preferred">(PELICAN_STOREFRONT_CATEGORIES[0]);
@@ -460,7 +467,8 @@ export function SurfacesPickerDialog({
     ...(vesselFaucetByName.data?.items ?? []),
     ...(tubFaucetByName.data?.items ?? []),
   ] as SelectedSurface[];
-  const bathroomRows = isBathroom && activeBathroomRole === "bathroom-faucet"
+  const injectedRows = isBathroom ? injectedBathroomRows?.[activeBathroomRole] : undefined;
+  const bathroomRows = injectedRows ?? (isBathroom && activeBathroomRole === "bathroom-faucet"
     ? mergeBathroomFaucetRows((bathroomData ?? []) as SelectedSurface[], faucetCatalogItems)
     : (() => {
       const familyRows = [
@@ -472,7 +480,7 @@ export function SurfacesPickerDialog({
       for (const row of (bathroomData ?? []) as SelectedSurface[]) byId.set(row.id, row);
       for (const row of familyRows) if (!byId.has(row.id)) byId.set(row.id, row);
       return Array.from(byId.values());
-    })();
+    })());
   const baseItems: SelectedSurface[] = (isBathroom
     ? (browsingTileMosaic ? categoryItems : bathroomRows)
     : category === "Preferred"
@@ -495,10 +503,20 @@ export function SurfacesPickerDialog({
         || (showingFloorMaterials && (floorMosaicLoading || (floorMosaicPage2Enabled && floorMosaicPage2Loading)));
   const selectedBathroomFixture = useMemo(() => {
     if (!isBathroom || bathroomPaletteMode !== "fixtures") return null;
-    return selected.find((item) => Boolean(
+    const match = selected.find((item) => Boolean(
       verifiedPelicanBathroomFixtureProfile(item.pelicanCode)
       || /faucet|tap|valve/i.test(`${item.name} ${item.category} ${item.subCategory ?? ""}`),
-    )) ?? null;
+    ));
+    if (!match) return null;
+    // The grid already shows the corrected Pelican name; the banner must show the
+    // same one. The stored row still carries the imported StoneCreek "Farmhouse
+    // Apron-Front" wording for every PL-3xxx basin, so reading `selected` raw put
+    // a kitchen farmhouse title over an 18" x 13" undermount vanity sink.
+    return {
+      ...match,
+      ...withPelicanSinkCatalogCopy(match),
+      imageUrl: bathroomFixtureCardImage(match.pelicanCode, match.imageUrl),
+    };
   }, [bathroomPaletteMode, isBathroom, selected]);
   const selectedBacksplash = useMemo(() => {
     const backsplashSelections = selected.filter((item) => item.category === "Tile & Mosaic");
