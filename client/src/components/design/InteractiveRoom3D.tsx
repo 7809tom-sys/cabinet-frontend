@@ -116,6 +116,14 @@ import {
   makeShowerSystemParts,
 } from "./showerFixtureGeometry";
 import {
+  showerFinishFromCode,
+  showerGlassMaterial,
+  showerMetalMaterial,
+  showerPanTexture,
+  showerSurroundFinish,
+  showerSurroundTexture,
+} from "./showerFinishes";
+import {
   BACKSPLASH_ROOM_SCENE_FIDELITY,
   backsplashTextureWarningMessage,
   parseBacksplashSheetInches,
@@ -11311,23 +11319,67 @@ function addPelicanBathroomFixture(
     // source-bounded glass plane deliberately does not invent a curb, wall,
     // track setback, or finished installation opening.
     const panelHeight = (profile.visiblePanelHeightIn ?? profile.heightIn) * INCH;
-    const glass = new THREE.MeshPhysicalMaterial({ color: "#d8eef4", roughness: 0.05, metalness: 0, transmission: 0.68, transparent: true, opacity: 0.38, side: THREE.DoubleSide });
-    const metal = new THREE.MeshStandardMaterial({ color: "#77828a", roughness: 0.28, metalness: 0.85 });
+    const glass = showerGlassMaterial();
+    // Solid metal in the finish the door is sold in: a matte black door must be
+    // black, not grey. Every reference bathroom shows a substantial frame and rail.
+    const metal = showerMetalMaterial(showerFinishFromCode(profile.pelicanCode));
+    const frame = 0.05;
+    const panelDepth = Math.max(depth, 0.03);
     for (const x of [-width / 4, width / 4]) {
-      const panel = new THREE.Mesh(new THREE.BoxGeometry(width / 2 - 0.006, panelHeight, Math.max(depth, 0.015)), glass);
+      const panelWidth = width / 2 - 0.006;
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(panelWidth, panelHeight, panelDepth), glass);
       panel.position.set(x, panelHeight / 2, 0);
+      panel.userData.glass = true;
       add(panel, "shower-door-glass-panel");
+
+      // A metal stile down each side of the panel, plus a top and bottom rail, so
+      // the glass is held in a real frame rather than floating.
+      for (const edge of [-1, 1] as const) {
+        const stile = new THREE.Mesh(new THREE.BoxGeometry(frame, panelHeight, panelDepth * 1.1), metal);
+        stile.position.set(x + edge * (panelWidth / 2 - frame / 2), panelHeight / 2, 0);
+        stile.castShadow = true;
+        add(stile, "shower-door-frame-stile");
+      }
+      for (const [label, y] of [["shower-door-frame-top", panelHeight - frame / 2], ["shower-door-frame-bottom", frame / 2]] as const) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(panelWidth, frame, panelDepth * 1.1), metal);
+        bar.position.set(x, y, 0);
+        bar.castShadow = true;
+        add(bar, label);
+      }
     }
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.045, 0.045), metal);
-    rail.position.y = height - 0.0225;
+    // The top rail the panels hang from, and the floor track they run in.
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.06, 0.06), metal);
+    rail.position.y = height - 0.03;
+    rail.castShadow = true;
     add(rail, "shower-door-rail");
+    const track = new THREE.Mesh(new THREE.BoxGeometry(width, 0.028, 0.05), metal);
+    track.position.y = 0.014;
+    add(track, "shower-door-track");
+    // A vertical pull handle on the leading edge, as in every reference photo.
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, panelHeight * 0.42, 16), metal);
+    handle.position.set(-width * 0.02, panelHeight * 0.52, panelDepth * 0.9);
+    handle.castShadow = true;
+    add(handle, "shower-door-handle");
   } else if (profile.kind === "shower-pan") {
     // A pan is the shower floor: a measured envelope with a flat rim, a recessed
     // basin and a drain on the published side. Its back and both ends are the
     // walled sides, so it snaps into a corner or alcove like an alcove tub.
+    // A pan is an opaque, solid acrylic base. It must never read as translucent:
+    // the reference bathrooms all show a solid white floor with real depth.
+    const panTexture = showerPanTexture();
     const showerMaterials = {
-      shell: new THREE.MeshPhysicalMaterial({ color: "#f7f8f5", roughness: 0.22, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.2 }),
-      metal: new THREE.MeshStandardMaterial({ color: "#aab4b8", roughness: 0.3, metalness: 0.8 }),
+      shell: new THREE.MeshPhysicalMaterial({
+        color: panTexture ? "#ffffff" : "#fbfbf8",
+        map: panTexture,
+        roughness: 0.2,
+        metalness: 0,
+        clearcoat: 0.42,
+        clearcoatRoughness: 0.18,
+        side: THREE.DoubleSide,
+        transparent: false,
+        opacity: 1,
+      }),
+      metal: showerMetalMaterial("brushed-nickel"),
     };
     for (const { mesh, part } of makeShowerPanParts(profile, showerMaterials)) {
       // The builder works around the pan's own centre; the fixture group is
@@ -11340,17 +11392,22 @@ function addPelicanBathroomFixture(
     // The reference bathrooms are finished in pale stone or white marble tile, not
     // a dark grey panel. The panel finish is a real, light stone so the surround
     // reads as a tiled wall and the white pan and metal trim stay legible against it.
-    const surroundPanelFinish = showerSurroundPanelFinish(profile.pelicanCode);
+    // The panel carries the décor's real construction — marble veining, subway
+    // grout or grey stone mottle — at full opacity. A flat colour reads as a
+    // near-white translucent box at any distance, which is what the owner saw.
+    const surroundFinish = showerSurroundFinish(profile.pelicanCode);
+    const surroundTexture = showerSurroundTexture(surroundFinish);
     const surround = makeShowerSurroundParts(profile, {
       shell: shell,
-      // Real metal trim: the reference showers all show a visible metal frame/edge.
-      metal: new THREE.MeshStandardMaterial({ color: "#9aa4ab", roughness: 0.26, metalness: 0.88 }),
+      metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
       panel: new THREE.MeshPhysicalMaterial({
-        color: surroundPanelFinish.color,
-        roughness: surroundPanelFinish.roughness,
+        color: surroundTexture ? "#ffffff" : surroundFinish.color,
+        map: surroundTexture,
+        roughness: surroundFinish.roughness,
         metalness: 0,
-        clearcoat: surroundPanelFinish.clearcoat,
-        clearcoatRoughness: 0.35,
+        clearcoat: surroundFinish.clearcoat,
+        clearcoatRoughness: 0.3,
+        side: THREE.DoubleSide,
       }),
     });
     for (const { mesh, part } of surround) {
@@ -11362,7 +11419,9 @@ function addPelicanBathroomFixture(
     // it needs no extra offset: the fixture group is already on its wall.
     for (const { mesh, part } of makeShowerSystemParts(profile, {
       shell,
-      metal: new THREE.MeshStandardMaterial({ color: "#b9c2c7", roughness: 0.24, metalness: 0.9 }),
+      // Solid metal in the finish the SKU is sold in, so a matte black system is
+      // not drawn as a grey plastic rod.
+      metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
     })) {
       add(mesh, part);
     }
@@ -11370,8 +11429,10 @@ function addPelicanBathroomFixture(
     // A niche is recessed into a panel wall; a soap tray sits on a wall or pan.
     // Both are wall fittings with no floor footprint.
     for (const { mesh, part } of makeShowerNicheParts(profile, {
-      shell: new THREE.MeshStandardMaterial({ color: "#f2f3f0", roughness: 0.4 }),
-      metal: dark,
+      // A niche is recessed into the wall it sits in, so it takes the surround's
+      // finish rather than a separate white box.
+      shell: new THREE.MeshStandardMaterial({ color: "#eeeae4", roughness: 0.42 }),
+      metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
     })) {
       add(mesh, part);
     }
@@ -13456,9 +13517,13 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
 	    const dollhouseCenter = new THREE.Vector3();
     // Keep the floor visually warm and uncluttered; physical room edges and
     // cabinet shadows provide scale better than a generic editor grid.
+    // A soft contact wash under the furniture, sized to the room's own footprint
+    // rather than a fixed fraction of its longest side. The old fixed 32% circle,
+    // stretched 1.35 x 0.72, drew one big grey oval across an almost empty floor —
+    // which the owner read as a shadow that belonged to nothing.
     const floorContact = new THREE.Mesh(
-      new THREE.CircleGeometry(Math.max(room.width, room.depth) * INCH * 0.32, 48),
-	      new THREE.MeshBasicMaterial({ color: "#51483f", transparent: true, opacity: 0.035, depthWrite: false }),
+      new THREE.PlaneGeometry(room.width * INCH, room.depth * INCH),
+      new THREE.MeshBasicMaterial({ color: "#3a332c", transparent: true, opacity: 0.012, depthWrite: false }),
     );
     floorContact.rotation.x = -Math.PI / 2;
     // Use the actual wall endpoints; custom open-wall rooms can extend into
@@ -13473,7 +13538,6 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
       ? { minX: Number.POSITIVE_INFINITY, maxX: Number.NEGATIVE_INFINITY, minZ: Number.POSITIVE_INFINITY, maxZ: Number.NEGATIVE_INFINITY }
       : fallbackWallBounds);
     floorContact.position.set((wallBounds.minX + wallBounds.maxX) / 2, 0.006, (wallBounds.minZ + wallBounds.maxZ) / 2);
-    floorContact.scale.set(1.35, 0.72, 1);
     floorContact.userData = { presentationContactShadow: true };
     threeScene.add(floorContact);
 
