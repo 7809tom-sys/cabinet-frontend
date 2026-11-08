@@ -7,7 +7,6 @@ describe("fresh room catalog onboarding", () => {
   it("opens the distributor and door-style gate after room selection", () => {
     expect(source).toContain("const [catalogSetupOpen, setCatalogSetupOpen] = useState(false);");
     expect(source).toContain("const handleRoomLayoutSelected = useCallback((layoutPresetId: string) => {");
-    expect(source).toContain("setCatalogSetupOpen(true);");
     expect(source).toContain("window.setTimeout(() => setCatalogSetupOpen(true), 0);");
     expect(source).toContain("onLayoutSelected={handleRoomLayoutSelected}");
     expect(source).toContain('data-testid="fresh-room-catalog-setup"');
@@ -22,8 +21,13 @@ describe("fresh room catalog onboarding", () => {
     expect(source).toContain("Door style / color");
     expect(source).toContain("disabled={catalogDistributorId == null || displayUniqueDoorStyles.length === 0}");
     expect(source).toContain("disabled={catalogDistributorId == null || styleId == null}");
-    expect(source).toContain("onPointerDownOutside={(event) => event.preventDefault()}");
-    expect(source).toContain("onInteractOutside={(event) => event.preventDefault()}");
+    // The gate is modal over the whole Designer, so it must never refuse its own
+    // close paths. It used to swallow outside taps; it now closes on them, and
+    // offers an explicit "Not now" for a customer who is not ready to choose.
+    expect(source).toContain('data-testid="fresh-room-catalog-setup-skip"');
+    const gateStart = source.indexOf('data-testid="fresh-room-catalog-setup"');
+    const gateBlock = source.slice(gateStart, source.indexOf("</Dialog>", gateStart));
+    expect(gateBlock).not.toContain("onPointerDownOutside");
   });
 
   it("hands the chosen catalog into the normal cabinet catalog", () => {
