@@ -3448,11 +3448,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // stale standard-base drawing type after its master category is corrected.
   const { data: liveMasterCabinets } = trpc.design.placeableCabinets.useQuery(
     {
-      styleId: styleId ?? undefined,
+      styleId: designStyleId ?? undefined,
       distributorId: catalogDistributorScopeId ?? undefined,
       affiliateSlug: affiliateSlug ?? undefined,
     },
-    { enabled: styleId != null },
+    { enabled: designStyleId != null },
   );
   const liveMasterDrawingRules = useMemo(
 	    () => ((liveMasterCabinets ?? []) as DesignCabinet[]).map((cabinet) => ({
@@ -3506,21 +3506,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   // A dedicated, full base-cabinet list for the active line, used by the
   // Auto-Fill engine (independent of which palette tab/search is active).
+  // Auto Design, Auto-Fill, fillers and Rule 10 panels stamp or bill Color 1, so
+  // these pools follow Color 1 even while Color 2 is the lit brush.
   const { data: autoFillCabinets, isLoading: autoFillCabinetsLoading } = trpc.design.placeableCabinets.useQuery({
     placement: "base",
-    styleId: styleId ?? undefined,
+    styleId: designStyleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
     affiliateSlug: affiliateSlug ?? undefined,
   });
   const { data: threeDAccessoryCatalog, isLoading: catalogFillersLoading } = trpc.design.placeableCabinets.useQuery({
     placement: "accessory",
-    styleId: styleId ?? undefined,
+    styleId: designStyleId ?? undefined,
     // Match the catalog picker scope used by cabinet placement. A pre-placement
     // distributor selection must not make its own active 3-inch filler vanish
     // from a measured seam simply because the plan lock has not been written.
     distributorId: catalogDistributorScopeId ?? undefined,
     affiliateSlug: affiliateSlug ?? undefined,
-  }, { enabled: styleId != null });
+  }, { enabled: designStyleId != null });
   const catalogFillers = useMemo(
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
@@ -3960,7 +3962,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // stable addCabinet callback can read the latest data without re-creating.
   const { data: wallCabPool, isLoading: wallCabPoolLoading } = trpc.design.placeableCabinets.useQuery({
     placement: "wall",
-    styleId: styleId ?? undefined,
+    styleId: designStyleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
     affiliateSlug: affiliateSlug ?? undefined,
   });
@@ -4019,7 +4021,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // regardless of the palette tab the customer currently has open.
   const { data: tallCabPool } = trpc.design.placeableCabinets.useQuery({
     placement: "tall",
-    styleId: styleId ?? undefined,
+    styleId: designStyleId ?? undefined,
     distributorId: lockedDistributorId ?? undefined,
     affiliateSlug: affiliateSlug ?? undefined,
   });
@@ -4389,8 +4391,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // A refrigerator is a source-priced assembly. Load the selected line's
   // buyable caps and end panels before the auto-build seats its anchors.
   const { data: refrigeratorSurroundCatalog } = trpc.design.surroundForFridge.useQuery(
-    { styleId: styleId ?? 0 },
-    { enabled: !!styleId },
+    { styleId: designStyleId ?? 0 },
+    { enabled: designStyleId != null },
   );
   // Appliances/fixtures are a synthetic, client-side catalog (no DB rows),
   // filtered to the current room type (kitchen appliances vs bath/laundry
@@ -5599,7 +5601,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		      room,
 		      catalogFillers,
 		      makeUid,
-		      styleId,
+		      // The repaired pair takes its cabinet's finish; beside an inherited cabinet it inherits too.
+		      (cabinet) => cabinet.styleId ?? null,
 		    );
 	    if (repaired.added.length === 0) return;
 	    placedRef.current = repaired.placed;
@@ -5610,7 +5613,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		  // settle, and the repair must then see the restored two cabinet runs instead
 		  // of the empty pre-restore ref. The repair is idempotent because it detects
 		  // its own front-miter-pair records.
-		  }, [catalogFillers, room, styleId, placed]);
+		  }, [catalogFillers, room, placed]);
 
   const glassDoorAddonFor = useCallback((p: PlacedCabinet, resolvedStyleId: number) => {
     const linkedGlassDoorCode = glassDoorAddonCodeFor(p);
@@ -11698,15 +11701,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // when data lands.
   const [builtinRunArmed, setBuiltinRunArmed] = useState(false);
   const { data: builtinRunData } = trpc.design.builtinFridgeRun.useQuery(
-    { styleId: styleId ?? 0 },
-    { enabled: builtinRunArmed && !!styleId }
+    { styleId: designStyleId ?? 0 },
+    { enabled: builtinRunArmed && designStyleId != null }
   );
   const buildBuiltinFridgeRun = useCallback(() => {
     if (layoutLocked) { toast.info(t("dt_t_unlock_autofill")); return; }
     if (roomType !== "kitchen") { toast.info(t("dt_builtin_kitchen_only")); return; }
-    if (!styleId) { toast.error(t("dt_t_pick_style_first")); return; }
+    if (!designStyleId) { toast.error(t("dt_t_pick_style_first")); return; }
     setBuiltinRunArmed(true);
-  }, [layoutLocked, roomType, styleId, t]);
+  }, [layoutLocked, roomType, designStyleId, t]);
 
   // Place the built-in run once the resolved pieces arrive.
   useEffect(() => {

@@ -301,4 +301,22 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource).toContain(": null) ?? designStyle;");
     expect(designToolSource).toContain(": designKitchenDoorColor;");
   });
+
+  it("Auto Design, Auto-Fill, fillers and Rule 10 panels read the Color 1 catalog, not the lit brush", () => {
+    const query = (placement: string) => {
+      const start = designToolSource.indexOf(`placement: "${placement}",\n    styleId:`);
+      return designToolSource.slice(start, start + 120);
+    };
+    expect(designToolSource).toMatch(/autoFillCabinets, isLoading: autoFillCabinetsLoading \} = trpc\.design\.placeableCabinets\.useQuery\(\{\s+placement: "base",\s+styleId: designStyleId \?\? undefined,/);
+    expect(designToolSource).toMatch(/threeDAccessoryCatalog, isLoading: catalogFillersLoading \} = trpc\.design\.placeableCabinets\.useQuery\(\{\s+placement: "accessory",\s+styleId: designStyleId \?\? undefined,/);
+    expect(designToolSource).toContain("}, { enabled: designStyleId != null });");
+    expect(designToolSource).toMatch(/wallCabPool, isLoading: wallCabPoolLoading \} = trpc\.design\.placeableCabinets\.useQuery\(\{\s+placement: "wall",\s+styleId: designStyleId \?\? undefined,/);
+    expect(query("tall")).toContain("styleId: designStyleId ?? undefined,");
+    expect(designToolSource).toMatch(/const \{ data: liveMasterCabinets \} = trpc\.design\.placeableCabinets\.useQuery\(\s+\{\s+styleId: designStyleId \?\? undefined,/);
+    // The palette and the Corner tab still list what the next placed cabinet (the brush) can be.
+    expect(designToolSource).toMatch(/Narrow to the chosen line \+ style so only purchasable cabinets show\.\s+styleId: styleId \?\? undefined,/);
+    // A repaired angled filler pair takes its own cabinet's finish.
+    expect(designToolSource).toContain("(cabinet) => cabinet.styleId ?? null,");
+  });
+
 });

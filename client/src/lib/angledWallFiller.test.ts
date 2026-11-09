@@ -319,6 +319,29 @@ function pair(placement: "wall" | "base" | "tall") {
 	    expect(appendCollisionFreePlacements([parentBase, childBase], repaired.added, peninsulaRoom).rejected).toEqual([]);
 	  });
 
+	  it("a repaired filler pair takes its cabinet's finish, and inherits beside an inherited cabinet", () => {
+	    const { neighbor, newlyPlaced } = pair("base");
+	    let number = 0;
+	    const inherited = repairMissingAngledWallFillers(
+	      [{ ...neighbor, styleId: null }, { ...newlyPlaced, styleId: null }],
+	      room,
+	      [baseFiller],
+	      () => `inherit-filler-${++number}`,
+	      (owner) => owner.styleId ?? null,
+	    );
+	    expect(inherited.added).toHaveLength(2);
+	    expect(inherited.added.every((filler) => filler.styleId == null)).toBe(true);
+	    const own = repairMissingAngledWallFillers(
+	      [{ ...neighbor, styleId: 390017 }, { ...newlyPlaced, styleId: 390017 }],
+	      room,
+	      [baseFiller],
+	      () => `own-filler-${++number}`,
+	      (owner) => owner.styleId ?? null,
+	    );
+	    expect(own.added).toHaveLength(2);
+	    expect(own.added.every((filler) => filler.styleId === 390017)).toBe(true);
+	  });
+
 	  it("keeps real source filler boards visible when their selected-line price is missing", () => {
 	    const { neighbor, newlyPlaced } = pair("base");
 	    let number = 0;
