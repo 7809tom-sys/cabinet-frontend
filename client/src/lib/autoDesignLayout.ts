@@ -1,4 +1,5 @@
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { FRAMELESS_TOP_WALL_HEIGHT_IN } from "./framelessWallTopAlignment";
 import {
   adjacentDishwasherCenterIn,
   anchorAlongStartIn,
@@ -67,6 +68,7 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "./framelessWallTopAlignment";
 import {
   applyRangeFlankEndPanels,
   applyRangeFlankPlan,
@@ -178,6 +180,25 @@ export function mergeAutoDesignRefrigeratorCaps(
     merged.push(row);
   }
   return merged;
+}
+
+/**
+ * True when the selected line is the U.S. Cabinet Depot frameless line: its wall
+ * rows carry the printed geometry marker. One marker is enough, and a line with
+ * no marker at all is treated as framed so its 84" line is never disturbed.
+ */
+export function isFramelessWallCatalog(
+  wallCatalog: readonly { constructionMethod?: string | null; masterCode?: string | null; height?: string | number | null }[],
+): boolean {
+  // The geometry marker is the strongest signal, but the palette query does not
+  // always ship it. The book's frameless wall heights are 30-1/4", 35-1/4" and
+  // 40-1/4"; a framed line sells 30/36/42 instead. A 40-1/4" box is therefore
+  // frameless-only, which identifies the line from dimension data alone.
+  if (wallCatalog.some((row) => hasAefPrintedGeometry(row))) return true;
+  return wallCatalog.some((row) => {
+    const height = Number(row.height);
+    return Number.isFinite(height) && Math.abs(height - FRAMELESS_TOP_WALL_HEIGHT_IN) <= 0.3;
+  });
 }
 
 /** A 4–9 inch base opening is too wide for a 3 inch filler and too narrow for another cabinet. Grow the cabinet beside it when the line sells that wider box. */
@@ -715,7 +736,10 @@ export function runAutoDesignLayout(args: {
       styleId: args.styleId,
       makeUid,
       wallCabinetHeightIn: resolveWallHeightClass(args.wallCatalog, nominal) ?? nominal,
-      framelessLine: args.wallCatalog.some((row) => hasAefPrintedGeometry(row)),
+      // A frameless line is one whose wall rows carry the printed geometry
+      // marker. `wallCatalog` is the authoritative line list, so this is where
+      // the answer is decided (issue #354 item 5 needs it for the cap's line).
+      framelessLine: isFramelessWallCatalog(args.wallCatalog),
     });
     if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
     // The refrigerator must stay inside its end panels: take the clamped copy (depth/height) before fitting.
@@ -1362,6 +1386,26 @@ export function runAutoDesignLayout(args: {
   working = pairAdjacentSingleDoorHandles({ placed: working, room, explicitHingeUids }).placed;
   // Rule 11: the 54 / 84-90-96 upper datum, and rule 4's one continuous board per filler.
   working = normalizeUpperHeights(working, { room, openings: stageOpenings });
+  // Issue #354 item 7 (Tom): on the U.S. Cabinet Depot frameless line every wall
+  // cabinet top meets the top of a 40-1/4" wall cabinet, including the box over a
+  // microwave. The pass only raises a bottom, so the 72" microwave bridge datum,
+  // the over-range cooking floor and the over-sink window clearance are all left
+  // satisfied, and other lines are untouched because none of their cabinets
+  // carry the frameless geometry marker.
+  const framelessTops = alignFramelessWallCabinetTops({ placed: working, room });
+  working = framelessTops.placed;
+  for (const entry of framelessTops.aligned) {
+    notes.push(`${entry.masterCode} was raised to meet the frameless ${framelessWallTopDatumIn()}″ wall-cabinet top line.`);
+  }
+  for (const warning of framelessTops.warnings) {
+    reviewFindings.push({
+      ruleId: "frameless-wall-top-line",
+      code: "frameless-upper-off-the-top-line",
+      severity: "warning",
+      title: "A wall cabinet could not join the frameless top line",
+      detail: warning,
+    });
+  }
   working = normalizeContinuousVerticalFillers(working, room).placed;
   // Owner rule: the uppers line up with the bases beneath them. A shared pass
   // later in the pipeline can still mirror a run-end base filler up into the wall

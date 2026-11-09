@@ -1,4 +1,5 @@
-import { framelessAboveFridgeHeight } from "./aefAboveFridge";
+import { FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN, framelessAboveFridgeHeight, isFramelessFortyWallHeight } from "./aefAboveFridge";
+import { framelessWallTopDatumIn } from "./framelessWallTopAlignment";
 import { REFRIGERATOR_PANEL_LIMIT_EPSILON_IN } from "./refrigeratorPanelLimit";
 import { REFRIGERATOR_BRIDGE_FACE_EPSILON_IN } from "./refrigeratorBridgeDepth";
 import { catalogSizeFromNumbers, pickClosestCatalogSize } from "./closestCatalogSize";
@@ -117,7 +118,12 @@ export function pickAutoDesignRefrigeratorCap(
   refrigeratorTop: number,
   wallCabinetHeightIn: number,
   ceilingIn: number,
-  framelessLine = true,
+  /**
+   * True only when the caller knows the selected line is frameless.
+   * `autoDesignLayout` passes the answer from the wall catalog; the default is
+   * false so a framed line never inherits the frameless 94-1/4" top line.
+   */
+  framelessLine = false,
   refrigeratorWidthIn = 36,
 ): RefrigeratorCapPick | null {
   // The box above matches the refrigerator width (30, 33, 36 or 42). When that width is not in
@@ -132,7 +138,15 @@ export function pickAutoDesignRefrigeratorCap(
   // A frameless 40 1/4" run pairs with the 22 5/8" × 24" refrigerator wall.
   // A framed 42" request, and a framed line whose 42" class is sold as 40",
   // are not this height. A missing exact box falls through to the under-30 bridge.
-  const framelessCapHeight = framelessLine ? framelessAboveFridgeHeight(wallCabinetHeightIn) : null;
+  // Tom's decision (Nov 9 2026, issue #354 item 5): on the frameless line the box
+  // above the refrigerator tops out on the one 94-1/4" line too. From the 72"
+  // appliance datum that is the book's 22-5/8" box (72 + 22-5/8 = 94-5/8), so the
+  // frameless line always takes that height whatever 30/36/42 class was asked for.
+  // The cap's own bottom is floored at the 72" datum further down, so the top lands
+  // on the line without the box ever floating.
+  const framelessCapHeight = framelessLine
+    ? (framelessAboveFridgeHeight(wallCabinetHeightIn) ?? FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN)
+    : null;
   if (framelessCapHeight != null) {
     const match = caps
       .filter((candidate) => (
@@ -266,7 +280,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   styleId,
   makeUid,
   wallCabinetHeightIn = 30,
-  framelessLine = true,
+  framelessLine = false,
 }: Input): AutoDesignRefrigeratorBayResult {
   const fridgeWidthIn = Number(refrigerator.width) || 0;
   if (!AUTO_DESIGN_REFRIGERATOR_WIDTHS_IN.some((width) => Math.abs(fridgeWidthIn - width) <= 0.01)) {
@@ -300,7 +314,11 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   // for its straight wall cabinets. The cabinet above the refrigerator lines up
   // with those, not with the appliance datum.
   const capHeightLineIn = Math.max(0, Number(wallCabinetHeightIn) || 30);
-  const upperLineTopIn = UPPER_RUN_BOTTOM_IN + capHeightLineIn;
+  // The frame the cap's TOP must reach. On the frameless line that is the single
+  // 94-1/4" line (Tom, Nov 9 2026, issue #354 item 5); other lines keep 54 + height.
+  const upperLineTopIn = framelessLine || isFramelessFortyWallHeight(wallCabinetHeightIn)
+    ? framelessWallTopDatumIn()
+    : UPPER_RUN_BOTTOM_IN + capHeightLineIn;
   // Height rule, separate from the depth rule: the cabinet above lines up with
   // the other uppers, so its TOP lands on the run's line (54 + the selected
   // upper height) and its bottom is that line less its own height. Hanging it

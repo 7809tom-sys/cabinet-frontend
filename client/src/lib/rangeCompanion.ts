@@ -21,6 +21,7 @@ import {
   overRangeBridgeLabel,
   microwaveBridgeHeightPick,
   overRangeSettingTopLineIn,
+  singleTopLineFor,
 } from "@/lib/overRangeCompanion";
 
 /**
@@ -46,7 +47,9 @@ export type RangeCompanionProposal = {
 };
 
 /** Tom's rule (Nov 8): the cabinet over the microwave is one of exactly these heights. */
-export const RANGE_BRIDGE_HEIGHTS_IN = [12, 15, 18, 21, 24] as const;
+// 23 is the frameless 22-5/8" box: from the 72" datum its top is 94-5/8", the
+// closest the frameless line gets to the 94-1/4" wall-cabinet top.
+export const RANGE_BRIDGE_HEIGHTS_IN = [12, 15, 18, 21, 23, 24] as const;
 
 export type RangeBridgeHeightChoice = {
   heightIn: number;
@@ -133,8 +136,15 @@ export function preselectedRangeBridgeHeight(
   choices: readonly RangeBridgeHeightChoice[],
   upperTopLineIn: number | null,
   neighborHeightIn: number | null = null,
+  /** The line's single wall top line (frameless: 94-1/4"). Overrides the mapping. */
+  framelessTopLineIn: number | null = null,
 ): number | null {
-  return microwaveBridgeHeightPick(choices.filter((choice) => choice.bridge != null), upperTopLineIn, neighborHeightIn);
+  return microwaveBridgeHeightPick(
+    choices.filter((choice) => choice.bridge != null),
+    upperTopLineIn,
+    neighborHeightIn,
+    framelessTopLineIn,
+  );
 }
 
 /** Why no bridge can go over this range: no SKU at the range width, or none that clears the ceiling. */
@@ -212,7 +222,11 @@ export function rangeCompanionProposal(
   // exactly as the Auto Design build reads it.
   const upperTopLine = neighbor?.topIn ?? overRangeSettingTopLineIn(wallCabinetHeight, wallCabinets);
   const neighborHeight = neighbor?.heightIn ?? wallCabinetHeight;
-  const preselected = requested?.heightIn ?? preselectedRangeBridgeHeight(bridgeChoices, upperTopLine, neighborHeight);
+  // Issue #354 item 5: on a line with one wall top line (frameless 94-1/4") the
+  // bridge is preselected to reach it from the 72" datum, not by neighbour height.
+  const framelessTopLine = singleTopLineFor({ wallCatalog: wallCabinets, wallCabinetHeightIn: wallCabinetHeight });
+  const preselected = requested?.heightIn
+    ?? preselectedRangeBridgeHeight(bridgeChoices, upperTopLine, neighborHeight, framelessTopLine);
   const bridge = bridgeChoices.find((choice) => choice.heightIn === preselected)?.bridge ?? null;
 
   const microwaveWidth = numberDimension(microwave.width);

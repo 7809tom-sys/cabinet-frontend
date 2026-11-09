@@ -1901,7 +1901,11 @@ export const WALL_MOUNT_BOTTOM = STD.WALL_MOUNT_BOTTOM; // 54"
 /** Short ordinary wall boxes finish at the standard 84-inch upper-run top line. */
 export const TWELVE_INCH_WALL_MOUNT_BOTTOM = 72;
 
-/** The 30-inch-wide short-upper family shares one 72-inch bottom datum. */
+/**
+ * The 30-inch-wide short-upper family shares one 72-inch bottom datum. 23 is the
+ * frameless 22-5/8" box (nominal "23"); from 72" its top reaches the frameless
+ * 94-1/4" wall line (issue #354 item 5).
+ */
 function isThirtyInchShortUpperAt72(p: {
   placement?: Placement | null;
   height?: number | null;
@@ -1909,8 +1913,8 @@ function isThirtyInchShortUpperAt72(p: {
 }): boolean {
   if (p.placement !== "wall") return false;
   const normalizedCode = (p.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return /^W30(?:12|15|18|21|24)$/.test(normalizedCode)
-    && [12, 15, 18, 21, 24].includes(Number(p.height));
+  return /^W30(?:12|15|18|21|23|24)$/.test(normalizedCode)
+    && [12, 15, 18, 21, 22.625, 23, 24].includes(Number(p.height));
 }
 
 /** The default mount for a room-wall cabinet before a user applies an override. */
@@ -5567,6 +5571,10 @@ export function normalizeStandardWallMounts(
       || cabinet.spiceStackParentUid
       || isWd18CountertopDrawerCabinet(cabinet)
       || isStacker(cabinet)
+      // A refrigerator-bay bridge is height-ruled by its own bay: its top lands on
+      // the run line from the appliance clearance. Re-hanging it here is what moved
+      // it off the frameless 94-1/4" line (issue #354 item 5).
+      || cabinet.refrigeratorAssemblyRole === "bridge"
     ) return cabinet;
 
     if (isRefrigeratorWallCabinet(cabinet)) {
@@ -8333,6 +8341,13 @@ export function isRangeOrOven(masterCode?: string | null, description?: string |
   // appliance collision, countertop, or mounting behavior just because its
   // source description includes the words “Range Hood Front”.
   if (/^RHF[\s_-]*\d/.test(code) || /range\s*hood\s*front/.test(desc)) return false;
+  // A RANGE BASE holds a RANGE TOP; neither is a freestanding range with an oven.
+  // "Two Drawer Base … for a range top" must stay an ordinary base cabinet, or it
+  // draws as a range chassis (the reported oven-door front). The RB codes are the
+  // distributor's range-base family (spec book pp. 29-30).
+  const normalized = code.replace(/[^A-Z0-9]/g, "");
+  if (/^RB[23]DB\d+$/.test(normalized) || /^RB-?\d*DB/i.test(code)) return false;
+  if (/\brange\s*top\b|\brange\s*base\b|\bcooktop\s*base\b/.test(desc)) return false;
   if (/^(RANGE|OVEN|RNG|OV|STOVE|STV|COOKTOP|CT)[\s_-]*\d/.test(code) || /^(RANGE|OVEN|RNG|OV|STOVE|STV|COOKTOP|CT)$/.test(code)) return true;
   return /\brange\b|\boven\b|\bstove\b|\bcooktop\b/.test(desc);
 }
@@ -8363,7 +8378,7 @@ export function isOverRangeMicrowaveBridge(
   if (cabinet.placement !== "wall") return false;
   if (cabinet.overRangeMicrowaveBridge === true) return true;
   const code = (cabinet.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!/^W30(?:12|15|18|21|24)$/.test(code)) return false;
+  if (!/^W30(?:12|15|18|21|23|24)$/.test(code)) return false;
   const dimensions = wallCabinetSkuDimensions(cabinet.masterCode);
   if (!dimensions || dimensions.width !== 30) return false;
   const side = cabinetWall(cabinet, room);
@@ -8387,10 +8402,12 @@ export function isOverRangeMicrowaveBridge(
 //   36" walls → 18" bridge
 //   39" walls → 21" bridge
 //   42" walls → 24" bridge
+// 23 is the frameless 22-5/8" box (nominal "23"): from the 72" datum its top is
+// 94-5/8", which is the closest the frameless line gets to the 94-1/4" wall top.
 // Widths that are not a stock bridge width snap to the nearest available stock
 // width (30, 33, or 36) so we always suggest a real, orderable SKU.
 export const BRIDGE_STOCK_WIDTHS = [30, 33, 36] as const;
-export const BRIDGE_STOCK_HEIGHTS = [12, 15, 18, 21, 24] as const;
+export const BRIDGE_STOCK_HEIGHTS = [12, 15, 18, 21, 23, 24] as const;
 
 /** Map wall cabinet height to the appropriate bridge height. */
 /**
@@ -8827,8 +8844,9 @@ export function fridgeCornerUpperDepth(): number {
 // 24"-deep tall cabinet with the oven inside a 24" opening: the oven door and
 // handle stay inside the box and can never reach a neighbor. It is a cabinet,
 // not a free-standing range, so the corner handle-clearance filler never
-// applies on either side of it (user rule, 2026-10-19). A "Range Base"
-// (RB2DB30 ...) is likewise just a base cabinet under a cooktop.
+// applies on either side of it (user rule, 2026-10-19). A RANGE BASE
+// (RB2DB30 ...) is likewise just a base cabinet that holds a range top: it is
+// not a range appliance, so the range clearance and hood rules never apply.
 export function isBuiltInOvenCabinet(p: {
   masterCode?: string | null;
   description?: string | null;

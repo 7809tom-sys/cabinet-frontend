@@ -303,15 +303,23 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   // here without one fails. (The dedicated `overRangeBridgeMatrix.test.ts` asserts
   // the geometry: centered, at the 72" datum, matched to the range width.)
   if (range && !overRangeHasBridge(placed, range, room)) issues.push(`no bridge above ${range.masterCode}`);
-  // Owner report (Nov 6 2026): the bridge over the range must be 12 inches tall on a
-  // 30 inch upper run, not 24. Its top has to land on the same line as the uppers
-  // beside it, which on 30" uppers is 84".
+  // Tom's decision (Nov 9 2026, issue #354 item 5): on the frameless line the
+  // bridge hangs from the fixed 72" datum and its TOP must reach the single
+  // 94-1/4" wall-cabinet line, so the picker chooses the frameless 22-5/8" box
+  // (W30xx23) rather than the old 12" W3012 that topped out at 84-1/4".
   if (range) {
     const bridge = existingOverRangeBridge(placed, range, room);
     if (bridge) {
       const top = Number(bridge.mountBottom ?? 0) + Number(bridge.height ?? 0);
-      if (top > 84.75) issues.push(`bridge ${bridge.masterCode} tops at ${top}, above the 84 inch upper line`);
-      if (Number(bridge.height ?? 0) > 12.75) issues.push(`bridge ${bridge.masterCode} is ${bridge.height} tall, not 12`);
+      if (frameless) {
+        // The line's tallest stock bridge reaches 94-5/8" (72 + 22-5/8"); allow
+        // that and require the bridge to be at least on the line.
+        if (top > 95.2) issues.push(`bridge ${bridge.masterCode} tops at ${top}, above the 94-1/4 inch frameless upper line`);
+        if (top < 93.9) issues.push(`bridge ${bridge.masterCode} tops at ${top}, below the 94-1/4 inch frameless upper line`);
+      } else {
+        if (top > 84.75) issues.push(`bridge ${bridge.masterCode} tops at ${top}, above the 84 inch upper line`);
+        if (Number(bridge.height ?? 0) > 12.75) issues.push(`bridge ${bridge.masterCode} is ${bridge.height} tall, not 12`);
+      }
     }
   }
   if (hood && hood.mountBottom !== autoDesignHoodMountBottom(hood.width)) issues.push(`hood ${hood.masterCode} bottom ${hood.mountBottom}`);

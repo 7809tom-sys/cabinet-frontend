@@ -1494,7 +1494,9 @@ export function ElevationView({
 
           // Identify range positions on this wall for the taller stretch zone.
           const rangeSpans = sorted
-            .filter((p) => isRangeOrOven(p.masterCode, p.description))
+            // Only a real range APPLIANCE owns a range span. A range base is a
+            // base cabinet that holds a range top, so it never counts here.
+            .filter((p) => p.placement === "appliance" && isRangeOrOven(p.masterCode, p.description))
             .map((p) => {
               const sizeAlong = wallRunSpan(p, side, room);
               const posAlong = wallRunOffset(p, side, room);

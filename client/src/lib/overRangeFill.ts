@@ -39,6 +39,7 @@ import {
   lineSellsBridgeAtRangeWidth,
   overRangeBridgeFor,
   overRangeBridgePlacement,
+  singleTopLineFor,
   overRangeBridgePlanFor,
   overRangeCompanionPlacements,
   overRangeCompanionPlanFor,
@@ -219,11 +220,13 @@ function seatMandatoryBridge(input: {
     };
   }
   const ceilingIn = rangeWallCeiling(range, room);
+  const topLineIn = singleTopLineFor({ wallCatalog, wallCabinetHeightIn });
   const bridge = overRangeBridgeFor({
     rangeWidthIn: Number(range.width) || 0,
     wallCabinetHeightIn,
     wallCatalog,
     ceilingIn,
+    topLineIn,
   });
   if (!bridge) {
     // Never a narrower stock width: no bridge at the range's own width is reported, not substituted.
@@ -248,6 +251,23 @@ function seatMandatoryBridge(input: {
       added: null,
       finding: bridgeBlockedFinding(range, `The ${bridge.masterCode} bridge needs ${Number(bridge.width) || 30}″ of clear upper wall centered above ${range.masterCode}, and that span is already occupied. Nothing was moved or removed to make room.`),
     };
+  }
+  // Issue #354 item 5: on a line with one wall top line the bridge must reach it.
+  // When the tallest box the line sells still falls short, the bridge is placed
+  // (never dropped) and the shortfall is named, so a low bridge is visible.
+  if (topLineIn != null) {
+    const bridgeTop = draft.mountBottom! + (Number(draft.height) || 0);
+    if (bridgeTop < topLineIn - 0.51) {
+      const shortfall = Math.round((topLineIn - bridgeTop) * 8) / 8;
+      return {
+        placed: accepted.placed,
+        added: draft,
+        finding: bridgeBlockedFinding(
+          range,
+          `${bridge.masterCode} is the tallest bridge the line sells at ${Math.round(Number(range.width) || 30)}″ and its top finishes at ${bridgeTop}″, ${shortfall}″ short of the ${topLineIn}″ wall-cabinet line. Choose a door line whose bridge reaches that line, or accept the lower bridge.`,
+        ),
+      };
+    }
   }
   return { placed: accepted.placed, added: draft, finding: null };
 }

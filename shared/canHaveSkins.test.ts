@@ -7,6 +7,7 @@ import {
   isSkinProduct,
   skinsAreNeeded,
   SKIN_NEEDED_LOCKED_TOOLTIP,
+  SKIN_NEEDED_FRAMELESS_TOOLTIP,
 } from "./canHaveSkins";
 
 const hickoryFrameless = {
@@ -102,11 +103,19 @@ describe("door style need view", () => {
       skinNeededDisabled: false,
       finishedEndNeeded: true,
     });
-    for (const style of [hickoryFramed, mapleFrameless, { ...mapleFrameless, skinNeeded: true }]) {
+    // A FRAMED line keeps the generic "hickory only" reason.
+    expect(doorStyleNeedView(hickoryFramed)).toMatchObject({
+      skinNeeded: false,
+      skinNeededDisabled: true,
+      skinNeededTooltip: SKIN_NEEDED_LOCKED_TOOLTIP,
+    });
+    // A framed (non-hickory) FRAMELESS line says why instead: its exposed sides
+    // finish automatically with the 3/4" end panel and it sells no 1/4" skins.
+    for (const style of [mapleFrameless, { ...mapleFrameless, skinNeeded: true }]) {
       expect(doorStyleNeedView(style)).toMatchObject({
         skinNeeded: false,
         skinNeededDisabled: true,
-        skinNeededTooltip: SKIN_NEEDED_LOCKED_TOOLTIP,
+        skinNeededTooltip: SKIN_NEEDED_FRAMELESS_TOOLTIP,
       });
     }
   });

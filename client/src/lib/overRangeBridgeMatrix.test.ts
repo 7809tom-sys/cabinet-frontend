@@ -47,7 +47,8 @@ const palette = [
   { id: 5, masterCode: "MW-30", description: 'Over-Range Microwave 30"', category: "Appliance", subCategory: "Appliance", width: "30", depth: "15", height: "16", placement: "appliance" },
 ] as DesignCabinet[];
 
-const BRIDGE_CODE = /^W(\d{2})(12|15|18|21|24)$/;
+// 23 is the frameless 22-5/8" box, the height whose top reaches the 94-1/4" line.
+const BRIDGE_CODE = /^W(\d{2})(12|15|18|21|23|24)$/;
 
 function bridgesOver(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
   return placed.filter((item) => item.placement === "wall" && item.overRangeMicrowaveBridge === true);

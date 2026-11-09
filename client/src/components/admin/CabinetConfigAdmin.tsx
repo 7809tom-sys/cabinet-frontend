@@ -897,8 +897,7 @@ function EditModal({
     const currentCategory = merged.category ?? null;
     if (!dbCategories || dbCategories.length === 0) {
       const fallback: Record<string, string[]> = {
-        Base: ["Sink Base","Drawer Base","Corner Base","Blind Corner","Lazy Susan","Oven Base","Range Base"],
-        Wall: ["Microwave","Open Shelf","Glass Door"],
+        Base: ["Sink Base","Drawer Base","Corner Base","Blind Corner","Lazy Susan","Oven Base","Range Base"],        Wall: ["Microwave","Open Shelf","Glass Door"],
         Tall: ["Pantry","Utility","Refrigerator"],
         Filler: ["Filler Panel","Decorative End Panel","Scribe Moulding"],
         Accessory: ["Roll-Out Tray","Trim & Moulding"],

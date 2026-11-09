@@ -32,12 +32,19 @@ import {
 } from "./design";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import {
+  FRAMELESS_TOP_WALL_HEIGHT_IN,
+  framelessWallTopDatumIn,
+} from "./framelessWallTopAlignment";
 
 /** What the designer asked for above the range. */
 export type OverRangeAnswer = "hood" | "microwave-bridge" | "open" | null | undefined;
 
 /** The approved bridge family: a real solid wall cabinet 12-24 inches tall. */
-const APPROVED_BRIDGE_CODE = /^W(\d{2})(12|15|18|21|24)$/;
+// 23 is the frameless 22-5/8" box (nominal "23"): the height whose top reaches
+// the frameless 94-1/4" wall line from the 72" datum.
+const APPROVED_BRIDGE_CODE = /^W(\d{2})(12|15|18|21|23|24)$/;
 
 function numberOrZero(value: string | number | null | undefined): number {
   const parsed = Number(value);
@@ -202,6 +209,30 @@ function isUsableBridgeRow(cabinet: DesignCabinet): { width: number; height: num
 /** A frameless line sells 17-5/8" where a framed line sells 18"; both are the 18" bridge. */
 const BRIDGE_STOCK_HEIGHT_MATCH_IN = 0.5;
 
+/**
+ * The single wall top line this line finishes on, or null when the line has none
+ * and the older neighbour-height mapping still applies.
+ *
+ * Tom's decision (Nov 9 2026, issue #354 item 5): on the U.S. Cabinet Depot
+ * frameless line every wall cabinet top and every bridge top finishes at 94-1/4"
+ * (54" bottom + the book's 40-1/4" box). `isFramelessLine` accepts either the
+ * geometry marker on a placed cabinet or a frameless catalog row, so the pop-up,
+ * the mandatory build pass and the restore pass all read the same answer.
+ */
+export function singleTopLineFor(input: {
+  wallCatalog?: readonly { constructionMethod?: string | null }[];
+  wallCabinetHeightIn?: number | null;
+}): number | null {
+  const catalogIsFrameless = (input.wallCatalog ?? []).some((row) => hasAefPrintedGeometry(row));
+  if (catalogIsFrameless) return framelessWallTopDatumIn();
+  // A 40-1/4" request is itself the frameless class: no framed line sells it.
+  const requested = Number(input.wallCabinetHeightIn);
+  if (Number.isFinite(requested) && Math.abs(requested - FRAMELESS_TOP_WALL_HEIGHT_IN) <= 0.05) {
+    return framelessWallTopDatumIn();
+  }
+  return null;
+}
+
 /** The stock bridge height (12/15/18/21/24) a real box stands for, or null. */
 export function stockBridgeHeightIn(heightIn: number): number | null {
   const nearest = BRIDGE_STOCK_HEIGHTS.reduce((best, height) => (
@@ -242,9 +273,24 @@ export function microwaveBridgeHeightPick(
   available: readonly { heightIn: number; topIn: number }[],
   upperTopLineIn: number | null,
   neighborHeightIn: number | null,
+  /**
+   * Issue #354 item 5 (Tom, Nov 9 2026): on the frameless line the bridge tops
+   * out on the 94-1/4" wall-cabinet line, not on the neighbour-mapping line.
+   * Pass that line here and the pick ignores `neighborHeightIn`.
+   */
+  framelessTopLineIn: number | null = null,
 ): number | null {
   const sorted = [...available].sort((left, right) => left.heightIn - right.heightIn);
   if (sorted.length === 0) return null;
+  if (framelessTopLineIn != null && Number.isFinite(framelessTopLineIn)) {
+    // Every bridge hangs from the fixed 72" datum, so its top is 72 + height.
+    // Take the shortest box whose top does not pass the line; when none reaches
+    // it, take the tallest the line sells so the gap is as small as possible
+    // (the caller names the shortfall rather than silently leaving it low).
+    const reaching = sorted.filter((option) => option.topIn <= framelessTopLineIn + 0.51);
+    if (reaching.length > 0) return reaching[reaching.length - 1]!.heightIn;
+    return sorted[sorted.length - 1]!.heightIn;
+  }
   const mapped = microwaveBridgeHeightForNeighbor(neighborHeightIn);
   if (mapped != null && sorted.some((option) => option.heightIn === mapped)) return mapped;
   const mappedHeights: number[] = Object.values(MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN);
@@ -280,6 +326,12 @@ export function overRangeBridgeFor(input: {
   wallCatalog: readonly DesignCabinet[];
   /** The wall's ceiling, so a bridge taller than the room allows is never chosen. */
   ceilingIn?: number | null;
+  /**
+   * The single wall top line this line finishes on. The frameless designer passes
+   * 94-1/4" here (issue #354 item 5): the bridge then tops out on that line from
+   * the fixed 72" datum instead of following the neighbour-height mapping.
+   */
+  topLineIn?: number | null;
 }): DesignCabinet | null {
   // The bridge spans the range, so only the range's own width qualifies: a real
   // bridge, else a single-door cabinet turned horizontal. Then the shared height
@@ -292,6 +344,7 @@ export function overRangeBridgeFor(input: {
     available,
     overRangeSettingTopLineIn(input.wallCabinetHeightIn, input.wallCatalog),
     input.wallCabinetHeightIn,
+    input.topLineIn ?? null,
   );
   return heightIn == null ? null : byHeight.get(heightIn) ?? null;
 }
@@ -313,7 +366,17 @@ export function overRangeBridgeHeightFor(
   wallCabinetHeightIn: number,
   wallCatalog: readonly { placement?: string | null; width?: string | number | null; height?: string | number | null }[] = [],
   bridgeBottomIn: number = OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM,
+  /** The line's single wall top line (frameless: 94-1/4"). Overrides the mapping. */
+  topLineIn: number | null = null,
 ): number {
+  // Issue #354 item 5: a line with one wall top line puts the bridge top there
+  // from this datum, whatever height the neighbour is.
+  if (topLineIn != null && Number.isFinite(topLineIn)) {
+    const required = topLineIn - bridgeBottomIn;
+    const sorted = [...BRIDGE_STOCK_HEIGHTS].sort((a, b) => a - b);
+    const reaching = sorted.filter((height) => height <= required + 0.51);
+    return reaching.length > 0 ? reaching[reaching.length - 1]! : sorted[sorted.length - 1]!;
+  }
   // Over a microwave on the 72" datum, Tom's 30/36/42 -> 12/18/24 mapping wins.
   const mapped = Math.abs(bridgeBottomIn - OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM) <= 0.01
     ? microwaveBridgeHeightForNeighbor(wallCabinetHeightIn)
@@ -360,6 +423,8 @@ export function overRangeBridgeOptions(input: {
   wallCabinetHeightIn: number;
   wallCatalog: readonly DesignCabinet[];
   ceilingIn?: number | null;
+  /** The line's single wall top line (frameless: 94-1/4"). */
+  topLineIn?: number | null;
 }): DesignCabinet[] {
   const rows = input.wallCatalog
     .map((cabinet) => {
@@ -368,7 +433,7 @@ export function overRangeBridgeOptions(input: {
     })
     .filter((entry): entry is { cabinet: DesignCabinet; width: number; height: number } => entry != null);
   const wantedWidth = numberOrZero(input.rangeWidthIn);
-  const requiredHeight = overRangeBridgeHeightFor(input.wallCabinetHeightIn, input.wallCatalog);
+  const requiredHeight = overRangeBridgeHeightFor(input.wallCabinetHeightIn, input.wallCatalog, OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM, input.topLineIn ?? null);
   return rows
     .filter((row) => bridgeMatchesRangeWidth(row.width, wantedWidth) && microwaveBridgeClearsCeiling(row.height, input.ceilingIn))
     .sort((left, right) => (
@@ -434,6 +499,7 @@ export function planOverRangeCompanions(input: {
     wallCabinetHeightIn: input.wallCabinetHeightIn,
     wallCatalog: input.wallCatalog,
     ceilingIn: rangeWallCeiling(range, input.room),
+    topLineIn: singleTopLineFor({ wallCatalog: input.wallCatalog, wallCabinetHeightIn: input.wallCabinetHeightIn }),
   });
   const findings: DesignerReviewFinding[] = [];
   if (!microwave) {
