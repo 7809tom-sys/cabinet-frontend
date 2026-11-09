@@ -1,6 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { LanguageProvider } from "@/contexts/LanguageContext";
+import { ElevationView } from "@/components/design/ElevationView";
+import { doorCountForCabinet, hardwareForCabinet, hardwareSchedule } from "./hardware";
 import {
   normalizePlacedWallCabinetSkuDimensions,
   type DesignCabinet,
@@ -201,4 +206,76 @@ describe("a single-door wall cabinet turned horizontal as the range bridge (Tom,
     expect(uprightSize.x).toBeCloseTo(size.y, 1);
     expect(uprightSize.y).toBeCloseTo(size.x, 1);
   });
+  it("draws and bills a turned bridge as one door when the catalog row has no door count", () => {
+    // Door counts left blank: eligibility reads width <= 21 as single-door, and the
+    // placed cabinet must carry that one door, not infer two from its 36" width.
+    const noCount = line36().map((row) => ({ ...row, numberOfDoors: null }));
+    const proposal = proposalFor(36, noCount)!;
+    const popup = rangeCompanionPlacement(proposal.bridge!, proposal.bridgeSpot, proposal.bridgeMountBottom, "popup", 7);
+    const build = planOverRangeCompanions({
+      answer: "microwave-bridge", placed: [range36], room, appliancePalette: [mw36], wallCatalog: noCount, wallCabinetHeightIn: 36,
+    });
+    if (!build.ok) throw new Error(JSON.stringify(build.findings));
+    let n = 0;
+    const autoDesign = overRangeCompanionPlacements(build.plan, { makeUid: () => `auto-${++n}`, styleId: 7 }).find((cabinet) => cabinet.placement === "wall")!;
+    const mandatory = placeMandatoryOverRangeBridges({
+      placed: [{ ...range36, wallId: "top", wallOffset: 48 }], room, wallCatalog: noCount, wallCabinetHeightIn: 36, styleId: 7, makeUid: () => "mandatory",
+    }).placed.find((cabinet) => cabinet.placement === "wall")!;
+    // A turned cabinet saved before the count was carried still reads as one door.
+    const legacy = { ...popup, uid: "legacy", numberOfDoors: undefined };
+
+    for (const bridge of [popup, autoDesign, mandatory, legacy]) {
+      expect(bridge, bridge.uid).toMatchObject({ masterCode: "W1836", width: 36, height: 18, turnedSideways: true });
+      if (bridge !== legacy) expect(bridge.numberOfDoors, bridge.uid).toBe(1);
+      expect(doorCountForCabinet(bridge), bridge.uid).toBe(1);
+      expect(hardwareForCabinet(bridge, "bar-pull"), bridge.uid).toMatchObject({ barPulls: 1, total: 1 });
+      expect(hardwareSchedule([bridge], "bar-pull"), bridge.uid).toMatchObject({ barPulls: 1, total: 1, cabinetsWithHardware: 1 });
+
+      const root = new THREE.Group();
+      addCabinet(root, existingCabinetSku(bridge, room, [bridge]), null, {}, room.width, room.depth, "#c8b89a", "#eeeeee", { doorStyle: "Shaker" } as never, existingCabinetTransform(bridge, room, [bridge]), undefined, undefined, { hardwareStyleId: "bar-pull" } as never);
+      const doorPulls: THREE.Object3D[] = [];
+      const seams: THREE.Object3D[] = [];
+      root.traverse((node) => {
+        if (node.userData.cabinetPull === "door") doorPulls.push(node);
+        if (node.userData.wallCabinetDoorSeam) seams.push(node);
+      });
+      expect(doorPulls, bridge.uid).toHaveLength(1);
+      expect(seams, bridge.uid).toHaveLength(0);
+
+      const markup = renderElevation(bridge);
+      expect(markup.match(/data-cabinet-hardware="door-pull"/g), bridge.uid).toHaveLength(1);
+    }
+  });
+
+  it("hinges the turned door on the bottom or top in the 2D elevation, as in 3D", () => {
+    const proposal = proposalFor(36)!;
+    const bridge = rangeCompanionPlacement(proposal.bridge!, proposal.bridgeSpot, proposal.bridgeMountBottom, "bridge", 7);
+    // 3D turns the upright door +90 degrees, so its left hinge lands on the bottom
+    // edge and its right hinge on the top; the elevation turns the same way.
+    const left = renderElevation(bridge);
+    expect(left).toContain('data-turned-door-hinge="bottom"');
+    expect(left).toMatch(/data-turned-door-hinge="bottom"[^>]*style="[^"]*rotate\(-90deg\)/);
+    expect(renderElevation({ ...bridge, swing: "right" })).toContain('data-turned-door-hinge="top"');
+    // An upright W1836 keeps its side hinge and is not rotated.
+    const upright = renderElevation({ ...bridge, width: 18, height: 36, turnedSideways: undefined });
+    expect(upright).not.toContain("data-turned-door-hinge");
+    expect(upright.match(/data-cabinet-hardware="door-pull"/g)).toHaveLength(1);
+  });
 });
+
+function renderElevation(cabinet: PlacedCabinet): string {
+  return renderToStaticMarkup(createElement(
+    LanguageProvider,
+    null,
+    createElement(ElevationView, {
+      room,
+      cabinets: [{ ...cabinet, y: 0 }],
+      selectedUid: null,
+      onSelect: () => undefined,
+      wall: "back",
+      finish: { face: "#e8dfcf", edge: "#796f61", label: "#302c27" },
+      panelKind: "shaker",
+      hardwareStyleId: "bar-pull",
+    } as never),
+  ));
+}

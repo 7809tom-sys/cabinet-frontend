@@ -254,6 +254,9 @@ export function doorCountForCabinet(p: PlacedCabinet): number {
   const standardDoors = standardBaseDoorCount(p);
   if (standardDoors != null) return standardDoors;
   if (typeof p.numberOfDoors === "number") return Math.max(0, p.numberOfDoors);
+  // A turned bridge is a single-door upper on its side; its placed width is the
+  // cabinet's height, so the width rule below would read two doors.
+  if (p.turnedSideways === true) return 1;
   const hay = `${p.description ?? ""} ${p.masterCode ?? ""}`.toLowerCase();
   if ((/\bdrawer base\b|^db|drawer\b/.test(hay)) && !/door/.test(hay)) return 0;
   // No stored door count: infer by width the way real cabinetry is built. A

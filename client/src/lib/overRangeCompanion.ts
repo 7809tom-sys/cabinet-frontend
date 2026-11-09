@@ -122,7 +122,9 @@ export function turnableBridgeGeometry(
 
 /** The over-range view of a turned cabinet: same id and SKU, width and height swapped. */
 export function turnedBridgeRow(cabinet: DesignCabinet): DesignCabinet {
-  return { ...cabinet, width: cabinet.height, height: cabinet.width, turnedSideways: true };
+  // Only single-door uppers qualify, so a row without a door count is still one
+  // door; without it the 36" turned width would infer two.
+  return { ...cabinet, width: cabinet.height, height: cabinet.width, numberOfDoors: 1, turnedSideways: true };
 }
 
 /** "W3018", or "W1836 turned horizontal" for a turned cabinet. */
