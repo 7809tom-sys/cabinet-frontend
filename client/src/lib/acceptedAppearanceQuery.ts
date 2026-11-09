@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   acceptedAppearanceUnavailable,
@@ -71,8 +72,12 @@ export function useAcceptedDoorAppearance(styleIds: readonly number[]) {
     : null;
   const unavailable = !procedure
     || Boolean(query?.isError && acceptedAppearanceUnavailable(query.error));
+  // The 3D scene rebuilds whenever `rows` changes identity, so it must only
+  // change when the query data does.
+  const data = query?.data;
+  const rows = useMemo(() => toAcceptedAppearanceRows(data), [data]);
   return {
-    rows: toAcceptedAppearanceRows(query?.data),
+    rows,
     isLoading: Boolean(query?.isLoading && enabled),
     unavailable,
     /** True for any failure that is not the endpoint simply not existing yet. */

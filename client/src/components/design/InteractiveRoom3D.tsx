@@ -12324,6 +12324,10 @@ export function resolvedThreeDWallHeights(room: RoomData | undefined, fallbackHe
   }, {} as Record<WallSide, number>);
 }
 
+export function sameThreeDWallHeights(left: Record<WallSide, number>, right: Record<WallSide, number>): boolean {
+  return THREE_D_WALL_SIDES.every((side) => left[side] === right[side]);
+}
+
 /** Changes one wall only; all other independent room-wall heights remain intact. */
 export function updatedThreeDWallHeights(current: Record<WallSide, number>, side: WallSide, nextHeight: number): Record<WallSide, number> {
   return { ...current, [side]: nextHeight };
@@ -12945,7 +12949,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   useEffect(() => {
     const nextGlobal = constrainedThreeDWallHeight(roomOverride?.ceilingHeight ?? dimensions(scene.roomShape?.defaultDimensions).ceilingHeight);
     setWallHeightIn(nextGlobal);
-    setWallHeights(resolvedThreeDWallHeights(roomOverride, nextGlobal));
+    const nextHeights = resolvedThreeDWallHeights(roomOverride, nextGlobal);
+    setWallHeights((current) => sameThreeDWallHeights(current, nextHeights) ? current : nextHeights);
   }, [roomOverride?.ceilingHeight, roomOverride?.wallCeilings, scene.roomShape?.defaultDimensions]);
 
   const updateWallHeight = (value: unknown) => {
@@ -13056,11 +13061,12 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   useEffect(() => {
     const host = new ThreeDRendererHost();
     rendererHostRef.current = host;
-    // Only this effect releases the WebGL context. Cleanup runs in declaration
+    // Only this effect gives the renderer up. Cleanup runs in declaration
     // order, and this effect is declared first, so the scene effect below tears
-    // its contents down first and the canvas is detached last.
+    // its contents down first and the canvas is detached last. The renderer is
+    // parked rather than destroyed so the next 3D view reuses its context.
     return () => {
-      host.dispose();
+      host.release();
       if (rendererHostRef.current === host) rendererHostRef.current = null;
     };
   }, []);
@@ -13099,7 +13105,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     sizeThreeDRenderer(renderer, canvasWidth, canvasHeight, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
 	    renderer.domElement.dataset.renderQuality = renderQuality.tier;
     renderer.shadowMap.enabled = true;
-	    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	    renderer.shadowMap.type = THREE.PCFShadowMap;
 	    renderer.outputColorSpace = THREE.SRGBColorSpace;
 	    renderer.toneMapping = THREE.ACESFilmicToneMapping;
 	    renderer.toneMappingExposure = studioLights.exposure;
@@ -14163,7 +14169,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         renderer.setRenderTarget(null);
         renderer.autoClear = true;
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         renderer.clear();
         renderer.render(pathTraceScene, pathTraceCamera);
         usedStandardRender = true;

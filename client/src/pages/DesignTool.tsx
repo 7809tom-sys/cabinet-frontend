@@ -1001,7 +1001,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [beginnerFirstCabinetGuideOpen, setBeginnerFirstCabinetGuideOpen] = useState(false);
   const [interactive3dOpen, setInteractive3dOpen] = useState(false);
   const [requestedThreeDPreview, setRequestedThreeDPreview] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "3d");
-  const [interactive3dPresentation, setInteractive3dPresentation] = useState<{ cabinetFinish: string; countertopFinish: string } | null>(null);
+  const [interactive3dPresentation, setInteractive3dPresentationState] = useState<{ cabinetFinish: string; countertopFinish: string } | null>(null);
+  // The 3D view re-reports its finishes whenever it mounts. Ignoring a report
+  // that matches what is already stored keeps a remount from counting as a
+  // design change.
+  const setInteractive3dPresentation = useCallback((next: { cabinetFinish: string; countertopFinish: string } | null) => {
+    setInteractive3dPresentationState((current) => (
+      current === next
+      || (current != null && next != null && current.cabinetFinish === next.cabinetFinish && current.countertopFinish === next.countertopFinish)
+        ? current
+        : next
+    ));
+  }, []);
   // New windows use a real photographic scene by default; Daylight remains an explicit fallback choice.
   const [windowSceneKind, setWindowSceneKind] = useState<WindowSceneKind>(DEFAULT_WINDOW_SCENE_KIND);
   const [windowFrameStyle, setWindowFrameStyle] = useState<WindowFrameStyle>("white");
@@ -3284,14 +3295,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const canLoadCatalogInteractive3d = Boolean(styleId && selectedStyleDistributorId && (placed.length > 0 || selectedLayoutPresetId));
   const canLoadInteractive3d = hasPersistedTwoDPlan || canLoadCatalogInteractive3d;
 
-  const { data: interactive3dScene, isFetching: interactive3dLoading, isError: interactive3dError } = trpc.roomLayouts.scene.useQuery(
+  const { data: interactive3dScene, isFetching: interactive3dFetching, isError: interactive3dError } = trpc.roomLayouts.scene.useQuery(
     {
       layoutPresetId: activeSceneLayoutPresetId,
       distributorId: selectedStyleDistributorId ?? 0,
       styleId: styleId ?? 0,
     },
-    { enabled: canLoadCatalogInteractive3d },
+    { enabled: canLoadCatalogInteractive3d, refetchOnWindowFocus: false },
   );
+  // Only a scene that has not arrived yet counts as loading. A background
+  // refetch keeps the 3D view mounted on the scene it already has; unmounting
+  // it would throw away its WebGL renderer.
+  const interactive3dLoading = interactive3dFetching && !interactive3dScene;
 
   useEffect(() => {
     if (!requestedThreeDPreview || interactive3dOpen || !canLoadInteractive3d || interactive3dLoading) return;

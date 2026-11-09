@@ -437,7 +437,7 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = DOOR_AUDIT_LIGHTS.exposure;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(DOOR_AUDIT_LIGHTS.background);

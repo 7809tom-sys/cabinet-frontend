@@ -37,8 +37,10 @@ export function announceChosenDoorProfile(styleId: number | string | null | unde
  * coming back from it is the common path).
  */
 export function useChosenDoorProfiles(): (styleId: number | null | undefined) => ChosenDoorProfile | null {
-  const [version, setVersion] = useState(0);
-  const bump = useCallback(() => setVersion((current) => current + 1), []);
+  // Focus and visibility fire constantly; only a changed draft store may give
+  // the Designer a new lookup, or every return to the tab rebuilds the 3D room.
+  const [storedDrafts, setStoredDrafts] = useState(readChosenProfileStore);
+  const bump = useCallback(() => setStoredDrafts(readChosenProfileStore()), []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -69,12 +71,21 @@ export function useChosenDoorProfiles(): (styleId: number | null | undefined) =>
       if (profile) map.set(id, profile);
     }
     return map;
-  }, [version]);
+  }, [storedDrafts]);
 
   return useCallback((styleId: number | null | undefined) => {
     if (styleId == null) return null;
     return byId.get(styleId) ?? null;
   }, [byId]);
+}
+
+function readChosenProfileStore(): string {
+  if (typeof localStorage === "undefined") return "";
+  try {
+    return localStorage.getItem(AI_DOOR_CHOSEN_PROFILE_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 /** Style ids with a draft, read from the store's own key. */
@@ -113,5 +124,6 @@ export function withChosenProfiles<T extends { id?: number | null }>(
   styles: readonly T[],
   draftFor: (styleId: number | null | undefined) => ChosenDoorProfile | null,
 ): T[] {
-  return styles.map((style) => styleWithChosenProfile(style, draftFor));
+  const merged = styles.map((style) => styleWithChosenProfile(style, draftFor));
+  return merged.every((style, index) => style === styles[index]) ? (styles as T[]) : merged;
 }
