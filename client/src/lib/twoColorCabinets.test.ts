@@ -319,4 +319,15 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource).toContain("(cabinet) => cabinet.styleId ?? null,");
   });
 
+  it("inventory and sink-base hooks re-run when Color 1 changes", () => {
+    const sinkSwap = designToolSource.slice(designToolSource.indexOf("const result = applyAutomaticSinkBaseSubstitutions({"), designToolSource.indexOf("const undoSinkBaseSwap = useCallback"));
+    expect(sinkSwap).toMatch(/sinkBaseOutOfStock,\s+designStyleId,\s+\]\);/);
+    expect(sinkSwap).not.toMatch(/^\s+styleId,$/m);
+    const choose = designToolSource.slice(designToolSource.indexOf("const chooseStockPrompt = useCallback("), designToolSource.indexOf("const applyReadjustOption = useCallback("));
+    expect(choose).toMatch(/setPlaced, setSelectedUid, designStyleId\]\);/);
+    const swap = designToolSource.slice(designToolSource.indexOf("const swapInventoryCabinet = useCallback("), designToolSource.indexOf("const swapInventoryCabinet = useCallback(") + 1600);
+    expect(swap).toContain("stockPromptUnlocked, designStyleId]);");
+    for (const body of [sinkSwap, choose, swap]) expect(body).not.toMatch(/[\[ ]styleId[,\]]/);
+  });
+
 });

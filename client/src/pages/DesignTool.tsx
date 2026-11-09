@@ -4135,7 +4135,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     selectedSurfaces,
     setPlaced,
     sinkBaseOutOfStock,
-    styleId,
+    designStyleId,
   ]);
   const undoSinkBaseSwap = useCallback((uid: string) => {
     const notice = sinkBaseSwapNotices.find((item) => item.uid === uid);
@@ -4230,7 +4230,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     finishStockPrompt(uid);
     setReadjustOptions([]);
     toast.success(result.message);
-  }, [catalogDistributorScopeId, finishStockPrompt, inventory.assumeUnlistedInStock, inventory.catalog, inventory.stock, openings, setPlaced, setSelectedUid, styleId]);
+  }, [catalogDistributorScopeId, finishStockPrompt, inventory.assumeUnlistedInStock, inventory.catalog, inventory.stock, openings, setPlaced, setSelectedUid, designStyleId]);
   const applyReadjustOption = useCallback((optionId: string) => {
     const option = readjustOptions.find((item) => item.id === optionId);
     if (!option || !stockPromptUid) return;
@@ -4265,7 +4265,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (result.selectedUid) setSelectedUid(result.selectedUid);
     if (prompted) finishStockPrompt(uid);
     toast.success(result.message);
-  }, [finishStockPrompt, inventory.notices, setPlaced, setSelectedUid, stockPromptUnlocked, styleId]);
+  }, [finishStockPrompt, inventory.notices, setPlaced, setSelectedUid, stockPromptUnlocked, designStyleId]);
 
   // The unified "Corner" tab shows BOTH corner base AND corner wall cabinets in
   // one place (grouped into two sections). The base-placement corner cabinets
