@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { ThreeDRendererHost } from "@/components/design/threeDRendererHost";
 import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStudio";
 import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCanonicalCornerShelf, studioCanonicalTowerFootprint, studioCanonicalTowerOffset, studioCompanionTowerTransform, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioSnapShelfHeight, studioWidth } from "@/lib/vendorClosetStudio";
 import { CLOSET_FRAME_PADDING, closetCabinetCorners, closetFitDistance, frameClosetStudioCamera, projectClosetPoint, type ClosetAabb, type ClosetCameraFrame, type ClosetCameraView } from "./closetStudioCamera";
@@ -91,6 +92,8 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
   const decorVisible = decorRef.current;
   const reframeRef = useRef<() => void>(() => {});
   const readoutRef = useRef<HTMLDivElement>(null);
+  /** One renderer for the life of the closet view; design edits rebuild only the scene. */
+  const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
   useEffect(() => {
     const host = mount.current;
     if (!host) return;
@@ -102,10 +105,12 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const towerWidth = studioWidth(design) * IN;
     const w = hasCornerPlanning ? design.wallWidthIn * IN : towerWidth;
     const roomDepth = hasCornerPlanning ? design.roomDepthIn * IN : Math.max(4, 14.5 * IN + 3);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    rendererHostRef.current ??= new ThreeDRendererHost();
+    const renderer = rendererHostRef.current.ensureMounted(host);
+    if (!renderer) return;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.6;
@@ -116,7 +121,6 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     renderer.domElement.style.display = "block";
     renderer.domElement.setAttribute("aria-label", "Interactive vendor closet scene: drag a part into a tower, or choose a part and tap a tower");
     renderer.domElement.tabIndex = 0;
-    host.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.enablePan = false;
@@ -659,9 +663,15 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       for (const material of [oak, seamMaterial, wall.material, baseboard.material, boardMat, edgeMat, metalMat, shoeMat, brass, basketLinerMat, basketFrameMat, hintMat, hitMat, ...decorMaterialList, ...shakerMaterials]) {
         if (Array.isArray(material)) material.forEach((mat) => mat.dispose()); else material.dispose();
       }
-      texture.dispose(); renderer.dispose(); host.removeChild(renderer.domElement);
+      texture.dispose(); renderer.renderLists.dispose();
     };
   }, [design, selectedBay, selectedCornerId]);
+  // Declared after the scene effect so, on unmount, the scene tears down before
+  // the renderer is parked for the next 3D view.
+  useEffect(() => () => {
+    rendererHostRef.current?.release();
+    rendererHostRef.current = null;
+  }, []);
   useEffect(() => {
     // Presentation toggle only: flip visibility of the decor groups already in the scene. Rebuilding
     // here would leak the whole WebGL scene on every toggle click.
