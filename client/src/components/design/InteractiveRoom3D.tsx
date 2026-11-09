@@ -12689,10 +12689,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     if (!webglContextLost) return;
     const timer = window.setTimeout(() => {
       setWebglContextLost(false);
-      if (!claimThreeDGpuRecovery()) {
-        stopAfterGpuResets();
-        return;
-      }
       rendererHostRef.current?.dispose();
       webglAutoRetriesRef.current = 0;
       setWebglUnavailable(true);
@@ -13164,13 +13160,16 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       return;
     }
     renderer = hostRenderer;
-    const onWebglContextLost = () => setWebglContextLost(true);
-    const onWebglContextRestored = () => {
-      setWebglContextLost(false);
+    // Each reset takes one of the session's recoveries when it happens, however it is then recovered.
+    const onWebglContextLost = () => {
       if (!claimThreeDGpuRecovery()) {
         stopAfterGpuResets();
         return;
       }
+      setWebglContextLost(true);
+    };
+    const onWebglContextRestored = () => {
+      setWebglContextLost(false);
       setWebglContextGeneration((generation) => generation + 1);
     };
     renderer.domElement.addEventListener("webglcontextlost", onWebglContextLost);

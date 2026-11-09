@@ -176,11 +176,10 @@ describe("3D view after a GPU reset", () => {
     expect(timeout).toContain("setWebglUnavailable(true);");
   });
 
-  it("caps recoveries per session, whether Chrome restores the context or a new one is started", () => {
-    const timeout = source.slice(source.indexOf("if (!webglContextLost) return;"), source.indexOf("}, [webglContextLost]);", source.indexOf("if (!webglContextLost) return;")));
-    expect(timeout).toMatch(/if \(!claimThreeDGpuRecovery\(\)\) \{\s*stopAfterGpuResets\(\);\s*return;/);
-    const restored = source.slice(source.indexOf("const onWebglContextRestored = () => {"), source.indexOf('renderer.domElement.addEventListener("webglcontextlost"'));
-    expect(restored).toMatch(/if \(!claimThreeDGpuRecovery\(\)\) \{\s*stopAfterGpuResets\(\);\s*return;\s*\}\s*setWebglContextGeneration/);
+  it("caps recoveries per session: each reset counts once, whether Chrome restores the context or a new one is started", () => {
+    const lost = source.slice(source.indexOf("const onWebglContextLost = () => {"), source.indexOf("const onWebglContextRestored = () => {"));
+    expect(lost).toMatch(/if \(!claimThreeDGpuRecovery\(\)\) \{\s*stopAfterGpuResets\(\);\s*return;\s*\}\s*setWebglContextLost\(true\);/);
+    expect(source.match(/claimThreeDGpuRecovery\(\)/g)?.length).toBe(1);
     expect(source).toContain("gpuResetLimitReached ? THREE_D_GPU_RESET_LIMIT_MESSAGE : threeDWebGLUnavailableMessage(webglSupport)");
   });
 
