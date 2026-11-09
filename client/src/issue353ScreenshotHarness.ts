@@ -26,11 +26,15 @@ import {
   type RoomData,
 } from "@/lib/design";
 import { DEFAULT_ROOM } from "@/lib/design";
+// Main's real geometry modules, served straight out of git by the
+// `issue353-main-snapshot` Vite plugin (see vite.config.ts). Nothing is vendored
+// into this repository: the plugin runs `git show origin/main:<path>` when it
+// resolves the id, so the BEFORE column can never drift from main.
 import {
   countertopSurfaces as mainCountertops,
   countertopSurfacePlanPolygon as mainPolygon,
-} from "@/lib/legacyMain/design";
-import { DEFAULT_ROOM as MAIN_ROOM } from "@/lib/legacyMain/design";
+  DEFAULT_ROOM as MAIN_ROOM,
+} from "virtual:issue353-main/design.ts";
 
 const INCH = 1 / 12;
 const ROOM: RoomData = { ...DEFAULT_ROOM, width: 204, depth: 168, ceilingHeight: 96 };

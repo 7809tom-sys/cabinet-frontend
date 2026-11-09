@@ -133,14 +133,25 @@ export function participatesInFreestandingChain(cabinet: PlacedCabinet, room: Ro
 }
 
 /**
- * True when this wall-seated cabinet belongs to a wall that a returned chain
- * continues. It is the anchor the angled leg is measured from, so the chain
- * builder can read the wall run's real frame instead of only the loose bodies.
+ * True when this wall-seated cabinet belongs to a CARDINAL room wall that a
+ * returned chain continues. It is the anchor the angled leg is measured from, so
+ * the chain builder can read that run's real frame instead of only the loose
+ * bodies.
+ *
+ * A custom wall (the Continuous Wall Builder) and a peninsula run are run kinds
+ * with their own frame, miter and filler logic. Promoting their cabinets into a
+ * chain would retag their slabs as `freestanding:...` and drop the
+ * `customWallId` that the measured-wall pass, the plan and the takeoff read, so
+ * they are excluded here — the same guard `participatesInFreestandingChain`
+ * applies to its angled leg.
  */
 export function isChainWallAnchor(cabinet: PlacedCabinet, room: RoomData): boolean {
   if (cabinet.placement !== "base" || cabinet.islandFace) return false;
   if (placedCornerGeometryKind(cabinet) !== "standard") return false;
-  return Boolean(cabinet.wallId);
+  if (!cabinet.wallId) return false;
+  if (room.customWalls?.some((wall) => wall.id === cabinet.wallId)) return false;
+  if (peninsulaRunById(room, cabinet.wallId)) return false;
+  return true;
 }
 
 /** Resolves the rotated body frame of a free-standing cabinet from its AABB record. */

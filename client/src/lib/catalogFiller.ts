@@ -44,8 +44,9 @@ function depthRank(value: unknown, desired: number): number {
 /**
  * A few source catalogs label a filler by its nominal installed family but print
  * a slightly smaller finished stock width. AltaEuro's OF overlay filler is a
- * documented 3-inch family with a 2-7/8-inch physical board. It is valid stock
- * for a sub-3-inch seam; arbitrary 2-7/8-inch trim is not.
+ * documented 3-inch family with a 2-7/8-inch physical board, and its OF6 family
+ * is a documented 6-inch filler with a 5-7/8-inch board. Both are valid stock
+ * for their own nominal seam width; arbitrary trim is not.
  */
 function isNominalThreeInchFillerStock(candidate: CatalogFillerCandidate): boolean {
   const width = numberValue(candidate.width);
@@ -54,6 +55,32 @@ function isNominalThreeInchFillerStock(candidate: CatalogFillerCandidate): boole
   return Math.abs(width - 2.875) <= 0.001
     && /^of\d+$/i.test(String(candidate.masterCode ?? ""))
     && /3[\s"-]*(?:inch\s*)?filler\s*overlay/.test(text);
+}
+
+/** AltaEuro's OF6 overlay filler is documented 6-inch stock with a 5-7/8-inch board. */
+function isNominalSixInchFillerStock(candidate: CatalogFillerCandidate): boolean {
+  const width = numberValue(candidate.width);
+  if (Math.abs(width - 6) <= 0.001) return true;
+  const text = `${candidate.masterCode} ${candidate.description ?? ""}`.toLowerCase();
+  return Math.abs(width - 5.875) <= 0.001
+    && /^of\d+$/i.test(String(candidate.masterCode ?? ""))
+    && /6[\s"-]*(?:inch\s*)?filler\s*overlay/.test(text);
+}
+
+/**
+ * An appliance filler is sold as a multi-pack of short, wide boards for the
+ * narrow gaps beside built-in appliances — not cuttable run filler. AltaEuro's
+ * AF3006 is an "Appliance Filler (three-pack) 29-7/8 × 5-7/8 × 3/4". Selecting
+ * it for a 6-inch cabinet-to-cabinet seam would put a 29-7/8-inch pack into the
+ * order, so it is never catalog filler stock (issue 353, frameless 540005).
+ */
+export function isApplianceFillerPack(
+  candidate: Pick<CatalogFillerCandidate, "masterCode" | "description" | "category" | "subCategory">,
+): boolean {
+  const code = String(candidate.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const text = `${candidate.description ?? ""} ${candidate.subCategory ?? ""}`.toLowerCase();
+  if (/^AF\d/.test(code)) return true;
+  return /appliance\s*filler/.test(text);
 }
 
 /** Panels are finish/cover components—not cuttable cabinet-run fillers. */
@@ -81,7 +108,7 @@ export function isCatalogDecorativeLeg(candidate: Pick<CatalogFillerCandidate, "
 }
 
 export function isCatalogFiller(candidate: Pick<CatalogFillerCandidate, "masterCode" | "description" | "category" | "subCategory">): boolean {
-  if (isCatalogPanel(candidate) || isCatalogDecorativeLeg(candidate)) return false;
+  if (isCatalogPanel(candidate) || isCatalogDecorativeLeg(candidate) || isApplianceFillerPack(candidate)) return false;
   const text = `${candidate.masterCode} ${candidate.description ?? ""} ${candidate.category ?? ""} ${candidate.subCategory ?? ""}`.toLowerCase();
   // Only CabinetDealz filler stock may be field-cut. Dishwasher panels and
   // toe-kick/utility trim are not filler boards and must never be substituted
@@ -108,13 +135,16 @@ export function catalogFillerForGap(
   const desiredDepth = placement === "wall" ? 12 : 24;
   const desiredHeight = placement === "wall" ? 30 : placement === "tall" ? 96 : 34.5;
   const requiresThreeInchStock = gapWidth <= 3 + 0.001;
+  const requiresSixInchStock = !requiresThreeInchStock && gapWidth <= 6 + 0.001;
 
   return candidates
     .filter(isCatalogFiller)
-    // AltaEuro's documented 2-7/8-inch "3-inch" overlay is nominal 3-inch stock, so it
-    // also satisfies an exact 3-inch seam such as a blind-corner filler.
+    // A documented overlay family prints a slightly smaller finished board than
+    // its nominal width (OF3 = 2-7/8, OF6 = 5-7/8). A nominal board of the seam's
+    // own width is real stock for it; a narrower one is not stretched.
     .filter((candidate) => numberValue(candidate.width) + 0.001 >= gapWidth
-      || (requiresThreeInchStock && isNominalThreeInchFillerStock(candidate)))
+      || (requiresThreeInchStock && isNominalThreeInchFillerStock(candidate))
+      || (requiresSixInchStock && isNominalSixInchFillerStock(candidate)))
     // A 5/8-inch, 1-1/2-inch, or 3-inch installed seam is cut from and billed
     // as one real 3-inch stock filler. Do not silently substitute a smaller
     // accessory code or a wider filler when the line has no orderable 3-inch SKU.

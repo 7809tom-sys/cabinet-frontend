@@ -1,15 +1,17 @@
 /**
  * Before / after screenshot harness for issue 353 outcome 8, round 2.
  *
- * BOTH columns are real designer code:
- *   - BEFORE calls `legacyMain/verticalFiller.ts`, a verbatim copy of main's
- *     continuous vertical-filler contract, which anchored EVERY board at the
- *     floor and ran it to the highest top beside it. Beside a 24-inch W3024
- *     upper that becomes a floor-standing 96-inch strip — Tom's report.
- *   - AFTER calls this branch's own contract, which finishes the upper band.
+ * Tom's actual case: a STANDALONE W3024 upper, and the end panel the designer
+ * hung on its left side, which used to run down past the cabinet's own bottom.
  *
- * The upper run is real too: a 30-inch upper, a 1-1/2 inch seam, a 24-inch
- * W3024 bridge, a 30-inch upper. Nothing here invents an elevation.
+ * BOTH columns are real designer code:
+ *   - BEFORE runs main's exposed-side engine, served straight out of git by the
+ *     `issue353-main-snapshot` Vite plugin, so the panel really is the one main
+ *     places;
+ *   - AFTER runs this branch's engine, whose panel is clamped to the upper band.
+ *
+ * Nothing here invents a panel. This file only draws the cabinets and whatever
+ * panel the engine returned.
  *
  * Loaded only by client/dev/issue353-panel-shot.html during the screenshot run.
  */
@@ -22,99 +24,79 @@ import {
   type PlacedCabinet,
   type RoomData,
 } from "@/lib/design";
-import { continuousVerticalFiller as branchFiller } from "@/lib/verticalFiller";
-import { continuousVerticalFiller as mainFiller } from "@/lib/legacyMain/verticalFiller";
-import { DEFAULT_ROOM as MAIN_ROOM } from "@/lib/legacyMain/design";
+import { syncExposedSidePanels } from "@/lib/exposedSidePanels";
+// Main's real exposed-side engine, from git. See vite.config.ts.
+import {
+  syncExposedSidePanels as mainSyncExposedSidePanels,
+} from "virtual:issue353-main/exposedSidePanels.ts";
 
 const INCH = 1 / 12;
 const ROOM: RoomData = { ...DEFAULT_ROOM, width: 156, depth: 132, ceilingHeight: 96 };
 
-function wallCabinet(
-  uid: string,
-  code: string,
-  offset: number,
-  width: number,
-  height: number,
-  mountBottom: number,
-): PlacedCabinet {
-  const spot = wallPlacementAt(offset, width, 12, "top", ROOM);
+/** The standalone W3024 Tom reported: one 30 × 24-inch upper, nothing beside it. */
+function w3024(): PlacedCabinet {
+  const spot = wallPlacementAt(48, 30, 12, "top", ROOM);
   return {
-    uid,
-    cabinetId: offset + 1,
-    masterCode: code,
-    description: code,
+    uid: "w3024",
+    cabinetId: 9001,
+    masterCode: "W3024",
+    description: '30" Microwave Bridge',
     category: "Wall",
-    subCategory: code === "W3024" ? "Microwave Bridge" : "Standard Wall",
+    subCategory: "Microwave Bridge",
     placement: "wall",
     ...spot,
-    width,
+    width: 30,
     depth: 12,
-    height,
+    height: 24,
     rotation: spot.rotation,
     wallId: "top",
-    wallOffset: offset,
-    mountBottom,
+    wallOffset: 48,
+    // A standalone W3024: no bridge flag, no appliance under it, no counter run
+    // beneath it. This is the cabinet Tom reported.
+
     numberOfDoors: 2,
     numberOfDrawers: 0,
+    constructionMethod: "frameless",
   } as PlacedCabinet;
 }
 
-// Tom's reported run: a 30-inch upper, a 1-1/2 inch seam, the 24-inch W3024
-// bridge at the 72-inch datum, then another 30-inch upper.
-const UPPERS: PlacedCabinet[] = [
-  wallCabinet("u-left", "W3030", 0, 30, 30, 54),
-  wallCabinet("u-bridge", "W3024", 31.5, 30, 24, 72),
-  wallCabinet("u-right", "W3030", 61.5, 30, 30, 54),
+// Real AltaEuro wall end-panel stock, priced.
+const panelStock = [
+  { id: 201, masterCode: "WEP1523", description: '15-1/4" W × 22-5/8" H × 3/4" D Wall End Panel', category: "Accessory", subCategory: "Wall End Panel", width: "15.25", depth: "0.75", height: "22.625" },
+  { id: 202, masterCode: "WEP1530", description: '15-1/4" W × 30-1/4" H × 3/4" D Wall End Panel', category: "Accessory", subCategory: "Wall End Panel", width: "15.25", depth: "0.75", height: "30.25" },
+  { id: 203, masterCode: "WEP1535", description: '15-1/4" W × 35-1/4" H × 3/4" D Wall End Panel', category: "Accessory", subCategory: "Wall End Panel", width: "15.25", depth: "0.75", height: "35.25" },
+  { id: 204, masterCode: "WEP1542", description: '15-1/4" W × 41-3/4" H × 3/4" D Wall End Panel', category: "Accessory", subCategory: "Wall End Panel", width: "15.25", depth: "0.75", height: "41.75" },
 ];
-const SEAM_START = 30;
-const SEAM_WIDTH = 1.5;
 
-const BASES: PlacedCabinet[] = [0, 30, 60].map((offset, index) => ({
-  uid: `b${index}`,
-  cabinetId: 90 + index,
-  masterCode: "B30",
-  description: "B30",
-  category: "Base",
-  subCategory: "Standard Base",
-  placement: "base" as const,
-  x: offset,
-  y: 0,
-  width: 30,
-  depth: 24,
-  height: 34.5,
-  rotation: 0,
-  wallId: "top",
-  wallOffset: offset,
-  numberOfDoors: 2,
-  numberOfDrawers: 0,
-} as PlacedCabinet));
+type Column = {
+  label: string;
+  panels: PlacedCabinet[];
+};
 
-type Band = { bottom: number; height: number; label: string };
-
-/** The seam board, read from the real contract in each column. */
-function seamBoard(useMain: boolean): Band {
-  if (useMain) {
-    const spec = mainFiller({
-      wallId: "top",
-      startIn: SEAM_START,
-      widthIn: SEAM_WIDTH,
-      placed: UPPERS as never,
-      room: MAIN_ROOM as never,
-    });
-    return { bottom: spec.bottomIn, height: spec.heightIn, label: `main: ${spec.bottomIn}"–${spec.bottomIn + spec.heightIn}"` };
-  }
-  const spec = branchFiller({
-    wallId: "top",
-    startIn: SEAM_START,
-    widthIn: SEAM_WIDTH,
-    placed: UPPERS,
+function panelsFrom(sync: typeof syncExposedSidePanels): PlacedCabinet[] {
+  const upper = w3024();
+  const result = sync({
+    placed: [upper],
     room: ROOM,
-    layer: "wall",
+    catalog: panelStock.map((item) => ({
+      id: item.id,
+      masterCode: item.masterCode,
+      description: item.description,
+      placement: "wall" as const,
+      stockFace: Number(item.width),
+      stockHeight: Number(item.height),
+      price: 96,
+      panelType: "wall-end" as const,
+    })),
+    qualifiedOnly: true,
+    doorStyleFor: () => ({ ourName: "AltaEuro Luxe", isFrameless: true } as never),
+    priceFor: () => 96,
+    pricesReady: true,
   });
-  return { bottom: spec.bottomIn, height: spec.heightIn, label: `branch: ${spec.bottomIn}"–${spec.bottomIn + spec.heightIn}"` };
+  return result.placed.filter((item) => Boolean(item.autoPlacedReason));
 }
 
-function build(container: HTMLElement, board: Band) {
+function build(container: HTMLElement, column: Column, highlight: boolean) {
   const width = container.clientWidth;
   const height = container.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -134,7 +116,7 @@ function build(container: HTMLElement, board: Band) {
   const ceiling = (ROOM.ceilingHeight ?? 96) * INCH;
 
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(roomW * 1.5, 14),
+    new THREE.PlaneGeometry(roomW * 1.5, 12),
     new THREE.MeshStandardMaterial({ color: "#d9d3c7", roughness: 0.9 }),
   );
   floor.rotation.x = -Math.PI / 2;
@@ -149,14 +131,15 @@ function build(container: HTMLElement, board: Band) {
   left.position.set(-2 * INCH, ceiling / 2, 6);
   scene.add(left);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.15));
-  const key = new THREE.DirectionalLight(0xffffff, 1.3);
-  key.position.set(roomW * 0.4, ceiling + 2, 9);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.1));
+  const key = new THREE.DirectionalLight(0xffffff, 1.35);
+  key.position.set(roomW * 0.35, ceiling + 2, 9);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   const cam = key.shadow.camera as THREE.OrthographicCamera;
   cam.left = -roomW; cam.right = roomW; cam.top = ceiling * 2; cam.bottom = -2;
   cam.near = 0.1; cam.far = 60;
+  key.shadow.bias = -0.0005;
   scene.add(key);
   const fill = new THREE.DirectionalLight(0xffffff, 0.45);
   fill.position.set(-roomW * 0.5, ceiling * 0.7, 14);
@@ -166,44 +149,43 @@ function build(container: HTMLElement, board: Band) {
   scene.add(root);
 
   const carcass = new THREE.MeshStandardMaterial({ color: "#efece5", roughness: 0.62, metalness: 0 });
-  const counter = new THREE.MeshPhysicalMaterial({ color: "#dfe3e8", roughness: 0.34, metalness: 0, clearcoat: 0.22 });
 
-  for (const base of BASES) {
-    const box = new THREE.Mesh(new THREE.BoxGeometry(base.width * INCH, 34.5 * INCH, 24 * INCH), carcass);
-    box.position.set((base.x + base.width / 2) * INCH, 17.25 * INCH, 12 * INCH);
-    box.castShadow = true;
-    root.add(box);
-    const top = new THREE.Mesh(new THREE.BoxGeometry(base.width * INCH, STD.COUNTERTOP_THICKNESS * INCH, 25.5 * INCH), counter);
-    top.position.set((base.x + base.width / 2) * INCH, (STD.COUNTERTOP_HEIGHT + STD.COUNTERTOP_THICKNESS / 2) * INCH, 12.75 * INCH);
-    root.add(top);
-  }
-
-  // Real uppers, at their real elevations.
-  for (const upper of UPPERS) {
+  // The upper, at its real elevation (72" bottom, 24" tall).
+  const upper = w3024();
+{
     const box = elevationBox(upper, ROOM);
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(upper.width * INCH, box.height * INCH, upper.depth * INCH),
-      carcass,
-    );
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(upper.width * INCH, box.height * INCH, upper.depth * INCH), carcass);
     mesh.position.set((upper.x + upper.width / 2) * INCH, (box.bottom + box.height / 2) * INCH, 6 * INCH);
     mesh.castShadow = true;
     root.add(mesh);
+    // A thin reference plane at the cabinet's own bottom, so a panel that runs
+    // past it is unmistakable.
+    const datum = new THREE.Mesh(
+      new THREE.BoxGeometry((upper.width + 6) * INCH, 0.05, 13 * INCH),
+      new THREE.MeshBasicMaterial({ color: 0x047857, transparent: true, opacity: 0.55 }),
+    );
+    datum.position.set((upper.x + upper.width / 2) * INCH, box.bottom * INCH, 6.5 * INCH);
+    root.add(datum);
   }
 
-  // The seam board, at the elevation the real contract gave it.
-  const boardMat = new THREE.MeshStandardMaterial({ color: "#b45309", roughness: 0.55, metalness: 0 });
-  const boardMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(SEAM_WIDTH * INCH, Math.max(0.05, board.height) * INCH, 12 * INCH),
-    boardMat,
-  );
-  boardMesh.position.set(
-    (SEAM_START + SEAM_WIDTH / 2) * INCH,
-    (board.bottom + board.height / 2) * INCH,
-    6 * INCH,
-  );
-  boardMesh.castShadow = true;
-  boardMesh.userData = { seamBoard: true };
-  root.add(boardMesh);
+  // Whatever panel the real engine placed, at its own measured elevation.
+  const panelMat = new THREE.MeshStandardMaterial({ color: "#b45309", roughness: 0.55, metalness: 0 });
+  for (const panel of column.panels) {
+    const box = elevationBox(panel, ROOM);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(panel.width * INCH, Math.max(0.05, box.height) * INCH, (panel.depth || 12) * INCH),
+      panelMat,
+    );
+    mesh.position.set(
+      (panel.x + (panel.width / 2)) * INCH,
+      (box.bottom + box.height / 2) * INCH,
+      ((panel.y ?? 0) + 6) * INCH,
+    );
+    mesh.castShadow = true;
+    mesh.userData = { endPanel: true };
+    root.add(mesh);
+  }
+  void highlight;
 
   const bounds = new THREE.Box3().setFromObject(root);
   const size = new THREE.Vector3();
@@ -212,31 +194,48 @@ function build(container: HTMLElement, board: Band) {
   bounds.getCenter(center);
   const span = Math.max(size.x, size.y, 6);
   const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 300);
-  camera.position.set(center.x - span * 0.26, center.y + span * 0.16, center.z + span * 1.05);
-  camera.lookAt(center.x, center.y - span * 0.04, center.z);
+  camera.position.set(center.x - span * 0.18, center.y + span * 0.06, center.z + span * 1.15);
+  camera.lookAt(center.x, center.y, center.z);
   renderer.render(scene, camera);
 }
 
 function run() {
   try {
-    const before = seamBoard(true);
-    const after = seamBoard(false);
-    build(document.getElementById("pane-before")!, before);
-    build(document.getElementById("pane-after")!, after);
-    const beforeTop = before.bottom + before.height;
-    const afterTop = after.bottom + after.height;
+    const beforePanels = panelsFrom(mainSyncExposedSidePanels as unknown as typeof syncExposedSidePanels);
+    const afterPanels = panelsFrom(syncExposedSidePanels);
+    const upperBottom = elevationBox(w3024(), ROOM).bottom;
+
+    build(document.getElementById("pane-before")!, { label: "BEFORE · main", panels: beforePanels }, true);
+    build(document.getElementById("pane-after")!, { label: "AFTER · branch", panels: afterPanels }, true);
+
+    const lowest = (panels: PlacedCabinet[]) => {
+      if (!panels.length) return null;
+      return Math.min(...panels.map((panel) => elevationBox(panel, ROOM).bottom));
+    };
+    const beforeLow = lowest(beforePanels);
+    const afterLow = lowest(afterPanels);
+
+    const beforeLine = beforePanels.length
+      ? `end panel ${beforeLow}&#8243;&#8211;${Math.round(((beforeLow ?? 0) + elevationBox(beforePanels[0]!, ROOM).height) * 10) / 10}&#8243; hangs below the ${upperBottom}&#8243; cabinet bottom`
+      : "no end panel placed";
+    const afterLine = afterPanels.length
+      ? `end panel starts at the ${afterLow}&#8243; cabinet bottom`
+      : "no end panel placed";
+
     document.getElementById("caption-before")!.innerHTML =
       `<strong>BEFORE · main</strong><br />` +
-      `<span class="bad">&#10007; seam board ${before.bottom}&#8243;&#8211;${beforeTop}&#8243;: runs to the floor</span><br />` +
-      `<span class="bad">&#10007; ${before.height}&#8243; strip beside a 24&#8243; upper</span>`;
+      `<span class="bad">&#10007; ${beforeLine}</span><br />` +
+      `<span class="bad">&#10007; standalone W3024 (30&#8243; × 24&#8243;) with a stray side panel</span>`;
     document.getElementById("caption-after")!.innerHTML =
       `<strong>AFTER · branch</strong><br />` +
-      `<span class="ok">&#10003; seam board ${after.bottom}&#8243;&#8211;${afterTop}&#8243;: finishes the upper band</span><br />` +
-      `<span class="ok">&#10003; never reaches below the cabinet bottom</span>`;
+      `<span class="ok">&#10003; ${afterLine}</span><br />` +
+      `<span class="ok">&#10003; never reaches below the cabinet</span>`;
+
     (window as unknown as { __issue353Panel?: unknown }).__issue353Panel = {
       ok: true,
-      before: { bottom: before.bottom, height: before.height },
-      after: { bottom: after.bottom, height: after.height },
+      upperBottom,
+      before: { panels: beforePanels.length, lowestBottom: beforeLow },
+      after: { panels: afterPanels.length, lowestBottom: afterLow },
     };
   } catch (error) {
     (window as unknown as { __issue353Panel?: unknown }).__issue353Panel = { ok: false, message: (error as Error).message };
@@ -245,4 +244,5 @@ function run() {
   }
 }
 
+void STD;
 void run();

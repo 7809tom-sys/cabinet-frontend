@@ -4782,6 +4782,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid, styleId: styleIdRef.current ?? null,
       // Filler is the last resort and never automatic at a run end.
       allowAutoFillers: false,
+      // Everyday cooking keeps a real counter landing beside the range; the
+      // no-void rule must not board over that landing.
+      preserveHeavyCookLandings: heavyCook,
     });
     working = baseRules.placed;
     // No gap is left anywhere: every opening between the measured anchors, panels, corner
@@ -4825,6 +4828,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const finishedRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
       makeUid, styleId: styleIdRef.current ?? null,
+      preserveHeavyCookLandings: heavyCook,
     });
     working = finishedRules.placed;
     placedRef.current = working;

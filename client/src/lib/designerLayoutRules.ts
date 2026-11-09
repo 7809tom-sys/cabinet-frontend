@@ -1053,6 +1053,12 @@ export function applyDesignerLayoutRules(input: {
    * a caller that has already exhausted real cabinets, may pass true.
    */
   allowAutoFillers?: boolean;
+  /**
+   * Everyday cooking keeps a real counter landing beside the range. The no-void
+   * rule honours the same flag the seam pass uses, so it never boards over that
+   * landing (issue 353 review 2).
+   */
+  preserveHeavyCookLandings?: boolean;
 }): DesignerLayoutRuleResult {
   let placed = normalizeOverApplianceWallMounts(normalizeGlassStackersToParentFronts(
     normalizeStandardWallMounts(
@@ -1090,6 +1096,7 @@ export function applyDesignerLayoutRules(input: {
   // runs continuously over a filled seam instead of floating over empty floor.
   placed = closeAdjoiningBaseVoids({
     placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
+    preserveHeavyCookLandings: input.preserveHeavyCookLandings,
   });
   // Owner rule: a filler is only ever a front-face board closing a cabinet-to-
   // cabinet, cabinet-to-wall, or cabinet-to-appliance gap. A board cut against a
@@ -1146,6 +1153,13 @@ export function closeAdjoiningBaseVoids(input: {
   fillers: readonly CatalogFillerCandidate[];
   makeUid: () => string;
   styleId: number | null;
+  /**
+   * Everyday cooking keeps a real counter landing beside the range. When this is
+   * true the shared seam pass leaves a short range-adjacent opening open instead
+   * of boarding it, so this rule never overrides that decision (DesignTool
+   * passes the same flag to `fillAutoDesignLowerSeams`).
+   */
+  preserveHeavyCookLandings?: boolean;
 }): PlacedCabinet[] {
   const maxFiller = kitchenRuleNumber("filler_gap_max_in");
   if (!(maxFiller > 0) || input.fillers.length === 0) return input.placed;
@@ -1157,6 +1171,7 @@ export function closeAdjoiningBaseVoids(input: {
     makeUid: input.makeUid,
     styleId: input.styleId,
     maxFillerIn: maxFiller,
+    preserveHeavyCookLandings: input.preserveHeavyCookLandings === true,
   }).placed;
 }
 

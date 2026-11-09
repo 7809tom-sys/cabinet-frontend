@@ -1182,6 +1182,8 @@ export function runAutoDesignLayout(args: {
     // Owner rule: filler is the last resort, never automatic. Real cabinets first
     // (shared pass below), and no end-of-run filler at all.
     allowAutoFillers: false,
+    // The no-void rule honours the same range-landing decision as the seam pass.
+    preserveHeavyCookLandings: heavyCook,
   });
   working = baseRules.placed;
   // The shared "real cabinets before filler" pass runs on EVERY wall and both
@@ -1285,6 +1287,7 @@ export function runAutoDesignLayout(args: {
     // The automatic small-gap pass is off for the whole measured build: filler is
     // the last resort, and a run closes with one board at most (below).
     allowAutoFillers: false,
+    preserveHeavyCookLandings: heavyCook,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
   // One board per run end. Before this pass a run could collect a 1¼″ beside a
