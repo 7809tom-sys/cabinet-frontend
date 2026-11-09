@@ -228,6 +228,10 @@ afterEach(() => {
   window.sessionStorage.clear();
 });
 
+function readCanvasOnlyFlag(): boolean {
+  return Boolean((window as unknown as Record<string, unknown>).__designerCanvasOnly);
+}
+
 function placedUids(key: string): string[] {
   const raw = window.localStorage.getItem(key);
   return raw ? JSON.parse(raw).placed.map((cabinet: { uid: string }) => cabinet.uid) : [];
@@ -348,5 +352,50 @@ describe("designer crash restore prompt", () => {
     expect(window.localStorage.getItem(CRASH_KEY)).toBeNull();
     // A saved design has no local draft to discard.
     expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
+  });
+
+  it("a crash turns canvas-only off: the site chrome comes back and fullscreen is released", { timeout: 120_000 }, async () => {
+    let fullscreenElement: Element | null = null;
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null;
+    });
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreenElement });
+    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, get: () => true });
+    (document as unknown as { exitFullscreen: unknown }).exitFullscreen = exitFullscreen;
+    (HTMLElement.prototype as unknown as { requestFullscreen: unknown }).requestFullscreen = function (this: Element) {
+      fullscreenElement = this;
+      return Promise.resolve();
+    };
+    const published: boolean[] = [];
+    const onPublish = (event: Event) => published.push(Boolean((event as CustomEvent<boolean>).detail));
+    window.addEventListener("cabinetdealz:designer-canvas-only", onPublish);
+    try {
+      await renderDesigner();
+      fireEvent.click(screen.getByTestId("three-d-immersive-toggle"));
+      await act(async () => {});
+      expect(readCanvasOnlyFlag()).toBe(true);
+      expect(fullscreenElement).toBe(screen.getByTestId("designer-root"));
+
+      crash.armed = true;
+      fireEvent.click(screen.getByTestId("add-second-cabinet"));
+      await act(async () => {});
+      expect(screen.getByTestId("designer-error-boundary")).toBeTruthy();
+      expect(readCanvasOnlyFlag()).toBe(false);
+      expect(published.at(-1)).toBe(false);
+      expect(exitFullscreen).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "Reload designer" }));
+      await act(async () => {});
+      fireEvent.click(screen.getByRole("button", { name: "Restore previous" }));
+      await act(async () => {});
+      expect(readCanvasOnlyFlag()).toBe(false);
+      expect(screen.getByTestId("designer-root").getAttribute("data-canvas-only")).toBeNull();
+      expect(screen.getByTestId("designer-toolbar").getAttribute("data-canvas-only-hidden")).toBeNull();
+    } finally {
+      window.removeEventListener("cabinetdealz:designer-canvas-only", onPublish);
+      delete (document as unknown as Record<string, unknown>).exitFullscreen;
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>).requestFullscreen;
+      Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => null });
+    }
   });
 });

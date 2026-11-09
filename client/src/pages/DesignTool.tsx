@@ -53,7 +53,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/useMobile";
 import { useDesignerImmersive, useTabletWorkspace } from "@/hooks/useTabletWorkspace";
-import { publishDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
+import { publishDesignerCanvasOnly, readDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import {
   browserFullscreenOwnsElement,
   canRequestBrowserFullscreen,
@@ -15431,6 +15431,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const setCanvasOnly = useCallback((next: boolean) => {
     setCanvasOnlyState(next);
     publishDesignerCanvasOnly(next);
+  }, []);
+  // The shared flag outlives this component, but canvasOnly starts false on
+  // every mount. Leaving the Designer (a route change, or a crash and Reload
+  // designer) must hand the site header and history row back, and release the
+  // browser fullscreen this Designer requested.
+  useEffect(() => {
+    if (readDesignerCanvasOnly()) publishDesignerCanvasOnly(false);
+    const root = canvasImmersionRootRef.current;
+    return () => {
+      if (readDesignerCanvasOnly()) publishDesignerCanvasOnly(false);
+      if (typeof document === "undefined") return;
+      const owner = (document.fullscreenElement ?? (document as { webkitFullscreenElement?: Element | null }).webkitFullscreenElement ?? null) as Element | null;
+      if (owner && (owner === root || owner === canvasImmersionRootRef.current || !owner.isConnected)) {
+        void document.exitFullscreen?.().catch(() => undefined);
+      }
+    };
   }, []);
   // Entering/leaving canvas-only changes the stage's CSS box. The 3D renderer sizes
   // itself from a ResizeObserver on its mount, so the observer fires on its own —
