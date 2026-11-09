@@ -5,13 +5,11 @@ import {
   isRefrigerator,
   isStacker,
   OVER_RANGE_UPPER_MIN_BOTTOM_IN,
-  overSinkOrRangeNeighborAlignedMountBottom,
   refrigeratorSurroundElevation,
   wallRunOffset,
   wallRunSpan,
   type PlacedCabinet,
   type RoomData,
-  type WallOpening,
 } from "./design";
 
 /** Tom's rule (Nov 1): a 12 to 24 inch cabinet over a fridge or a range mounts with its bottom at 72 inches. */
@@ -75,7 +73,6 @@ export function overApplianceWallMount(
   cabinet: PlacedCabinet,
   placed: readonly PlacedCabinet[],
   room: RoomData,
-  openings: readonly WallOpening[] = [],
 ): OverApplianceWallMount | null {
   if (cabinet.placement !== "wall" || cabinet.islandFace || isStacker(cabinet)) return null;
   if (/^RHF[\s_-]*\d/i.test(cabinet.masterCode || "")) return null;
@@ -122,10 +119,6 @@ export function overApplianceWallMount(
   if (below.some(isHoodAppliance)) return null;
   const range = below.find((item) => isRangeOrOven(item.masterCode, item.description));
   if (!range) return null;
-  // Tom's rule (Nov 8): a cabinet over the range that joins an upper tops out on
-  // that upper's line; the helper already enforces this cooking clearance.
-  const aligned = overSinkOrRangeNeighborAlignedMountBottom(cabinet, placed, openings, room);
-  if (aligned != null) return finish("range", aligned, null);
   const microwave = below.find(isOverRangeMicrowave);
   if (microwave) return finish("microwave", Math.max(OVER_APPLIANCE_UPPER_MOUNT_BOTTOM_IN, topOf(microwave)), null);
   return finish("range", OVER_APPLIANCE_UPPER_MOUNT_BOTTOM_IN, null);
@@ -136,11 +129,7 @@ export function overApplianceWallMount(
  * (`mountBottomAdjusted`) is left alone. A cabinet over a fridge joins that fridge's assembly as its bridge
  * so the panel clamp covers it.
  */
-export function normalizeOverApplianceWallMounts(
-  placed: PlacedCabinet[],
-  room: RoomData,
-  openings: readonly WallOpening[] = [],
-): PlacedCabinet[] {
+export function normalizeOverApplianceWallMounts(placed: PlacedCabinet[], room: RoomData): PlacedCabinet[] {
   let changed = false;
   const next = placed.map((cabinet) => {
     if (cabinet.mountBottomAdjusted) return cabinet;
@@ -148,7 +137,7 @@ export function normalizeOverApplianceWallMounts(
     // bottom on the appliance clearance). Re-running the generic over-appliance
     // datum here is what re-hung it below the two-inch clearance.
     if (cabinet.refrigeratorAssemblyRole === "bridge") return cabinet;
-    const mount = overApplianceWallMount(cabinet, placed, room, openings);
+    const mount = overApplianceWallMount(cabinet, placed, room);
     if (!mount) return cabinet;
     const attach = mount.refrigeratorUid != null && cabinet.refrigeratorAssemblyId == null;
     if (Math.abs((Number(cabinet.mountBottom) || 0) - mount.mountBottom) <= 0.01 && !attach) return cabinet;

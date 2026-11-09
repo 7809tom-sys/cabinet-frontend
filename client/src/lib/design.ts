@@ -5291,33 +5291,80 @@ export function normalizeOverSinkWallMounts(
 const isHoodLike = (item: Pick<PlacedCabinet, "masterCode" | "description">) =>
   /^(?:HOOD(?:-|\b)|RHF[\s_-]*\d)/i.test(item.masterCode || "") || /\b(?:range\s+)?hood\b/i.test(item.description || "");
 
+/** A real adjoining edge: the spans touch, or leave at most this gap, and never overlap. */
+const ADJOINING_EDGE_GAP_IN = 1.5;
+
+const sameFace = (a: Pick<PlacedCabinet, "peninsulaSide">, b: Pick<PlacedCabinet, "peninsulaSide">) =>
+  (a.peninsulaSide ?? null) === (b.peninsulaSide ?? null);
+
 /**
- * Tom's rule (Nov 8): a wall cabinet over the sink or over the stove/range,
- * of any height, hangs so its top meets the upper it joins on the same wall
- * (a W2430 between two 42" uppers tops out at 96", not 84"). It wins over the
- * 70" short over-sink rule and the 72" over-range datum. Every other upper
- * keeps its normal 54" bottom.
- *
- * "Over" means centered on the sink base or range within
- * OVER_SINK_CENTER_TOLERANCE_IN. Returns null, leaving the existing rules in
- * charge, when there is no adjoining upper or when the aligned box would pass
- * the ceiling, enter a window's clearance, sit over a hood, or drop below the
- * cooking clearance (72", or the top of an over-the-range microwave).
+ * The top line of the wall cabinets that share an edge with the run-axis span
+ * start..end on `side` (and on the same peninsula face): the line a cabinet
+ * dropped into that span joins. An overlapping cabinet is not beside it. Hoods,
+ * fillers, panels, stackers, bridges and refrigerator uppers are not part of
+ * the line. Null when nothing adjoins the span.
  */
-export function overSinkOrRangeNeighborAlignedMountBottom(
-  cabinet: PlacedCabinet,
+export function adjoiningUpperTopIn(
+  side: string,
+  start: number,
+  end: number,
   placed: readonly PlacedCabinet[],
-  openings: readonly WallOpening[],
   room: RoomData,
+  excludeUids: readonly string[] = [],
+  face: Pick<PlacedCabinet, "peninsulaSide"> = {},
 ): number | null {
+  return adjoiningUpperIn(side, start, end, placed, room, excludeUids, face)?.topIn ?? null;
+}
+
+/** The adjoining upper that sets the top line (the highest top), with its height. */
+export function adjoiningUpperIn(
+  side: string,
+  start: number,
+  end: number,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  excludeUids: readonly string[] = [],
+  face: Pick<PlacedCabinet, "peninsulaSide"> = {},
+): { topIn: number; heightIn: number } | null {
+  let best: { topIn: number; heightIn: number } | null = null;
+  for (const peer of placed) {
+    if (excludeUids.includes(peer.uid) || peer.placement !== "wall" || peer.islandFace) continue;
+    if (peer.overRangeMicrowaveBridge) continue;
+    if (isStacker(peer) || isFillerItem(peer) || isPanelItem(peer) || isRefrigeratorWallCabinet(peer) || isHoodLike(peer)) continue;
+    if (cabinetWall(peer, room) !== side || !sameFace(peer, face)) continue;
+    const peerStart = wallRunOffset(peer, side, room);
+    const peerEnd = peerStart + wallRunSpan(peer, side, room);
+    const gap = peerEnd <= start + 0.01 ? start - peerEnd : peerStart >= end - 0.01 ? peerStart - end : null;
+    if (gap == null || gap > ADJOINING_EDGE_GAP_IN) continue;
+    const box = elevationBox(peer, room);
+    const topIn = box.bottom + box.height;
+    if (!best || topIn > best.topIn + 0.01 || (Math.abs(topIn - best.topIn) <= 0.01 && box.height > best.heightIn)) {
+      best = { topIn, heightIn: box.height };
+    }
+  }
+  return best;
+}
+
+type OverFixtureContext = {
+  side: WallSide;
+  start: number;
+  end: number;
+  overSink: boolean;
+  overRange: boolean;
+  /** Items on the same wall face whose span overlaps the cabinet's. */
+  below: PlacedCabinet[];
+};
+
+/** Whether a wall upper is centered over a sink base or a range on its own wall face. */
+function overFixtureContext(cabinet: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): OverFixtureContext | null {
   if (cabinet.placement !== "wall" || cabinet.islandFace || isStacker(cabinet) || isHoodLike(cabinet)) return null;
-  const height = placedHeight(cabinet);
-  if (!(height > 0)) return null;
+  if (!(placedHeight(cabinet) > 0)) return null;
   const side = cabinetWall(cabinet, room);
   const start = wallRunOffset(cabinet, side, room);
   const end = start + wallRunSpan(cabinet, side, room);
   const center = (start + end) / 2;
-  const onWall = (item: PlacedCabinet) => item.uid !== cabinet.uid && !item.islandFace && cabinetWall(item, room) === side;
+  const onFace = (item: PlacedCabinet) => item.uid !== cabinet.uid && !item.islandFace
+    && cabinetWall(item, room) === side && sameFace(item, cabinet);
   const span = (item: PlacedCabinet) => {
     const itemStart = wallRunOffset(item, side, room);
     return { start: itemStart, end: itemStart + wallRunSpan(item, side, room) };
@@ -5326,37 +5373,71 @@ export function overSinkOrRangeNeighborAlignedMountBottom(
     const itemSpan = span(item);
     return Math.abs(center - (itemSpan.start + itemSpan.end) / 2) <= OVER_SINK_CENTER_TOLERANCE_IN;
   };
-  const overlaps = (item: PlacedCabinet) => {
+  const overSink = placed.some((item) => onFace(item) && item.placement === "base" && isSinkBaseCabinet(item) && centeredOn(item));
+  const overRange = !overSink && placed.some((item) => onFace(item) && item.placement !== "wall" && isRangeOrCooktop(item) && centeredOn(item));
+  if (!overSink && !overRange) return null;
+  const below = placed.filter((item) => {
+    if (!onFace(item)) return false;
     const itemSpan = span(item);
     return itemSpan.start < end - 0.02 && itemSpan.end > start + 0.02;
-  };
-  const overSink = placed.some((item) => onWall(item) && item.placement === "base" && isSinkBaseCabinet(item) && centeredOn(item));
-  const overRange = !overSink && placed.some((item) => onWall(item) && item.placement !== "wall" && isRangeOrCooktop(item) && centeredOn(item));
-  if (!overSink && !overRange) return null;
+  });
+  return { side, start, end, overSink, overRange, below };
+}
 
-  const neighborTops: number[] = [];
-  for (const peer of placed) {
-    if (!onWall(peer) || peer.placement !== "wall") continue;
-    if (isStacker(peer) || isFillerItem(peer) || isPanelItem(peer) || isRefrigeratorWallCabinet(peer) || isHoodLike(peer)) continue;
-    const peerSpan = span(peer);
-    const gap = peerSpan.end <= start + 0.01 ? start - peerSpan.end : peerSpan.start >= end - 0.01 ? peerSpan.start - end : 0;
-    if (gap > 1.5) continue;
-    const box = elevationBox(peer, room);
-    neighborTops.push(box.bottom + box.height);
+/**
+ * The lowest an upper centered over a range may hang: the 72" cooking
+ * clearance, or the top of an over-the-range microwave or hood (appliance or
+ * wall-placed hood front such as RHF30) under it, whichever is higher. Null
+ * for any cabinet that is not over a range, so other uppers hang as before.
+ */
+export function overRangeCookingFloorIn(cabinet: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): number | null {
+  const context = overFixtureContext(cabinet, placed, room);
+  if (!context?.overRange) return null;
+  const tops = context.below
+    .filter((item) => (item.placement === "appliance" && /^MW-/i.test(item.masterCode || "")) || isHoodLike(item))
+    .map((item) => { const box = elevationBox(item, room); return box.bottom + box.height; });
+  return Math.max(OVER_RANGE_UPPER_MIN_BOTTOM_IN, ...tops);
+}
+
+/**
+ * Tom's rules (Nov 8) for a wall cabinet centered (within
+ * OVER_SINK_CENTER_TOLERANCE_IN) over the sink base or over the stove/range on
+ * its own wall face:
+ *
+ *  - over the sink, any height: its top meets the upper it joins (a W2430
+ *    between two 42" uppers tops out at 96", not 84"), ahead of the 70" short
+ *    over-sink rule. Null when nothing adjoins it, or when the aligned box
+ *    would pass the ceiling or enter a window's clearance.
+ *  - over the range: it sits on the cooking floor (72", or on top of an
+ *    over-the-range microwave), and its height - one of the 12/15/18/21/24"
+ *    bridges chosen in the range-companion pop-up - sets where its top lands.
+ *    It is never re-hung to a neighbour, so this rule and that pop-up agree.
+ *    Null over a hood (appliance or wall-placed hood front); callers then hold
+ *    the cabinet at `overRangeCookingFloorIn` rather than the ordinary datum.
+ *
+ * Every other upper keeps its normal 54" bottom.
+ */
+export function overSinkOrRangeNeighborAlignedMountBottom(
+  cabinet: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  openings: readonly WallOpening[],
+  room: RoomData,
+): number | null {
+  const context = overFixtureContext(cabinet, placed, room);
+  if (!context) return null;
+  const { side, start, end } = context;
+  const height = placedHeight(cabinet);
+
+  if (context.overRange) {
+    if (context.below.some(isHoodLike)) return null;
+    return overRangeCookingFloorIn(cabinet, placed, room);
   }
-  if (neighborTops.length === 0) return null;
-  const top = Math.max(...neighborTops);
+
+  const top = adjoiningUpperTopIn(side, start, end, placed, room, [cabinet.uid], cabinet);
+  if (top == null) return null;
   const bottom = top - height;
   if (bottom < STD.COUNTERTOP_HEIGHT + 12 - 0.01) return null;
   if (top > wallCeilingMin(room, side) + 0.01) return null;
-  if (overRange) {
-    const below = placed.filter((item) => onWall(item) && item.placement === "appliance" && overlaps(item));
-    if (below.some(isHoodLike)) return null;
-    const microwaveTops = below
-      .filter((item) => /^MW-/i.test(item.masterCode || ""))
-      .map((item) => { const box = elevationBox(item, room); return box.bottom + box.height; });
-    if (bottom < Math.max(OVER_RANGE_UPPER_MIN_BOTTOM_IN, ...microwaveTops) - 0.01) return null;
-  }
   const aligned = { ...cabinet, mountBottom: bottom };
   const blocked = openings.some((opening) => opening.kind === "window"
     && opening.side === side
@@ -5439,7 +5520,11 @@ export function normalizeStandardWallMounts(
     // A verified sink/window clearance is an installation necessity, not an
     // inherited run height. Preserve and repair that exact computed datum.
     const requiredWindowBottom = overSinkWallMountBottom(cabinet, placed, openings, room);
-    const targetBottom = requiredWindowBottom ?? ordinaryWallMountBottom(cabinet);
+    const ordinaryBottom = requiredWindowBottom ?? ordinaryWallMountBottom(cabinet);
+    // An upper over the range never drops below the cooking clearance, even
+    // when the over-range rule is set aside (for example over a hood).
+    const cookingFloor = overRangeCookingFloorIn(cabinet, placed, room);
+    const targetBottom = cookingFloor != null ? Math.max(ordinaryBottom, cookingFloor) : ordinaryBottom;
     if (typeof cabinet.mountBottom === "number" && Math.abs(cabinet.mountBottom - targetBottom) <= 0.01) return cabinet;
     changed = true;
     return { ...cabinet, mountBottom: targetBottom };
@@ -5450,7 +5535,7 @@ export function normalizeStandardWallMounts(
   // plan that needs no change comes back identical and the live effect settles.
   const aligned = normalized.map((cabinet, index) => {
     const original = placed[index]!;
-    if (!standardWallMountCandidate(original)) return cabinet;
+    if (!standardWallMountCandidate(cabinet)) return cabinet;
     const bottom = overSinkOrRangeNeighborAlignedMountBottom(cabinet, normalized, openings, room);
     if (bottom == null) return cabinet;
     if (typeof original.mountBottom === "number" && Math.abs(original.mountBottom - bottom) <= 0.01) return original;
@@ -8247,6 +8332,24 @@ export const BRIDGE_STOCK_WIDTHS = [30, 33, 36] as const;
 export const BRIDGE_STOCK_HEIGHTS = [12, 15, 18, 21, 24] as const;
 
 /** Map wall cabinet height to the appropriate bridge height. */
+/**
+ * Tom's mapping (Nov 8) for the cabinet over an over-the-range microwave, keyed
+ * by the height of the upper it joins: a 30" neighbour takes a 12" bridge (top
+ * 84"), 36" takes 18" (top 90") and 42" takes 24" (top 96"). 15" and 21" remain
+ * selectable but are never the default for these three. Any other neighbour
+ * height returns null so the caller falls back to its own top-line rule.
+ */
+export const MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN: Readonly<Record<number, number>> = { 30: 12, 36: 18, 42: 24 };
+
+export function microwaveBridgeHeightForNeighbor(neighborHeightIn: number | null | undefined): number | null {
+  const height = Number(neighborHeightIn);
+  if (!Number.isFinite(height) || height <= 0) return null;
+  for (const [neighbor, bridge] of Object.entries(MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN)) {
+    if (Math.abs(height - Number(neighbor)) <= 0.5) return bridge;
+  }
+  return null;
+}
+
 export function bridgeHeightForWallHeight(wallCabH: number): number {
   if (wallCabH >= 42) return 24;
   if (wallCabH >= 39) return 21;

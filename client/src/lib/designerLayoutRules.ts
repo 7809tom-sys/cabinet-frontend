@@ -1062,7 +1062,7 @@ export function applyDesignerLayoutRules(input: {
       input.room,
     ),
     input.room,
-  ), input.room, input.openings);
+  ), input.room);
   placed = applyMissingBlindCornerFillers({
     placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
   });

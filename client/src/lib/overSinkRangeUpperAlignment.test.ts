@@ -44,19 +44,21 @@ describe("upper over the sink or range joins its neighbour's top line (Tom, Nov 
     expect(normalized[2].mountBottom).toBeUndefined();
   });
 
-  it("range, short and tall: aligns when it clears the 72-inch cooking clearance", () => {
-    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(18), [range, left, right], [], room)).toBe(78);
+  it("range: an upper over the range sits on the 72-inch datum; its height sets the top", () => {
+    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(18), [range, left, right], [], room)).toBe(72);
     expect(overSinkOrRangeNeighborAlignedMountBottom(upper(24), [range, left, right], [], room)).toBe(72);
-    expect(overApplianceWallMount(upper(18), [range, left, right], room)).toMatchObject({ kind: "range", mountBottom: 78 });
+    expect(overApplianceWallMount(upper(18), [range, left, right], room)).toMatchObject({ kind: "range", mountBottom: 72 });
+    const microwave = item({ uid: "mw", masterCode: "MW-30", description: "Over the Range Microwave", placement: "appliance", x: 48, width: 30, depth: 16, height: 16, mountBottom: 56 });
+    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(24), [range, microwave, left, right], [], room)).toBe(72);
   });
 
-  it("range: keeps the existing cooking-clearance and hood rules when alignment would break them", () => {
-    // A 30-inch upper would start at 66, inside the 72-inch cooking clearance.
-    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(30), [range, left, right], [], room)).toBeNull();
+  it("range: holds the cooking floor instead of dropping below it, and sets the rule aside over a hood", () => {
+    // 72 + 30 passes the 96-inch ceiling; the cabinet still never drops below 72.
+    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(30), [range, left, right], [], room)).toBe(72);
     const hood = item({ uid: "hood", masterCode: "HOOD-30", description: "30 inch Range Hood", placement: "appliance", x: 48, width: 30, depth: 20, height: 10, mountBottom: 66 });
     expect(overSinkOrRangeNeighborAlignedMountBottom(upper(18), [range, hood, left, right], [], room)).toBeNull();
-    const microwave = item({ uid: "mw", masterCode: "MW-30", description: "Over the Range Microwave", placement: "appliance", x: 48, width: 30, depth: 16, height: 17, mountBottom: 66 });
-    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(18), [range, microwave, left, right], [], room)).toBeNull();
+    const tallMicrowave = item({ uid: "mw", masterCode: "MW-30", description: "Over the Range Microwave", placement: "appliance", x: 48, width: 30, depth: 16, height: 17, mountBottom: 66 });
+    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(12), [range, tallMicrowave, left, right], [], room)).toBe(83);
   });
 
   it("an off-center upper does not count as over the sink or range", () => {
@@ -101,8 +103,8 @@ describe("upper over the sink or range joins its neighbour's top line (Tom, Nov 
       placed, room, openings: [], fillers: [], makeUid: () => "uid", styleId: null, allowAutoFillers: false,
     }).placed;
     expect(run([sinkBase, left, upper(30), right]).find((cabinet) => cabinet.uid === "w2430")?.mountBottom).toBe(66);
-    expect(run([range, left, upper(18), right]).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(78);
+    expect(run([range, left, upper(18), right]).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(72);
     const rangeOnly = normalizeOverApplianceWallMounts([range, left, upper(18), right], room);
-    expect(rangeOnly[2].mountBottom).toBe(78);
+    expect(rangeOnly[2].mountBottom).toBe(72);
   });
 });
