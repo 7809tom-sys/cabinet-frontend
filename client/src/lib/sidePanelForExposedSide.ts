@@ -68,6 +68,7 @@ import {
   type AefEndPanelCatalogItem,
   type AefEndPanelSelection,
 } from "./aefEndPanelStock";
+import { runFitProblems, type RunFitProblem } from "./exposedSideRunAccounting";
 
 /** A side panel is 3/4" stock, the same finished-end thickness used everywhere else. */
 export const SIDE_PANEL_THICKNESS_IN = STD.PANEL_THICKNESS;
@@ -116,6 +117,12 @@ export type ExposedSidePanelResult = {
   needs: ExposedSidePanelNeed[];
   /** Needs the run had no room for, named rather than silently dropped. */
   skipped: Array<{ hostCode: string; side: "start" | "end"; reason: ExposedSideReason; why: string }>;
+  /**
+   * Runs that no longer fit once the 3/4" boards count as real width. The
+   * Designer shows each one as a visible refusal instead of letting a run
+   * silently overrun its wall.
+   */
+  fitProblems: RunFitProblem[];
 };
 
 function isFramelessBox(item: PlacedCabinet): boolean {
@@ -482,6 +489,24 @@ export function applyExposedSidePanels(input: {
     let host = working.find((item) => item.uid === need.hostUid);
     if (!host) continue;
     let startIn = need.startIn;
+    // Layer alignment: finish the wall board on the SAME 3/4" of run the base
+    // board at this end already occupies (and vice versa). Without this the two
+    // layers drift by one panel thickness each time and the elevation no longer
+    // sits over its lowers.
+    const hostPlacement = host.placement;
+    const sameEndOtherLayer = working.find((item) => {
+      if (!item.autoPlacedForUid || item.autoPlacedSide !== need.side) return false;
+      if (!isPanelItem(item)) return false;
+      if (cabinetWall(item, input.room) !== need.wallId) return false;
+      const owner = input.placed.find((candidate) => candidate.uid === item.autoPlacedForUid);
+      if (!owner) return false;
+      return owner.placement !== hostPlacement;
+    }) ?? null;
+    if (sameEndOtherLayer) {
+      // Both panels are the same 3/4" stock, so the matching board starts at the
+      // same along-wall offset as the one it mirrors.
+      startIn = Number(sameEndOtherLayer.wallOffset ?? startIn);
+    }
     const wallLengthIn = wallLength(need.wallId, input.room);
     // The 3/4" column is free unless something standing in it shares the band
     // the panel will occupy. A shorter cabinet under that band is not in the way.
@@ -561,11 +586,15 @@ export function applyExposedSidePanels(input: {
   }
   // A settled plan is returned by reference, the same contract
   // `syncExposedSidePanelsForRun` and `syncDishwasherPanels` use.
+  const placed = changed ? working : (input.placed as PlacedCabinet[]);
   return {
-    placed: changed ? working : (input.placed as PlacedCabinet[]),
+    placed,
     additions,
     needs: [...input.needs],
     skipped,
+    // A panel is real run width; re-measure the finished run so the caller can
+    // refuse visibly instead of letting it overrun the wall.
+    fitProblems: runFitProblems({ placed, room: input.room }),
   };
 }
 
@@ -578,7 +607,10 @@ export function syncExposedSidePanelsForRun(input: {
   makeUid: () => string;
 }): ExposedSidePanelResult {
   const needs = exposedSidePanelNeeds(input);
-  return applyExposedSidePanels({ ...input, needs });
+  const result = applyExposedSidePanels({ ...input, needs });
+  // A 3/4" board is real run width, so the finished run is re-measured with it in
+  // place. A run that no longer fits is reported, never left to overrun.
+  return { ...result, fitProblems: runFitProblems({ placed: result.placed, room: input.room }) };
 }
 
 /**
@@ -888,13 +920,23 @@ export function symmetricEndPanel(input: {
     placedHeight(neighbour),
     catalog,
   );
+  // Line the matching board up with the panel that triggered it, so the two
+  // layers finish on the same 3/4" of run instead of drifting apart.
+  const panelSpan = spanOf(panel, room);
+  const atSameOffset = panelSpan != null
+    && Math.abs(panelSpan.start - (neighbourSide === "start"
+      ? neighbourSpan.start - SIDE_PANEL_THICKNESS_IN
+      : neighbourSpan.end)) > SEAM_IN;
+  const startIn = atSameOffset
+    ? (neighbourSide === "start" ? panelSpan.start : panelSpan.end)
+    : (neighbourSide === "start" ? neighbourSpan.start - SIDE_PANEL_THICKNESS_IN : neighbourSpan.end);
   return {
     hostUid: neighbour.uid,
     hostCode: neighbour.masterCode ?? "",
     side: neighbourSide,
     reason: "symmetric-end",
     wallId: neighbourSpan.side,
-    startIn: neighbourSide === "start" ? neighbourSpan.start - SIDE_PANEL_THICKNESS_IN : neighbourSpan.end,
+    startIn,
     bottomIn: band.bottomIn,
     heightIn: band.heightIn,
     depthIn: band.depthIn,

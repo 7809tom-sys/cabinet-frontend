@@ -8309,6 +8309,13 @@ export function isRangeOrOven(masterCode?: string | null, description?: string |
   // appliance collision, countertop, or mounting behavior just because its
   // source description includes the words “Range Hood Front”.
   if (/^RHF[\s_-]*\d/.test(code) || /range\s*hood\s*front/.test(desc)) return false;
+  // A RANGE BASE holds a RANGE TOP; neither is a freestanding range with an oven.
+  // "Two Drawer Base … for a range top" must stay an ordinary base cabinet, or it
+  // draws as a range chassis (the reported oven-door front). The RB codes are the
+  // distributor's range-base family (spec book pp. 29-30).
+  const normalized = code.replace(/[^A-Z0-9]/g, "");
+  if (/^RB[23]DB\d+$/.test(normalized) || /^RB-?\d*DB/i.test(code)) return false;
+  if (/\brange\s*top\b|\brange\s*base\b|\bcooktop\s*base\b/.test(desc)) return false;
   if (/^(RANGE|OVEN|RNG|OV|STOVE|STV|COOKTOP|CT)[\s_-]*\d/.test(code) || /^(RANGE|OVEN|RNG|OV|STOVE|STV|COOKTOP|CT)$/.test(code)) return true;
   return /\brange\b|\boven\b|\bstove\b|\bcooktop\b/.test(desc);
 }
@@ -8805,8 +8812,9 @@ export function fridgeCornerUpperDepth(): number {
 // 24"-deep tall cabinet with the oven inside a 24" opening: the oven door and
 // handle stay inside the box and can never reach a neighbor. It is a cabinet,
 // not a free-standing range, so the corner handle-clearance filler never
-// applies on either side of it (user rule, 2026-10-19). A "Range Base"
-// (RB2DB30 ...) is likewise just a base cabinet under a cooktop.
+// applies on either side of it (user rule, 2026-10-19). A RANGE BASE
+// (RB2DB30 ...) is likewise just a base cabinet that holds a range top: it is
+// not a range appliance, so the range clearance and hood rules never apply.
 export function isBuiltInOvenCabinet(p: {
   masterCode?: string | null;
   description?: string | null;

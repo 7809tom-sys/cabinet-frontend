@@ -59,12 +59,12 @@ function placedBase(masterCode: string, width: number, offset: number, uid = mas
   };
 }
 
-function cooktopOn(base: PlacedCabinet): PlacedCabinet {
+function rangeTopOn(base: PlacedCabinet): PlacedCabinet {
   return {
     uid: `${base.uid}:cooktop`,
     cabinetId: 0,
     masterCode: "CATALOG-APPLIANCE-gas",
-    description: "Gas cooktop",
+    description: "Gas range top",
     category: "Appliance",
     placement: "appliance",
     applianceRole: "countertop-opening",
@@ -104,15 +104,15 @@ describe("range base guard (issue #354 items 2 and 5)", () => {
     expect(replacement.width).toBe(24);
   });
 
-  it("recognises the cooktop seated on the base's own uid", () => {
+  it("recognises the range top seated on the base's own uid", () => {
     const base = placedBase("RB3DB24", 24, 0);
-    const cooktop = cooktopOn(base);
-    expect(rangeBaseCooktopFor(base, [base, cooktop], room)?.uid).toBe("RB3DB24:cooktop");
-    expect(rangeBaseHasCooktop(base, [base, cooktop], room)).toBe(true);
+    const rangeTop = rangeTopOn(base);
+    expect(rangeBaseCooktopFor(base, [base, rangeTop], room)?.uid).toBe("RB3DB24:cooktop");
+    expect(rangeBaseHasCooktop(base, [base, rangeTop], room)).toBe(true);
     expect(rangeBaseHasCooktop(base, [base], room)).toBe(false);
   });
 
-  it("never accepts a freestanding range or a plain cabinet as the cooktop", () => {
+  it("never accepts a freestanding range or a plain cabinet as the range top", () => {
     const base = placedBase("RB3DB24", 24, 0);
     const range: PlacedCabinet = {
       ...placedBase("RANGE-30", 30, 0, "range"),
@@ -123,13 +123,13 @@ describe("range base guard (issue #354 items 2 and 5)", () => {
     expect(rangeBaseHasCooktop(base, [base, range], room)).toBe(false);
   });
 
-  it("asks for a cooktop when a range base is picked", () => {
+  it("asks for the range top when a range base is picked", () => {
     expect(rangeBaseCooktopPromptWidth("RB3DB24")).toBe(24);
     expect(rangeBaseCooktopPromptWidth("RB2DB36")).toBe(36);
     expect(rangeBaseCooktopPromptWidth("B24")).toBeNull();
   });
 
-  it("repairs a saved range base with no cooktop above it", () => {
+  it("repairs a saved range base with no range top on it", () => {
     const dishwasher: PlacedCabinet = {
       ...placedBase("DW-24", 24, 60, "dw"),
       placement: "appliance",
@@ -147,9 +147,9 @@ describe("range base guard (issue #354 items 2 and 5)", () => {
     expect(repair.placed.find((item) => item.uid === "stray")?.masterCode).toBe("B24");
   });
 
-  it("keeps a range base that really is under a cooktop", () => {
+  it("keeps a range base that really has a range top", () => {
     const base = placedBase("RB3DB24", 24, 36);
-    const repair = repairRangeBasesWithoutCooktop({ placed: [base, cooktopOn(base)], room, catalog });
+    const repair = repairRangeBasesWithoutCooktop({ placed: [base, rangeTopOn(base)], room, catalog });
     expect(repair.replacements).toEqual([]);
     expect(repair.placed).toBe(repair.placed);
     expect(repair.placed[0]?.masterCode).toBe("RB3DB24");

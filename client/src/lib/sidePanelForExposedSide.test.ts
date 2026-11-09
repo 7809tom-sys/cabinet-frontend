@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
-import { wallPlacementAt, type PlacedCabinet, type RoomData } from "@/lib/design";
+import { isRangeOrOven, wallPlacementAt, type PlacedCabinet, type RoomData } from "@/lib/design";
+import { rangesInPlan } from "@/lib/overRangeFill";
 import {
   SIDE_PANEL_THICKNESS_IN,
   applyExposedSidePanels,
@@ -529,5 +530,25 @@ describe("wall/base symmetry default at a run end (Tom, Nov 9 2026)", () => {
     const needs = exposedSidePanelNeeds({ placed, room, catalog: panelCatalog });
     // The automatic needs pass must NOT invent a wall panel just for symmetry.
     expect(needs.some((need) => need.reason === "symmetric-end")).toBe(false);
+  });
+});
+
+describe("range bases are base cabinets, not range appliances", () => {
+  it("never classifies a range base or its range-top wording as a range appliance", () => {
+    // The oven-door render came from isRangeOrOven matching the word "range" in
+    // "…for a range top". A range base is a base cabinet that holds a range top.
+    expect(isRangeOrOven("RB3DB30", '30" W × 34.75" H × 24" D Two Drawer Base with One False Front for a range top')).toBe(false);
+    expect(isRangeOrOven("RB2DB24", '24" Two Drawer Base for a range top')).toBe(false);
+    expect(isRangeOrOven("B24", '24" Base with a range top above it')).toBe(false);
+    // A real freestanding range is still a range appliance.
+    expect(isRangeOrOven("RANGE-30", "30 inch Freestanding Range")).toBe(true);
+    expect(isRangeOrOven("RANGE-36", null)).toBe(true);
+  });
+
+  it("gives a range base no range clearance, hood or bridge rule", () => {
+    const base = { ...cab({ uid: "rb", masterCode: "RB3DB30", placement: "base", offset: 0, width: 30 }), description: '30" Two Drawer Base for a range top' };
+    expect(isRangeOrOven(base.masterCode, base.description)).toBe(false);
+    // No hood/bridge is hung over it, because it is not a cooking appliance.
+    expect(rangesInPlan([base])).toEqual([]);
   });
 });

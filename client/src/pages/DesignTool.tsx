@@ -270,7 +270,7 @@ import { designerCabinetName, isRangeBaseCabinetCode } from "@/lib/designerCabin
 import { isRangeTopRow, placeRangeTopOnBase, rangeTopRowDisabledReason, rangeTopRowsForBase } from "@/lib/rangeBaseSelection";
 import { rangeBaseCooktopPromptWidth, repairRangeBasesWithoutCooktop } from "@/lib/rangeBaseGuard";
 import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "@/lib/framelessWallTopAlignment";
-import { exposedSidePanelNeeds, syncExposedSidePanelsForRun, cookingSidesFinishedByExposedPanels, type ExposedSidePanelNeed } from "@/lib/sidePanelForExposedSide";
+import { applyExposedSidePanels, exposedSidePanelNeeds, syncExposedSidePanelsForRun, cookingSidesFinishedByExposedPanels, setExposedSidePanel, symmetricEndPanel, exposedSidePanelFor, type ExposedSidePanelNeed } from "@/lib/sidePanelForExposedSide";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
 import { overRangeBridgeLabel } from "@/lib/overRangeCompanion";
@@ -5531,6 +5531,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // for gaps. Frameless lines only, priced from the door style's own catalog SKU,
   // and the customer is told which side panel was added and why.
   const [sidePanelWarnings, setSidePanelWarnings] = useState<ExposedPanelWarning[]>([]);
+  /** Runs that no longer fit once exposed-side panels count as real width. */
+  const [exposedSideFitRefusals, setExposedSideFitRefusals] = useState<Array<{ wallId: string; layer: string; reason: string; overrunIn: number }>>([]);
   const sidePanelCatalog = useMemo(() => autoPanelCatalog.map((item) => ({
     id: item.id,
     masterCode: item.masterCode,
@@ -5571,7 +5573,65 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       })),
     ];
     setSidePanelWarnings((prev) => sameExposedPanelWarnings(prev, next) ? prev : next);
+    // A 3/4" board is real run width. If the finished run no longer fits its
+    // wall, say so plainly instead of letting it overrun.
+    setExposedSideFitRefusals((prev) => {
+      const key = plan.fitProblems.map((problem) => problem.reason).join("|");
+      const previousKey = prev.map((problem) => problem.reason).join("|");
+      return key === previousKey ? prev : plan.fitProblems;
+    });
   }, [doorStyles, placed, pricingStyleIdFor, setPlaced, sidePanelCatalog, styleId]);
+
+  /**
+   * The per-cabinet Left panel / Right panel toggle. A panel is a real catalog
+   * end panel on that exposed side; the run shifts by its 3/4" when needed.
+   *
+   * After a panel is added, the wall/base symmetry DEFAULT is offered once: the
+   * matching panel on the other layer at the same exposed run end. It is applied
+   * as its own row and never re-forced, so the customer can remove or change it.
+   */
+  const applyExposedSidePanelToggle = useCallback((uid: string, side: "start" | "end", enabled: boolean) => {
+    const current = placedRef.current;
+    const result = setExposedSidePanel({
+      placed: current,
+      hostUid: uid,
+      side,
+      enabled,
+      room: roomRef.current,
+      catalog: sidePanelCatalog,
+      styleId: styleIdRef.current ?? null,
+      makeUid: () => `side-panel-manual:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+    });
+    if (!result.ok) {
+      setPlacementWarning(result.reason);
+      toast.error(result.reason);
+      return;
+    }
+    let nextPlaced = result.placed;
+    if (enabled) {
+      // Offer the matching panel at the same exposed run end. Adding it here is
+      // the one-shot default; nothing re-checks or re-adds it later.
+      const match = symmetricEndPanel({
+        placed: nextPlaced,
+        room: roomRef.current,
+        catalog: sidePanelCatalog,
+        panelUid: result.panel.uid,
+      });
+      if (match) {
+        const symmetric = applyExposedSidePanels({
+          placed: nextPlaced,
+          room: roomRef.current,
+          needs: [match],
+          styleId: styleIdRef.current ?? null,
+          makeUid: () => `side-panel-symmetry:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+        });
+        nextPlaced = symmetric.placed;
+        for (const addition of symmetric.additions) toast.info(addition.fieldModificationNote ?? "A matching side panel was added.");
+      }
+    }
+    placedRef.current = nextPlaced;
+    setPlaced(nextPlaced);
+  }, [sidePanelCatalog, setPlaced]);
 
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
@@ -13590,7 +13650,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      endGapIn: Math.max(0, length - end),
 	    };
 	  }, [attrUid, placed, room]);
-	  const attrAttachedFillerOptions = useMemo(() => {
+	  /**
+   * The per-cabinet Left panel / Right panel state for the attributes dialog.
+   * `allowed` mirrors the exposed-side rule: a panel goes only where the side is
+   * really exposed. `checked` reports whether this cabinet already carries the
+   * toggle's board, including the automatic one on a frameless line, so the
+   * toggle reflects and controls that same 3/4" panel rather than adding a
+   * second board.
+   */
+  const attrExposedSidePanelOptions = useMemo(() => {
+    const owner = attrUid ? placed.find((item) => item.uid === attrUid) : null;
+    if (!owner || owner.islandFace) return null;
+    if (!(owner.placement === "wall" || owner.placement === "base" || owner.placement === "tall")) return null;
+    const needs = exposedSidePanelNeeds({ placed, room, catalog: sidePanelCatalog });
+    const forOwner = needs.filter((need) => need.hostUid === owner.uid);
+    const checked = (side: "start" | "end") => {
+      if (exposedSidePanelFor(owner.uid, side, placed)) return true;
+      return placed.some((item) => item.autoPlacedForUid === owner.uid && item.autoPlacedSide === side);
+    };
+    // A side is offered when it is exposed now, or when it already has a board.
+    const allowed = (side: "start" | "end") => forOwner.some((need) => need.side === side) || checked(side);
+    if (!allowed("start") && !allowed("end") && !checked("start") && !checked("end")) return null;
+    return {
+      leftAllowed: allowed("start"),
+      rightAllowed: allowed("end"),
+      leftChecked: checked("start"),
+      rightChecked: checked("end"),
+      automatic: owner.constructionMethod === "Frameless; distributor geometry is printed in AltaEuro Collection Full Spec Book V8.2",
+    };
+  }, [attrUid, placed, room, sidePanelCatalog]);
+  const attrAttachedFillerOptions = useMemo(() => {
 	    const owner = attrUid ? placed.find((item) => item.uid === attrUid) : null;
 	    if (!owner || owner.islandFace || !supportsAttachedFillerChoice(owner) || isBaseBlindCorner(owner)) return null;
 	    const attached = placed.filter((item) => item.fillerForCabinetUid === owner.uid && item.fillerAttachmentSide);
@@ -16510,7 +16599,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // the dishwasher panel, and the 3/4" panels this build added automatically
   // because a side is exposed (beside a range hood, oven or range; where heights
   // change; or at an open run end). Each notice says which side and why.
-  const designCheckWarnings = [...exposedPanelWarnings, ...dishwasherPanelWarnings, ...sidePanelWarnings];
+  const designCheckWarnings = [
+    ...exposedPanelWarnings,
+    ...dishwasherPanelWarnings,
+    ...sidePanelWarnings,
+    // The exposed-side panels take real run width, so a run that no longer fits
+    // is a visible refusal here, not a silent overrun.
+    ...exposedSideFitRefusals.map((problem, index) => ({
+      id: `exposed-fit:${problem.wallId}:${problem.layer}:${index}`,
+      cabinetUid: "",
+      reason: "open-end-of-run" as const,
+      message: problem.reason,
+    })),
+  ];
   const designCheckNotice = useTransientNotice(
     designCheckWarnings.map((warning) => warning.id).join("|"),
     8000,
@@ -22862,6 +22963,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        cornerClearance={cabinetCornerClearance}
 	        attachedFillerOptions={attrAttachedFillerOptions}
 	        onApplyAttachedFillers={applyAttachedCabinetFillers}
+	        exposedSidePanelOptions={attrExposedSidePanelOptions}
+	        onToggleExposedSidePanel={applyExposedSidePanelToggle}
 	        onResetSize={() => { resetWidth(); resetHeight(); resetDepth(); }}
         onSetSwing={setSwingFor}
         onSetNoDoor={setNoDoorFor}

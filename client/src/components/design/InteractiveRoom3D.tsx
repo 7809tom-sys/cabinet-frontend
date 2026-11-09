@@ -4785,6 +4785,9 @@ export function addCabinet(
   const nonRangeApplianceCode = /^(?:FRIDGE|HOOD|DW|DISHWASHER|WINE|MW|MICROWAVE|OVEN)[\s_-]*/i.test(sku.masterCode);
   const rangeOrStoveDescription = /\b(?:freestanding\s+)?(?:range|stove)\b/i.test(sku.description ?? "")
     && !nonRangeApplianceCode
+    // A range TOP or a range BASE is not a freestanding range: both are cabinet
+    // products, and the range-top wording must never draw a range chassis.
+    && !/\brange\s*top\b|\brange\s*base\b|\bcooktop\b/i.test(sku.description ?? "")
     && !/\b(?:wall|built[-\s]?in|single|double)\s+oven\b/i.test(sku.description ?? "");
   const isFreestandingRange = placement === "appliance" && !isCountertopOpeningAppliance && !isPlacedHood && (rangeOrStoveCode || rangeOrStoveDescription);
   const rangeAppearance = isFreestandingRange ? rangeVisualAppearance(sku) : null;
@@ -11987,7 +11990,10 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
   const footprint = sharedCornerKind !== "standard" ? normalizedThreeDFootprint(cabinet) : null;
   const cornerBody = threeDCornerBodyDimensions(cabinet);
   const applianceCode = `${cabinet.masterCode ?? ""}`.toLowerCase().replace(/[^a-z0-9]/g, "");
-  const inferredAppliancePlacement = /^(?:fridge|range|hood|dw|wine|mw)/i.test(cabinet.masterCode ?? "");
+  // A code prefix that names an appliance family. A RANGE BASE (RB…) is a base
+  // cabinet, never an appliance, so its "range" substring does not opt it in.
+  const inferredAppliancePlacement = /^(?:fridge|range|hood|dw|wine|mw)/i.test(cabinet.masterCode ?? "")
+    && !/^RB-?\d*DB/i.test((cabinet.masterCode ?? "").toUpperCase());
   // Tall UOC / oven-pantry cabinets contain an oven but are not appliances.
   // Keep their configured tall enclosure in the oven-cabinet renderer. Sending
   // them through the appliance path turns the full cabinet into a freestanding
