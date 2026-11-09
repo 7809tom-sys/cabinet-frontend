@@ -386,7 +386,7 @@ import { RoomSizeControl, RoomSizeInline } from "@/components/design/RoomSizeCon
 import { RoomLayoutStarter } from "@/components/design/RoomLayoutStarter";
 import type { WallBuilderDraft } from "@/components/design/WallBuilder";
 import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
-import { DesignerErrorBoundary, useDesignerCrashFlush } from "@/components/design/DesignerErrorBoundary";
+import { DesignerErrorBoundary, designerCrashDraftKey, useDesignerCrashFlush, useLastCommitted } from "@/components/design/DesignerErrorBoundary";
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
 import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 import { nearestFreeWallDropStart, targetedLowerCabinetForThreeDDrop, targetedSinkBaseForThreeDDrop, type ThreeDWallDropTarget } from "./designTool3DDropPlacement";
@@ -1253,6 +1253,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  const historyRestoringRef = useRef(false);
 	  const historyRebaseRequestedRef = useRef(false);
 	  const [historyRevision, setHistoryRevision] = useState(0);
+	  // Bumps once per applied undo or redo, never for an ordinary edit.
+	  const [undoRedoRevision, setUndoRedoRevision] = useState(0);
   // Manual ordering override for the BOM shopping list. Maps group key → position
   // index within its section. Populated when the user clicks move-up/move-down.
   const [bomOrder, setBomOrder] = useState<Record<string, number>>({});
@@ -2911,12 +2913,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    if (!previous) return;
 	    applyHistorySnapshot(previous);
 	    setHistoryRevision((revision) => revision + 1);
+	    setUndoRedoRevision((revision) => revision + 1);
 	  }, [applyHistorySnapshot]);
 	  const handleRedo = useCallback(() => {
 	    const next = undoRedoRef.current.redo();
 	    if (!next) return;
 	    applyHistorySnapshot(next);
 	    setHistoryRevision((revision) => revision + 1);
+	    setUndoRedoRevision((revision) => revision + 1);
 	  }, [applyHistorySnapshot]);
 	  const canUndo = historyRevision >= 0 && undoRedo.canUndo();
 	  const canRedo = historyRevision >= 0 && undoRedo.canRedo();
@@ -14724,7 +14728,47 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
   });
 
-  useDesignerCrashFlush(writeDraft);
+  // A crash during render (or in a layout effect) must not save the state that
+  // crashed, so the crash save reads the snapshot of the last committed render.
+  const committedDraftRef = useLastCommitted(snapshotDraft);
+  const crashDraftKey = designerCrashDraftKey(draftKey);
+  // The crash copy goes under its own key and doubles as the marker for the
+  // Restore previous / Start fresh prompt; draftKey stays the last good draft.
+  const writeCrashDraft = usePersistFn(() => {
+    if (!draftRestoredRef.current) return;
+    try {
+      localStorage.setItem(crashDraftKey, JSON.stringify({ v: 1, at: Date.now(), snapshot: committedDraftRef.current }));
+    } catch {
+      /* storage full / unavailable — ignore */
+    }
+  });
+  const discardCrashedDraft = usePersistFn(() => {
+    try {
+      localStorage.removeItem(crashDraftKey);
+      localStorage.removeItem(draftKey);
+      if (localStorage.getItem(activeDraftKey) === draftKey) localStorage.removeItem(activeDraftKey);
+    } catch {
+      /* ignore */
+    }
+  });
+  useDesignerCrashFlush(writeCrashDraft, discardCrashedDraft);
+  const crashRestoreChoiceRef = useRef<"restore" | "fresh" | null>(null);
+  const [crashRestorePrompt, setCrashRestorePrompt] = useState(false);
+  const [crashRestoreRevision, setCrashRestoreRevision] = useState(0);
+  const resolveCrashRestore = useCallback((choice: "restore" | "fresh") => {
+    try {
+      localStorage.removeItem(crashDraftKey);
+      if (choice === "fresh") {
+        localStorage.removeItem(draftKey);
+        if (localStorage.getItem(activeDraftKey) === draftKey) localStorage.removeItem(activeDraftKey);
+      }
+    } catch {
+      /* ignore */
+    }
+    crashRestoreChoiceRef.current = choice;
+    setCrashRestorePrompt(false);
+    setCrashRestoreRevision((revision) => revision + 1);
+  }, [crashDraftKey, draftKey, activeDraftKey]);
 
   // Restore once, after verification, unless we're loading a saved design.
   useEffect(() => {
@@ -14733,6 +14777,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // An explicit saved-design/package load owns the canvas; skip draft restore but
       // allow future saves.
       draftRestoredRef.current = true;
+      return;
+    }
+    if (crashRestoreChoiceRef.current == null) {
+      let crashed = false;
+      try {
+        crashed = localStorage.getItem(crashDraftKey) != null;
+      } catch {
+        /* storage unavailable */
+      }
+      if (crashed) {
+        // Autosave stays off (draftRestoredRef is false) until the customer chooses.
+        setCrashRestorePrompt(true);
+        return;
+      }
+    }
+    if (crashRestoreChoiceRef.current === "fresh") {
+      draftRestoredRef.current = true;
+      if (!roomLayoutHandoffAppliedRef.current && !latchedFreshStart.fresh) setLayoutStarterOpen(true);
       return;
     }
     let restoredDesignedKitchen = false;
@@ -14925,7 +14987,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verified, draftKey, activeDraftKey, storeScope, verifiedEmail, accountId, draftIdentity, loadDesignId, bundleIdParam, selectCatalogHardware]);
+  }, [verified, draftKey, activeDraftKey, crashDraftKey, crashRestoreRevision, storeScope, verifiedEmail, accountId, draftIdentity, loadDesignId, bundleIdParam, selectCatalogHardware]);
 
   // Pre-select a door style from the ?style=<id> URL param (e.g. "Design with
   // this" CTA from the homepage). Fires once, after the draft has been restored,
@@ -16184,7 +16246,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!resolvedInteractive3dScene) return paletteType === "closetparts"
       ? <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground"><strong className="text-foreground">Start your MasterTrac closet</strong><p>Open the measured floor plan to position boards, or choose a connected layout part in the right panel. No kitchen door style is needed.</p><Button type="button" variant="outline" onClick={() => setViewMode("plan")}>Open floor plan</Button></div>
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
-	    return <DesignerErrorBoundary surface="3d" resetKey={historyRevision}><InteractiveRoom3D
+	    return <DesignerErrorBoundary surface="3d" resetKey={undoRedoRevision} pageReload={false}><InteractiveRoom3D
 		      key={`active-surfaces-${threeDSurfaceViewKey}`}
 		      embedded
 		      cutawayRoomWalls
@@ -21083,6 +21145,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              </DialogFooter>
 	            </DialogContent>
 	          </Dialog>
+	          <AlertDialog open={crashRestorePrompt}>
+	            <AlertDialogContent className="max-w-md" data-testid="designer-crash-restore">
+	              <AlertDialogHeader>
+	                <AlertDialogTitle>The designer closed after a problem</AlertDialogTitle>
+	                <AlertDialogDescription>
+	                  Restore previous opens your last saved version from before the problem. Start fresh opens a new, empty design.
+	                </AlertDialogDescription>
+	              </AlertDialogHeader>
+	              <AlertDialogFooter>
+	                <AlertDialogCancel onClick={() => resolveCrashRestore("fresh")}>Start fresh</AlertDialogCancel>
+	                <AlertDialogAction onClick={() => resolveCrashRestore("restore")}>Restore previous</AlertDialogAction>
+	              </AlertDialogFooter>
+	            </AlertDialogContent>
+	          </AlertDialog>
 	          <AlertDialog open={peninsulaDeletePrompt != null} onOpenChange={(open) => { if (!open) setPeninsulaDeletePrompt(null); }}>
 	            <AlertDialogContent className="max-w-md">
 	              <AlertDialogHeader>
@@ -24589,7 +24665,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             {interactive3dLoading ? (
               <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">Loading real catalog geometry…</div>
             ) : resolvedInteractive3dScene ? (
-              <DesignerErrorBoundary surface="3d" resetKey={historyRevision}>
+              <DesignerErrorBoundary surface="3d" resetKey={undoRedoRevision} pageReload={false}>
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceViewKey}`}
                 scene={resolvedInteractive3dScene}

@@ -5,13 +5,16 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
-  DESIGNER_BOUNDARY_RELOAD_FLAG,
   DESIGNER_BOUNDARY_STABLE_MS,
   DesignerErrorBoundary,
   designerBoundaryEnv,
+  designerBoundaryReloadFlag,
   isChunkLoadError,
   useDesignerCrashFlush,
+  useLastCommitted,
 } from "./DesignerErrorBoundary";
+
+const DESIGNER_FLAG = designerBoundaryReloadFlag("designer");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -48,8 +51,12 @@ async function settle() {
   for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
 }
 
+function button(label: string) {
+  return Array.from(host.querySelectorAll("button")).find((candidate) => candidate.textContent?.includes(label));
+}
+
 function reloadButton() {
-  return Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("Reload designer"));
+  return button("Reload designer");
 }
 
 describe("designer error boundary", () => {
@@ -131,7 +138,7 @@ describe("designer error boundary", () => {
 
     await mountLazy();
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(window.sessionStorage.getItem(DESIGNER_BOUNDARY_RELOAD_FLAG)!)).toMatchObject({ surface: "designer", reason: "chunk-load" });
+    expect(JSON.parse(window.sessionStorage.getItem(DESIGNER_FLAG)!)).toMatchObject({ surface: "designer", reason: "chunk-load" });
 
     // The reloaded page fails the same way: the flag stops a second automatic reload.
     act(() => root.unmount());
@@ -155,7 +162,7 @@ describe("designer error boundary", () => {
     expect(reload).not.toHaveBeenCalled();
     act(() => reloadButton()!.click());
     expect(reload).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(window.sessionStorage.getItem(DESIGNER_BOUNDARY_RELOAD_FLAG)!)).toMatchObject({ reason: "repeated-crash" });
+    expect(JSON.parse(window.sessionStorage.getItem(DESIGNER_FLAG)!)).toMatchObject({ reason: "repeated-crash" });
     // Still crashing after that reload: no automatic reload again; the button reloads the page by hand.
     act(() => reloadButton()!.click());
     expect(reload).toHaveBeenCalledTimes(2);
@@ -165,11 +172,11 @@ describe("designer error boundary", () => {
     vi.useFakeTimers();
     let now = 1_000_000;
     designerBoundaryEnv.now = () => now;
-    window.sessionStorage.setItem(DESIGNER_BOUNDARY_RELOAD_FLAG, "{}");
+    window.sessionStorage.setItem(DESIGNER_FLAG, "{}");
     act(() => root.render(<DesignerErrorBoundary surface="designer"><div>ok</div></DesignerErrorBoundary>));
     now += DESIGNER_BOUNDARY_STABLE_MS;
     act(() => vi.advanceTimersByTime(DESIGNER_BOUNDARY_STABLE_MS));
-    expect(window.sessionStorage.getItem(DESIGNER_BOUNDARY_RELOAD_FLAG)).toBeNull();
+    expect(window.sessionStorage.getItem(DESIGNER_FLAG)).toBeNull();
 
     // Two crashes far apart are not a streak.
     let fail = true;
@@ -207,6 +214,126 @@ describe("designer error boundary", () => {
     act(() => root.render(<Page tick={1} />));
     expect(panel()).not.toBeNull();
     expect(saves).toEqual(["unsaved edit"]);
+  });
+
+  it("saves the last committed state at a crash, not the state that crashed", () => {
+    const saves: number[] = [];
+    let setValue: (value: number) => void = () => {};
+    function Designer() {
+      const [value, set] = React.useState(1);
+      setValue = set;
+      const snapshot = React.useCallback(() => value, [value]);
+      const committed = useLastCommitted(snapshot);
+      const flush = React.useCallback(() => saves.push(committed.current!), [committed]);
+      useDesignerCrashFlush(flush);
+      if (value === 3) throw new Error("designer render failed");
+      return <div>value {value}</div>;
+    }
+    act(() => root.render(<DesignerErrorBoundary surface="designer"><Designer /></DesignerErrorBoundary>));
+    act(() => setValue(2));
+    act(() => setValue(3));
+    expect(panel()).not.toBeNull();
+    expect(saves).toEqual([2]);
+  });
+
+  it("offers Discard draft only after the reload guard was used, and starts clean from it", () => {
+    let discards = 0;
+    let draft: "bad" | null = "bad";
+    // Like the Designer: it mounts empty, then applies the saved draft in an effect.
+    function Designer() {
+      const [restored, setRestored] = React.useState<"bad" | null>(null);
+      React.useEffect(() => setRestored(draft), []);
+      const flush = React.useCallback(() => {}, []);
+      const discard = React.useCallback(() => {
+        discards += 1;
+        draft = null;
+      }, []);
+      useDesignerCrashFlush(flush, discard);
+      if (restored === "bad") throw new Error("designer render failed");
+      return <div data-testid="designer-ok">designer</div>;
+    }
+    act(() => root.render(<DesignerErrorBoundary surface="designer"><Designer /></DesignerErrorBoundary>));
+    expect(panel()).not.toBeNull();
+    expect(button("Discard draft")).toBeUndefined();
+    act(() => root.unmount());
+
+    // The page already reloaded once for this surface and the draft still crashes it.
+    window.sessionStorage.setItem(DESIGNER_FLAG, JSON.stringify({ surface: "designer", reason: "repeated-crash" }));
+    root = createRoot(host);
+    act(() => root.render(<DesignerErrorBoundary surface="designer"><Designer /></DesignerErrorBoundary>));
+    expect(panel()).not.toBeNull();
+    act(() => button("Discard draft")!.click());
+    expect(discards).toBe(1);
+    expect(panel()).toBeNull();
+    expect(host.querySelector("[data-testid='designer-ok']")).not.toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("never reloads the page for the 3D view while the designer keeps editing", async () => {
+    vi.useFakeTimers();
+    let now = 1_000_000;
+    designerBoundaryEnv.now = () => now;
+    function BrokenScene(): React.ReactNode {
+      throw new Error("scene setup failed");
+    }
+    // Every edit re-renders the designer; the 3D stays broken throughout.
+    const render = (undoRedo: number, edit: number) => act(() => root.render(
+      <div data-edit={edit}>
+        <DesignerErrorBoundary surface="3d" resetKey={undoRedo} pageReload={false}><BrokenScene /></DesignerErrorBoundary>
+      </div>,
+    ));
+    for (let edit = 0; edit < 20; edit++) {
+      render(0, edit);
+      now += 100;
+    }
+    for (let undo = 1; undo <= 6; undo++) {
+      render(undo, 100 + undo);
+      now += 100;
+    }
+    for (let click = 0; click < 6; click++) act(() => reloadButton()!.click());
+    expect(panel()?.getAttribute("data-designer-surface")).toBe("3d");
+    expect(reload).not.toHaveBeenCalled();
+    expect(window.sessionStorage.length).toBe(0);
+
+    // A chunk that failed to load inside the 3D view also stays in place.
+    act(() => root.unmount());
+    root = createRoot(host);
+    const LazyScene = React.lazy(() => Promise.reject(new TypeError("Failed to fetch dynamically imported module: /assets/three-old.js")));
+    act(() => root.render(
+      <React.Suspense fallback={null}>
+        <DesignerErrorBoundary surface="3d" pageReload={false}><LazyScene /></DesignerErrorBoundary>
+      </React.Suspense>,
+    ));
+    for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+    act(() => reloadButton()!.click());
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("does not count remounts from a reset key toward the crash streak", () => {
+    function AlwaysThrows(): React.ReactNode {
+      throw new Error("designer render failed");
+    }
+    for (let key = 0; key < 6; key++) {
+      act(() => root.render(<DesignerErrorBoundary surface="designer" resetKey={key}><AlwaysThrows /></DesignerErrorBoundary>));
+    }
+    expect(panel()).not.toBeNull();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps each surface's reload guard until that surface itself has run cleanly", () => {
+    vi.useFakeTimers();
+    const closetFlag = designerBoundaryReloadFlag("closet");
+    window.sessionStorage.setItem(DESIGNER_FLAG, "{}");
+    window.sessionStorage.setItem(closetFlag, "{}");
+    act(() => root.render(
+      <>
+        <DesignerErrorBoundary surface="3d" pageReload={false}><div>scene</div></DesignerErrorBoundary>
+        <DesignerErrorBoundary surface="closet"><div>closet</div></DesignerErrorBoundary>
+      </>,
+    ));
+    act(() => vi.advanceTimersByTime(DESIGNER_BOUNDARY_STABLE_MS + 1));
+    expect(window.sessionStorage.getItem(closetFlag)).toBeNull();
+    expect(window.sessionStorage.getItem(DESIGNER_FLAG)).toBe("{}");
   });
 
   it("clears the 3D panel when the layout revision changes, e.g. after an undo", () => {
