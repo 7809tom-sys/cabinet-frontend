@@ -39,8 +39,8 @@ describe("designer-facing cabinet names (issue #354 item 1)", () => {
       expect(name).not.toMatch(/range\s*base/i);
       expect(hasForbiddenDesignerWording(name)).toBe(false);
     }
-    expect(designerCabinetName(RB3DB24)).toBe('24" W × 34.75" H × 24" D Two Drawer Base with One False Front for a drop-in cooktop');
-    expect(designerCabinetName(RB2DB30)).toBe('30" W × 34.75" H × 24" D Two Drawer Base for a drop-in cooktop');
+    expect(designerCabinetName(RB3DB24)).toBe('24" W × 34.75" H × 24" D Two Drawer Base with One False Front for a range top');
+    expect(designerCabinetName(RB2DB30)).toBe('30" W × 34.75" H × 24" D Two Drawer Base for a range top');
   });
 
   it("keeps the book's two-drawer wording for RB3DB (item 6)", () => {

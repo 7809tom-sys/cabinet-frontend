@@ -92,6 +92,58 @@ line. There is no 30-1/4"-only-run exemption.**
   book's wording ("Two Drawer Base … for a drop-in cooktop"), and RB3DB is no
   longer described as a three-drawer cabinet. Codes unchanged.
 
+## Exposed sides — the central concept
+
+A **side is exposed when it can be seen**:
+
+* next to an appliance — a range hood, an oven, or a range;
+* where cabinet heights change — a shorter cabinet beside a taller one;
+* at an open end of a run.
+
+A side **against a wall**, or against an adjoining cabinet **of the same height and
+depth**, is **not** exposed.
+
+| Line | What happens on an exposed side |
+|---|---|
+| **USCD frameless** (altaeuro and every USCD frameless line) | A **3/4" panel is added automatically** on every exposed side, with a notice to the customer. The book sells no 1/4" skins, so this panel *is* the finished face: `WEP1523/1530/1535/1542` (walls by height), `BEP2535` (bases), `TEP3096`/`BP9642` (tall), priced from the door style's catalog SKU. |
+| **Framed with finished sides** | **No automatic panel.** The customer adds one with the per-cabinet **Left panel / Right panel** options. |
+
+**Fillers vs panels.** Fillers are only for gaps and door/handle clearance;
+panels finish the face. When a side needs a panel and a filler would also apply,
+**the required panel wins** and the filler yields
+(`dropFillersOvertakenByExposedPanel`).
+
+**Skins vs panels.** A 1/4" **skin** is a thin finished sheet glued onto an
+**unfinished side** — the plain box side meant to sit against a wall or another
+cabinet. Panels and skins go **only on exposed sides, never on hidden ones**. The
+"skin needed for outside" checkbox stays for **non-frameless** lines and uses
+these definitions in its label and tooltip; on the USCD frameless lines it is
+hidden/disabled with the note that end panels are added automatically, and a skin
+is never stacked on top of an auto panel.
+
+**Required automatic panels** (frameless and framed alike, when the line sells the
+board):
+
+* the **wall** cabinet side that faces a **range hood**;
+* the **base** cabinet side that faces the **oven or range**.
+
+**Pantries.** A side against a pantry that is **not part of the run** is
+**optional and never automatic** — it gets a panel only if the customer chooses
+one with the Left/Right toggle. A pantry **inside** the run already has its end
+treatment, so it gets **no** panel.
+
+**Symmetry is a default.** The same panel on the wall and the base at the same
+end of a run, so the look lines up (`symmetricEndPanel`). It is a default, not a
+requirement: the customer may change or remove either panel, and the designer
+never forces them back to matching. Nothing is added to a hidden side for
+symmetry.
+
+**Panels are real width.** A 3/4" panel occupies 3/4" of wall length exactly like
+a cabinet or a filler, so cabinets after it shift by 3/4" and the length, fit and
+remaining-space maths count it (`exposedSideRunAccounting.ts`). A run that no
+longer fits is reported so Auto Design resizes, swaps or refuses with a visible
+reason — it never overlaps or silently overruns.
+
 ## Tests added
 
 `designerCabinetNames.test.ts`, `rangeBaseGuard.test.ts`,

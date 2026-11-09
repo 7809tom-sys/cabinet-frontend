@@ -291,7 +291,7 @@ function run() {
     caption.innerHTML = [
       `<strong style="color:#047857">${f.code} &middot; ${f.name}</strong>`,
       `${f.width}&Prime; W &times; 34.75&Prime; H &times; 24&Prime; D`,
-      `countertop top ${f.baseTop}&Prime; &middot; ${f.cooktopName} set into it (top ${f.cooktopTop}&Prime;)`,
+      `countertop ${STD.COUNTERTOP_HEIGHT}&Prime; &middot; ${f.cooktopName} installed in it`,
       `no freestanding range`,
     ].join("<br />");
 

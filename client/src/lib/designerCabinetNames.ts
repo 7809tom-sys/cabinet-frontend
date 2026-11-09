@@ -59,11 +59,15 @@ export function isRangeBaseCabinetCode(masterCode: string | null | undefined): b
   return rangeBaseFamilyForCode(masterCode) != null;
 }
 
-/** The book wording for one RB family, with no "range base" phrasing and no RB prefix. */
+/**
+ * The wording for one RB family, with no "range base" phrasing and no RB prefix.
+ * Tom's product meaning: this is the cabinet a RANGE TOP goes on, the way a sink
+ * base is the cabinet a sink goes in, so the name says "range top".
+ */
 export function rangeBaseDesignerName(family: RangeBaseFamily): string {
   return family === "two-drawer"
-    ? "Two Drawer Base for a drop-in cooktop"
-    : "Two Drawer Base with One False Front for a drop-in cooktop";
+    ? "Two Drawer Base for a range top"
+    : "Two Drawer Base with One False Front for a range top";
 }
 
 /** The leading `24" W × 34.75" H × 24" D ` block of a catalog description, or "". */

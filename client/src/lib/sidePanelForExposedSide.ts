@@ -1,32 +1,49 @@
 /**
- * Side panels that an exposed side earns on its own — no prompt, no filler.
+ * EXPOSED SIDES — the one place that decides which cabinet sides need a panel.
  *
- * Issue #354 items 3 and 4 (Tom, Nov 9 2026):
+ * A side is EXPOSED when it can be seen:
  *
- *   "Today, placing a range in the Pelican designer asks for a filler every
- *    time. Instead, the designer should automatically shift the cabinets over
- *    and put a 3/4 in side panel on the exposed side next to the range (or
- *    microwave), and tell the customer a side panel is going in because that
- *    side will be exposed."
+ *   - next to an appliance (a range hood, an oven, or a range);
+ *   - where cabinet heights change (a shorter cabinet beside a taller one);
+ *   - at an open end of a run.
  *
- *   "...when a smaller cabinet sits next to a larger one (a shallower or
- *    shorter cabinet beside a deeper or taller one) and leaves part of the
- *    larger cabinet's side exposed, it automatically adds a 3/4 in side panel on
- *    the exposed side and notifies the customer, same as the range rule."
+ * A side against a wall, or against an adjoining cabinet of the same height and
+ * depth, is NOT exposed.
  *
- * The panels come from the altaeuro V8.2 frameless book (pp. 73-74) and are
- * priced from the door style's catalog SKU:
+ * What goes on an exposed side:
  *
- *   3/4" wall end panels   WEP1523 / WEP1530 / WEP1535 / WEP1542  (by height)
- *   3/4" base end panel    BEP2535
- *   3/4" tall end panel    TEP3096   (long sheet BP9642 where 42" is enough)
+ *   - FRAMELESS lines (USCD altaeuro and every USCD frameless line) get a 3/4"
+ *     panel on every exposed side, automatically, with a notice to the customer.
+ *     The book sells no 1/4" skins, so the 3/4" end panel is the finished face:
+ *     WEP1523 / WEP1530 / WEP1535 / WEP1542 (walls by height), BEP2535 (bases),
+ *     TEP3096 / BP9642 (tall), priced from the door style's catalog SKU.
+ *   - FRAMED lines with finished sides get NO automatic panel. The customer adds
+ *     one with the per-cabinet Left panel / Right panel options.
  *
- * Fillers stay for gaps only (`OF*` / `AF3006` / `SM8` scribe). This module is
- * deliberately separate from the broad exposed-side engine in
- * `exposedSidePanels.ts` and from the range-flank panels in
- * `autoDesignRangeFlanks.ts`: it answers exactly these two questions and
- * nothing else, so the two panel rules can be merged without touching either
- * one's internals.
+ * Fillers are only for gaps and door/handle clearance. Panels finish the face.
+ * When a side needs a panel and a filler would also apply, the required panel
+ * wins (see `dropFillersOvertakenByExposedPanel`).
+ *
+ * Required automatic panels:
+ *   - the WALL cabinet side that faces a range hood;
+ *   - the BASE cabinet side that faces the oven or range.
+ *
+ * A 1/4" SKIN is a thin finished sheet glued onto an UNFINISHED side — the plain
+ * box side meant to sit against a wall or another cabinet. Skins and panels go
+ * only on exposed sides, never on hidden ones.
+ *
+ * A side against a pantry that is not part of the run is OPTIONAL and never
+ * automatic: it gets a panel only when the customer chooses one. A pantry inside
+ * the run already has its end treatment, so it gets no panel.
+ *
+ * For symmetry the DEFAULT is the same panel on the wall and the base at the
+ * same end of a run, so the look lines up (see `symmetricEndPanel`). It is a
+ * default, never a requirement: the customer may change or remove either panel,
+ * and nothing forces them back into agreement.
+ *
+ * A 3/4" panel is REAL WIDTH in the run; `exposedSideRunAccounting.ts` measures
+ * it with the cabinets, fillers and appliances so the plan, elevation, 3D view
+ * and dimension labels all agree.
  */
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import {
@@ -61,20 +78,21 @@ const SEAM_IN = 0.125;
 /** How far past its neighbour a taller/deeper box has to stand to have a visible side. */
 const EXPOSURE_MIN_IN = 0.125;
 
-export type SidePanelReason =
+export type ExposedSideReason =
   | "beside-range"
   | "beside-microwave"
   | "beside-hood"
   | "beside-oven"
-  | "smaller-neighbour";
+  | "smaller-neighbour"
+  | "symmetric-end";
 
-export type SidePanelNeed = {
+export type ExposedSidePanelNeed = {
   /** The cabinet whose side is exposed. */
   hostUid: string;
   hostCode: string;
   /** The side that faces the opening. `start` is the run-start side. */
   side: "start" | "end";
-  reason: SidePanelReason;
+  reason: ExposedSideReason;
   wallId: WallSide;
   /** Along-wall start the 3/4" board occupies, outside the host body. */
   startIn: number;
@@ -92,12 +110,12 @@ export type SidePanelNeed = {
   message: string;
 };
 
-export type SidePanelResult = {
+export type ExposedSidePanelResult = {
   placed: PlacedCabinet[];
   additions: PlacedCabinet[];
-  needs: SidePanelNeed[];
+  needs: ExposedSidePanelNeed[];
   /** Needs the run had no room for, named rather than silently dropped. */
-  skipped: Array<{ hostCode: string; side: "start" | "end"; reason: SidePanelReason; why: string }>;
+  skipped: Array<{ hostCode: string; side: "start" | "end"; reason: ExposedSideReason; why: string }>;
 };
 
 function isFramelessBox(item: PlacedCabinet): boolean {
@@ -223,7 +241,7 @@ function neighbourAt(
   return neighbourSpan.start >= hostSpan.end - tolerance && neighbourSpan.start <= hostSpan.end + tolerance;
 }
 
-function describe(reason: SidePanelReason, hostCode: string, selection: AefEndPanelSelection, side: "start" | "end"): string {
+function describe(reason: ExposedSideReason, hostCode: string, selection: AefEndPanelSelection, side: "start" | "end"): string {
   const where = side === "start" ? "left" : "right";
   switch (reason) {
     case "beside-range":
@@ -236,6 +254,8 @@ function describe(reason: SidePanelReason, hostCode: string, selection: AefEndPa
       return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because that side faces the oven/range.`;
     case "smaller-neighbour":
       return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because the adjacent cabinet is smaller and leaves that side exposed.`;
+    case "symmetric-end":
+      return `A 3/4″ side panel (${selection.masterCode}) was matched to the ${where} side of ${hostCode} so the wall and base ends line up. You can change or remove it.`;
   }
 }
 
@@ -276,7 +296,12 @@ function sideIsCovered(
     const inThisSlot = side === "start"
       ? otherSpan.end >= hostSpan.start - SEAM_IN && otherSpan.end <= hostSpan.start + SIDE_PANEL_THICKNESS_IN + SEAM_IN
       : otherSpan.start >= hostSpan.end - SEAM_IN && otherSpan.start <= hostSpan.end + SIDE_PANEL_THICKNESS_IN + SEAM_IN;
-    if (isPanelItem(other) || isFillerItem(other)) return inThisSlot;
+    if (isPanelItem(other) || isFillerItem(other)) {
+      // A panel finishes only its OWN layer's side. A base-layer end panel must
+      // not mark the wall cabinet above it as covered.
+      if (other.placement !== host.placement) return false;
+      return inThisSlot;
+    }
     // A tall unit always finishes the side it stands against.
     if (isTallUnitCabinet(other)) return true;
     // Appliances never finish a cabinet's side: a range, oven, microwave or hood
@@ -302,15 +327,15 @@ function wholeSideBand(host: PlacedCabinet): { bottomIn: number; heightIn: numbe
  * Every side that is exposed for a reason this rule owns, with the book panel
  * that finishes it. Read-only: nothing moves and nothing is placed here.
  */
-export function sidePanelNeeds(input: {
+export function exposedSidePanelNeeds(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
   catalog: readonly AefEndPanelCatalogItem[];
-}): SidePanelNeed[] {
+}): ExposedSidePanelNeed[] {
   const { placed, room, catalog } = input;
-  const needs: SidePanelNeed[] = [];
+  const needs: ExposedSidePanelNeed[] = [];
   const seen = new Set<string>();
-  const record = (host: PlacedCabinet, side: "start" | "end", reason: SidePanelReason, band: { bottomIn: number; heightIn: number; depthIn: number }) => {
+  const record = (host: PlacedCabinet, side: "start" | "end", reason: ExposedSideReason, band: { bottomIn: number; heightIn: number; depthIn: number }) => {
     const key = `${host.uid}:${side}`;
     if (seen.has(key)) return;
     const span = spanOf(host, room);
@@ -436,17 +461,17 @@ function shiftRunForPanel(input: {
  * Designer runs this in an effect and calls `setPlaced` on a new array, so a
  * fresh array on a settled plan would re-render (and re-run) forever.
  */
-export function applySidePanels(input: {
+export function applyExposedSidePanels(input: {
   placed: PlacedCabinet[];
   room: RoomData;
-  needs: readonly SidePanelNeed[];
+  needs: readonly ExposedSidePanelNeed[];
   styleId: number | null;
   makeUid: () => string;
-}): SidePanelResult {
+}): ExposedSidePanelResult {
   let working = input.placed;
   let changed = false;
   const additions: PlacedCabinet[] = [];
-  const skipped: SidePanelResult["skipped"] = [];
+  const skipped: ExposedSidePanelResult["skipped"] = [];
   // One board per host side. The board this rule seats records the pair, so a
   // second pass (or a pass after the run slid) never stacks a duplicate.
   const alreadyPanelled = new Set(input.placed
@@ -535,7 +560,7 @@ export function applySidePanels(input: {
     additions.push(panel);
   }
   // A settled plan is returned by reference, the same contract
-  // `syncExposedSidePanels` and `syncDishwasherPanels` use.
+  // `syncExposedSidePanelsForRun` and `syncDishwasherPanels` use.
   return {
     placed: changed ? working : (input.placed as PlacedCabinet[]),
     additions,
@@ -545,15 +570,15 @@ export function applySidePanels(input: {
 }
 
 /** One call for the design-check rail: what is exposed and what panel finishes it. */
-export function syncRangeAndNeighbourSidePanels(input: {
+export function syncExposedSidePanelsForRun(input: {
   placed: PlacedCabinet[];
   room: RoomData;
   catalog: readonly AefEndPanelCatalogItem[];
   styleId: number | null;
   makeUid: () => string;
-}): SidePanelResult {
-  const needs = sidePanelNeeds(input);
-  return applySidePanels({ ...input, needs });
+}): ExposedSidePanelResult {
+  const needs = exposedSidePanelNeeds(input);
+  return applyExposedSidePanels({ ...input, needs });
 }
 
 /**
@@ -564,10 +589,10 @@ export function syncRangeAndNeighbourSidePanels(input: {
  * faces the range, the old corner handle-clearance filler prompt is satisfied
  * by the panel and must not be raised again.
  */
-export function rangesFinishedBySidePanels(input: {
+export function cookingSidesFinishedByExposedPanels(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
-  needs: readonly SidePanelNeed[];
+  needs: readonly ExposedSidePanelNeed[];
 }): Set<string> {
   // A base side facing the range reports as `beside-oven`; both count as the
   // panel that satisfies the range's handle clearance.
@@ -610,16 +635,16 @@ export function rangeOrMicrowaveInPlan(placed: readonly PlacedCabinet[]): boolea
  * filler, or a tall unit that finishes it is refused with the reason, so a
  * toggle can never stack a board where nothing shows.
  */
-export type ManualPanelSide = "start" | "end";
+export type ExposedSideHand = "start" | "end";
 
 export type ManualPanelResult =
   | { ok: true; panel: PlacedCabinet; placed: PlacedCabinet[] }
   | { ok: false; reason: string };
 
 /** The board a per-cabinet toggle would put on this side, or the reason it cannot. */
-export function manualPanelSelection(
+export function exposedSidePanelSelection(
   host: PlacedCabinet,
-  side: ManualPanelSide,
+  side: ExposedSideHand,
   catalog: readonly AefEndPanelCatalogItem[],
 ): AefEndPanelSelection | null {
   if (host.placement !== "wall" && host.placement !== "base" && host.placement !== "tall") return null;
@@ -634,10 +659,10 @@ export function manualPanelSelection(
  * removes it); false removes the board this toggle owns. The run slides by the
  * 3/4" when the slot is not free, exactly like the automatic pass.
  */
-export function setCabinetSidePanel(input: {
+export function setExposedSidePanel(input: {
   placed: PlacedCabinet[];
   hostUid: string;
-  side: ManualPanelSide;
+  side: ExposedSideHand;
   enabled: boolean;
   room: RoomData;
   catalog: readonly AefEndPanelCatalogItem[];
@@ -671,7 +696,7 @@ export function setCabinetSidePanel(input: {
     };
   }
 
-  const selection = manualPanelSelection(host, side, catalog);
+  const selection = exposedSidePanelSelection(host, side, catalog);
   if (!selection) return { ok: false, reason: `${host.masterCode} cannot take a side panel.` };
 
   const span = spanOf(currentHost, room);
@@ -754,9 +779,9 @@ export function setCabinetSidePanel(input: {
 }
 
 /** True when the per-cabinet toggle already owns a panel on this side. */
-export function cabinetSidePanelFor(
+export function exposedSidePanelFor(
   hostUid: string,
-  side: ManualPanelSide,
+  side: ExposedSideHand,
   placed: readonly PlacedCabinet[],
 ): PlacedCabinet | null {
   return placed.find((item) => item.uid === `${hostUid}:manual-panel:${side}`) ?? null;
@@ -767,9 +792,9 @@ export function cabinetSidePanelFor(
  * side. Tom's rule (Nov 9 2026): when a panel is required, the panel wins; a
  * filler only fills whatever gap is left over, never the panel's own slot.
  */
-export function dropFillersOvertakenByPanel(input: {
+export function dropFillersOvertakenByExposedPanel(input: {
   placed: readonly PlacedCabinet[];
-  needs: readonly SidePanelNeed[];
+  needs: readonly ExposedSidePanelNeed[];
   room: RoomData;
 }): { placed: PlacedCabinet[]; removed: PlacedCabinet[] } {
   const required = new Set(input.needs.map((need) => need.hostUid));
@@ -790,4 +815,91 @@ export function dropFillersOvertakenByPanel(input: {
   if (removed.length === 0) return { placed: input.placed as PlacedCabinet[], removed: [] };
   const gone = new Set(removed.map((item) => item.uid));
   return { placed: input.placed.filter((item) => !gone.has(item.uid)), removed };
+}
+
+/**
+ * The matching panel on the other layer at the same end of a run.
+ *
+ * Tom (Nov 9 2026): for symmetry, the DEFAULT is the same panel on the wall and
+ * the base at the same end of a run, so the look lines up. When a base end gets
+ * a panel, the wall cabinet above it at that end defaults to the matching panel
+ * (same material / finish / style, from the same catalog stock family), and vice
+ * versa — but only when that side is itself exposed. It is a default, never a
+ * requirement: the customer may change or remove either panel on its own, and
+ * nothing here forces them back into agreement.
+ */
+export function symmetricEndPanel(input: {
+  placed: readonly PlacedCabinet[];
+  room: RoomData;
+  catalog: readonly AefEndPanelCatalogItem[];
+  /** The panel that was just placed (or chosen) on one layer. */
+  panelUid: string;
+}): ExposedSidePanelNeed | null {
+  const { placed, room, catalog } = input;
+  const panel = placed.find((item) => item.uid === input.panelUid);
+  if (!panel || !isPanelItem(panel)) return null;
+  const hostUid = panel.autoPlacedForUid;
+  if (!hostUid) return null;
+  const host = placed.find((item) => item.uid === hostUid);
+  if (!host) return null;
+  const side = panel.autoPlacedSide === "start" || panel.autoPlacedSide === "end"
+    ? panel.autoPlacedSide
+    : null;
+  if (!side) return null;
+  // Only a wall and a base mirror each other; tall/filler boards have no pair.
+  if (host.placement !== "wall" && host.placement !== "base") return null;
+  const otherLayer: "wall" | "base" = host.placement === "wall" ? "base" : "wall";
+  const hostSpan = spanOf(host, room);
+  if (!hostSpan) return null;
+  const wallSide = hostSpan.side;
+
+  // The cabinet on the other layer that shares this run end. Run ends are
+  // compared by the shared wall side, not by both cabinets being the same width:
+  // a 24" base under a 30" upper at the same end of a run still pairs.
+  const neighbour = placed.find((item) => {
+    if (item.uid === host.uid) return false;
+    if (item.placement !== otherLayer) return false;
+    if (isFillerItem(item) || isPanelItem(item)) return false;
+    if (cabinetWall(item, room) !== wallSide) return false;
+    const other = spanOf(item, room);
+    if (!other) return false;
+    // Both start at (or near) the same point, or both end at the same point.
+    const sameStart = Math.abs(other.start - hostSpan.start) <= SEAM_IN;
+    const sameEnd = Math.abs(other.end - hostSpan.end) <= SEAM_IN;
+    return sameStart || sameEnd;
+  }) ?? null;
+  if (!neighbour) return null;
+
+  // The matching side: the exposed side at the SAME end of the run. When the two
+  // boxes are different widths, map by the end they share, not by the literal
+  // start/end flag.
+  const neighbourSpan = spanOf(neighbour, room);
+  if (!neighbourSpan) return null;
+  const sameStart = Math.abs(neighbourSpan.start - hostSpan.start) <= SEAM_IN;
+  const neighbourSide: "start" | "end" = sameStart ? "start" : "end";
+  // Never add a panel to a hidden side just for symmetry.
+  if (sideIsCovered(neighbour, neighbourSide, placed, room)) return null;
+  if (placed.some((item) => item.autoPlacedForUid === neighbour.uid && item.autoPlacedSide === neighbourSide)) return null;
+
+  const band = wholeSideBand(neighbour);
+  const selection = selectAefEndPanel(
+    neighbour.placement as "wall" | "base" | "tall",
+    rotatedSize(neighbour).d,
+    placedHeight(neighbour),
+    catalog,
+  );
+  return {
+    hostUid: neighbour.uid,
+    hostCode: neighbour.masterCode ?? "",
+    side: neighbourSide,
+    reason: "symmetric-end",
+    wallId: neighbourSpan.side,
+    startIn: neighbourSide === "start" ? neighbourSpan.start - SIDE_PANEL_THICKNESS_IN : neighbourSpan.end,
+    bottomIn: band.bottomIn,
+    heightIn: band.heightIn,
+    depthIn: band.depthIn,
+    placement: neighbour.placement as "wall" | "base" | "tall",
+    selection,
+    message: `A 3/4″ side panel (${selection.masterCode}) was matched to the ${neighbourSide === "start" ? "left" : "right"} side of ${neighbour.masterCode} so the wall and base ends line up. You can change or remove it.`,
+  };
 }

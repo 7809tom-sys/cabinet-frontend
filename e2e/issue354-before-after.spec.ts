@@ -39,11 +39,11 @@ test("shows the cooktop base with its range top seated in the countertop", async
   // The caption carries the measured facts, so the claim is checkable from the image.
   const caption = page.locator("#after-caption");
   await expect(caption).toContainText("RB3DB30");
-  await expect(caption).toContainText("drop-in cooktop");
+  await expect(caption).toContainText("for a range top");
   await expect(caption).toContainText("no freestanding range");
   // The cooktop sits ON the countertop line, like a basin in a sink base.
-  await expect(caption).toContainText("countertop top 34.75");
-  await expect(caption).toContainText("set into it");
+  await expect(caption).toContainText("countertop 36");
+  await expect(caption).toContainText("installed in it");
 
   await page.waitForTimeout(900);
   await page.screenshot({ path: OUT_FILE });

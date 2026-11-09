@@ -1,13 +1,13 @@
 /**
- * Drop-in cooktop bases (`RB2DB*`, `RB3DB*`) belong under a cooktop and nowhere
- * else.
+ * Range bases (`RB2DB*`, `RB3DB*`) are cabinets for a RANGE TOP — the way a sink
+ * base is a cabinet for a sink. They are NOT full range units and never contain
+ * an oven.
  *
- * Issue #354 items 2 and 5 (Tom, Nov 9 2026): the reported plan had an
- * `RB3DB24` sitting between the dishwasher and a freestanding range, where a
- * plain 24" base belongs. A range base is a drawer box with a false front whose
- * top is opened for a drop-in cooktop; with no cooktop above it the top is a
- * hole, and beside a freestanding range the cooking surface is the range, not
- * this box.
+ * Issue #354 (Tom, Nov 9 2026): the reported plan had an `RB3DB24` sitting
+ * between the dishwasher and a freestanding range, where a plain 24" base
+ * belongs. A range base is a drawer box with a false front whose top is opened
+ * for a range top; with no range top on it the top is a hole, and beside a
+ * freestanding range the cooking surface is the range, not this box.
  *
  * Rules enforced here, in one place so Auto-Design, manual placement and the
  * saved-plan restore pass cannot drift apart:
@@ -16,18 +16,17 @@
  *    `autoDesignBaseRows` is the straight-base pool every auto pass reads, and
  *    it drops the RB family outright; `standardBaseForRangeBase` is the
  *    same-width substitute for a plan that already carries one.
- * 2. A range base is only legal with a cooktop over it. `rangeBaseCooktopFor`
- *    finds that cooktop (the frameless conversion seats a
- *    `countertop-opening` appliance on the base's own uid), and
- *    `rangeBaseNeedsCooktopPrompt` is what a manual selection asks before the
- *    box is committed.
- * 3. A saved plan that has one without a cooktop is repaired to the standard
+ * 2. A range base is only legal with a range top on it. `rangeBaseRangeTopFor`
+ *    finds that top (the frameless conversion seats a `countertop-opening`
+ *    appliance on the base's own uid), and `rangeBaseCooktopPromptWidth` is what
+ *    a manual selection asks before the box is committed.
+ * 3. A saved plan that has one with no range top is repaired to the standard
  *    base of the same width, so the drawing, cart, quote and order all show the
  *    cabinet that is really installed.
  *
  * The RB codes themselves are never deleted, renamed, or aliased: the
  * distributor still receives `RB3DB24` when a range base really is under a
- * cooktop.
+ * range top.
  */
 import {
   COLLISION_EPSILON_IN,
@@ -59,9 +58,9 @@ export function isStandardStraightBaseRow(row: DesignCabinet): boolean {
 }
 
 /**
- * The straight-base pool Auto-Design tiles a run from. A drop-in cooktop base
- * is never in it, whatever a catalog row's sub-category says, so Auto-Design
- * can never seat one beside a range or anywhere else without a cooktop.
+ * The straight-base pool Auto-Design tiles a run from. A range base is never in
+ * it, whatever a catalog row's sub-category says, so Auto-Design can never seat
+ * one beside a range or anywhere else with no range top on it.
  */
 export function autoDesignBaseRows<T extends DesignCabinet>(rows: readonly T[]): T[] {
   return rows.filter((row) => !isRangeBaseCabinetCode(row.masterCode));
@@ -122,13 +121,13 @@ function overlapsOnRunAxis(a: PlacedCabinet, b: PlacedCabinet, room: RoomData): 
 }
 
 /**
- * The cooktop over one range base, or null.
+ * The range top seated on one range base, or null.
  *
- * A frameless conversion seats the cooktop as a `countertop-opening` appliance
- * on the base's own uid (`<baseUid>:cooktop`), so that link is the exact one.
- * A cooktop a customer added through Surfaces & Fixtures is matched by the bay
- * it covers on the same wall. A freestanding range is a different product and
- * never counts.
+ * A range base holds a range top the way a sink base holds a sink, so the top is
+ * a `countertop-opening` appliance on the base's own uid
+ * (`<baseUid>:cooktop`). A top added through the range-top picker is matched by
+ * the bay it covers on the same wall. A freestanding or slide-in range is a
+ * different product and never counts as the top.
  */
 export function rangeBaseCooktopFor(
   rangeBase: PlacedCabinet,
@@ -145,7 +144,7 @@ export function rangeBaseCooktopFor(
     && overlapsOnRunAxis(rangeBase, item, room)) ?? null;
 }
 
-/** True when the range base really has a drop-in cooktop on its top. */
+/** True when the range base really has a range top in its countertop. */
 export function rangeBaseHasCooktop(
   rangeBase: PlacedCabinet,
   placed: readonly PlacedCabinet[],
@@ -155,9 +154,9 @@ export function rangeBaseHasCooktop(
 }
 
 /**
- * A range base a customer just picked needs a cooktop confirmed for its top
- * before the box is committed. Returns the width so the prompt can name the
- * cooktop that has to go on it, or null for any other cabinet.
+ * A range base a customer just picked needs its range top chosen for the top
+ * before the box is committed. Returns the width so the picker can offer the
+ * range tops that fit it, or null for any other cabinet.
  */
 export function rangeBaseCooktopPromptWidth(masterCode: string | null | undefined): number | null {
   return isRangeBaseCabinetCode(masterCode) ? rangeBaseNominalWidth(masterCode) : null;
@@ -169,7 +168,7 @@ export type RangeBaseRepair = {
 };
 
 /**
- * Save/restore repair: every range base with no cooktop over it becomes the
+ * Save/restore repair: every range base with no range top on it becomes the
  * standard base of the same width. A width the line cannot supply is reported
  * and left alone rather than deleted, so nothing silently disappears from a
  * cart or an order.

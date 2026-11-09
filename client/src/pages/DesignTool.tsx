@@ -266,10 +266,11 @@ import { aefExposedEndRequirements } from "@/lib/aefExposedEnds";
 import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
-import { designerCabinetName } from "@/lib/designerCabinetNames";
+import { designerCabinetName, isRangeBaseCabinetCode } from "@/lib/designerCabinetNames";
+import { isRangeTopRow, placeRangeTopOnBase, rangeTopRowDisabledReason, rangeTopRowsForBase } from "@/lib/rangeBaseSelection";
 import { rangeBaseCooktopPromptWidth, repairRangeBasesWithoutCooktop } from "@/lib/rangeBaseGuard";
 import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "@/lib/framelessWallTopAlignment";
-import { sidePanelNeeds, syncRangeAndNeighbourSidePanels, rangesFinishedBySidePanels, type SidePanelNeed } from "@/lib/sidePanelForExposedSide";
+import { exposedSidePanelNeeds, syncExposedSidePanelsForRun, cookingSidesFinishedByExposedPanels, type ExposedSidePanelNeed } from "@/lib/sidePanelForExposedSide";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
 import { overRangeBridgeLabel } from "@/lib/overRangeCompanion";
@@ -1131,10 +1132,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     pullText: string;
   } | null>(null);
   /**
-   * A drop-in cooktop base (`RB2DB*` / `RB3DB*`) may only stand under a
-   * cooktop, so picking one asks which cooktop goes on its top before the box
-   * is committed (issue #354 item 2). "Standard base instead" places the plain
-   * same-width box and leaves the cooktop to the Surfaces & Fixtures picker.
+   * A range base (`RB2DB*` / `RB3DB*`) holds a RANGE TOP, the way a sink base
+   * holds a sink. Placing one opens the range-top picker, which shows the
+   * catalog's range tops as the things to put on it (issue #354). "Use the plain
+   * base instead" keeps the same-width box with no range top.
    */
   const [rangeBaseCooktopPrompt, setRangeBaseCooktopPrompt] = useState<{
     cabinet: DesignCabinet;
@@ -1151,6 +1152,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     blindPullOverride?: number;
     attachedFillerChoice?: AttachedFillerChoice;
   } | null>(null);
+  /** The placed range base whose range top is being chosen after the box landed. */
+  const [pendingRangeTopBaseUid, setPendingRangeTopBaseUid] = useState<string | null>(null);
   const [attachedFillerPrompt, setAttachedFillerPrompt] = useState<{
     cabinet: DesignCabinet;
     x?: number;
@@ -1634,9 +1637,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [showerWizardOpen, setShowerWizardOpen] = useState(false);
   const forcedOpenSinkRef = useRef<OpenSinkBasePlacement | null>(null);
   /**
-   * Set while the cooktop prompt for a picked drop-in cooktop base is being
-   * answered, so the confirmed placement skips the prompt exactly once
-   * (issue #354 item 2).
+   * Set while the range-top picker for a picked range base is being answered, so
+   * the confirmed placement skips the picker exactly once (issue #354).
    */
   const rangeBaseConfirmedRef = useRef<string | null>(null);
   const pelicanSinkDraftRef = useRef<PelicanPlacedProduct | null>(null);
@@ -5549,7 +5551,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setSidePanelWarnings((prev) => prev.length ? [] : prev);
         return;
       }
-    const plan = syncRangeAndNeighbourSidePanels({
+    const plan = syncExposedSidePanelsForRun({
       placed: current,
       room: roomRef.current,
       catalog: sidePanelCatalog,
@@ -6059,10 +6061,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      // persisted can have a visually seated cabinet but no wallId/wallOffset.
 	      // Repair that once while restoring so the drag preview and the final
 	      // collision check use the same physical run coordinates.
-      // Issue #354 item 2: a saved plan can hold a drop-in cooktop base with no
-      // cooktop over it (the reported RB3DB24 beside a range). The box becomes
-      // the plain base of the same width so the drawing, cart, quote and order
-      // all show the cabinet that is really installed.
+      // Issue #354: a saved plan can hold a range base with no range top on it
+      // (the reported RB3DB24 beside a freestanding range). The box becomes the
+      // plain base of the same width so the drawing, cart, quote and order all
+      // show the cabinet that is really installed.
       const notesForRestore: string[] = [];
       const rangeBaseRepair = repairRangeBasesWithoutCooktop({
         placed: convertedPlaced,
@@ -6070,7 +6072,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         catalog: ((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
       });
       for (const swap of rangeBaseRepair.replacements) {
-        if (swap.to) notesForRestore.push(`${swap.from} had no cooktop above it, so it was restored as the ${swap.to} base of the same width.`);
+        if (swap.to) notesForRestore.push(`${swap.from} had no range top on it, so it was restored as the ${swap.to} base of the same width.`);
       }
       const peninsulaNormalizedPlaced = clampCabinetsToRoom(backfillLegacyWallRuns(normalizeLegacyPeninsulaCabinets(
         normalizeBlindCornerDoorSides(normalizeLCornerDepths(rangeBaseRepair.placed), restoredRoom),
@@ -7084,10 +7086,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const rangeClearanceUids = useMemo(() => {
     const violations = rangeOvenClearanceViolations(placed, room);
     if (violations.size === 0) return violations;
-    const finished = rangesFinishedBySidePanels({
+    const finished = cookingSidesFinishedByExposedPanels({
       placed,
       room,
-      needs: sidePanelNeeds({ placed, room, catalog: sidePanelCatalog }),
+      needs: exposedSidePanelNeeds({ placed, room, catalog: sidePanelCatalog }),
     });
     finished.forEach((uid) => violations.delete(uid));
     return violations;
@@ -7999,9 +8001,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setMobilePanel(null);
         return;
       }
-      // Issue #354 item 2 (Tom): a drop-in cooktop base (RB2DB/RB3DB) is only
-      // legal under a cooktop. Ask which cooktop goes on its top before the box
-      // is committed; cancelling leaves the plan exactly as it was.
+      // Issue #354 (Tom): a range base (RB2DB/RB3DB) holds a range top, the way a
+      // sink base holds a sink. Ask which range top goes on it before the box is
+      // committed; cancelling leaves the plan exactly as it was.
       const rangeBaseWidth = rangeBaseCooktopPromptWidth(c.masterCode);
       if (rangeBaseWidth != null && rangeBaseConfirmedRef.current !== c.masterCode) {
         setRangeBaseCooktopPrompt({
@@ -9401,6 +9403,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             .map((refrigerator) => ({ refrigerator, upper: unsuitableWallCabinetAboveRefrigerator(refrigerator, [...normalizedPrevious, finalCab], room) }))
             .find(({ upper }) => upper?.uid === finalCab.uid) ?? null
         : null;
+      if (isRangeBaseCabinetCode(finalCab.masterCode)) {
+        setPendingRangeTopBaseUid(finalCab.uid);
+      }
       if (refrigeratorOverheadIssue) {
         setFridgeDialog({
           fridgeUid: refrigeratorOverheadIssue.refrigerator.uid,
@@ -16501,9 +16506,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     hasConflicts ? Array.from(conflictUids).sort().join("|") : "",
     8000,
   );
-  // The design check reads one list: the exposed-side panels, the dishwasher
-  // panel, and the side panels this build added because a side beside a range,
-  // a microwave, or a smaller neighbour is exposed (issue #354 items 3-4).
+  // EXPOSED SIDES: the design check reads one list — the exposed-side panels,
+  // the dishwasher panel, and the 3/4" panels this build added automatically
+  // because a side is exposed (beside a range hood, oven or range; where heights
+  // change; or at an open run end). Each notice says which side and why.
   const designCheckWarnings = [...exposedPanelWarnings, ...dishwasherPanelWarnings, ...sidePanelWarnings];
   const designCheckNotice = useTransientNotice(
     designCheckWarnings.map((warning) => warning.id).join("|"),
@@ -16538,7 +16544,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       {designCheckNotice.visible && designCheckWarnings.length > 0 && !canvasOnly && (
         <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
           <div>
-            <p className="font-semibold">Design check ({designCheckWarnings.length})</p>
+            <p className="font-semibold">Exposed sides · design check ({designCheckWarnings.length})</p>
             <ul className="mt-1 list-disc pl-5">
               {designCheckWarnings.map((warning) => (
                 <li key={warning.id}>{warning.message}</li>
@@ -24089,12 +24095,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      </Dialog>
 
 	      {/*
-	        Issue #354 item 2 (Tom): a range base / drop-in cooktop base is only
-	        legal under a cooktop. The customer confirms the cooktop for its top
-	        (or takes the plain same-width base instead) before it is committed.
+	        Issue #354 (Tom): a range base holds a RANGE TOP, exactly the way a sink
+	        base holds a sink. Picking a range base therefore shows the catalog's
+	        range tops as the things to put on it — the same flow a sink base uses
+	        for sink basins. The chosen top is drawn in the base's countertop and is
+	        display-only, never a cart line; the base itself stays billable.
 	      */}
 	      <Dialog open={!!rangeBaseCooktopPrompt} onOpenChange={(open) => { if (!open) setRangeBaseCooktopPrompt(null); }}>
-	        <DialogContent data-testid="range-base-cooktop-dialog" className="max-w-md">
+	        <DialogContent data-testid="range-base-cooktop-dialog" className="max-w-lg">
 	          {rangeBaseCooktopPrompt && (() => {
 	            const prompt = rangeBaseCooktopPrompt;
 	            const commit = (cabinet: DesignCabinet) => {
@@ -24114,28 +24122,123 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                prompt.blindPullOverride,
 	                prompt.attachedFillerChoice,
 	              );
+	              // Ask for the range top once the box has landed.
+	              window.setTimeout(() => setPendingRangeTopBaseUid(`${cabinet.masterCode}:pending`), 0);
 	            };
 	            const plainBase = (autoFillCabinets as DesignCabinet[] | undefined)?.find((row) => {
 	              if (row.placement !== "base") return false;
 	              if (Math.abs(Number(row.width) - prompt.widthIn) > 0.1) return false;
 	              return /^B-?\d+$/i.test(row.masterCode ?? "");
 	            }) ?? null;
+	            const rows = (rangeTopProducts ?? []) as Array<{
+	              id: number; pelicanCode?: string | null; name: string; category?: string | null; subCategory?: string | null;
+	              size?: string | null; imageUrl?: string | null; sellPrice?: number | null; slug?: string | null;
+	            }>;
+	            const topRows = rangeTopRowsForBase(rows, prompt.cabinet);
+	            const shown = topRows.length > 0 ? topRows : rows.filter((row) => isRangeTopRow(row));
 	            return <>
 	              <DialogHeader>
-	                <DialogTitle>A cooktop is required on this cabinet</DialogTitle>
+	                <DialogTitle>Choose a range top for this range base</DialogTitle>
 	                <DialogDescription>
-	                  {designerCabinetName(prompt.cabinet)} is a drop-in cooktop base. Its top is opened for a cooktop, so it can only stand where a cooktop sits on it.
+	                  {designerCabinetName(prompt.cabinet)} is a range base: it holds a range top, the way a sink base holds a sink. Pick the top that goes on it, or place the plain {formatInches(prompt.widthIn)} base instead.
 	                </DialogDescription>
 	              </DialogHeader>
-	              <div className="space-y-3 text-sm">
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-                  Choose the {formatInches(prompt.widthIn)} cooktop for its top in the next step, or place the plain {formatInches(prompt.widthIn)} base here instead. A cabinet whose top is opened for a cooktop can only stand where a cooktop sits on it, never beside a freestanding range.
-                </div>
+	              <div className="max-h-[46vh] space-y-2 overflow-y-auto">
+	                {shown.length === 0 ? (
+	                  <p className="rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
+	                    No {formatInches(prompt.widthIn)} range top is in the catalog right now. Place the base and choose its range top later, or use the plain base.
+	                  </p>
+	                ) : shown.map((row) => {
+	                  const disabled = rangeTopRowDisabledReason(row, prompt.cabinet);
+	                  return (
+	                    <button
+	                      key={row.id}
+	                      type="button"
+	                      data-testid={`range-base-top-${row.id}`}
+	                      disabled={Boolean(disabled)}
+	                      title={disabled ?? undefined}
+	                      onClick={() => commit(prompt.cabinet)}
+	                      className={`flex w-full items-center gap-3 rounded-lg border p-2 text-left transition-colors ${disabled ? "cursor-not-allowed border-dashed opacity-60" : "hover:border-primary hover:bg-muted/50"}`}
+	                    >
+	                      {row.imageUrl ? <img src={row.imageUrl} alt={row.name} className="h-12 w-12 shrink-0 rounded object-cover" /> : <span className="h-12 w-12 shrink-0 rounded bg-muted" />}
+	                      <span className="min-w-0 flex-1">
+	                        <span className="block truncate text-sm font-semibold">{row.name}</span>
+	                        <span className="block text-[11px] text-muted-foreground">{row.size ?? row.subCategory ?? "Range top"} · shown in the design, not sold separately</span>
+	                      </span>
+	                    </button>
+	                  );
+	                })}
 	              </div>
 	              <DialogFooter className="gap-2">
 	                <Button variant="outline" onClick={() => setRangeBaseCooktopPrompt(null)}>Cancel placement</Button>
 	                {plainBase && <Button variant="secondary" data-testid="range-base-use-plain-base" onClick={() => commit(plainBase)}>Use the {formatInches(prompt.widthIn)} base instead</Button>}
-	                <Button data-testid="range-base-confirm-cooktop" onClick={() => commit(prompt.cabinet)}>This will have a cooktop</Button>
+	                <Button data-testid="range-base-confirm-cooktop" onClick={() => commit(prompt.cabinet)}>Place the base, choose the top later</Button>
+	              </DialogFooter>
+	            </>;
+	          })()}
+	        </DialogContent>
+	      </Dialog>
+
+	      {/*
+	        The range top for a placed range base, chosen the way a sink base
+	        chooses its basin. The top is drawn in the base's countertop and is
+	        display-only: it never becomes a cart, quote, or order line.
+	      */}
+	      <Dialog open={!!pendingRangeTopBaseUid} onOpenChange={(open) => { if (!open) setPendingRangeTopBaseUid(null); }}>
+	        <DialogContent data-testid="range-base-range-top-dialog" className="max-w-lg">
+	          {pendingRangeTopBaseUid && (() => {
+	            const base = placed.find((item) => item.uid === pendingRangeTopBaseUid) ?? null;
+	            if (!base) return null;
+	            const rows = (rangeTopProducts ?? []) as Array<{
+	              id: number; pelicanCode?: string | null; name: string; category?: string | null; subCategory?: string | null;
+	              size?: string | null; imageUrl?: string | null; sellPrice?: number | null; slug?: string | null;
+	            }>;
+	            const fitting = rangeTopRowsForBase(rows, base);
+	            const shown = fitting.length > 0 ? fitting : rows.filter((row) => isRangeTopRow(row));
+	            const apply = (row: typeof rows[number] | null) => {
+	              if (!row) { setPendingRangeTopBaseUid(null); return; }
+	              const result = placeRangeTopOnBase({ base, placed, room, row });
+	              if (!result.ok) { toast.error(result.reason); return; }
+	              placedRef.current = result.placed;
+	              setPlaced(result.placed);
+	              setPendingRangeTopBaseUid(null);
+	              toast.success(`${row.name} set into ${base.masterCode}. It is drawn in the design and is not a cart line.`);
+	            };
+	            return <>
+	              <DialogHeader>
+	                <DialogTitle>Choose the range top for {base.masterCode}</DialogTitle>
+	                <DialogDescription>
+	                  This range base holds a range top, the way a sink base holds a sink. The top is shown in the 3D drawing and on the plan; the cabinet under it is what you buy.
+	                </DialogDescription>
+	              </DialogHeader>
+	              <div className="max-h-[46vh] space-y-2 overflow-y-auto">
+	                {shown.length === 0 ? (
+	                  <p className="rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
+	                    No {formatInches(Number(base.width) || 0)} range top is in the catalog right now. You can set one later from this cabinet’s attributes.
+	                  </p>
+	                ) : shown.map((row) => {
+	                  const disabled = rangeTopRowDisabledReason(row, base);
+	                  return (
+	                    <button
+	                      key={row.id}
+	                      type="button"
+	                      data-testid={`range-top-choice-${row.id}`}
+	                      disabled={Boolean(disabled)}
+	                      title={disabled ?? undefined}
+	                      onClick={() => apply(row)}
+	                      className={`flex w-full items-center gap-3 rounded-lg border p-2 text-left transition-colors ${disabled ? "cursor-not-allowed border-dashed opacity-60" : "hover:border-primary hover:bg-muted/50"}`}
+	                    >
+	                      {row.imageUrl ? <img src={row.imageUrl} alt={row.name} className="h-12 w-12 shrink-0 rounded object-cover" /> : <span className="h-12 w-12 shrink-0 rounded bg-muted" />}
+	                      <span className="min-w-0 flex-1">
+	                        <span className="block truncate text-sm font-semibold">{row.name}</span>
+	                        <span className="block text-[11px] text-muted-foreground">{row.size ?? row.subCategory ?? "Range top"} · shown in the design, not sold separately</span>
+	                      </span>
+	                    </button>
+	                  );
+	                })}
+	              </div>
+	              <DialogFooter className="gap-2">
+	                <Button variant="outline" onClick={() => setPendingRangeTopBaseUid(null)}>No range top for now</Button>
 	              </DialogFooter>
 	            </>;
 	          })()}
