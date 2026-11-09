@@ -5284,6 +5284,59 @@ export function normalizeOverSinkWallMounts(
   return changed ? normalized : placed;
 }
 
+/**
+ * A full-height wall cabinet (30" or taller) placed over a sink hangs so its top
+ * meets the uppers directly beside it on the same wall. A W2430 between two
+ * W3036s would otherwise keep the 54" bottom and finish below their top line.
+ * Returns null when there is no adjoining upper, when the cabinet is not over a
+ * sink base, or when the aligned box would cross a window clearance or the
+ * ceiling; short over-sink cabinets keep the 70" over-sink rule.
+ */
+export function overSinkNeighborAlignedMountBottom(
+  cabinet: PlacedCabinet,
+  placed: PlacedCabinet[],
+  openings: WallOpening[],
+  room: RoomData,
+): number | null {
+  if (cabinet.placement !== "wall" || cabinet.islandFace || isStacker(cabinet)) return null;
+  const height = placedHeight(cabinet);
+  if (!(height >= 30)) return null;
+  const side = cabinetWall(cabinet, room);
+  const start = wallRunOffset(cabinet, side, room);
+  const end = start + wallRunSpan(cabinet, side, room);
+  const center = (start + end) / 2;
+  const overSink = placed.some((item) => {
+    if (!isSinkBaseCabinet(item) || item.placement !== "base" || cabinetWall(item, room) !== side) return false;
+    const sinkStart = wallRunOffset(item, side, room);
+    return center >= sinkStart - 0.01 && center <= sinkStart + wallRunSpan(item, side, room) + 0.01;
+  });
+  if (!overSink) return null;
+  const neighborTops: number[] = [];
+  for (const peer of placed) {
+    if (peer.uid === cabinet.uid || peer.placement !== "wall" || peer.islandFace) continue;
+    if (isStacker(peer) || isFillerItem(peer) || isPanelItem(peer) || isRefrigeratorWallCabinet(peer)) continue;
+    if (cabinetWall(peer, room) !== side) continue;
+    const peerStart = wallRunOffset(peer, side, room);
+    const peerEnd = peerStart + wallRunSpan(peer, side, room);
+    const gap = peerEnd <= start + 0.01 ? start - peerEnd : peerStart >= end - 0.01 ? peerStart - end : 0;
+    if (gap > 1.5) continue;
+    const box = elevationBox(peer, room);
+    neighborTops.push(box.bottom + box.height);
+  }
+  if (neighborTops.length === 0) return null;
+  const top = Math.max(...neighborTops);
+  const bottom = top - height;
+  if (bottom < STD.COUNTERTOP_HEIGHT + 12 - 0.01) return null;
+  if (top > wallCeilingMin(room, side) + 0.01) return null;
+  const aligned = { ...cabinet, mountBottom: bottom };
+  const blocked = openings.some((opening) => opening.kind === "window"
+    && opening.side === side
+    && start < opening.offset + opening.width - 0.01
+    && end > opening.offset + 0.01
+    && windowVerticallyOverlapsCabinet(aligned, opening, room, WALL_OPENING_CLEARANCE_IN));
+  return blocked ? null : bottom;
+}
+
 /** Repair old WD18 placements that inherited the generic 54-inch wall mount. */
 export function normalizeWd18CountertopMounts(placed: PlacedCabinet[]): PlacedCabinet[] {
   let changed = false;

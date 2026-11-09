@@ -19,7 +19,7 @@ import {
 	  wallCeiling, wallCeilingIsSloped, wallCeilingMin, wallCeilingAt, wallCabinetVerticalMoveLimit, repairWallCabinetPlanSeamForVerticalMove, clampCeilingHeight,
 	  freeSegmentsOnWall, magneticAvailableWallStart, nearestAvailableWallStart, firstCollisionFreeWallPlacement, wallPlacementAt, wallRunOffset, wallGapFitPreview, wallGaps, paletteActiveWallPlacement, kneeDrawerWallPlacement, refrigeratorAdjacentOpeningPlacement, nextAvailableRoomCornerPlacement, customWallTrueCornerPlacement, adjoiningWallRunMountBottom, selectedSinkBaseWallPlacement, sinkBaseWindowPlacement, selectedLowerCabinetWallPlacement, matchingLowerCabinetWallPlacement, continuousWallApplianceSnapInfo,
   rangeOvenClearanceViolations, RANGE_CLEARANCE_FILLER_IN, autoPlaceRangeFillers,
-  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, bridgeMountBottomAboveWindow, overSinkWindowStart, overSinkWallMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts, OVER_SINK_WALL_MOUNT_BOTTOM,
+  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, bridgeMountBottomAboveWindow, overSinkWindowStart, overSinkWallMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts, OVER_SINK_WALL_MOUNT_BOTTOM, overSinkNeighborAlignedMountBottom,
 	  blindCornerSpecViolations, blindCornerViolations, blindPullRange, blindCornerPullPlacement, resolveBaseBlindCornerFillerSnap,
 	  blindCornerAutoFiller, blindCornerRearCountertopExtensionIn,
 			  isStacker, glassStackerParentPlacement, glassStackerFrontFlushSpot, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout, normalizeWd18CountertopMounts, normalizeStandardWallMounts,
@@ -3672,6 +3672,26 @@ describe("wall cabinet clearance from doors/windows", () => {
 	    expect(normalized[1]).toBe(manuallyRaised);
 	    expect(normalized[1].mountBottom).toBe(71);
 	  });
+
+  it("top-aligns a W2430 over the sink with the taller uppers beside it", () => {
+    const sinkBase = cab({ uid: "sb", masterCode: "SB-30", description: "Sink Base 30", placement: "base", x: 54, y: 0, width: 30, depth: 24, height: 34.5 });
+    const left = cab({ uid: "w-left", masterCode: "W-2436", description: "24x36 Wall Cabinet", placement: "wall", x: 33, y: 0, width: 24, depth: 12, height: 36 });
+    const right = cab({ uid: "w-right", masterCode: "W-2436", description: "24x36 Wall Cabinet", placement: "wall", x: 81, y: 0, width: 24, depth: 12, height: 36 });
+    const w2430 = cab({ uid: "w2430", masterCode: "W-2430", description: "24x30 Wall Cabinet", placement: "wall", x: 57, y: 0, width: 24, depth: 12, height: 30 });
+    const bottom = overSinkNeighborAlignedMountBottom(w2430, [sinkBase, left, right], [], room);
+    expect(bottom).toBe(60);
+    expect(elevationBox({ ...w2430, mountBottom: bottom! }, room).bottom + 30).toBe(elevationBox(left, room).bottom + 36);
+  });
+
+  it("leaves an over-sink upper at its normal height with no adjoining upper, off the sink, or under a window", () => {
+    const sinkBase = cab({ uid: "sb", masterCode: "SB-30", description: "Sink Base 30", placement: "base", x: 54, y: 0, width: 30, depth: 24, height: 34.5 });
+    const left = cab({ uid: "w-left", masterCode: "W-2436", description: "24x36 Wall Cabinet", placement: "wall", x: 33, y: 0, width: 24, depth: 12, height: 36 });
+    const w2430 = cab({ uid: "w2430", masterCode: "W-2430", description: "24x30 Wall Cabinet", placement: "wall", x: 57, y: 0, width: 24, depth: 12, height: 30 });
+    expect(overSinkNeighborAlignedMountBottom(w2430, [sinkBase], [], room)).toBeNull();
+    expect(overSinkNeighborAlignedMountBottom({ ...w2430, x: 57 + 60 }, [sinkBase, { ...left, x: 93 }], [], room)).toBeNull();
+    const window: WallOpening = { uid: "win", kind: "window", side: "top", offset: 57, width: 24, sill: 40, height: 18 } as WallOpening;
+    expect(overSinkNeighborAlignedMountBottom(w2430, [sinkBase, left], [window], room)).toBeNull();
+  });
 
   it("still blocks a short cabinet that occupies the neighboring upper's elevation band", () => {
     const leftUpper = cab({ uid: "w-12-42", masterCode: "W-12-42", description: "12x42 Wall", placement: "wall", x: 54, y: 0, width: 36, depth: 12, height: 42 });
