@@ -386,6 +386,7 @@ import { RoomSizeControl, RoomSizeInline } from "@/components/design/RoomSizeCon
 import { RoomLayoutStarter } from "@/components/design/RoomLayoutStarter";
 import type { WallBuilderDraft } from "@/components/design/WallBuilder";
 import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
+import { DesignerErrorBoundary } from "@/components/design/DesignerErrorBoundary";
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
 import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 import { nearestFreeWallDropStart, targetedLowerCabinetForThreeDDrop, targetedSinkBaseForThreeDDrop, type ThreeDWallDropTarget } from "./designTool3DDropPlacement";
@@ -16181,7 +16182,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!resolvedInteractive3dScene) return paletteType === "closetparts"
       ? <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground"><strong className="text-foreground">Start your MasterTrac closet</strong><p>Open the measured floor plan to position boards, or choose a connected layout part in the right panel. No kitchen door style is needed.</p><Button type="button" variant="outline" onClick={() => setViewMode("plan")}>Open floor plan</Button></div>
       : <div className="flex h-full min-h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the synchronized 3D canvas.</div>;
-	    return <InteractiveRoom3D
+	    return <DesignerErrorBoundary surface="3d"><InteractiveRoom3D
 		      key={`active-surfaces-${threeDSurfaceViewKey}`}
 		      embedded
 		      cutawayRoomWalls
@@ -16349,7 +16350,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      onClearTemporaryPreview={smartGapPreview.length > 0 ? () => { smartGapPreviewSessionRef.current = null; setSmartGapPreviewPosition(null); setSmartGapPreview([]); } : undefined}
 	      temporaryPreviewTransitionKey={smartGapPreview[0]?.uid ?? null}
 	      fillerInsertionTransition={fillerInsertionTransition}
-	    />;
+	    /></DesignerErrorBoundary>;
   };
 
   const layoutNoticeSignature = [
@@ -24586,6 +24587,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             {interactive3dLoading ? (
               <div className="flex h-[360px] items-center justify-center text-sm text-muted-foreground">Loading real catalog geometry…</div>
             ) : resolvedInteractive3dScene ? (
+              <DesignerErrorBoundary surface="3d">
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceViewKey}`}
                 scene={resolvedInteractive3dScene}
@@ -24727,6 +24729,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                fillerInsertionTransition={fillerInsertionTransition}
 	                colorTrace={colorTracePanelState}
 	              />
+              </DesignerErrorBoundary>
             ) : (
               <div className="flex h-[360px] items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm text-muted-foreground">Choose an active door style and add a cabinet, or choose a starter room layout, to load the 3D preview.</div>
             )}

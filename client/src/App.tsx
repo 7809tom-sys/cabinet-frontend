@@ -12,6 +12,7 @@ import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialI
 import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
 import DesignerHistoryNav from "@/components/design/DesignerHistoryNav";
+import { DesignerErrorBoundary } from "@/components/design/DesignerErrorBoundary";
 import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
@@ -241,7 +242,9 @@ function DesignerRoute() {
   const designer = (
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
-        <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
+        <DesignerErrorBoundary surface="designer">
+          <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
+        </DesignerErrorBoundary>
       </Suspense>
     </ErrorBoundary>
   );
@@ -454,7 +457,9 @@ export default function App() {
             <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
                 <AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>
-                  <DesignTool affiliateSlug={params.slug} />
+                  <DesignerErrorBoundary surface="designer">
+                    <DesignTool affiliateSlug={params.slug} />
+                  </DesignerErrorBoundary>
                 </AffiliateShell>
               </Suspense>
             </ErrorBoundary>
@@ -579,7 +584,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug} fullHeight>
-                <VendorClosetStudio affiliateSlug={params.slug} />
+                <DesignerErrorBoundary surface="closet">
+                  <VendorClosetStudio affiliateSlug={params.slug} />
+                </DesignerErrorBoundary>
               </AffiliateShell>
             </Suspense>
           )}
@@ -709,7 +716,9 @@ export default function App() {
         <Route path="/closet">
           <div className="flex h-[100dvh] flex-col overflow-hidden">
             <Suspense fallback={<PageLoader />}>
-              <VendorClosetStudio />
+              <DesignerErrorBoundary surface="closet">
+                <VendorClosetStudio />
+              </DesignerErrorBoundary>
             </Suspense>
           </div>
         </Route>
@@ -879,7 +888,9 @@ export default function App() {
         <Route path="/vendor/closet-studio">
           <div className="flex h-[100dvh] flex-col overflow-hidden">
             <Suspense fallback={<PageLoader />}>
-              <VendorClosetStudio />
+              <DesignerErrorBoundary surface="closet">
+                <VendorClosetStudio />
+              </DesignerErrorBoundary>
             </Suspense>
           </div>
         </Route>
