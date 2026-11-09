@@ -1401,6 +1401,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   ) => { ok: true } | { ok: false; message: string }) | null>(null);
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
+  // A GPU reset pauses the 3D view; its notice must not sit under a modal.
+  const [threeDGraphicsPaused, setThreeDGraphicsPaused] = useState(false);
   /**
    * Cancels the required corner choice. The staged build is transactional, so
    * cancelling leaves no auto-created appliance, sink, filler, or cabinet behind.
@@ -16289,6 +16291,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      scene={resolvedInteractive3dScene}
 	      placed={deferredCountertopGeometry.threeDPlaced}
 	      onGeometryRendered={() => setPaintedCountertopGeometry(deferredCountertopGeometry)}
+	      onGraphicsPausedChange={setThreeDGraphicsPaused}
 	      crown={crown}
 	      toeKick={toeKick}
 	      catalogDropWall={activeWall}
@@ -22479,7 +22482,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      )}
 	      {autoDesignAvailable && (
 	        <AutoDesignFaucetDialog
-	          open={autoDesignFaucetPrompt != null}
+	          open={autoDesignFaucetPrompt != null && !threeDGraphicsPaused}
 	          sinkLabel={autoDesignFaucetPromptCabinet?.masterCode ?? "this sink"}
 	          sinkCount={autoDesignFaucetSinkCount}
 	          products={autoDesignFaucetProducts}
@@ -24697,6 +24700,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <DesignerErrorBoundary surface="3d" resetKey={undoRedoRevision} pageReload={false}>
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceViewKey}`}
+			      onGraphicsPausedChange={setThreeDGraphicsPaused}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}

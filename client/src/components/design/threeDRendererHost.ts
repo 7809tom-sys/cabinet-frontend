@@ -62,12 +62,56 @@ export function detectThreeDWebGLSupport(createCanvas: () => HTMLCanvasElement =
 export function threeDWebGLUnavailableMessage(support: ThreeDWebGLSupport): string {
   const keep = "Your 2D plan and elevation preview remain available.";
   if (support === "webgl1-only") {
-    return `This browser has WebGL 2 turned off, and the 3D view needs it. In Chrome, open Settings > System, turn on "Use graphics acceleration when available", relaunch Chrome, then press Retry. ${keep}`;
+    return `The 3D view needs WebGL 2, which is turned off in this browser. In Chrome, open Settings > System, make sure "Use graphics acceleration when available" is on, and relaunch Chrome. On a work computer, WebGL 2 may be blocked by your IT policy. Then press Retry. ${keep}`;
   }
   if (support === "none") {
     return `This browser is not letting this page use 3D graphics (WebGL is off or blocked). In Chrome, open Settings > System, turn on "Use graphics acceleration when available", and relaunch Chrome. If it is already on, chrome://gpu shows whether WebGL is blocked. Then press Retry. ${keep}`;
   }
   return `The interactive 3D view could not start. Close other 3D tabs, then press Retry. ${keep}`;
+}
+
+/** Recoveries from a GPU reset (a restored context or a new one) per browser session. */
+export const MAX_THREE_D_GPU_RECOVERIES = 3;
+const GPU_RECOVERIES_KEY = "cabinetdealz.threeDGpuRecoveries";
+let gpuRecoveriesThisPage = 0;
+
+export const THREE_D_GPU_RESET_LIMIT_MESSAGE =
+  "The graphics card has reset several times, so the 3D view stopped reconnecting to it. Reload the page to try again; if it keeps happening, restart Chrome or update the graphics driver. Your 2D plan and elevation preview remain available.";
+
+function sessionStorageOrNull(): Pick<Storage, "getItem" | "setItem"> | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Takes one of the session's GPU-reset recoveries. Chrome blocks WebGL for a
+ * page that keeps resetting the GPU, so past the limit the 3D view stops and
+ * says so instead of reconnecting forever. Without session storage the count
+ * lasts for this page load.
+ */
+export function claimThreeDGpuRecovery(storage: Pick<Storage, "getItem" | "setItem"> | null = sessionStorageOrNull()): boolean {
+  let used = gpuRecoveriesThisPage;
+  try {
+    used = Math.max(used, Number(storage?.getItem(GPU_RECOVERIES_KEY)) || 0);
+  } catch {
+    /* storage unavailable */
+  }
+  if (used >= MAX_THREE_D_GPU_RECOVERIES) return false;
+  gpuRecoveriesThisPage = used + 1;
+  try {
+    storage?.setItem(GPU_RECOVERIES_KEY, String(used + 1));
+  } catch {
+    /* storage unavailable */
+  }
+  return true;
+}
+
+/** Test hook: a fresh page load. */
+export function resetThreeDGpuRecoveriesForTests() {
+  gpuRecoveriesThisPage = 0;
 }
 
 /**

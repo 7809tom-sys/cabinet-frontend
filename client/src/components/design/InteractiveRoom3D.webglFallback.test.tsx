@@ -13,6 +13,22 @@ import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InteractiveRoom3D } from "./InteractiveRoom3D";
 
+const hosts = vi.hoisted(() => ({ created: 0, released: 0 }));
+vi.mock("./threeDRendererHost", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./threeDRendererHost")>();
+  class CountedHost extends actual.ThreeDRendererHost {
+    constructor(...args: ConstructorParameters<typeof actual.ThreeDRendererHost>) {
+      super(...args);
+      hosts.created += 1;
+    }
+    release() {
+      hosts.released += 1;
+      super.release();
+    }
+  }
+  return { ...actual, ThreeDRendererHost: CountedHost };
+});
+
 const { router } = vi.hoisted(() => {
   const queryResult = {
     data: undefined,
@@ -112,7 +128,7 @@ describe("3D view without WebGL 2", () => {
     browserOffers(["webgl"]);
     const { container } = render(<InteractiveRoom3D scene={scene} placed={[]} />);
     await wait(250);
-    expect(notice(container)).toContain("WebGL 2 turned off");
+    expect(notice(container)).toContain("needs WebGL 2, which is turned off");
     expect(notice(container)).toContain("Use graphics acceleration when available");
     expect(notice(container)).not.toContain("Close other 3D tabs");
     expect(notice(container)).toContain("Retry 3D view");
@@ -129,6 +145,20 @@ describe("3D view without WebGL 2", () => {
     expect(notice(container)).toContain("not letting this page use 3D graphics");
     expect(notice(container)).toContain("chrome://gpu");
   }, 20_000);
+
+  it("keeps one renderer host through the automatic retries and releases it on unmount", async () => {
+    browserOffers([]);
+    hosts.created = 0;
+    hosts.released = 0;
+    const { container, unmount } = render(<InteractiveRoom3D scene={scene} placed={[]} />);
+    for (let i = 0; i < 16 && !notice(container).includes("not letting this page"); i++) await wait(500);
+    expect(notice(container)).toContain("not letting this page use 3D graphics");
+    // Each retry asked for a fresh context on the same host.
+    expect(contextRequests.filter((type) => type === "webgl2").length).toBeGreaterThanOrEqual(12);
+    unmount();
+    expect(hosts.created).toBeGreaterThanOrEqual(1);
+    expect(hosts.released).toBe(hosts.created);
+  }, 20_000);
 });
 
 describe("3D view after a GPU reset", () => {
@@ -141,8 +171,29 @@ describe("3D view after a GPU reset", () => {
     expect(source).toContain("setWebglContextGeneration((generation) => generation + 1);");
     expect(source).toMatch(/\}, \[webglUnavailable, webglContextGeneration, scene,/);
     expect(source).toContain('data-testid="webgl-context-lost"');
-    const timeout = source.slice(source.indexOf("if (!webglContextLost) return;"), source.indexOf("}, [webglContextLost]);"));
+    const timeout = source.slice(source.indexOf("if (!webglContextLost) return;"), source.indexOf("}, [webglContextLost]);", source.indexOf("if (!webglContextLost) return;")));
     expect(timeout).toContain("rendererHostRef.current?.dispose();");
     expect(timeout).toContain("setWebglUnavailable(true);");
+  });
+
+  it("caps recoveries per session, whether Chrome restores the context or a new one is started", () => {
+    const timeout = source.slice(source.indexOf("if (!webglContextLost) return;"), source.indexOf("}, [webglContextLost]);", source.indexOf("if (!webglContextLost) return;")));
+    expect(timeout).toMatch(/if \(!claimThreeDGpuRecovery\(\)\) \{\s*stopAfterGpuResets\(\);\s*return;/);
+    const restored = source.slice(source.indexOf("const onWebglContextRestored = () => {"), source.indexOf('renderer.domElement.addEventListener("webglcontextlost"'));
+    expect(restored).toMatch(/if \(!claimThreeDGpuRecovery\(\)\) \{\s*stopAfterGpuResets\(\);\s*return;\s*\}\s*setWebglContextGeneration/);
+    expect(source).toContain("gpuResetLimitReached ? THREE_D_GPU_RESET_LIMIT_MESSAGE : threeDWebGLUnavailableMessage(webglSupport)");
+  });
+
+  it("never swaps in an unreleased host after a recovery", () => {
+    expect(source).not.toContain("rendererHostRef.current = null;\n      setWebglUnavailable");
+    const mountEffect = source.slice(source.indexOf("const host = new ThreeDRendererHost();"), source.indexOf("const host = new ThreeDRendererHost();") + 700);
+    expect(mountEffect).toContain("if (current && current !== host) current.release();");
+  });
+
+  it("holds the Auto-Design faucet chooser while the paused notice shows", () => {
+    const designTool = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
+    expect(designTool).toContain("open={autoDesignFaucetPrompt != null && !threeDGraphicsPaused}");
+    expect(designTool.match(/onGraphicsPausedChange=\{setThreeDGraphicsPaused\}/g)?.length).toBe(2);
+    expect(source).toContain("onGraphicsPausedChangeRef.current?.(webglContextLost);");
   });
 });

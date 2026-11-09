@@ -14,7 +14,7 @@ vi.mock("three", async (importOriginal) => {
   };
 });
 
-const { createThreeDWebGLRenderer, detectThreeDWebGLSupport, threeDWebGLUnavailableMessage } = await import("./threeDRendererHost");
+const { MAX_THREE_D_GPU_RECOVERIES, THREE_D_GPU_RESET_LIMIT_MESSAGE, claimThreeDGpuRecovery, createThreeDWebGLRenderer, detectThreeDWebGLSupport, resetThreeDGpuRecoveriesForTests, threeDWebGLUnavailableMessage } = await import("./threeDRendererHost");
 
 afterEach(() => {
   attempts.length = 0;
@@ -51,11 +51,39 @@ describe("why WebGL could not start", () => {
   });
 
   it("gives each case its own customer fix", () => {
-    expect(threeDWebGLUnavailableMessage("webgl1-only")).toMatch(/WebGL 2 turned off.*graphics acceleration/);
+    const webgl2Off = threeDWebGLUnavailableMessage("webgl1-only");
+    expect(webgl2Off).toMatch(/^The 3D view needs WebGL 2, which is turned off in this browser\./);
+    expect(webgl2Off).toContain('make sure "Use graphics acceleration when available" is on');
+    expect(webgl2Off).toContain("blocked by your IT policy");
+    expect(webgl2Off).not.toContain("Close other 3D tabs");
     expect(threeDWebGLUnavailableMessage("none")).toMatch(/WebGL is off or blocked.*chrome:\/\/gpu/);
     expect(threeDWebGLUnavailableMessage("webgl2")).toContain("Close other 3D tabs");
     for (const support of ["webgl2", "webgl1-only", "none"] as const) {
       expect(threeDWebGLUnavailableMessage(support)).toContain("2D plan and elevation preview remain available");
     }
+  });
+});
+
+describe("GPU-reset recoveries", () => {
+  function memory(stored: Record<string, string> = {}) {
+    return { stored, getItem: (key: string) => stored[key] ?? null, setItem: (key: string, value: string) => { stored[key] = value; } };
+  }
+
+  it("allows three per session, then stops with a clear message", () => {
+    resetThreeDGpuRecoveriesForTests();
+    const storage = memory();
+    expect(MAX_THREE_D_GPU_RECOVERIES).toBe(3);
+    expect([1, 2, 3, 4].map(() => claimThreeDGpuRecovery(storage))).toEqual([true, true, true, false]);
+    // A reload of the page keeps the session's count.
+    resetThreeDGpuRecoveriesForTests();
+    expect(claimThreeDGpuRecovery(memory(storage.stored))).toBe(false);
+    expect(THREE_D_GPU_RESET_LIMIT_MESSAGE).toMatch(/reset several times.*Reload the page.*2D plan and elevation preview remain available/);
+  });
+
+  it("still caps them for the page when session storage is missing or throws", () => {
+    resetThreeDGpuRecoveriesForTests();
+    const throwing = { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } };
+    expect([claimThreeDGpuRecovery(null), claimThreeDGpuRecovery(throwing), claimThreeDGpuRecovery(null), claimThreeDGpuRecovery(throwing)]).toEqual([true, true, true, false]);
+    resetThreeDGpuRecoveriesForTests();
   });
 });
