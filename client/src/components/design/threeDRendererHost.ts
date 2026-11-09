@@ -30,10 +30,58 @@ export function createThreeDWebGLRenderer(): THREE.WebGLRenderer | null {
   }
 }
 
+/**
+ * Renderers handed back by unmounted 3D views. Switching between Plan and 3D,
+ * or between the kitchen, bathroom and closet designers, unmounts one view and
+ * mounts the next; taking the parked renderer keeps the live WebGL context
+ * count flat instead of asking the browser for a new context each time.
+ */
+const MAX_PARKED_RENDERERS = 2;
+const parkedRenderers: THREE.WebGLRenderer[] = [];
+
+function threeDRendererContextLost(renderer: THREE.WebGLRenderer): boolean {
+  try {
+    return renderer.getContext().isContextLost();
+  } catch {
+    return true;
+  }
+}
+
+function destroyThreeDRenderer(renderer: THREE.WebGLRenderer): void {
+  try {
+    renderer.dispose();
+  } finally {
+    try { renderer.forceContextLoss(); } catch { /* already lost */ }
+    renderer.domElement.remove();
+  }
+}
+
+export function takeParkedThreeDRenderer(): THREE.WebGLRenderer | null {
+  while (parkedRenderers.length > 0) {
+    const renderer = parkedRenderers.pop()!;
+    if (!threeDRendererContextLost(renderer)) return renderer;
+    destroyThreeDRenderer(renderer);
+  }
+  return null;
+}
+
+export function parkedThreeDRendererCount(): number {
+  return parkedRenderers.length;
+}
+
+/** Test hook: drops every parked renderer. */
+export function clearParkedThreeDRenderers(): void {
+  while (parkedRenderers.length > 0) destroyThreeDRenderer(parkedRenderers.pop()!);
+}
+
+export function createOrReuseThreeDWebGLRenderer(): THREE.WebGLRenderer | null {
+  return takeParkedThreeDRenderer() ?? createThreeDWebGLRenderer();
+}
+
 export class ThreeDRendererHost {
   private renderer: THREE.WebGLRenderer | null = null;
 
-  constructor(private readonly createRenderer: ThreeDRendererFactory = createThreeDWebGLRenderer) {}
+  constructor(private readonly createRenderer: ThreeDRendererFactory = createOrReuseThreeDWebGLRenderer) {}
 
   get current() {
     return this.renderer;
@@ -54,19 +102,42 @@ export class ThreeDRendererHost {
     return this.renderer;
   }
 
-  /** Unmount-only teardown. forceContextLoss is required because dispose()
-   * alone leaves the browser's WebGL context alive, and Chrome caps live
-   * contexts, so repeated Designer opens eventually refuse new ones. */
+  /**
+   * Unmount teardown. A healthy renderer is parked for the next 3D view to
+   * take; a lost one, or one beyond the parking limit, is destroyed.
+   */
+  release(): void {
+    const renderer = this.renderer;
+    if (!renderer) return;
+    this.renderer = null;
+    if (threeDRendererContextLost(renderer) || parkedRenderers.length >= MAX_PARKED_RENDERERS) {
+      destroyThreeDRenderer(renderer);
+      return;
+    }
+    renderer.setAnimationLoop(null);
+    renderer.setRenderTarget(null);
+    renderer.renderLists.dispose();
+    const canvas = renderer.domElement;
+    canvas.remove();
+    // Each view labels and styles the canvas for itself; the next view must not
+    // inherit test ids, aria labels, cursors or published bounds.
+    for (const name of canvas.getAttributeNames()) {
+      if (name !== "width" && name !== "height") canvas.removeAttribute(name);
+    }
+    // A 1x1 buffer frees the old frame's memory and makes the next view's first
+    // size call apply its own size and CSS.
+    renderer.setSize(1, 1, false);
+    parkedRenderers.push(renderer);
+  }
+
+  /** Hard teardown for a failed start. forceContextLoss is required because
+   * dispose() alone leaves the browser's WebGL context alive, and Chrome caps live
+   * contexts, so the retry must not inherit this one. */
   dispose(): void {
     const renderer = this.renderer;
     if (!renderer) return;
     this.renderer = null;
-    try {
-      renderer.dispose();
-    } finally {
-      try { renderer.forceContextLoss(); } catch { /* already lost */ }
-      renderer.domElement.remove();
-    }
+    destroyThreeDRenderer(renderer);
   }
 }
 

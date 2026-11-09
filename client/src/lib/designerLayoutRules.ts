@@ -1062,7 +1062,7 @@ export function applyDesignerLayoutRules(input: {
       input.room,
     ),
     input.room,
-  ), input.room);
+  ), input.room, input.openings);
   placed = applyMissingBlindCornerFillers({
     placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
   });
@@ -1092,7 +1092,7 @@ export function applyDesignerLayoutRules(input: {
   // Rule 4: one continuous floor-to-top board per filler, never a base sliver plus an upper sliver.
   placed = normalizeContinuousVerticalFillers(placed, input.room).placed;
   // Rule 11: uppers hang at 54 and top out on the 84/90/96 line.
-  placed = normalizeUpperHeights(placed);
+  placed = normalizeUpperHeights(placed, { room: input.room, openings: input.openings });
   placed = clampPlacedToRefrigeratorPanels(placed, input.room).placed;
   // Owner rule (Tom, Nov 6 2026): whenever a refrigerator panel is used, the
   // cabinet above comes forward so its face is flush with the panel. This is the

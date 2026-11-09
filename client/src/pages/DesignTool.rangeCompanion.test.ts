@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(new URL("./DesignTool.tsx", import.meta.url), "utf8");
+const companionSource = readFileSync(new URL("../lib/rangeCompanion.ts", import.meta.url), "utf8");
 
 describe("Design Tool range companion workflow", () => {
   it("asks before adding the real short wall cabinet and centered over-range microwave when a new range has no assigned hood", () => {
@@ -27,9 +28,12 @@ describe("Design Tool range companion workflow", () => {
     const previewSource = source.slice(previewStart, previewStart + 2300);
 
     expect(actionSource).toContain("proposal.microwaveMountBottom");
-	    expect(actionSource).toContain("overRangeMicrowaveBridge: true");
-    expect(previewSource).toContain("The 16″ MW-30 runs from 56″ to 72″");
-    expect(previewSource).toContain("bridge begins at 72″");
+    // The placed record is built by the shared rangeCompanionPlacement helper.
+    expect(actionSource).toContain("rangeCompanionPlacement(");
+    expect(companionSource).toContain("overRangeMicrowaveBridge: true");
+    // The preview text follows the chosen bridge height (exact wording is unit-tested).
+    expect(previewSource).toContain("rangeCompanionDetail(rangeCompanionPrompt.proposal)");
+    expect(companionSource).toContain("with no gap or trim and ends at ${top}″.");
     expect(source).not.toContain("rangeCompanionClearanceIn");
     expect(source).not.toContain("Microwave clearance");
   });

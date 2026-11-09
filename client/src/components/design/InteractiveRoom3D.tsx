@@ -321,6 +321,13 @@ export function addThreeDProductionLightRig(
 type SceneSku = {
   /** Stable source ID for a cabinet that came from the authoritative 2D design. */
   placementUid?: string | null;
+  /**
+   * A single-door wall cabinet hung turned horizontal as a range bridge. width
+   * and height here are the UPRIGHT catalog box (W1836: 18 x 36); the scene
+   * turns the whole case a quarter about its front normal, so it stands 36
+   * wide x 18 tall with the door hinge on top or bottom.
+   */
+  turnedSideways?: boolean;
   distributorSkuId: number;
   cabinetId: number;
   masterCode: string;
@@ -4923,8 +4930,14 @@ export function addCabinet(
       : requestedMountBottom;
   const countertopCenterY = (bottom + heightIn + 0.75) * INCH;
   const cabinet = new THREE.Group();
-  cabinet.position.set(x * INCH, (bottom + heightIn / 2) * INCH, z * INCH);
+  const turnedSideways = isWall && sku.turnedSideways === true;
+  // A turned bridge is built upright and then turned 90 degrees about its own
+  // front normal (applied before the wall-facing turn), so it stands as wide as
+  // the upright box is tall and as tall as it is wide.
+  cabinet.position.set(x * INCH, (bottom + (turnedSideways ? widthIn : heightIn) / 2) * INCH, z * INCH);
+  cabinet.rotation.order = "YXZ";
   cabinet.rotation.y = rotation;
+  if (turnedSideways) cabinet.rotation.z = Math.PI / 2;
   cabinet.userData = {
     placedUid: sku.placementUid ?? null,
     distributorSkuId: sku.distributorSkuId,
@@ -11988,6 +12001,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
     })
     : undefined;
   const codeDimensions = compactWallCodeDimensions(cabinet);
+  const turnedSideways = placementType === "wall" && cabinet.turnedSideways === true && Number(cabinet.width) > 0 && Number(cabinet.height) > 0;
   const openShelfHand = room ? wallOpenShelfExposedHand(cabinet, room, peers) : null;
   return {
     placementUid: cabinet.uid,
@@ -12010,8 +12024,11 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
     // The placed record is primary. Older appliance records can lack one of
     // these dimensions, in which case use the same APPLIANCES definition that
     // created the 2D placement—never the generic 24/12-inch cabinet defaults.
-    width: cornerBody?.width ?? footprint?.w ?? codeDimensions?.width ?? cabinet.width ?? appliance?.width,
-    height: codeDimensions?.height ?? cabinet.height ?? appliance?.elevHeight ?? (placementType === "wall" ? STD.WALL_HEIGHT : placementType === "tall" ? STD.TALL_HEIGHT : STD.BASE_HEIGHT),
+    // A turned bridge's placed record is the turned box (36 x 18); the scene
+    // draws the upright catalog box (18 x 36) and turns it.
+    ...(turnedSideways ? { turnedSideways: true } : {}),
+    width: turnedSideways ? cabinet.height : cornerBody?.width ?? footprint?.w ?? codeDimensions?.width ?? cabinet.width ?? appliance?.width,
+    height: turnedSideways ? cabinet.width : codeDimensions?.height ?? cabinet.height ?? appliance?.elevHeight ?? (placementType === "wall" ? STD.WALL_HEIGHT : placementType === "tall" ? STD.TALL_HEIGHT : STD.BASE_HEIGHT),
     depth: cornerBody?.depth ?? footprint?.d ?? cabinet.depth ?? appliance?.depth,
     numberOfDoors: cabinet.numberOfDoors ?? null,
     numberOfDrawers: cabinet.numberOfDrawers ?? null,
@@ -12324,6 +12341,10 @@ export function resolvedThreeDWallHeights(room: RoomData | undefined, fallbackHe
   }, {} as Record<WallSide, number>);
 }
 
+export function sameThreeDWallHeights(left: Record<WallSide, number>, right: Record<WallSide, number>): boolean {
+  return THREE_D_WALL_SIDES.every((side) => left[side] === right[side]);
+}
+
 /** Changes one wall only; all other independent room-wall heights remain intact. */
 export function updatedThreeDWallHeights(current: Record<WallSide, number>, side: WallSide, nextHeight: number): Record<WallSide, number> {
   return { ...current, [side]: nextHeight };
@@ -12566,7 +12587,11 @@ function ThreeDFloorMaterialControl({
   return <FlooringRotationControl value={rotation} onChange={onRotationChange} testId={testId} />;
 }
 
-export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick = false, roomOverride, openings = [], sinks = [], potFillers = [], island = null, islandFocusRequest = null, furniture = [], selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = [], orderSummary, orderLines = [], initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = [], doorStyleChoices = [], selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = [], catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered }: Props) {
+// Shared default for every omitted array prop. A fresh `[]` per render is a new
+// identity in the scene effect's dependencies and rebuilds the whole 3D room.
+const NO_ITEMS: never[] = [];
+
+export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -12945,7 +12970,8 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   useEffect(() => {
     const nextGlobal = constrainedThreeDWallHeight(roomOverride?.ceilingHeight ?? dimensions(scene.roomShape?.defaultDimensions).ceilingHeight);
     setWallHeightIn(nextGlobal);
-    setWallHeights(resolvedThreeDWallHeights(roomOverride, nextGlobal));
+    const nextHeights = resolvedThreeDWallHeights(roomOverride, nextGlobal);
+    setWallHeights((current) => sameThreeDWallHeights(current, nextHeights) ? current : nextHeights);
   }, [roomOverride?.ceilingHeight, roomOverride?.wallCeilings, scene.roomShape?.defaultDimensions]);
 
   const updateWallHeight = (value: unknown) => {
@@ -13056,11 +13082,12 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
   useEffect(() => {
     const host = new ThreeDRendererHost();
     rendererHostRef.current = host;
-    // Only this effect releases the WebGL context. Cleanup runs in declaration
+    // Only this effect gives the renderer up. Cleanup runs in declaration
     // order, and this effect is declared first, so the scene effect below tears
-    // its contents down first and the canvas is detached last.
+    // its contents down first and the canvas is detached last. The renderer is
+    // parked rather than destroyed so the next 3D view reuses its context.
     return () => {
-      host.dispose();
+      host.release();
       if (rendererHostRef.current === host) rendererHostRef.current = null;
     };
   }, []);
@@ -13099,7 +13126,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
     sizeThreeDRenderer(renderer, canvasWidth, canvasHeight, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
 	    renderer.domElement.dataset.renderQuality = renderQuality.tier;
     renderer.shadowMap.enabled = true;
-	    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+	    renderer.shadowMap.type = THREE.PCFShadowMap;
 	    renderer.outputColorSpace = THREE.SRGBColorSpace;
 	    renderer.toneMapping = THREE.ACESFilmicToneMapping;
 	    renderer.toneMappingExposure = studioLights.exposure;
@@ -14163,7 +14190,7 @@ export function InteractiveRoom3D({ scene, placed = [], crown = false, toeKick =
         renderer.setRenderTarget(null);
         renderer.autoClear = true;
         renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         renderer.clear();
         renderer.render(pathTraceScene, pathTraceCamera);
         usedStandardRender = true;
