@@ -242,7 +242,7 @@ import {
 	  formatEighthInches, formatInches, wallOpeningClearanceDetail, ceilingFitDetail, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
   rangeOvenClearanceViolations, RANGE_CLEARANCE_FILLER_IN,
 	  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, baseOpeningOverlaps,
-  elevationBox, isStacker, isGlassDoorCabinet, glassCabinetPlacementAllowed, glassStackerParentPlacement, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, wallCabinetTopLine, bridgeMountBottomAboveWindow, overSinkWallMountBottom, overSinkOrRangeNeighborAlignedMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts,
+  elevationBox, isStacker, isGlassDoorCabinet, glassCabinetPlacementAllowed, glassStackerParentPlacement, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, wallCabinetTopLine, bridgeMountBottomAboveWindow, overSinkWallMountBottom, overSinkOrRangeNeighborAlignedMountBottom, overRangeCookingFloorIn, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts,
   isRangeOrOven, isOverRangeMicrowave, isRefrigerator, isRefrigeratorWallCabinet, isHoodOverRangePair,
   fridgeCornerUpperDepth, isDiagonalCorner,
   isApplianceCode, isBaseHeightAppliance, convertLegacyCooktopPlacements, bearsCountertop, bearsIslandCountertop,
@@ -268,7 +268,7 @@ import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
-import { rangeCompanionProposal, repairLegacyWscMicrowaveBridges, type RangeCompanionProposal } from "@/lib/rangeCompanion";
+import { rangeCompanionDetail, rangeCompanionPlacement, rangeCompanionProposal, rangeCompanionSummary, repairLegacyWscMicrowaveBridges, type RangeCompanionProposal } from "@/lib/rangeCompanion";
 import { APPLIANCE_FINISH_CHOICES, applyApplianceFinish, type ApplianceFinish } from "@/lib/applianceFinish";
 import { isWscSpiceCabinet, wsc30UpperChoices, wsc30UpperPlacement } from "@/lib/spiceStack";
 import { commitThreeDCabinetCandidate, countertopMountedCabinet, threeDSeatedWallMoveTarget, threeDPlanMoveDelta } from "./designTool3DMovement";
@@ -5776,6 +5776,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const s = doorStyles?.find((d) => d.id === styleId) as { ourName?: string | null; aliasName?: string | null } | undefined;
     return s ? (affiliateStyleName({ ...s, id: styleId ?? 0 }) || null) : null;
   }, [affiliateStyleName, doorStyles, styleId]);
+  const activeStyleNameRef = useRef(activeStyleName);
+  activeStyleNameRef.current = activeStyleName;
   // Full active door style (with woodSpecies) so we can apply the Hickory-only
   // unfinished-end skin rule. Hickory cabinets ship with unfinished exposed
   // sides, so any exposed end needs a matching Hickory skin panel.
@@ -8734,6 +8736,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           toast.warning(overApplianceMount.warning, { duration: 9000 });
         }
       }
+	      // An upper over the range never lands below the cooking clearance, even
+	      // where a hood sets the over-range rule aside.
+	      const cookingFloor = requestedIslandFace || bridgeMountBottom != null || overApplianceMount ? null : overRangeCookingFloorIn(finalCab, prev, room);
+	      if (cookingFloor != null) finalCab = { ...finalCab, mountBottom: Math.max(elevationBox(finalCab, room).bottom, cookingFloor) };
 	      // Do not top-align any other wall cabinet to an adjacent upper. The room
 	      // wall standard is a 54-inch cabinet bottom; only an upper over the sink
 	      // or range joins its neighbour's top line (above). Stackers, OTR
@@ -9102,6 +9108,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		              wallCabPoolRef.current,
 		              appliancePalette,
 		              wallCabHeightRef.current,
+		              { placed: committedRun, lineName: activeStyleNameRef.current },
 		            );
 		        if (proposal) {
 		          setRangeCompanionPrompt({ rangeUid: finalCab.uid, proposal, microwaveAlreadyPlaced: false });
@@ -9121,6 +9128,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		            wallCabPoolRef.current,
 		            appliancePalette,
 		            wallCabHeightRef.current,
+		            { placed: committedRun, lineName: activeStyleNameRef.current },
 		          );
 		          if (proposal) {
 		            setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: true });
@@ -9333,6 +9341,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    justPlacedRef.current = true;
 	    toast.success(`${recommendation.hood.masterCode} replaced ${recommendation.conflictingUpper.masterCode} above the range.`);
 	  }, [rangeHoodReplacementRecommendation, room]);
+	  const chooseRangeBridgeHeight = useCallback((heightIn: number) => {
+	    const prompt = rangeCompanionPrompt;
+	    if (!prompt) return;
+	    const choice = prompt.proposal.bridgeChoices.find((candidate) => candidate.heightIn === heightIn);
+	    if (!choice?.bridge) return;
+	    const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
+	    if (!range) return;
+	    const proposal = rangeCompanionProposal(
+	      range,
+	      room,
+	      wallCabPoolRef.current,
+	      appliancePalette,
+	      wallCabHeightRef.current,
+	      { placed: placedRef.current, lineName: activeStyleNameRef.current, bridgeHeightIn: heightIn },
+	    );
+	    if (proposal?.bridgeHeightIn === heightIn) setRangeCompanionPrompt({ ...prompt, proposal });
+	  }, [appliancePalette, rangeCompanionPrompt, room]);
 	  const addApprovedRangeCompanions = useCallback(() => {
 	    const prompt = rangeCompanionPrompt;
 	    if (!prompt) return;
@@ -9373,53 +9398,33 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      wallCabPoolRef.current,
 	      appliancePalette,
 	      wallCabHeightRef.current,
+	      { placed: placedRef.current, lineName: activeStyleNameRef.current, bridgeHeightIn: prompt.proposal.bridgeHeightIn },
 	    );
+	    // The chosen height must still be the same real SKU; never place a
+	    // different bridge than the one the person approved.
+	    if (proposal && (proposal.bridge.id !== prompt.proposal.bridge.id || proposal.bridge.masterCode !== prompt.proposal.bridge.masterCode)) {
+	      setRangeCompanionPrompt(null);
+	      toast.error(`${prompt.proposal.bridge.masterCode} is no longer available at that height for this range. Nothing was added.`);
+	      return;
+	    }
 	    if (!proposal) {
 	      setRangeCompanionPrompt(null);
 	      toast.error("A matching selected-line bridge and layout microwave are no longer available for this range. Nothing was added.");
 	      return;
 	    }
 
-	    const makePlacedCompanion = (
-	      source: DesignCabinet,
-	      spot: RangeCompanionProposal["bridgeSpot"],
-	      mountBottom: number,
-	      styleId: number | null,
-	    ): PlacedCabinet => ({
-	      uid: makeUid(),
-	      cabinetId: source.id,
-	      masterCode: source.masterCode,
-	      description: source.description,
-	      category: source.category,
-	      subCategory: source.subCategory,
-	      placement: source.placement,
-	      x: spot.x,
-	      y: spot.y,
-	      width: Number(source.width),
-	      depth: Number(source.depth),
-	      height: Number(source.height),
-	      rotation: spot.rotation,
-	      numberOfDoors: source.numberOfDoors,
-	      numberOfDrawers: source.numberOfDrawers,
-	      catalogImageUrl: source.catalogImageUrl ?? null,
-	      mountBottom,
-	      // A W30 microwave bridge is a named installation exception: it begins
-	      // at the owner's fixed 72-inch datum, not the ordinary 54-inch wall
-	      // cabinet datum. Preserve that value through save/restore normalization.
-	      ...(source.placement === "wall" ? { mountBottomAdjusted: true, overRangeMicrowaveBridge: true } : {}),
-	      styleId,
-	      ...(spot.wallId ? { wallId: spot.wallId, wallOffset: spot.wallOffset ?? 0 } : {}),
-	    });
-	    const microwave = existingMicrowave ?? makePlacedCompanion(
+	    const microwave = existingMicrowave ?? rangeCompanionPlacement(
 	      proposal.microwave,
 	      proposal.microwaveSpot,
 	      proposal.microwaveMountBottom,
+	      makeUid(),
 	      null,
 	    );
-	    const bridge = makePlacedCompanion(
+	    const bridge = rangeCompanionPlacement(
 	      proposal.bridge,
 	      proposal.bridgeSpot,
 	      proposal.bridgeMountBottom,
+	      makeUid(),
 	      styleIdRef.current ?? null,
 	    );
 	    const additions = existingMicrowave ? [bridge] : [microwave, bridge];
@@ -9471,7 +9476,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!prompt) return;
     const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
     if (!range) { toast.error("The range changed before the bridge cabinet was offered. Nothing was added."); return; }
-    const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current);
+    const proposal = rangeCompanionProposal(range, room, wallCabPoolRef.current, appliancePalette, wallCabHeightRef.current, { placed: placedRef.current, lineName: activeStyleNameRef.current });
     if (!proposal) { toast.error("A matching selected-line bridge cabinet and microwave are not available for this range."); return; }
     // The proposal already carries the right bridge: `overRangeBridgeFor` matches the
     // RANGE width and sizes the height so its top lands on the upper run beside it
@@ -23762,10 +23767,43 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <AlertDialogTitle>Add microwave and bridge over range</AlertDialogTitle>
 	            <AlertDialogDescription>
 	              {rangeCompanionPrompt
-	                ? `The 16″ MW-30 ends at the fixed 72″ bridge datum. The selected bridge begins at 72″ and ends at ${rangeCompanionPrompt.proposal.bridgeMountBottom + Number(rangeCompanionPrompt.proposal.bridge.height)}″, matching the current ${wallCabHeight}″ side-wall cabinet height.`
+	                ? rangeCompanionSummary(rangeCompanionPrompt.proposal)
 	                : ""}
 	            </AlertDialogDescription>
 	          </AlertDialogHeader>
+	          {rangeCompanionPrompt && rangeCompanionPrompt.proposal.bridgeHeightIn != null && (
+	            <fieldset data-testid="range-bridge-height-choices" className="space-y-2">
+	              <legend className="text-sm font-semibold">Cabinet height over the microwave</legend>
+	              <div role="radiogroup" aria-label="Cabinet height over the microwave" className="grid grid-cols-5 gap-1.5">
+	                {rangeCompanionPrompt.proposal.bridgeChoices.map((choice) => {
+	                  const selected = choice.heightIn === rangeCompanionPrompt.proposal.bridgeHeightIn;
+	                  return (
+	                    <button
+	                      key={choice.heightIn}
+	                      type="button"
+	                      role="radio"
+	                      aria-checked={selected}
+	                      disabled={!choice.bridge}
+	                      title={choice.disabledReason ?? `${choice.bridge?.masterCode}: top at ${choice.topIn}″`}
+	                      data-testid={`range-bridge-height-${choice.heightIn}`}
+	                      onClick={() => chooseRangeBridgeHeight(choice.heightIn)}
+	                      className={`rounded-md border px-1 py-1.5 text-center text-xs leading-tight transition-colors ${selected ? "border-[#244338] bg-[#244338] text-white" : "border-slate-300 bg-white text-slate-900 hover:border-[#244338]"} disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400`}
+	                    >
+	                      <span className="block font-semibold">{choice.heightIn}″</span>
+	                      <span className="block text-[10px]">{choice.bridge ? `top ${choice.topIn}″` : "n/a"}</span>
+	                    </button>
+	                  );
+	                })}
+	              </div>
+	              {rangeCompanionPrompt.proposal.bridgeChoices.some((choice) => choice.disabledReason) && (
+	                <ul className="space-y-0.5 text-[11px] leading-snug text-slate-600" data-testid="range-bridge-height-disabled-reasons">
+	                  {rangeCompanionPrompt.proposal.bridgeChoices.filter((choice) => choice.disabledReason).map((choice) => (
+	                    <li key={choice.heightIn}>{choice.heightIn}″ unavailable: {choice.disabledReason}</li>
+	                  ))}
+	                </ul>
+	              )}
+	            </fieldset>
+	          )}
 	          {rangeCompanionPrompt && (
 	            <div data-testid="range-companion-source-preview" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
 	              <p className="font-semibold">{rangeCompanionPrompt.microwaveAlreadyPlaced ? "The matching bridge will be added above the existing MW-30 only if the upper span is clear." : "Two aligned items will be added only if the upper span is clear."}</p>
@@ -23773,7 +23811,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                <li><span className="font-medium">{rangeCompanionPrompt.proposal.bridge.masterCode}</span> — {rangeCompanionPrompt.proposal.bridge.description} <span className="text-emerald-800">({Number(rangeCompanionPrompt.proposal.bridge.height)}″ bridge)</span></li>
 	                <li><span className="font-medium">{rangeCompanionPrompt.proposal.microwave.masterCode}</span> — {rangeCompanionPrompt.proposal.microwave.description} <span className="text-emerald-800">({rangeCompanionPrompt.microwaveAlreadyPlaced ? "already placed" : "layout appliance; quote separately"})</span></li>
 	              </ul>
-	              <p className="mt-3 border-t border-emerald-200 pt-3 text-xs leading-relaxed">The 16″ MW-30 runs from 56″ to 72″. The selected real W30 bridge begins at 72″ with no gap or trim and ends at {rangeCompanionPrompt.proposal.bridgeMountBottom + Number(rangeCompanionPrompt.proposal.bridge.height)}″.</p>
+	              <p className="mt-3 border-t border-emerald-200 pt-3 text-xs leading-relaxed">{rangeCompanionDetail(rangeCompanionPrompt.proposal)}</p>
 	              <p className="mt-2 text-xs leading-relaxed">No existing cabinet will be moved or replaced. Selecting No keeps the range as placed.</p>
 	            </div>
 	          )}

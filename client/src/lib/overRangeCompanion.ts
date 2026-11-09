@@ -15,6 +15,7 @@
 import {
   BRIDGE_STOCK_HEIGHTS,
   bridgeHeightForWallHeight,
+  microwaveBridgeHeightForNeighbor,
   cabinetWall,
   dim,
   isRangeOrOven,
@@ -165,6 +166,11 @@ export function overRangeBridgeHeightFor(
   wallCatalog: readonly { placement?: string | null; width?: string | number | null; height?: string | number | null }[] = [],
   bridgeBottomIn: number = OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM,
 ): number {
+  // Over a microwave on the 72" datum, Tom's 30/36/42 -> 12/18/24 mapping wins.
+  const mapped = Math.abs(bridgeBottomIn - OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM) <= 0.01
+    ? microwaveBridgeHeightForNeighbor(wallCabinetHeightIn)
+    : null;
+  if (mapped != null) return mapped;
   const runTop = overRangeUpperRunTop(wallCabinetHeightIn, wallCatalog)
     ?? kitchenRuleNumber("wall_bottom_in") + wallCabinetHeightIn;
   const required = runTop - bridgeBottomIn;
