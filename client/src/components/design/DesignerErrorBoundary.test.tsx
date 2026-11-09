@@ -13,7 +13,7 @@ import {
   useDesignerCrashFlush,
   useLastCommitted,
 } from "./DesignerErrorBoundary";
-import { STALE_CHUNK_RELOAD_FLAG, resetPageReloadState } from "@/lib/staleChunkReload";
+import { STALE_CHUNK_RELOAD_FLAG, reloadForStaleChunk, resetPageReloadState } from "@/lib/staleChunkReload";
 
 const DESIGNER_FLAG = designerBoundaryReloadFlag("designer");
 
@@ -111,6 +111,24 @@ describe("designer error boundary", () => {
     expect(reload).toHaveBeenCalledTimes(2);
     expect(imports).toBe(1);
     expect(panel()).not.toBeNull();
+  });
+
+  it("treats the error after a cancelled preload as the same stale chunk while its reload is on the way", async () => {
+    const saves: string[] = [];
+    function Designer() {
+      useDesignerCrashFlush(React.useCallback(() => saves.push("crash"), []));
+      // What React throws for a lazy import that resolved with nothing.
+      throw new Error("Element type is invalid. Received a promise that resolves to: undefined.");
+    }
+    expect(reloadForStaleChunk("page")).toBe(true);
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
+    act(() => root.render(<DesignerErrorBoundary surface="designer"><Designer /></DesignerErrorBoundary>));
+    await settle();
+    expect(panel()?.textContent).toContain("A newer version of the designer was published");
+    expect(saves).toEqual([]);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(window.sessionStorage.getItem(DESIGNER_FLAG)).toBeNull();
   });
 
   it("labels Reload by what it does: the page for a stale chunk, even in the 3D view; a remount otherwise", async () => {

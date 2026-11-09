@@ -31,21 +31,23 @@ export const STALE_CHUNK_RELOAD_FLAG = "cabinetdealz.staleChunkReload";
 export const STALE_CHUNK_STABLE_MS = 15_000;
 
 let staleChunkThisLoad = false;
-let reloadPending = false;
+let staleChunkReloadAt: number | null = null;
+/** Longer than a page takes to start unloading; a reload cancelled by the browser stops counting after this. */
+const RELOAD_PENDING_MS = 10_000;
 
 /**
- * True once an automatic reload is on its way. A cancelled `vite:preloadError`
+ * True once an automatic reload for a stale chunk is on its way. A cancelled `vite:preloadError`
  * resolves the import with nothing, so React then throws a different error
  * that is really the same stale chunk.
  */
 export function pageReloadPending(): boolean {
-  return reloadPending;
+  return staleChunkReloadAt != null && pageReloadEnv.now() - staleChunkReloadAt < RELOAD_PENDING_MS;
 }
 
 /** A fresh page load; jsdom tests call it between cases because the page never unloads. */
 export function resetPageReloadState() {
   staleChunkThisLoad = false;
-  reloadPending = false;
+  staleChunkReloadAt = null;
 }
 
 /**
@@ -64,7 +66,6 @@ export function guardedPageReload(flags: readonly string[], record: Record<strin
   } catch {
     return false;
   }
-  reloadPending = true;
   setTimeout(() => pageReloadEnv.reload(), 0);
   return true;
 }
@@ -92,7 +93,9 @@ export function clearReloadGuard(flag: string) {
  */
 export function reloadForStaleChunk(source: string, alsoFlags: readonly string[] = []): boolean {
   staleChunkThisLoad = true;
-  return guardedPageReload([STALE_CHUNK_RELOAD_FLAG, ...alsoFlags], { surface: source, reason: "chunk-load" });
+  const reloading = guardedPageReload([STALE_CHUNK_RELOAD_FLAG, ...alsoFlags], { surface: source, reason: "chunk-load" });
+  if (reloading) staleChunkReloadAt = pageReloadEnv.now();
+  return reloading;
 }
 
 /**

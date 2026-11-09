@@ -30,6 +30,8 @@ interface State {
   mountKey: number;
   /** The page reload has already been tried and a draft can be dropped. */
   canDiscard: boolean;
+  /** Reload loads the page again; known only once the crash has been counted. */
+  reloadsPage: boolean;
 }
 
 /** A crash within this long of the last remount counts as the same streak. */
@@ -110,7 +112,7 @@ export function useDesignerCrashFlush(flush: () => void, discard?: () => void) {
  * remount replays the same failed import.
  */
 export class DesignerErrorBoundary extends Component<Props, State> {
-  state: State = { error: null, mountKey: 0, canDiscard: false };
+  state: State = { error: null, mountKey: 0, canDiscard: false, reloadsPage: false };
   private readonly flushes: FlushRegistry = new Set();
   private crashes = 0;
   private remountedAt = Number.NEGATIVE_INFINITY;
@@ -129,7 +131,7 @@ export class DesignerErrorBoundary extends Component<Props, State> {
     if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
       // Not a retry by the user: a crash after this remount starts a new streak.
       this.remountedAt = Number.NEGATIVE_INFINITY;
-      this.setState((current) => ({ error: null, mountKey: current.mountKey + 1, canDiscard: false }));
+      this.setState((current) => ({ error: null, mountKey: current.mountKey + 1, canDiscard: false, reloadsPage: false }));
       return;
     }
     if (!this.state.error) this.scheduleStable();
@@ -155,6 +157,7 @@ export class DesignerErrorBoundary extends Component<Props, State> {
       }
     });
     this.crashes = designerBoundaryEnv.now() - this.remountedAt <= DESIGNER_BOUNDARY_STABLE_MS ? this.crashes + 1 : 1;
+    if (this.reloadsPage()) this.setState({ reloadsPage: true });
     if (this.props.pageReload === false) return;
     const surfaceFlag = designerBoundaryReloadFlag(this.props.surface);
     const guardUsed = reloadGuardUsed(surfaceFlag);
@@ -177,7 +180,7 @@ export class DesignerErrorBoundary extends Component<Props, State> {
 
   private remount() {
     this.remountedAt = designerBoundaryEnv.now();
-    this.setState((current) => ({ error: null, mountKey: current.mountKey + 1, canDiscard: false }));
+    this.setState((current) => ({ error: null, mountKey: current.mountKey + 1, canDiscard: false, reloadsPage: false }));
   }
 
   /** Whether Reload loads the page again instead of remounting the surface. */
@@ -230,7 +233,7 @@ export class DesignerErrorBoundary extends Component<Props, State> {
             )}
             <Button type="button" variant="outline" size="sm" onClick={this.reload} data-testid="designer-error-reload">
               <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              {this.reloadsPage() ? "Reload page" : "Reload designer"}
+              {staleBuild || this.state.reloadsPage ? "Reload page" : "Reload designer"}
             </Button>
             {this.state.canDiscard && (
               <Button type="button" variant="ghost" size="sm" onClick={this.discardDraft}>
