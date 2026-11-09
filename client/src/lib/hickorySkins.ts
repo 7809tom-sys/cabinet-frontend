@@ -171,14 +171,20 @@ function placementLabel(p: Placement): string {
  * Build the list of auto-suggested Hickory skins for a design. Returns an empty
  * list unless the style is hickory AND frameless. A forced skin flag cannot
  * add skins to any other style. One skin is suggested per exposed cabinet end.
+ * Pass a function to judge each cabinet by its own finish (a two-color design).
  */
 export function hickorySkinSuggestions(
   placed: PlacedCabinet[],
   room: RoomData,
-  style: SkinStyleInfo | null | undefined,
+  style: SkinStyleInfo | null | undefined | ((cabinet: PlacedCabinet) => SkinStyleInfo | null | undefined),
 ): HickorySkinSuggestion[] {
-  if (!skinsAreNeeded(style)) return [];
-  const ends = exposedEnds(placed, room);
+  if (typeof style !== "function" && !skinsAreNeeded(style)) return [];
+  const byUid = new Map(placed.map((cabinet) => [cabinet.uid, cabinet]));
+  const ends = exposedEnds(placed, room).filter((e) => {
+    if (typeof style !== "function") return true;
+    const cabinet = byUid.get(e.uid);
+    return cabinet != null && skinsAreNeeded(style(cabinet));
+  });
   return ends.map((e) => ({
     uid: e.uid,
     masterCode: e.masterCode,

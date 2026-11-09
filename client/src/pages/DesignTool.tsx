@@ -5864,10 +5864,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const design3DRoomSceneReferenceUrl = (designStyle as { roomSceneImageUrl?: string | null } | null)?.roomSceneImageUrl ?? null;
   const activeStyleRef = useRef(activeStyle);
   activeStyleRef.current = activeStyle;
+  // Skins are judged per cabinet: its own finish, else Color 1.
+  const skinStyleForCab = useCallback(
+    (cabinet: { styleId?: number | null }) => (cabinet.styleId != null
+      ? (doorStyles ?? []).find((style) => style.id === cabinet.styleId) ?? designStyle
+      : designStyle) as never,
+    [designStyle, doorStyles],
+  );
   useEffect(() => {
     if (styleId != null && !activeStyle) return;
-    setPlaced((current) => dropIneligibleSkins(current, designStyle));
-  }, [designStyle, styleId]);
+    setPlaced((current) => dropIneligibleSkins(current, skinStyleForCab));
+  }, [skinStyleForCab, styleId]);
   const doorRenderSettings = trpc.siteSettings.getPublicSettings.useQuery(undefined, { staleTime: 60_000 });
   const doorRenderExposure = clampRenderExposure((doorRenderSettings.data as { renderExposure?: number | string | null } | undefined)?.renderExposure);
   const doorColorDeltaE = clampColorDeltaE((doorRenderSettings.data as { colorMatchDeltaE?: number | string | null } | undefined)?.colorMatchDeltaE);
@@ -5921,8 +5928,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Empty unless the selected finish is Hickory. NOTE: the real skin SKU/price
   // is pending owner confirmation, so these carry pendingSku=true.
   const hickorySkins = useMemo<HickorySkinSuggestion[]>(() => {
-    return hickorySkinSuggestions(placed, room, designStyle as never);
-  }, [placed, room, designStyle]);
+    return hickorySkinSuggestions(placed, room, skinStyleForCab);
+  }, [placed, room, skinStyleForCab]);
 
   // Regular finished ends remain optional on framed lines. Frameless cabinets
   // add one source-priced 3/4" panel per visible wall, base, or tall end.
@@ -6041,7 +6048,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const pricedPlaced = clearForeignSavedStyleOverrides(repairedPlaced, restoredStyle.distributorId, styleDistributorIdById);
       const restoredDoorStyle = doorStyles?.find((style) => style.id === restoredStyle.styleId) ?? null;
       const styleKnown = restoredStyle.styleId == null || restoredDoorStyle != null;
-      const withoutIneligibleSkins = styleKnown ? dropIneligibleSkins(pricedPlaced, restoredDoorStyle) : pricedPlaced;
+      const withoutIneligibleSkins = styleKnown
+        ? dropIneligibleSkins(pricedPlaced, (item) => (item.styleId != null
+          ? doorStyles?.find((style) => style.id === item.styleId) ?? restoredDoorStyle
+          : restoredDoorStyle))
+        : pricedPlaced;
       const bathroomReload = d.roomType === "bathroom";
       const reloaded = restoreSavedDesignerPlan({
         room: restoredRoom,

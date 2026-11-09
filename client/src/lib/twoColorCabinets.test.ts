@@ -290,8 +290,8 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource.match(/finish=\{activeFinish\}/g)).toHaveLength(1);
     expect(designToolSource).toContain("return (sid != null && finishById.get(sid)) || designFinish;");
     expect(designToolSource).toContain("return (sid != null && panelKindById.get(sid)) || designPanelKind;");
-    expect(designToolSource).toContain("dropIneligibleSkins(current, designStyle)");
-    expect(designToolSource).toContain("hickorySkinSuggestions(placed, room, designStyle as never)");
+    expect(designToolSource).toContain("dropIneligibleSkins(current, skinStyleForCab)");
+    expect(designToolSource).toContain("hickorySkinSuggestions(placed, room, skinStyleForCab)");
     const withoutNameDefinition = designToolSource.replace(/^\s+const designStyleName = .*$/m, "");
     expect(withoutNameDefinition).not.toMatch(/\?\? activeFinish\b|\?\? activeStyleName\b/);
     // The selected cabinet shows its own finish (Color 1 when it inherits).
@@ -328,6 +328,13 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     const swap = designToolSource.slice(designToolSource.indexOf("const swapInventoryCabinet = useCallback("), designToolSource.indexOf("const swapInventoryCabinet = useCallback(") + 1600);
     expect(swap).toContain("stockPromptUnlocked, designStyleId]);");
     for (const body of [sinkSwap, choose, swap]) expect(body).not.toMatch(/[\[ ]styleId[,\]]/);
+  });
+
+  it("skins are judged per cabinet: its own finish, else Color 1", () => {
+    expect(designToolSource).toContain("setPlaced((current) => dropIneligibleSkins(current, skinStyleForCab));");
+    expect(designToolSource).toContain("return hickorySkinSuggestions(placed, room, skinStyleForCab);");
+    expect(designToolSource).toMatch(/const skinStyleForCab = useCallback\(\s+\(cabinet: \{ styleId\?: number \| null \}\) => \(cabinet\.styleId != null\s+\? \(doorStyles \?\? \[\]\)\.find\(\(style\) => style\.id === cabinet\.styleId\) \?\? designStyle\s+: designStyle\)/);
+    expect(designToolSource).toContain("dropIneligibleSkins(pricedPlaced, (item) => (item.styleId != null");
   });
 
 });

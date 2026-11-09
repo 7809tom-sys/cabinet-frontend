@@ -125,6 +125,18 @@ describe("dropIneligibleSkins", () => {
     expect(dropIneligibleSkins([cabinet, endPanel], mapleFrameless)).toEqual([cabinet, endPanel]);
   });
 
+  it("judges each skin by its own finish, else Color 1, on a two-color design", () => {
+    const hickorySkin = { ...skin, styleId: 1 as number | null };
+    const inheritedSkin = { ...wallSkin, styleId: null as number | null };
+    const styles = new Map<number, typeof hickoryFrameless | typeof mapleFrameless>([[1, hickoryFrameless], [2, mapleFrameless]]);
+    const colorOneMaple = (item: { styleId: number | null }) => (item.styleId != null ? styles.get(item.styleId) ?? mapleFrameless : mapleFrameless);
+    expect(dropIneligibleSkins([cabinet, hickorySkin, inheritedSkin], colorOneMaple)).toEqual([cabinet, hickorySkin]);
+    const colorOneHickory = (item: { styleId: number | null }) => (item.styleId != null ? styles.get(item.styleId) ?? hickoryFrameless : hickoryFrameless);
+    const kept = [cabinet, hickorySkin, inheritedSkin];
+    expect(dropIneligibleSkins(kept, colorOneHickory)).toBe(kept);
+    expect(dropIneligibleSkins([cabinet, { ...skin, styleId: 2 }, inheritedSkin], colorOneHickory)).toEqual([cabinet, inheritedSkin]);
+  });
+
   it("recognizes skin products without treating finished end panels as skins", () => {
     expect(isSkinProduct(skin)).toBe(true);
     expect(isSkinProduct({ masterCode: "BSV", description: "Base skin" })).toBe(true);
