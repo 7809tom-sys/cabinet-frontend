@@ -19,6 +19,7 @@ import {
   isGlassDoorCabinet,
   isPanelItem,
   ordinaryWallMountBottom,
+  overSinkOrRangeNeighborAlignedMountBottom,
   placedHeight,
   resolveSwing,
   wallRunOffset,
@@ -57,7 +58,25 @@ export function upperHangsAtRuleHeight(item: PlacedCabinet): boolean {
 }
 
 /** Rule 11: apply the 54" / 84-90-96 datum to every ordinary upper. */
-export function normalizeUpperHeights(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
+export function normalizeUpperHeights(
+  placed: readonly PlacedCabinet[],
+  context?: { room: RoomData; openings?: readonly WallOpening[] },
+): PlacedCabinet[] {
+  const datum = upperHeightsOnDatum(placed);
+  if (!context) return datum;
+  // Tom's rule (Nov 8): an upper over the sink or range keeps its neighbour's
+  // top line rather than the height-keyed datum, read from the re-hung run.
+  return datum.map((item, index) => {
+    const original = placed[index]!;
+    if (original.mountBottomAdjusted || original.refrigeratorAssemblyRole === "bridge" || original.overRangeMicrowaveBridge === true) return item;
+    const aligned = overSinkOrRangeNeighborAlignedMountBottom(item, datum, context.openings ?? [], context.room);
+    if (aligned == null) return item;
+    if (Number(original.mountBottom) === aligned) return original;
+    return { ...original, mountBottom: aligned };
+  });
+}
+
+function upperHeightsOnDatum(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
   return placed.map((item) => {
     if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item)) return item;
     if (item.stackedOnCabinetUid) return item;

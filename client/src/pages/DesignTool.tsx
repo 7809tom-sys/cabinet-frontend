@@ -241,7 +241,7 @@ import {
 	  formatEighthInches, formatInches, wallOpeningClearanceDetail, ceilingFitDetail, type WallGap, wallGaps, wallGapFitPreview, wallGapFreehandPreview, nearestRectRoomWallAtPoint, gapFillCandidatesByWidth, nextSmartGapPreviewIndex, withTemporarySmartGapPreview, isRangeHoodPlacement,
   rangeOvenClearanceViolations, RANGE_CLEARANCE_FILLER_IN,
 	  wallOpeningClearanceViolations, WALL_OPENING_CLEARANCE_IN, baseOpeningOverlaps,
-  elevationBox, isStacker, isGlassDoorCabinet, glassCabinetPlacementAllowed, glassStackerParentPlacement, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, wallCabinetTopLine, bridgeMountBottomAboveWindow, overSinkWallMountBottom, overSinkNeighborAlignedMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts,
+  elevationBox, isStacker, isGlassDoorCabinet, glassCabinetPlacementAllowed, glassStackerParentPlacement, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, wallCabinetTopLine, bridgeMountBottomAboveWindow, overSinkWallMountBottom, overSinkOrRangeNeighborAlignedMountBottom, overSinkWindowClearanceMeasure, overSinkWindowClearanceBlocked, normalizeOverSinkWallMounts,
   isRangeOrOven, isOverRangeMicrowave, isRefrigerator, isRefrigeratorWallCabinet, isHoodOverRangePair,
   fridgeCornerUpperDepth, isDiagonalCorner,
   isApplianceCode, isBaseHeightAppliance, convertLegacyCooktopPlacements, bearsCountertop, bearsIslandCountertop,
@@ -8712,8 +8712,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         toast.error(message);
         return;
       }
+	      // Tom's rule (Nov 8): an upper over the sink or range tops out on the
+	      // upper it joins, ahead of the 70" sink and 72" range datums.
+	      const neighborAlignedBottom = requestedIslandFace ? null : overSinkOrRangeNeighborAlignedMountBottom(finalCab, prev, openings, room);
 	      const sinkMountBottom = requestedIslandFace ? null : overSinkWallMountBottom(finalCab, prev, openings, room);
-	      const bridgeMountBottom = requestedIslandFace ? null : sinkMountBottom ?? bridgeMountBottomAboveWindow(finalCab, openings, room);
+	      const bridgeMountBottom = requestedIslandFace ? null : neighborAlignedBottom ?? sinkMountBottom ?? bridgeMountBottomAboveWindow(finalCab, openings, room);
       if (bridgeMountBottom != null) {
         finalCab = { ...finalCab, mountBottom: bridgeMountBottom };
       }
@@ -8732,16 +8735,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           toast.warning(overApplianceMount.warning, { duration: 9000 });
         }
       }
-	      // Do not top-align a short wall cabinet to an adjacent upper. The room
-	      // wall standard is a 54-inch cabinet bottom. `bridgeMountBottom` above
-	      // remains a narrow opening-clearance exception; stackers, OTR appliances,
-	      // and refrigerator surrounds retain their dedicated mounting rules.
-	      // A full-height upper over the sink is the exception: it meets the top
-	      // line of the uppers beside it (Tom, Nov 8: W2430 over the sink).
-	      if (!requestedIslandFace && bridgeMountBottom == null && !overApplianceMount && !otrRangeUid) {
-	        const alignedSinkBottom = overSinkNeighborAlignedMountBottom(finalCab, prev, openings, room);
-	        if (alignedSinkBottom != null) finalCab = { ...finalCab, mountBottom: alignedSinkBottom, mountBottomAdjusted: true };
-	      }
+	      // Do not top-align any other wall cabinet to an adjacent upper. The room
+	      // wall standard is a 54-inch cabinet bottom; only an upper over the sink
+	      // or range joins its neighbour's top line (above). Stackers, OTR
+	      // appliances, and refrigerator surrounds retain their dedicated rules.
 
       // A free segment or drop coordinate can become stale if the customer adds
       // several items quickly. Reject a true footprint collision rather than

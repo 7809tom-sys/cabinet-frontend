@@ -1208,7 +1208,7 @@ export function runAutoDesignLayout(args: {
   const explicitHingeUids = working.filter((item) => item.swing === "left" || item.swing === "right").map((item) => item.uid);
   working = pairAdjacentSingleDoorHandles({ placed: working, room, explicitHingeUids }).placed;
   // Rule 11: the 54 / 84-90-96 upper datum, and rule 4's one continuous board per filler.
-  working = normalizeUpperHeights(working);
+  working = normalizeUpperHeights(working, { room, openings: stageOpenings });
   working = normalizeContinuousVerticalFillers(working, room).placed;
   // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
   const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls });

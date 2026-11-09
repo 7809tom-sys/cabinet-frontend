@@ -1800,6 +1800,9 @@ export const WALL_CABINET_TOP = STD.WALL_MOUNT_BOTTOM + STD.WALL_HEIGHT; // 84"
 export const OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM = 72;
 /** Standard finished-floor bottom for a short cabinet directly above a sink. */
 export const OVER_SINK_WALL_MOUNT_BOTTOM = 70;
+export const OVER_SINK_CENTER_TOLERANCE_IN = 0.5;
+/** Cooking clearance: an upper over a range never hangs below 72 in (Tom, Nov 1). */
+export const OVER_RANGE_UPPER_MIN_BOTTOM_IN = 72;
 
 // On taller ceilings the upper run hangs higher so its top finishes near the
 // ceiling instead of leaving a big dead gap. We leave a small reveal so crown
@@ -5210,7 +5213,7 @@ export function overSinkWallMountBottom(
   const side = cabinetWall(cabinet, room);
   const horizontal = side === "top" || side === "bottom";
   const currentStart = horizontal ? cabinet.x : cabinet.y;
-  if (Math.abs(currentStart - centeredStart) > 0.5) return null;
+  if (Math.abs(currentStart - centeredStart) > OVER_SINK_CENTER_TOLERANCE_IN) return null;
   return Math.max(OVER_SINK_WALL_MOUNT_BOTTOM, bridgeMountBottomAboveWindow(cabinet, openings, room) ?? 0);
 }
 
@@ -5276,6 +5279,7 @@ export function normalizeOverSinkWallMounts(
   let changed = false;
   const normalized = placed.map((cabinet) => {
     if (cabinet.mountBottomAdjusted) return cabinet;
+    if (overSinkOrRangeNeighborAlignedMountBottom(cabinet, placed, openings, room) != null) return cabinet;
     const mountBottom = overSinkWallMountBottom(cabinet, placed, openings, room);
     if (mountBottom == null || cabinet.mountBottom === mountBottom) return cabinet;
     changed = true;
@@ -5284,41 +5288,58 @@ export function normalizeOverSinkWallMounts(
   return changed ? normalized : placed;
 }
 
+const isHoodLike = (item: Pick<PlacedCabinet, "masterCode" | "description">) =>
+  /^(?:HOOD(?:-|\b)|RHF[\s_-]*\d)/i.test(item.masterCode || "") || /\b(?:range\s+)?hood\b/i.test(item.description || "");
+
 /**
- * A full-height wall cabinet (30" or taller) placed over a sink hangs so its top
- * meets the uppers directly beside it on the same wall. A W2430 between two
- * W3036s would otherwise keep the 54" bottom and finish below their top line.
- * Returns null when there is no adjoining upper, when the cabinet is not over a
- * sink base, or when the aligned box would cross a window clearance or the
- * ceiling; short over-sink cabinets keep the 70" over-sink rule.
+ * Tom's rule (Nov 8): a wall cabinet over the sink or over the stove/range,
+ * of any height, hangs so its top meets the upper it joins on the same wall
+ * (a W2430 between two 42" uppers tops out at 96", not 84"). It wins over the
+ * 70" short over-sink rule and the 72" over-range datum. Every other upper
+ * keeps its normal 54" bottom.
+ *
+ * "Over" means centered on the sink base or range within
+ * OVER_SINK_CENTER_TOLERANCE_IN. Returns null, leaving the existing rules in
+ * charge, when there is no adjoining upper or when the aligned box would pass
+ * the ceiling, enter a window's clearance, sit over a hood, or drop below the
+ * cooking clearance (72", or the top of an over-the-range microwave).
  */
-export function overSinkNeighborAlignedMountBottom(
+export function overSinkOrRangeNeighborAlignedMountBottom(
   cabinet: PlacedCabinet,
-  placed: PlacedCabinet[],
-  openings: WallOpening[],
+  placed: readonly PlacedCabinet[],
+  openings: readonly WallOpening[],
   room: RoomData,
 ): number | null {
-  if (cabinet.placement !== "wall" || cabinet.islandFace || isStacker(cabinet)) return null;
+  if (cabinet.placement !== "wall" || cabinet.islandFace || isStacker(cabinet) || isHoodLike(cabinet)) return null;
   const height = placedHeight(cabinet);
-  if (!(height >= 30)) return null;
+  if (!(height > 0)) return null;
   const side = cabinetWall(cabinet, room);
   const start = wallRunOffset(cabinet, side, room);
   const end = start + wallRunSpan(cabinet, side, room);
   const center = (start + end) / 2;
-  const overSink = placed.some((item) => {
-    if (!isSinkBaseCabinet(item) || item.placement !== "base" || cabinetWall(item, room) !== side) return false;
-    const sinkStart = wallRunOffset(item, side, room);
-    return center >= sinkStart - 0.01 && center <= sinkStart + wallRunSpan(item, side, room) + 0.01;
-  });
-  if (!overSink) return null;
+  const onWall = (item: PlacedCabinet) => item.uid !== cabinet.uid && !item.islandFace && cabinetWall(item, room) === side;
+  const span = (item: PlacedCabinet) => {
+    const itemStart = wallRunOffset(item, side, room);
+    return { start: itemStart, end: itemStart + wallRunSpan(item, side, room) };
+  };
+  const centeredOn = (item: PlacedCabinet) => {
+    const itemSpan = span(item);
+    return Math.abs(center - (itemSpan.start + itemSpan.end) / 2) <= OVER_SINK_CENTER_TOLERANCE_IN;
+  };
+  const overlaps = (item: PlacedCabinet) => {
+    const itemSpan = span(item);
+    return itemSpan.start < end - 0.02 && itemSpan.end > start + 0.02;
+  };
+  const overSink = placed.some((item) => onWall(item) && item.placement === "base" && isSinkBaseCabinet(item) && centeredOn(item));
+  const overRange = !overSink && placed.some((item) => onWall(item) && item.placement !== "wall" && isRangeOrCooktop(item) && centeredOn(item));
+  if (!overSink && !overRange) return null;
+
   const neighborTops: number[] = [];
   for (const peer of placed) {
-    if (peer.uid === cabinet.uid || peer.placement !== "wall" || peer.islandFace) continue;
-    if (isStacker(peer) || isFillerItem(peer) || isPanelItem(peer) || isRefrigeratorWallCabinet(peer)) continue;
-    if (cabinetWall(peer, room) !== side) continue;
-    const peerStart = wallRunOffset(peer, side, room);
-    const peerEnd = peerStart + wallRunSpan(peer, side, room);
-    const gap = peerEnd <= start + 0.01 ? start - peerEnd : peerStart >= end - 0.01 ? peerStart - end : 0;
+    if (!onWall(peer) || peer.placement !== "wall") continue;
+    if (isStacker(peer) || isFillerItem(peer) || isPanelItem(peer) || isRefrigeratorWallCabinet(peer) || isHoodLike(peer)) continue;
+    const peerSpan = span(peer);
+    const gap = peerSpan.end <= start + 0.01 ? start - peerSpan.end : peerSpan.start >= end - 0.01 ? peerSpan.start - end : 0;
     if (gap > 1.5) continue;
     const box = elevationBox(peer, room);
     neighborTops.push(box.bottom + box.height);
@@ -5328,6 +5349,14 @@ export function overSinkNeighborAlignedMountBottom(
   const bottom = top - height;
   if (bottom < STD.COUNTERTOP_HEIGHT + 12 - 0.01) return null;
   if (top > wallCeilingMin(room, side) + 0.01) return null;
+  if (overRange) {
+    const below = placed.filter((item) => onWall(item) && item.placement === "appliance" && overlaps(item));
+    if (below.some(isHoodLike)) return null;
+    const microwaveTops = below
+      .filter((item) => /^MW-/i.test(item.masterCode || ""))
+      .map((item) => { const box = elevationBox(item, room); return box.bottom + box.height; });
+    if (bottom < Math.max(OVER_RANGE_UPPER_MIN_BOTTOM_IN, ...microwaveTops) - 0.01) return null;
+  }
   const aligned = { ...cabinet, mountBottom: bottom };
   const blocked = openings.some((opening) => opening.kind === "window"
     && opening.side === side
@@ -5415,7 +5444,35 @@ export function normalizeStandardWallMounts(
     changed = true;
     return { ...cabinet, mountBottom: targetBottom };
   });
-  return changed ? normalized : placed;
+  if (!changed && !placed.some((cabinet) => standardWallMountCandidate(cabinet))) return placed;
+  // Second pass so an upper over the sink or range reads its neighbours'
+  // normalized tops. An already-aligned cabinet keeps its original object, so a
+  // plan that needs no change comes back identical and the live effect settles.
+  const aligned = normalized.map((cabinet, index) => {
+    const original = placed[index]!;
+    if (!standardWallMountCandidate(original)) return cabinet;
+    const bottom = overSinkOrRangeNeighborAlignedMountBottom(cabinet, normalized, openings, room);
+    if (bottom == null) return cabinet;
+    if (typeof original.mountBottom === "number" && Math.abs(original.mountBottom - bottom) <= 0.01) return original;
+    return { ...original, mountBottom: bottom };
+  });
+  return aligned.some((cabinet, index) => cabinet !== placed[index]) ? aligned : placed;
+}
+
+function standardWallMountCandidate(cabinet: PlacedCabinet): boolean {
+  if (
+    cabinet.placement !== "wall"
+    || cabinet.islandFace
+    || cabinet.mountBottomAdjusted
+    || cabinet.overRangeMicrowaveBridge
+    || cabinet.spiceStackParentUid
+    || cabinet.refrigeratorAssemblyId
+    || isWd18CountertopDrawerCabinet(cabinet)
+    || isStacker(cabinet)
+    || isRefrigeratorWallCabinet(cabinet)
+  ) return false;
+  const haystack = `${cabinet.subCategory ?? ""} ${cabinet.description ?? ""} ${cabinet.masterCode ?? ""}`.toLowerCase();
+  return !/appliance garage|\bag-?\d/.test(haystack);
 }
 
 /** Whether a wall cabinet crosses a window only after clearing it vertically. */
