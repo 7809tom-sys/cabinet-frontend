@@ -659,6 +659,14 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       renderer.domElement.removeEventListener("drop", onDrop);
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) object.geometry.dispose();
+        // The renderer outlives this scene, so a light's shadow render target
+        // (windowLight's is 2048x2048) stays on the GPU unless freed here.
+        const lightShadow = (object as { shadow?: THREE.LightShadow }).shadow;
+        if (lightShadow?.map) {
+          lightShadow.map.depthTexture?.dispose();
+          lightShadow.dispose();
+          lightShadow.map = null;
+        }
       });
       for (const material of [oak, seamMaterial, wall.material, baseboard.material, boardMat, edgeMat, metalMat, shoeMat, brass, basketLinerMat, basketFrameMat, hintMat, hitMat, ...decorMaterialList, ...shakerMaterials]) {
         if (Array.isArray(material)) material.forEach((mat) => mat.dispose()); else material.dispose();
