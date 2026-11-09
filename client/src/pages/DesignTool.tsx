@@ -266,6 +266,10 @@ import { aefExposedEndRequirements } from "@/lib/aefExposedEnds";
 import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
+import { designerCabinetName } from "@/lib/designerCabinetNames";
+import { rangeBaseCooktopPromptWidth, repairRangeBasesWithoutCooktop } from "@/lib/rangeBaseGuard";
+import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "@/lib/framelessWallTopAlignment";
+import { sidePanelNeeds, syncRangeAndNeighbourSidePanels, rangesFinishedBySidePanels, type SidePanelNeed } from "@/lib/sidePanelForExposedSide";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
 import { overRangeBridgeLabel } from "@/lib/overRangeCompanion";
@@ -1126,6 +1130,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide };
     pullText: string;
   } | null>(null);
+  /**
+   * A drop-in cooktop base (`RB2DB*` / `RB3DB*`) may only stand under a
+   * cooktop, so picking one asks which cooktop goes on its top before the box
+   * is committed (issue #354 item 2). "Standard base instead" places the plain
+   * same-width box and leaves the cooktop to the Surfaces & Fixtures picker.
+   */
+  const [rangeBaseCooktopPrompt, setRangeBaseCooktopPrompt] = useState<{
+    cabinet: DesignCabinet;
+    widthIn: number;
+    x?: number;
+    y?: number;
+    forceAccessory: boolean;
+    rotation: number;
+    strictDropTarget: boolean;
+    targetCabinetUid?: string | null;
+    targetIslandFace?: IslandFace | null;
+    forceBackDepthAdjustment: boolean;
+    resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide };
+    blindPullOverride?: number;
+    attachedFillerChoice?: AttachedFillerChoice;
+  } | null>(null);
   const [attachedFillerPrompt, setAttachedFillerPrompt] = useState<{
     cabinet: DesignCabinet;
     x?: number;
@@ -1536,11 +1561,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   useEffect(() => {
     setPlaced((current) => normalizeGlassStackersToParentFronts(
         normalizeWallOpenShelfMounts(
-          normalizeStandardWallMounts(
-            normalizeWd18CountertopMounts(normalizeOverSinkWallMounts(current, openings, room)),
-            openings,
+          alignFramelessWallCabinetTops({
+            placed: normalizeStandardWallMounts(
+              normalizeWd18CountertopMounts(normalizeOverSinkWallMounts(current, openings, room)),
+              openings,
+              room,
+            ),
             room,
-          ),
+          }).placed,
           room,
         ),
         room,
@@ -1605,6 +1633,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [surfacesOpen, setSurfacesOpen] = useState(false);
   const [showerWizardOpen, setShowerWizardOpen] = useState(false);
   const forcedOpenSinkRef = useRef<OpenSinkBasePlacement | null>(null);
+  /**
+   * Set while the cooktop prompt for a picked drop-in cooktop base is being
+   * answered, so the confirmed placement skips the prompt exactly once
+   * (issue #354 item 2).
+   */
+  const rangeBaseConfirmedRef = useRef<string | null>(null);
   const pelicanSinkDraftRef = useRef<PelicanPlacedProduct | null>(null);
   const [tabletPreviewMode, setTabletPreviewMode] = useState<TabletPreviewMode | null>(null);
   // Optional exact-source flooring trim suggestions are ephemeral: only an
@@ -5489,6 +5523,54 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
   }, [dishwasherPanelStockCatalog, placed, setPlaced]);
 
+  // Issue #354 items 3 and 4 (Tom): an exposed side beside a range or microwave,
+  // or the side a smaller neighbour leaves showing, gets its 3/4" book panel
+  // automatically — a filler is never asked for there, because fillers are only
+  // for gaps. Frameless lines only, priced from the door style's own catalog SKU,
+  // and the customer is told which side panel was added and why.
+  const [sidePanelWarnings, setSidePanelWarnings] = useState<ExposedPanelWarning[]>([]);
+  const sidePanelCatalog = useMemo(() => autoPanelCatalog.map((item) => ({
+    id: item.id,
+    masterCode: item.masterCode,
+    constructionMethod: item.constructionMethod ?? null,
+  })), [autoPanelCatalog]);
+  useEffect(() => {
+    const current = placedRef.current;
+    const styles = (doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>;
+    const byId = new Map(styles.map((style) => [style.id, style]));
+    const styleFor = (cabinet: PlacedCabinet) => {
+      const sid = pricingStyleIdFor(cabinet) ?? styleId;
+      return sid != null ? byId.get(sid) ?? null : null;
+    };
+    // Only the frameless line carries this rule; a framed line keeps its own
+    // panel behavior and is never given a board it did not ask for.
+    const frameless = current.some((item) => hasAefPrintedGeometry(item) && requiresAutoEndPanels(styleFor(item)));
+      if (!frameless) {
+        setSidePanelWarnings((prev) => prev.length ? [] : prev);
+        return;
+      }
+    const plan = syncRangeAndNeighbourSidePanels({
+      placed: current,
+      room: roomRef.current,
+      catalog: sidePanelCatalog,
+      styleId,
+      makeUid: () => `side-panel:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+    });
+    if (plan.placed !== current) {
+      placedRef.current = plan.placed;
+      setPlaced(plan.placed);
+    }
+    const next: ExposedPanelWarning[] = [
+      ...plan.needs.map((need) => ({
+        id: `side-panel:${need.hostUid}:${need.side}`,
+        cabinetUid: need.hostUid,
+        reason: need.reason === "smaller-neighbour" ? "base-open-end" as const : "open-beside-range" as const,
+        message: need.message,
+      })),
+    ];
+    setSidePanelWarnings((prev) => sameExposedPanelWarnings(prev, next) ? prev : next);
+  }, [doorStyles, placed, pricingStyleIdFor, setPlaced, sidePanelCatalog, styleId]);
+
   // ── Part 1: every placed cabinet remains visible ─────────────────────────
   // Evaluate the active line as soon as its price query settles. Flags drive
   // the red outline, Materials & Parts state, and a visible pending-price
@@ -5977,19 +6059,35 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      // persisted can have a visually seated cabinet but no wallId/wallOffset.
 	      // Repair that once while restoring so the drag preview and the final
 	      // collision check use the same physical run coordinates.
+      // Issue #354 item 2: a saved plan can hold a drop-in cooktop base with no
+      // cooktop over it (the reported RB3DB24 beside a range). The box becomes
+      // the plain base of the same width so the drawing, cart, quote and order
+      // all show the cabinet that is really installed.
+      const notesForRestore: string[] = [];
+      const rangeBaseRepair = repairRangeBasesWithoutCooktop({
+        placed: convertedPlaced,
+        room: restoredRoom,
+        catalog: ((autoFillCabinets as DesignCabinet[] | undefined) ?? []),
+      });
+      for (const swap of rangeBaseRepair.replacements) {
+        if (swap.to) notesForRestore.push(`${swap.from} had no cooktop above it, so it was restored as the ${swap.to} base of the same width.`);
+      }
       const peninsulaNormalizedPlaced = clampCabinetsToRoom(backfillLegacyWallRuns(normalizeLegacyPeninsulaCabinets(
-        normalizeBlindCornerDoorSides(normalizeLCornerDepths(convertedPlaced), restoredRoom),
+        normalizeBlindCornerDoorSides(normalizeLCornerDepths(rangeBaseRepair.placed), restoredRoom),
 	        restoredRoom,
 	      ), restoredRoom), restoredRoom);
 	      const repairedPlaced = removeOverlappingPlacements(
 	        normalizeWallOpenShelfMounts(
-	          normalizeStandardWallMounts(
-	            normalizeWd18CountertopMounts(
-	              normalizeRefrigeratorBayUppers(peninsulaNormalizedPlaced, restoredRoom),
+	          alignFramelessWallCabinetTops({
+	            placed: normalizeStandardWallMounts(
+	              normalizeWd18CountertopMounts(
+	                normalizeRefrigeratorBayUppers(peninsulaNormalizedPlaced, restoredRoom),
+	              ),
+	              restoredOpenings,
+	              restoredRoom,
 	            ),
-	            restoredOpenings,
-	            restoredRoom,
-	          ),
+	            room: restoredRoom,
+	          }).placed,
 	          restoredRoom,
 	        ),
 	        restoredRoom,
@@ -6008,6 +6106,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // list into the one that was saved. Kitchen restores keep their repairs.
       setFurniture(reloaded.furniture);
       setPlaced(reloaded.placed, bathroomReload ? { exact: true } : undefined);
+      if (notesForRestore.length > 0) {
+        setPlacementWarning(notesForRestore.join(" "));
+        toast.info(notesForRestore.join(" "));
+      }
       setStyleId(restoredStyle.styleId);
       const restoredIslandStyleId = typeof restoredIsland?.cabinetStyleId === "number"
         && restoredIsland.cabinetStyleId !== restoredStyle.styleId
@@ -6976,11 +7078,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Conflicts: an appliance physically running into a cabinet. Highlighted red
   // on the canvas, badged in the BOM, and warned about before export.
   // Range/oven corner clearance rule: a range/oven at a wall corner butting a
-  // cabinet needs a filler between them so the handles clear.
-  const rangeClearanceUids = useMemo(
-    () => rangeOvenClearanceViolations(placed, room),
-    [placed, room]
-  );
+  // cabinet needs a filler between them so the handles clear — UNLESS the 3/4"
+  // side panel this build adds already finishes that side (issue #354 item 3:
+  // fillers are for gaps, and a range never prompts for one).
+  const rangeClearanceUids = useMemo(() => {
+    const violations = rangeOvenClearanceViolations(placed, room);
+    if (violations.size === 0) return violations;
+    const finished = rangesFinishedBySidePanels({
+      placed,
+      room,
+      needs: sidePanelNeeds({ placed, room, catalog: sidePanelCatalog }),
+    });
+    finished.forEach((uid) => violations.delete(uid));
+    return violations;
+  }, [placed, room, sidePanelCatalog]);
   // Wall cabinets must keep >= 3" from doors/windows.
   const wallOpeningUids = useMemo(
     () => wallOpeningClearanceViolations(placed, openings, room),
@@ -7888,6 +7999,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setMobilePanel(null);
         return;
       }
+      // Issue #354 item 2 (Tom): a drop-in cooktop base (RB2DB/RB3DB) is only
+      // legal under a cooktop. Ask which cooktop goes on its top before the box
+      // is committed; cancelling leaves the plan exactly as it was.
+      const rangeBaseWidth = rangeBaseCooktopPromptWidth(c.masterCode);
+      if (rangeBaseWidth != null && rangeBaseConfirmedRef.current !== c.masterCode) {
+        setRangeBaseCooktopPrompt({
+          cabinet: c,
+          widthIn: rangeBaseWidth,
+          x,
+          y,
+          forceAccessory,
+          rotation,
+          strictDropTarget,
+          targetCabinetUid,
+          targetIslandFace,
+          forceBackDepthAdjustment,
+          resolvedWallTarget,
+          blindPullOverride,
+          attachedFillerChoice,
+        });
+        setMobilePanel(null);
+        return;
+      }
+      rangeBaseConfirmedRef.current = null;
       // Debounce guard: block re-entry within 500 ms to prevent double-placement
       // caused by mobile touch events firing both touchend and click.
 	      if (isAddingRef.current) {
@@ -14793,13 +14928,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              room: draftRoom,
 	              placed: bathroomDraft ? (d.placed as PlacedCabinet[]) : removeOverlappingPlacements(
 	                normalizeWallOpenShelfMounts(
-	                  normalizeStandardWallMounts(
-	                    normalizeWd18CountertopMounts(
-	                      normalizeRefrigeratorBayUppers(peninsulaNormalizedDraft, draftRoom),
+	                  alignFramelessWallCabinetTops({
+	                    placed: normalizeStandardWallMounts(
+	                      normalizeWd18CountertopMounts(
+	                        normalizeRefrigeratorBayUppers(peninsulaNormalizedDraft, draftRoom),
+	                      ),
+	                      Array.isArray(d.openings) ? d.openings : [],
+	                      draftRoom,
 	                    ),
-	                    Array.isArray(d.openings) ? d.openings : [],
-	                    draftRoom,
-	                  ),
+	                    room: draftRoom,
+	                  }).placed,
 	                  draftRoom,
 	                ),
 	                draftRoom,
@@ -16363,8 +16501,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     hasConflicts ? Array.from(conflictUids).sort().join("|") : "",
     8000,
   );
+  // The design check reads one list: the exposed-side panels, the dishwasher
+  // panel, and the side panels this build added because a side beside a range,
+  // a microwave, or a smaller neighbour is exposed (issue #354 items 3-4).
+  const designCheckWarnings = [...exposedPanelWarnings, ...dishwasherPanelWarnings, ...sidePanelWarnings];
   const designCheckNotice = useTransientNotice(
-    [...exposedPanelWarnings, ...dishwasherPanelWarnings].map((warning) => warning.id).join("|"),
+    designCheckWarnings.map((warning) => warning.id).join("|"),
     8000,
   );
   const automaticSaveNotice = useTransientNotice(automaticSaveAt == null ? "" : String(automaticSaveAt), 5000);
@@ -16393,12 +16535,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         data-canvas-only={canvasOnly ? "true" : undefined}
         className={canvasOnly ? "fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-background" : "flex flex-col h-full min-h-0"}
       >
-      {designCheckNotice.visible && exposedPanelWarnings.length + dishwasherPanelWarnings.length > 0 && !canvasOnly && (
+      {designCheckNotice.visible && designCheckWarnings.length > 0 && !canvasOnly && (
         <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
           <div>
-            <p className="font-semibold">Design check ({exposedPanelWarnings.length + dishwasherPanelWarnings.length})</p>
+            <p className="font-semibold">Design check ({designCheckWarnings.length})</p>
             <ul className="mt-1 list-disc pl-5">
-              {[...exposedPanelWarnings, ...dishwasherPanelWarnings].map((warning) => (
+              {designCheckWarnings.map((warning) => (
                 <li key={warning.id}>{warning.message}</li>
               ))}
             </ul>
@@ -19736,7 +19878,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                    <CatalogPaletteCard
 	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
 	                      cabinet={c}
-	                      description={c.description}
+	                      description={designerCabinetName(c)}
 	                      sizeLabel={sizeLabel}
 	                      finishSwatchUrl={paletteFinishSwatch}
 	                      finishName={activeStyleName}
@@ -23940,6 +24082,60 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              <DialogFooter className="gap-2">
 	                <Button variant="outline" onClick={() => setBlindCornerPullPrompt(null)}>Cancel placement</Button>
 	                <Button onClick={place} disabled={!validPull}>Place blind corner</Button>
+	              </DialogFooter>
+	            </>;
+	          })()}
+	        </DialogContent>
+	      </Dialog>
+
+	      {/*
+	        Issue #354 item 2 (Tom): a range base / drop-in cooktop base is only
+	        legal under a cooktop. The customer confirms the cooktop for its top
+	        (or takes the plain same-width base instead) before it is committed.
+	      */}
+	      <Dialog open={!!rangeBaseCooktopPrompt} onOpenChange={(open) => { if (!open) setRangeBaseCooktopPrompt(null); }}>
+	        <DialogContent data-testid="range-base-cooktop-dialog" className="max-w-md">
+	          {rangeBaseCooktopPrompt && (() => {
+	            const prompt = rangeBaseCooktopPrompt;
+	            const commit = (cabinet: DesignCabinet) => {
+	              setRangeBaseCooktopPrompt(null);
+	              rangeBaseConfirmedRef.current = cabinet.masterCode;
+	              addCabinet(
+	                cabinet,
+	                prompt.x,
+	                prompt.y,
+	                prompt.forceAccessory,
+	                prompt.rotation,
+	                prompt.strictDropTarget,
+	                prompt.targetCabinetUid,
+	                prompt.targetIslandFace,
+	                prompt.forceBackDepthAdjustment,
+	                prompt.resolvedWallTarget,
+	                prompt.blindPullOverride,
+	                prompt.attachedFillerChoice,
+	              );
+	            };
+	            const plainBase = (autoFillCabinets as DesignCabinet[] | undefined)?.find((row) => {
+	              if (row.placement !== "base") return false;
+	              if (Math.abs(Number(row.width) - prompt.widthIn) > 0.1) return false;
+	              return /^B-?\d+$/i.test(row.masterCode ?? "");
+	            }) ?? null;
+	            return <>
+	              <DialogHeader>
+	                <DialogTitle>A cooktop is required on this cabinet</DialogTitle>
+	                <DialogDescription>
+	                  {designerCabinetName(prompt.cabinet)} is a drop-in cooktop base. Its top is opened for a cooktop, so it can only stand where a cooktop sits on it.
+	                </DialogDescription>
+	              </DialogHeader>
+	              <div className="space-y-3 text-sm">
+	                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+	                  Choose the {formatInches(prompt.widthIn)} cooktop for its top in the next step, or place the plain {formatInches(prompt.widthIn)} base here instead. A range base is never placed beside a range or anywhere without a cooktop above it.
+	                </div>
+	              </div>
+	              <DialogFooter className="gap-2">
+	                <Button variant="outline" onClick={() => setRangeBaseCooktopPrompt(null)}>Cancel placement</Button>
+	                {plainBase && <Button variant="secondary" data-testid="range-base-use-plain-base" onClick={() => commit(plainBase)}>Use the {formatInches(prompt.widthIn)} base instead</Button>}
+	                <Button data-testid="range-base-confirm-cooktop" onClick={() => commit(prompt.cabinet)}>This will have a cooktop</Button>
 	              </DialogFooter>
 	            </>;
 	          })()}

@@ -1,0 +1,21 @@
+<!doctype html>
+<!--
+  Screenshot harness for issue #354: the RB3DB24 that stood beside a freestanding
+  range. Left pane is the reported plan, right pane is what the branch builds —
+  both rendered by the real 3D engine. Used only by
+  e2e/issue354-before-after.spec.ts; no app route points at it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Issue 354 — range base beside a range</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { display: flex; width: 100vw; height: 100vh; gap: 2px; background: #cfd6dd; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/issue354ScreenshotHarness.ts"></script>
+  </body>
+</html>

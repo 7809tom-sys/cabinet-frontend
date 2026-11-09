@@ -67,6 +67,7 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "./framelessWallTopAlignment";
 import {
   applyRangeFlankEndPanels,
   applyRangeFlankPlan,
@@ -1362,6 +1363,26 @@ export function runAutoDesignLayout(args: {
   working = pairAdjacentSingleDoorHandles({ placed: working, room, explicitHingeUids }).placed;
   // Rule 11: the 54 / 84-90-96 upper datum, and rule 4's one continuous board per filler.
   working = normalizeUpperHeights(working, { room, openings: stageOpenings });
+  // Issue #354 item 7 (Tom): on the U.S. Cabinet Depot frameless line every wall
+  // cabinet top meets the top of a 40-1/4" wall cabinet, including the box over a
+  // microwave. The pass only raises a bottom, so the 72" microwave bridge datum,
+  // the over-range cooking floor and the over-sink window clearance are all left
+  // satisfied, and other lines are untouched because none of their cabinets
+  // carry the frameless geometry marker.
+  const framelessTops = alignFramelessWallCabinetTops({ placed: working, room });
+  working = framelessTops.placed;
+  for (const entry of framelessTops.aligned) {
+    notes.push(`${entry.masterCode} was raised to meet the frameless ${framelessWallTopDatumIn()}″ wall-cabinet top line.`);
+  }
+  for (const warning of framelessTops.warnings) {
+    reviewFindings.push({
+      ruleId: "frameless-wall-top-line",
+      code: "frameless-upper-off-the-top-line",
+      severity: "warning",
+      title: "A wall cabinet could not join the frameless top line",
+      detail: warning,
+    });
+  }
   working = normalizeContinuousVerticalFillers(working, room).placed;
   // Owner rule: the uppers line up with the bases beneath them. A shared pass
   // later in the pipeline can still mirror a run-end base filler up into the wall
