@@ -80,7 +80,7 @@ describe("Peninsula Wizard", () => {
   it("adds a real mitered filler pair at the 135-degree joint of every Wizard 45-degree return", () => {
     expect(source).toContain('const hasChildFortyFiveReturn = Boolean((nextRoom.peninsulaRuns ?? []).some((candidate) => (');
     expect(source).toContain('const itemsForSegment = hasChildFortyFiveReturn && plan.items.at(-1)?.isFiller');
-    expect(source).toContain('const miterRepair = repairMissingAngledWallFillers(working, nextRoom, catalogFillers, makeUid, styleIdRef.current ?? null);');
+    expect(source).toContain('const miterRepair = repairMissingAngledWallFillers(working, nextRoom, catalogFillers, makeUid, designStyleIdRef.current ?? null);');
     expect(source).toContain('The 135° joint needs a matching catalog filler pair on this line. No peninsula was added.');
     expect(source).toContain('At the 135° joint formed by this 45° return, the Wizard adds the required pair of real selected-line filler boards');
   });
