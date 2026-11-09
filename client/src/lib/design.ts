@@ -5408,11 +5408,15 @@ export function overRangeCookingFloorIn(cabinet: PlacedCabinet, placed: readonly
  *    between two 42" uppers tops out at 96", not 84"), ahead of the 70" short
  *    over-sink rule. Null when nothing adjoins it, or when the aligned box
  *    would pass the ceiling or enter a window's clearance.
- *  - over the range: it sits on the cooking floor (72", or on top of an
- *    over-the-range microwave), and its height - one of the 12/15/18/21/24"
- *    bridges chosen in the range-companion pop-up - sets where its top lands.
- *    It is never re-hung to a neighbour, so this rule and that pop-up agree.
- *    Null over a hood (appliance or wall-placed hood front); callers then hold
+ *  - over the range with an over-the-range microwave under it (or as the
+ *    flagged microwave bridge): it sits on the fixed 72" datum or the
+ *    microwave top, and its height - the 12/15/18/21/24" bridge chosen in the
+ *    range-companion pop-up - sets where its top lands, so this rule and that
+ *    pop-up agree.
+ *  - over a bare range: its top meets the upper it joins, like the sink case,
+ *    but its bottom never drops below the 72" cooking floor (an 18" upper
+ *    between 42" uppers hangs 78-96"). Null when nothing adjoins it.
+ *  - null over a hood (appliance or wall-placed hood front); callers then hold
  *    the cabinet at `overRangeCookingFloorIn` rather than the ordinary datum.
  *
  * Every other upper keeps its normal 54" bottom.
@@ -5428,16 +5432,19 @@ export function overSinkOrRangeNeighborAlignedMountBottom(
   const { side, start, end } = context;
   const height = placedHeight(cabinet);
 
+  let cookingFloor: number | null = null;
   if (context.overRange) {
     if (context.below.some(isHoodLike)) return null;
-    return overRangeCookingFloorIn(cabinet, placed, room);
+    cookingFloor = overRangeCookingFloorIn(cabinet, placed, room);
+    const overMicrowave = context.below.some((item) => item.placement === "appliance" && /^MW-/i.test(item.masterCode || ""));
+    if (overMicrowave || cabinet.overRangeMicrowaveBridge) return cookingFloor;
   }
 
   const top = adjoiningUpperTopIn(side, start, end, placed, room, [cabinet.uid], cabinet);
   if (top == null) return null;
-  const bottom = top - height;
+  const bottom = cookingFloor != null ? Math.max(top - height, cookingFloor) : top - height;
   if (bottom < STD.COUNTERTOP_HEIGHT + 12 - 0.01) return null;
-  if (top > wallCeilingMin(room, side) + 0.01) return null;
+  if (cookingFloor == null && top > wallCeilingMin(room, side) + 0.01) return null;
   const aligned = { ...cabinet, mountBottom: bottom };
   const blocked = openings.some((opening) => opening.kind === "window"
     && opening.side === side

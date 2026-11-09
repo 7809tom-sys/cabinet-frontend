@@ -44,10 +44,10 @@ describe("upper over the sink or range joins its neighbour's top line (Tom, Nov 
     expect(normalized[2].mountBottom).toBeUndefined();
   });
 
-  it("range: an upper over the range sits on the 72-inch datum; its height sets the top", () => {
-    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(18), [range, left, right], [], room)).toBe(72);
+  it("range: a bare-range upper tops out on its neighbours; over a microwave it sits on the 72-inch datum", () => {
+    expect(overSinkOrRangeNeighborAlignedMountBottom(upper(18), [range, left, right], [], room)).toBe(78);
     expect(overSinkOrRangeNeighborAlignedMountBottom(upper(24), [range, left, right], [], room)).toBe(72);
-    expect(overApplianceWallMount(upper(18), [range, left, right], room)).toMatchObject({ kind: "range", mountBottom: 72 });
+    expect(overApplianceWallMount(upper(18), [range, left, right], room)).toMatchObject({ kind: "range", mountBottom: 78 });
     const microwave = item({ uid: "mw", masterCode: "MW-30", description: "Over the Range Microwave", placement: "appliance", x: 48, width: 30, depth: 16, height: 16, mountBottom: 56 });
     expect(overSinkOrRangeNeighborAlignedMountBottom(upper(24), [range, microwave, left, right], [], room)).toBe(72);
   });
@@ -103,8 +103,8 @@ describe("upper over the sink or range joins its neighbour's top line (Tom, Nov 
       placed, room, openings: [], fillers: [], makeUid: () => "uid", styleId: null, allowAutoFillers: false,
     }).placed;
     expect(run([sinkBase, left, upper(30), right]).find((cabinet) => cabinet.uid === "w2430")?.mountBottom).toBe(66);
-    expect(run([range, left, upper(18), right]).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(72);
+    expect(run([range, left, upper(18), right]).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(78);
     const rangeOnly = normalizeOverApplianceWallMounts([range, left, upper(18), right], room);
-    expect(rangeOnly[2].mountBottom).toBe(72);
+    expect(rangeOnly[2].mountBottom).toBe(78);
   });
 });
