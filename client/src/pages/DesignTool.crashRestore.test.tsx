@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import DesignTool from "./DesignTool";
+import { DesignerErrorBoundary, designerBoundaryEnv } from "@/components/design/DesignerErrorBoundary";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { CartProvider } from "@/contexts/CartContext";
 import { PreferredProductsProvider } from "@/contexts/PreferredProductsContext";
@@ -98,6 +99,27 @@ vi.mock("@/components/design/InteractiveRoom3D", async (importOriginal) => {
   };
 });
 
+// The save/load toolbar is replaced by a control that changes the design (it
+// loads one more cabinet) and, once armed, crashes on that state, the way a bad
+// edit would crash the designer.
+const crash = vi.hoisted(() => ({ armed: false, always: false }));
+vi.mock("@/components/design/DesignActions", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    DesignActions: (props: { room: unknown; placed: Array<Record<string, unknown>>; onLoad: (design: unknown) => void }) => {
+      if (crash.armed && (crash.always || props.placed.length >= 2)) throw new Error("designer render failed");
+      return (
+        <button
+          type="button"
+          data-testid="add-second-cabinet"
+          onClick={() => props.onLoad({ id: null, room: props.room, placed: [...props.placed, { ...(props.placed[0] ?? {}), uid: "base-2", x: 64, wallOffset: 88 }] })}
+        />
+      );
+    },
+  };
+});
+
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -163,7 +185,9 @@ async function renderDesigner(width = 1500) {
       <ThemeProvider defaultTheme="light">
         <LanguageProvider>
           <CartProvider>
-            <DesignTool />
+            <DesignerErrorBoundary surface="designer">
+              <DesignTool />
+            </DesignerErrorBoundary>
           </CartProvider>
         </LanguageProvider>
       </ThemeProvider>
@@ -187,15 +211,27 @@ async function wait(ms: number) {
   });
 }
 
+const realEnv = { ...designerBoundaryEnv };
+
 beforeEach(() => {
   cleanup();
+  crash.armed = false;
+  crash.always = false;
+  window.sessionStorage.clear();
   window.localStorage.clear();
   window.history.replaceState(null, "", "/designer");
 });
 
 afterEach(() => {
   cleanup();
+  Object.assign(designerBoundaryEnv, realEnv);
+  window.sessionStorage.clear();
 });
+
+function placedUids(key: string): string[] {
+  const raw = window.localStorage.getItem(key);
+  return raw ? JSON.parse(raw).placed.map((cabinet: { uid: string }) => cabinet.uid) : [];
+}
 
 describe("designer crash restore prompt", () => {
   it("restores nothing until asked, then Restore previous opens the last good draft", { timeout: 120_000 }, async () => {
@@ -234,5 +270,83 @@ describe("designer crash restore prompt", () => {
   it("restores as before when there was no crash", { timeout: 120_000 }, async () => {
     await renderDesigner();
     expect(screen.queryByTestId("designer-crash-restore")).toBeNull();
+  });
+
+  it("keeps the good draft through three crashes and the guarded page reload", { timeout: 120_000 }, async () => {
+    // Chromium runs beforeunload synchronously inside location.reload().
+    const reload = vi.fn(() => {
+      window.dispatchEvent(new Event("beforeunload"));
+    });
+    designerBoundaryEnv.reload = reload;
+    await renderDesigner();
+    await wait(600);
+    expect(placedUids(ACCOUNT_DRAFT_KEY)).toEqual(["base-1"]);
+
+    crash.armed = true;
+    for (let round = 1; round <= 3; round++) {
+      if (round > 1) {
+        fireEvent.click(screen.getByRole("button", { name: "Reload designer" }));
+        await act(async () => {});
+        fireEvent.click(screen.getByRole("button", { name: "Restore previous" }));
+        await act(async () => {});
+      }
+      fireEvent.click(screen.getByTestId("add-second-cabinet"));
+      await act(async () => {});
+      expect(screen.getByTestId("designer-error-boundary")).toBeTruthy();
+      // The crash copy holds the last committed state, never the one that crashed.
+      expect(JSON.parse(window.localStorage.getItem(CRASH_KEY)!).snapshot.placed.map((cabinet: { uid: string }) => cabinet.uid)).toEqual(["base-1"]);
+    }
+    await wait(10);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(placedUids(ACCOUNT_DRAFT_KEY)).toEqual(["base-1"]);
+  });
+
+  it("saves the last committed state when the page unloads during a crashing render", { timeout: 120_000 }, async () => {
+    await renderDesigner();
+    await wait(600);
+    expect(placedUids(ACCOUNT_DRAFT_KEY)).toEqual(["base-1"]);
+    // An unload that lands while the crashing render is in progress (its own
+    // listeners are still attached) must not save that render's state.
+    crash.armed = true;
+    const realArmed = Object.getOwnPropertyDescriptor(crash, "armed")!;
+    Object.defineProperty(crash, "armed", {
+      configurable: true,
+      get() {
+        window.dispatchEvent(new Event("beforeunload"));
+        return true;
+      },
+    });
+    fireEvent.click(screen.getByTestId("add-second-cabinet"));
+    await act(async () => {});
+    Object.defineProperty(crash, "armed", realArmed);
+    expect(screen.getByTestId("designer-error-boundary")).toBeTruthy();
+    expect(placedUids(ACCOUNT_DRAFT_KEY)).toEqual(["base-1"]);
+  });
+
+  it("Start fresh also removes the older email and guest copies", { timeout: 120_000 }, async () => {
+    const GUEST_KEY = "cabinet-dealz:designer-draft:v2:owner:guest";
+    window.localStorage.setItem(GUEST_KEY, JSON.stringify({ v: 2, originScope: "owner", savedAt: Date.now(), placed: [baseCabinet] }));
+    seedCrashMarker();
+    await renderDesigner();
+    expect(window.localStorage.getItem(DRAFT_KEY)).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Start fresh" }));
+    await act(async () => {});
+    expect(window.localStorage.getItem(DRAFT_KEY)).toBeNull();
+    expect(window.localStorage.getItem(GUEST_KEY)).toBeNull();
+    expect(window.localStorage.getItem(CRASH_KEY)).toBeNull();
+  });
+
+  it("leaves no crash marker for a saved design opened by link", { timeout: 120_000 }, async () => {
+    window.history.replaceState(null, "", "/designer?load=42");
+    await renderDesigner();
+    await wait(50);
+    crash.armed = true;
+    crash.always = true;
+    fireEvent.click(screen.getByTestId("add-second-cabinet"));
+    await act(async () => {});
+    expect(screen.getByTestId("designer-error-boundary")).toBeTruthy();
+    expect(window.localStorage.getItem(CRASH_KEY)).toBeNull();
+    // A saved design has no local draft to discard.
+    expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
   });
 });

@@ -14703,10 +14703,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ponyWalls,
   }));
 
+  // Every save reads the snapshot of the last committed render. snapshotDraft()
+  // itself sees the render in progress, which may be the one that crashed (an
+  // unload during a crash would otherwise replace the good draft with it).
+  const committedDraftRef = useLastCommitted(snapshotDraft);
   const writeDraft = usePersistFn(() => {
     if (!draftRestoredRef.current) return; // don't clobber a saved draft pre-restore
     try {
-      const snap = snapshotDraft();
+      const snap = committedDraftRef.current;
+      if (!snap) return;
       // Only persist if there is something worth keeping.
       const worthKeeping =
         hasDesignedRoomGeometry(snap.room) ||
@@ -14728,47 +14733,55 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
   });
 
-  // A crash during render (or in a layout effect) must not save the state that
-  // crashed, so the crash save reads the snapshot of the last committed render.
-  const committedDraftRef = useLastCommitted(snapshotDraft);
   const crashDraftKey = designerCrashDraftKey(draftKey);
+  // A saved design or package link reloads from the server, so it leaves no
+  // marker (a later plain /design visit would ask about an unrelated draft) and
+  // has no local draft to discard.
+  const savedDesignLoad = loadDesignId != null || bundleIdParam != null;
   // The crash copy goes under its own key and doubles as the marker for the
   // Restore previous / Start fresh prompt; draftKey stays the last good draft.
   const writeCrashDraft = usePersistFn(() => {
-    if (!draftRestoredRef.current) return;
+    if (!draftRestoredRef.current || savedDesignLoad) return;
     try {
       localStorage.setItem(crashDraftKey, JSON.stringify({ v: 1, at: Date.now(), snapshot: committedDraftRef.current }));
     } catch {
       /* storage full / unavailable — ignore */
     }
   });
-  const discardCrashedDraft = usePersistFn(() => {
+  // Start fresh and Discard draft also drop the older copies restore would fall
+  // back to (the sign-in email and guest keys), so none of them comes back.
+  const removeDraftCopies = usePersistFn(() => {
     try {
-      localStorage.removeItem(crashDraftKey);
-      localStorage.removeItem(draftKey);
-      if (localStorage.getItem(activeDraftKey) === draftKey) localStorage.removeItem(activeDraftKey);
+      const identities = latchedFreshStart.fresh ? [draftIdentity] : draftIdentityCandidates({ accountId, email: verifiedEmail });
+      const keys = new Set([draftKey, ...identities.map((identity) => designerDraftStorageKey(storeScope, identity))]);
+      const active = localStorage.getItem(activeDraftKey);
+      keys.forEach((key) => {
+        localStorage.removeItem(key);
+        localStorage.removeItem(designerCrashDraftKey(key));
+      });
+      if (active != null && keys.has(active)) localStorage.removeItem(activeDraftKey);
     } catch {
       /* ignore */
     }
   });
-  useDesignerCrashFlush(writeCrashDraft, discardCrashedDraft);
+  useDesignerCrashFlush(writeCrashDraft, savedDesignLoad ? undefined : removeDraftCopies);
   const crashRestoreChoiceRef = useRef<"restore" | "fresh" | null>(null);
   const [crashRestorePrompt, setCrashRestorePrompt] = useState(false);
   const [crashRestoreRevision, setCrashRestoreRevision] = useState(0);
   const resolveCrashRestore = useCallback((choice: "restore" | "fresh") => {
-    try {
-      localStorage.removeItem(crashDraftKey);
-      if (choice === "fresh") {
-        localStorage.removeItem(draftKey);
-        if (localStorage.getItem(activeDraftKey) === draftKey) localStorage.removeItem(activeDraftKey);
+    if (choice === "fresh") {
+      removeDraftCopies();
+    } else {
+      try {
+        localStorage.removeItem(crashDraftKey);
+      } catch {
+        /* ignore */
       }
-    } catch {
-      /* ignore */
     }
     crashRestoreChoiceRef.current = choice;
     setCrashRestorePrompt(false);
     setCrashRestoreRevision((revision) => revision + 1);
-  }, [crashDraftKey, draftKey, activeDraftKey]);
+  }, [crashDraftKey, removeDraftCopies]);
 
   // Restore once, after verification, unless we're loading a saved design.
   useEffect(() => {
@@ -21150,7 +21163,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              <AlertDialogHeader>
 	                <AlertDialogTitle>The designer closed after a problem</AlertDialogTitle>
 	                <AlertDialogDescription>
-	                  Restore previous opens your last saved version from before the problem. Start fresh opens a new, empty design.
+	                  Restore previous opens your last autosaved draft on this device from before the problem. Start fresh opens a new, empty design.
 	                </AlertDialogDescription>
 	              </AlertDialogHeader>
 	              <AlertDialogFooter>

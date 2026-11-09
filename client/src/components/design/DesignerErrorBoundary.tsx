@@ -76,7 +76,9 @@ function guardedPageReload(surface: string, reason: string): boolean {
   } catch {
     return false;
   }
-  designerBoundaryEnv.reload();
+  // Deferred so the crash commit finishes and the crashed surface's unload
+  // listeners are removed before the page starts to unload.
+  setTimeout(() => designerBoundaryEnv.reload(), 0);
   return true;
 }
 

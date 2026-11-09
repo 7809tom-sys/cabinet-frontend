@@ -49,6 +49,8 @@ function panel() {
 
 async function settle() {
   for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+  // The guarded reload is deferred to a task after the crash commit.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
 }
 
 function button(label: string) {
@@ -152,15 +154,19 @@ describe("designer error boundary", () => {
     expect(panel()).not.toBeNull();
   });
 
-  it("falls back to one guarded page reload on the third crash in a row", () => {
+  it("falls back to one guarded page reload on the third crash in a row", async () => {
     function AlwaysThrows(): React.ReactNode {
       throw new Error("designer render failed");
     }
     act(() => root.render(<DesignerErrorBoundary surface="designer"><AlwaysThrows /></DesignerErrorBoundary>));
     expect(panel()).not.toBeNull();
     act(() => reloadButton()!.click());
+    await settle();
     expect(reload).not.toHaveBeenCalled();
     act(() => reloadButton()!.click());
+    // Deferred: the reload waits for the crash commit to finish.
+    expect(reload).not.toHaveBeenCalled();
+    await settle();
     expect(reload).toHaveBeenCalledTimes(1);
     expect(JSON.parse(window.sessionStorage.getItem(DESIGNER_FLAG)!)).toMatchObject({ reason: "repeated-crash" });
     // Still crashing after that reload: no automatic reload again; the button reloads the page by hand.
@@ -291,6 +297,7 @@ describe("designer error boundary", () => {
       now += 100;
     }
     for (let click = 0; click < 6; click++) act(() => reloadButton()!.click());
+    act(() => vi.runAllTimers());
     expect(panel()?.getAttribute("data-designer-surface")).toBe("3d");
     expect(reload).not.toHaveBeenCalled();
     expect(window.sessionStorage.length).toBe(0);
@@ -306,6 +313,7 @@ describe("designer error boundary", () => {
     ));
     for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
     act(() => reloadButton()!.click());
+    act(() => vi.runAllTimers());
     expect(reload).not.toHaveBeenCalled();
   });
 
