@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeStandardWallMounts,
   overSinkOrRangeNeighborAlignedMountBottom,
+  wallCabinetVerticalMoveLimit,
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
@@ -109,6 +110,27 @@ describe("designer re-review: microwave bridge and over-range uppers", () => {
     const mw = item({ uid: "mw", masterCode: "MW-30", description: "Over-Range Microwave", placement: "appliance", x: 48, width: 30, depth: 16, height: 16, mountBottom: 56 });
     expect(overSinkOrRangeNeighborAlignedMountBottom(upper18, [...plan, mw], [], room())).toBe(72);
     expect(normalizeStandardWallMounts([...plan, mw], [], room()).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(72);
+  });
+
+  it("2b. the bare-range top-align never pushes an upper past the ceiling over its span", () => {
+    // Range at 57-87 with the upper ending at 84", the middle of the 168" wall.
+    const upper18 = item({ uid: "w2418", masterCode: "W2418", description: "24x18 Wall Cabinet", x: 60, width: 24, height: 18 });
+    const plan = [{ ...rangeOf(), x: 57 }, wall("left", 45, 42), upper18, wall("right", 84, 42)];
+    // Sloped wall, 96" at its start and 84" at its end: 90" over this span's low end.
+    const sloped: RoomData = { ...room(), wallCeilings: { top: { high: 96, low: 84, slopeFrom: "start" } } };
+    expect(wallCabinetVerticalMoveLimit(upper18, sloped).ceiling).toBe(90);
+    // Without the guard this was raised to 78-96.
+    expect(overApplianceWallMount(upper18, plan, room(96))).toMatchObject({ kind: "range", mountBottom: 78 });
+    expect(overApplianceWallMount(upper18, plan, sloped)).toMatchObject({ kind: "range", mountBottom: 72 });
+    expect(overSinkOrRangeNeighborAlignedMountBottom(upper18, plan, [], sloped)).toBe(72);
+    expect(normalizeStandardWallMounts(plan, [], sloped).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(72);
+    const laidOut = applyDesignerLayoutRules({
+      placed: plan, room: sloped, openings: [], fillers: [], makeUid: () => "uid", styleId: null, allowAutoFillers: false,
+    }).placed.find((cabinet) => cabinet.uid === "w2418")!;
+    expect(laidOut.mountBottom).toBe(72);
+    // Under a flat 93" ceiling it rises only to the highest position that fits: 75-93.
+    expect(overApplianceWallMount(upper18, plan, room(93))).toMatchObject({ kind: "range", mountBottom: 75 });
+    expect(normalizeStandardWallMounts(plan, [], room(93)).find((cabinet) => cabinet.uid === "w2418")?.mountBottom).toBe(75);
   });
 
   it("3. the pop-up and Auto Design pick the same height from one shared fallback", () => {

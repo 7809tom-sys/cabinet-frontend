@@ -5415,7 +5415,9 @@ export function overRangeCookingFloorIn(cabinet: PlacedCabinet, placed: readonly
  *    pop-up agree.
  *  - over a bare range: its top meets the upper it joins, like the sink case,
  *    but its bottom never drops below the 72" cooking floor (an 18" upper
- *    between 42" uppers hangs 78-96"). Null when nothing adjoins it.
+ *    between 42" uppers hangs 78-96"), and its top never passes the ceiling
+ *    over its span: under a 90" ceiling that upper stays 72-90". Null when
+ *    nothing adjoins it.
  *  - null over a hood (appliance or wall-placed hood front); callers then hold
  *    the cabinet at `overRangeCookingFloorIn` rather than the ordinary datum.
  *
@@ -5442,7 +5444,12 @@ export function overSinkOrRangeNeighborAlignedMountBottom(
 
   const top = adjoiningUpperTopIn(side, start, end, placed, room, [cabinet.uid], cabinet);
   if (top == null) return null;
-  const bottom = cookingFloor != null ? Math.max(top - height, cookingFloor) : top - height;
+  // Over a bare range the top-align may never push the box past the ceiling
+  // over its own span: it rises only as far as both the line and that ceiling
+  // allow, and never below the cooking floor.
+  const bottom = cookingFloor != null
+    ? Math.max(cookingFloor, Math.min(top, wallCabinetVerticalMoveLimit(cabinet, room).ceiling) - height)
+    : top - height;
   if (bottom < STD.COUNTERTOP_HEIGHT + 12 - 0.01) return null;
   if (cookingFloor == null && top > wallCeilingMin(room, side) + 0.01) return null;
   const aligned = { ...cabinet, mountBottom: bottom };
