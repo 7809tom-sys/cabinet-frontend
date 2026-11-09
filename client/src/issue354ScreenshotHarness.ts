@@ -1,18 +1,18 @@
 /**
- * Screenshot harness for issue #354 — a frameless drop-in cooktop base.
+ * Screenshot harness for issue #354 — a frameless range base with its range top.
  *
  * ONE cabinet, rendered by the real 3D engine (`existingCabinetSku` +
  * `existingCabinetTransform` + `addCabinet` + `addThreeDStandardCountertops`
  * from InteractiveRoom3D), exactly the way the Designer draws a sink base:
  *
- *   the box      the frameless `RB3DB24` cooktop base (two drawers with one
+ *   the box      the frameless `RB3DB24` range base (two drawers with one
  *                false front), labelled with its designer-facing name
  *   the top      the shared countertop slab over the box
- *   the cooktop  the `countertop-opening` appliance set INTO that top, drawn by
- *                the engine's built-in cooktop branch (glass surface + burners)
+ *   the top      the `countertop-opening` range top set INTO that surface, drawn
+ *                by the engine's built-in cooktop branch (surface + burners)
  *
  * There is NO freestanding range anywhere in this scene: the cooking surface is
- * the drop-in cooktop seated in the cabinet's top, the same relationship a sink
+ * the range top seated in the cabinet's top, the same relationship a sink
  * basin has to its sink base.
  *
  * Loaded only by `dev/issue354-shot.html` during the screenshot run
@@ -54,12 +54,12 @@ const ROOM: RoomData = { ...DEFAULT_ROOM, width: 144, depth: 120, ceilingHeight:
 const CABINET_WIDTH_IN = 30;
 const CABINET_OFFSET_IN = 24;
 
-/** The frameless drop-in cooktop base, at the width the render uses. */
-function cooktopBaseRow(): DesignCabinet {
+/** The frameless range base, at the width the render uses. */
+function rangeBaseRow(): DesignCabinet {
   return {
     id: 2030,
     masterCode: `RB3DB${CABINET_WIDTH_IN}`,
-    description: `${CABINET_WIDTH_IN}" W × 34.75" H × 24" D Two Drawer Base with One False Front for a drop-in cooktop`,
+    description: `${CABINET_WIDTH_IN}" W × 34.75" H × 24" D Two Drawer Base with One False Front for a range top`,
     category: "Base",
     subCategory: null,
     width: String(CABINET_WIDTH_IN),
@@ -73,11 +73,11 @@ function cooktopBaseRow(): DesignCabinet {
 }
 
 /** The base box, seated on the wall like any other base cabinet. */
-function cooktopBase(): PlacedCabinet {
-  const row = cooktopBaseRow();
+function rangeBaseCabinet(): PlacedCabinet {
+  const row = rangeBaseRow();
   const spot = wallPlacementAt(CABINET_OFFSET_IN, CABINET_WIDTH_IN, 24, "top", ROOM);
   return {
-    uid: "cooktop-base",
+    uid: "range-base",
     cabinetId: row.id,
     masterCode: row.masterCode,
     description: row.description,
@@ -96,23 +96,23 @@ function cooktopBase(): PlacedCabinet {
 }
 
 /**
- * The drop-in cooktop, seated on the base's own top exactly as the frameless
- * cooktop conversion seats it: a `countertop-opening` appliance on the base uid,
+ * The range top, seated in the base's own countertop exactly as the frameless
+ * range-top conversion seats it: a `countertop-opening` appliance on the base uid,
  * its top meeting the finished 36" countertop line.
  */
-function cooktopOn(base: PlacedCabinet): PlacedCabinet {
+function rangeTopOn(base: PlacedCabinet): PlacedCabinet {
   return {
     uid: `${base.uid}:cooktop`,
     cabinetId: 0,
     masterCode: "CATALOG-APPLIANCE-gas",
-    description: 'Gas cooktop 30"',
+    description: 'Gas range top 30"',
     category: "Appliance",
     subCategory: "Cooktop",
     placement: "appliance",
     applianceRole: "countertop-opening",
     applianceProductId: 30001,
     applianceCatalogCode: "CATALOG-APPLIANCE-gas",
-    applianceCatalogName: 'Gas cooktop 30"',
+    applianceCatalogName: 'Gas range top 30"',
     x: base.x,
     y: base.y,
     rotation: base.rotation,
@@ -212,10 +212,10 @@ function buildScene(placed: PlacedCabinet[], width: number, height: number) {
   }
 
   // 2. The shared countertop slab over the box — the same call the Designer
-  //    makes, so a sink base and this cooktop base finish their tops identically.
+  //    makes, so a sink base and this range base finish their tops identically.
   addThreeDStandardCountertops(root, ROOM, placed, "#eeeae2", null);
 
-  // 3. The drop-in cooktop, set into that top by the engine's own
+  // 3. The range top, set into that top by the engine's own
   //    countertop-opening branch (glass surface, burners, no range chassis).
   for (const cabinet of placed) {
     if (cabinet.placement !== "appliance") continue;
@@ -255,16 +255,16 @@ function buildScene(placed: PlacedCabinet[], width: number, height: number) {
 
 function facts(placed: readonly PlacedCabinet[]) {
   const base = placed.find((item) => item.placement === "base")!;
-  const cooktop = placed.find((item) => item.placement === "appliance")!;
+  const rangeTop = placed.find((item) => item.placement === "appliance")!;
   const baseTop = Number(base.mountBottom ?? 0) + Number(base.height ?? 0);
-  const cooktopTop = Number(cooktop.mountBottom ?? 0) + Number(cooktop.height ?? 0);
+  const rangeTopTop = Number(rangeTop.mountBottom ?? 0) + Number(rangeTop.height ?? 0);
   return {
     name: designerCabinetName(base),
     code: base.masterCode,
     width: Number(base.width),
     baseTop,
-    cooktopTop,
-    cooktopName: cooktop.applianceCatalogName ?? cooktop.description,
+    rangeTopTop,
+    rangeTopName: rangeTop.applianceCatalogName ?? rangeTop.description,
   };
 }
 
@@ -272,8 +272,8 @@ function run() {
   const flag = (state: string) => { (window as unknown as { __issue354Shot?: string }).__issue354Shot = state; };
   try {
     const host = document.getElementById("root")!;
-    const base = cooktopBase();
-    const placed = [base, cooktopOn(base)];
+    const base = rangeBaseCabinet();
+    const placed = [base, rangeTopOn(base)];
 
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -291,7 +291,7 @@ function run() {
     caption.innerHTML = [
       `<strong style="color:#047857">${f.code} &middot; ${f.name}</strong>`,
       `${f.width}&Prime; W &times; 34.75&Prime; H &times; 24&Prime; D`,
-      `countertop ${STD.COUNTERTOP_HEIGHT}&Prime; &middot; ${f.cooktopName} installed in it`,
+      `countertop ${STD.COUNTERTOP_HEIGHT}&Prime; &middot; ${f.rangeTopName} installed in it`,
       `no freestanding range`,
     ].join("<br />");
 

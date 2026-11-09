@@ -6,7 +6,7 @@
  * on, exactly the way a sink base is the cabinet you put a sink on.** Selecting a
  * range base must therefore show the catalog's range tops as the things to put on
  * it — the same flow a sink base uses to show sink basins, not a "confirm a
- * cooktop" prompt about a different product.
+ * range-top" prompt about a different product.
  *
  * This module is the range-base counterpart of `sinkBaseSelection.ts`:
  *

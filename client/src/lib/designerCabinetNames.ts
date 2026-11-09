@@ -39,7 +39,7 @@ function compactCode(masterCode: string | null | undefined): string {
   return (masterCode ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-/** The RB drop-in cooktop base family encoded by a code, or null for every other code. */
+/** The RB range base family encoded by a code, or null for every other code. */
 export function rangeBaseFamilyForCode(masterCode: string | null | undefined): RangeBaseFamily | null {
   const match = RANGE_BASE_CODE.exec(compactCode(masterCode));
   if (!match) return null;
@@ -54,7 +54,7 @@ export function rangeBaseNominalWidth(masterCode: string | null | undefined): nu
   return Number.isFinite(width) && width > 0 ? width : null;
 }
 
-/** True for an RB drop-in cooktop base (`RB2DB*` / `RB3DB*`). */
+/** True for an RB range base (`RB2DB*` / `RB3DB*`) — the cabinet a range top goes on. */
 export function isRangeBaseCabinetCode(masterCode: string | null | undefined): boolean {
   return rangeBaseFamilyForCode(masterCode) != null;
 }
