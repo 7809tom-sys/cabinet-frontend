@@ -208,7 +208,7 @@ describe("InteractiveRoom3D renderer lifecycle wiring", () => {
 
   it("does not create, mount, dispose, or force-lose a context inside the scene effect", () => {
     const start = roomSource.indexOf("const hostRenderer = rendererHostRef.current.ensureMounted(mount)");
-    const end = roomSource.indexOf("}, [webglUnavailable, scene, validSuggestions, placed,", start);
+    const end = roomSource.indexOf("}, [webglUnavailable, webglContextGeneration, scene, validSuggestions, placed,", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const sceneEffect = roomSource.slice(start, end);

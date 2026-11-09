@@ -17,7 +17,10 @@ import { TRPC_QUERY_METHOD_OVERRIDE } from "./lib/trpcTransport";
 import { installHistoryIndex } from "./lib/browserHistoryNav";
 import { supabase } from "./lib/supabase";
 import { apiUrl } from "./lib/apiBase";
+import { installStaleChunkReload } from "./lib/staleChunkReload";
 import "./index.css";
+
+installStaleChunkReload();
 
 // Start counting in-app history entries before the first navigation, so the
 // Designer's Back button knows an in-app click left a real page behind it.

@@ -11,7 +11,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
+import { THREE_D_GPU_RESET_LIMIT_MESSAGE, ThreeDRendererHost, claimThreeDGpuRecovery, detectThreeDWebGLSupport, sizeThreeDRenderer, threeDWebGLUnavailableMessage, type ThreeDWebGLSupport } from "./threeDRendererHost";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
@@ -1114,6 +1114,8 @@ interface Props {
   onPresentationChange?: (presentation: InteractiveRoomPresentation) => void;
   /** Fires once the rebuilt scene has painted its first countertop frame. */
   onGeometryRendered?: () => void;
+  /** True while a GPU reset has paused the 3D view, so the page can hold back dialogs that would cover the notice. */
+  onGraphicsPausedChange?: (paused: boolean) => void;
   /** Persists an interactive wall-height adjustment back to the current 2D room. */
   onRoomWallHeightChange?: (heightIn: number) => void;
   /** Persists individual back, left, right, and front wall heights. */
@@ -12591,7 +12593,7 @@ function ThreeDFloorMaterialControl({
 // identity in the scene effect's dependencies and rebuilds the whole 3D room.
 const NO_ITEMS: never[] = [];
 
-export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered }: Props) {
+export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered, onGraphicsPausedChange }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -12662,16 +12664,45 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   const [wallHeightIn, setWallHeightIn] = useState(() => constrainedThreeDWallHeight(roomOverride?.ceilingHeight ?? dimensions(scene.roomShape?.defaultDimensions).ceilingHeight));
   const [wallHeights, setWallHeights] = useState<Record<WallSide, number>>(() => resolvedThreeDWallHeights(roomOverride, wallHeightIn));
 	  const [webglUnavailable, setWebglUnavailable] = useState(false);
+  const [webglSupport, setWebglSupport] = useState<ThreeDWebGLSupport>("webgl2");
+  const [webglContextLost, setWebglContextLost] = useState(false);
+  const [webglContextGeneration, setWebglContextGeneration] = useState(0);
+  const [gpuResetLimitReached, setGpuResetLimitReached] = useState(false);
   const webglAutoRetriesRef = useRef(0);
+  const onGraphicsPausedChangeRef = useRef(onGraphicsPausedChange);
+  onGraphicsPausedChangeRef.current = onGraphicsPausedChange;
+  useEffect(() => {
+    onGraphicsPausedChangeRef.current?.(webglContextLost);
+  }, [webglContextLost]);
+  useEffect(() => () => onGraphicsPausedChangeRef.current?.(false), []);
+  /** Past the session's GPU-reset recoveries: drop the context and say why instead of reconnecting again. */
+  const stopAfterGpuResets = () => {
+    rendererHostRef.current?.dispose();
+    webglAutoRetriesRef.current = 2;
+    setGpuResetLimitReached(true);
+    setWebglUnavailable(true);
+  };
+  useEffect(() => {
+    // A GPU reset loses the context. Chrome usually restores it; when it does
+    // not (it blocks WebGL for a page after repeated resets), start over with a
+    // new context instead of leaving a blank canvas.
+    if (!webglContextLost) return;
+    const timer = window.setTimeout(() => {
+      setWebglContextLost(false);
+      rendererHostRef.current?.dispose();
+      webglAutoRetriesRef.current = 0;
+      setWebglUnavailable(true);
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [webglContextLost]);
   useEffect(() => {
     // A failed start used to be permanent until a page refresh. Contexts free up a moment
     // later, so retry automatically (twice) before asking the user to press Retry.
     if (!webglUnavailable || webglAutoRetriesRef.current >= 2) return;
     const timer = window.setTimeout(() => {
       webglAutoRetriesRef.current += 1;
-      // Drop the failed host so the next attempt asks the browser for a fresh context.
+      // Drop the failed renderer so the next attempt asks the browser for a fresh context.
       rendererHostRef.current?.dispose();
-      rendererHostRef.current = null;
       setWebglUnavailable(false);
     }, 1200);
     return () => window.clearTimeout(timer);
@@ -13087,8 +13118,10 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     // its contents down first and the canvas is detached last. The renderer is
     // parked rather than destroyed so the next 3D view reuses its context.
     return () => {
+      const current = rendererHostRef.current;
       host.release();
-      if (rendererHostRef.current === host) rendererHostRef.current = null;
+      if (current && current !== host) current.release();
+      rendererHostRef.current = null;
     };
   }, []);
 
@@ -13118,11 +13151,29 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     if (!rendererHostRef.current) rendererHostRef.current = new ThreeDRendererHost();
     const hostRenderer = rendererHostRef.current.ensureMounted(mount);
     if (!hostRenderer) {
+      const support = detectThreeDWebGLSupport();
+      setWebglSupport(support);
+      // Retrying cannot turn WebGL 2 back on; show the browser fix right away.
+      if (support === "webgl1-only") webglAutoRetriesRef.current = 2;
       setWebglUnavailable(true);
       onGeometryRenderedRef.current?.();
       return;
     }
     renderer = hostRenderer;
+    // Each reset takes one of the session's recoveries when it happens, however it is then recovered.
+    const onWebglContextLost = () => {
+      if (!claimThreeDGpuRecovery()) {
+        stopAfterGpuResets();
+        return;
+      }
+      setWebglContextLost(true);
+    };
+    const onWebglContextRestored = () => {
+      setWebglContextLost(false);
+      setWebglContextGeneration((generation) => generation + 1);
+    };
+    renderer.domElement.addEventListener("webglcontextlost", onWebglContextLost);
+    renderer.domElement.addEventListener("webglcontextrestored", onWebglContextRestored);
     sizeThreeDRenderer(renderer, canvasWidth, canvasHeight, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
 	    renderer.domElement.dataset.renderQuality = renderQuality.tier;
     renderer.shadowMap.enabled = true;
@@ -13782,6 +13833,8 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      cancelAnimationFrame(frame);
 	      cancelAnimationFrame(readyFrame);
 	      resizeObserver.disconnect();
+      renderer.domElement.removeEventListener("webglcontextlost", onWebglContextLost);
+      renderer.domElement.removeEventListener("webglcontextrestored", onWebglContextRestored);
       cameraViewRef.current = {
         preset: cameraPreset,
         resetKey,
@@ -13804,7 +13857,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       if (controlsRef.current === controls) controlsRef.current = null;
       if (catalogRootRef.current === catalogRoot) catalogRootRef.current = null;
     };
-  }, [webglUnavailable, scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, hardwareFinish, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
+  }, [webglUnavailable, webglContextGeneration, scene, validSuggestions, placed, crown, toeKick, roomOverride, openings, sinks, potFillers, island, furniture, selectedFurnitureUid, ponyWalls, renderExistingDesign, resetKey, cameraPreset, showRoomContext, showSolidFrontWalls, cutawayRoomWalls, hybridPlanUnderlay, wallHeightIn, wallHeights, resolvedCabinetFinish, studioLights, cabinetPreviewFinishId, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDrawerSampleUrl, catalogFaceSourceKind, countertopFinish, cabinetFinish, catalogDoorSampleUrl, catalogRoomSceneUrl, hardwareStyleId, hardwareAccent, hardwareFinish, catalogCountertopName, catalogCountertopProductId, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopColor, catalogFlooringName, catalogFlooringProductId, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashSize, catalogBacksplashCategory, catalogBacksplashSubCategory, backsplashHeightMode, countertopBacksplashHeightIn, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl, flooringRotationDeg, mosaicFloorPattern, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl, catalogBacksplashMaterialImageUrl, catalogFlooringMaterialImageUrl]);
 
   // A catalog filler has already passed geometry/collision validation before this
 	  // cue runs. Animate only its visual group, so the final coordinates and the
@@ -15278,7 +15331,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     return <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground">Choose a room layout or open a saved design to generate the deterministic 3D preview.</div>;
   }
   if (webglUnavailable) {
-    return <div data-testid="webgl-unavailable" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{webglAutoRetriesRef.current < 2 ? "Starting the interactive 3D view…" : "The interactive 3D view could not start. Close other 3D tabs, then press Retry. Your 2D plan and elevation preview remain available."}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={() => { webglAutoRetriesRef.current = 0; rendererHostRef.current?.dispose(); rendererHostRef.current = null; setWebglUnavailable(false); }}>Retry 3D view</button></div>;
+    return <div data-testid="webgl-unavailable" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{webglAutoRetriesRef.current < 2 ? "Starting the interactive 3D view…" : gpuResetLimitReached ? THREE_D_GPU_RESET_LIMIT_MESSAGE : threeDWebGLUnavailableMessage(webglSupport)}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={() => { webglAutoRetriesRef.current = 0; rendererHostRef.current?.dispose(); setGpuResetLimitReached(false); setWebglUnavailable(false); }}>Retry 3D view</button></div>;
   }
   const fillerNoticeEntries = threeDFillerMeasurementNoticeEntries(placed);
   const fillerNoticePieceCount = fillerNoticeEntries.reduce((total, entry) => total + entry.quantity, 0);
@@ -15392,6 +15445,11 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	        setCatalogDragMeasurement(fit ? { item, fit, wall, freehand: event.shiftKey } : null);
 	      }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setCatalogDragMeasurement(null); }} onDrop={(event) => { event.preventDefault(); const key = event.dataTransfer.getData("text/plain"); const item = catalogItems.find((candidate) => `${candidate.category}:${candidate.id}` === key) ?? catalogDragItem; if (item) onAddCatalogItem?.(item, catalogDropTargetAtPoint(event.clientX, event.clientY), event.shiftKey); setDraggedCatalogId(null); setCatalogDragMeasurement(null); }}>
 			        <div ref={mountRef} className="h-full w-full" />
+			        {webglContextLost && (
+			          <div data-testid="webgl-context-lost" role="status" className="absolute inset-0 z-30 flex items-center justify-center bg-background/70 px-6 text-center text-sm font-medium text-foreground">
+			            The graphics card reset, so the 3D view paused. Restoring it…
+			          </div>
+			        )}
 			        {placedItemMenu && <PlacedItemContextMenu menu={placedItemMenu} onEdit={onOpenCabinetEditor ? (uid) => { setPlacedItemMenu(null); onOpenCabinetEditor(uid); } : undefined} onMove={onMoveCabinet ? (uid) => { setPlacedItemMenu(null); onSelectCabinet?.(uid); setMovePanelOpen(true); } : undefined} onRemove={onRemoveCabinet ? (uid) => { setPlacedItemMenu(null); preserveCurrentCameraView(); onRemoveCabinet(uid); setSelectedCabinet(null); setMovePanelOpen(false); } : undefined} onClose={() => setPlacedItemMenu(null)} />}
 			        {faucetWindowWarning && (
 			          <div data-testid="faucet-window-conflict" role="alert" className="pointer-events-none absolute bottom-16 left-3 z-30 max-w-sm rounded-lg border border-amber-500 bg-amber-50/95 px-3 py-2 text-xs font-semibold leading-snug text-amber-950 shadow-lg">
