@@ -46,6 +46,8 @@ import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRef
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase } from "./autoDesignSink";
+import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
+import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
 import {
   autoDesignTallProducts,
@@ -97,7 +99,8 @@ import {
   isFarmSinkBasePaletteItem,
   isRangeOrOven,
   isSinkBaseCabinet,
-  makeDefaultSinkForCabinet,
+  makeSinkForCabinet,
+  NON_APRON_SINK_FRONT_SETBACK,
   standardHeight,
   cabinetWall,
   wallPlacementAt,
@@ -255,6 +258,141 @@ function absorbOpenBaseGaps(
     }
   }
   return working;
+}
+
+/**
+ * Re-seat every sink fixture onto the sink base that actually holds it.
+ *
+ * The basin is built when the anchor is measured, and the base can move after
+ * that (the sink-landing rule slides it to open counter between the basin and a
+ * tall unit). Re-placing the fixture from the FINAL base is what keeps it centered
+ * on its own box at the approved 2"–2½" front setback instead of drifting with the
+ * old position.
+ */
+function reSeatSinkFixtures(
+  sinks: readonly SinkFixture[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  setbackIn: number,
+): { sinks: SinkFixture[]; changed: boolean; notes: string[] } {
+  let changed = false;
+  const notes: string[] = [];
+  const next = sinks.map((sink) => {
+    const base = placed.find((item) => item.uid === sink.cabinetUid);
+    if (!base || !isSinkBaseCabinet(base)) return sink;
+    const dimensions = {
+      width: sink.sourceWidth ?? sink.width,
+      depth: sink.sourceDepth ?? sink.depth,
+    };
+    const seated = makeSinkForCabinet(sink.type, base, room, dimensions, { frontSetbackIn: setbackIn });
+    const same = seated.x === sink.x
+      && seated.y === sink.y
+      && seated.width === sink.width
+      && seated.depth === sink.depth
+      && seated.wallSide === sink.wallSide
+      && seated.planRotation === sink.planRotation
+      && seated.frontSetbackIn === sink.frontSetbackIn;
+    if (same) return sink;
+    changed = true;
+    notes.push(`The basin on ${base.masterCode} was re-centered on its base at a ${seated.frontSetbackIn ?? setbackIn}″ front setback after the base moved.`);
+    return {
+      ...seated,
+      uid: sink.uid,
+      faucet: sink.faucet,
+      pelicanProductId: sink.pelicanProductId,
+      pelicanProductName: sink.pelicanProductName,
+      pelicanProductImage: sink.pelicanProductImage,
+      pelicanProfileId: sink.pelicanProfileId,
+      bowlWidth: sink.bowlWidth,
+      bowlDepth: sink.bowlDepth,
+      bowlHeight: sink.bowlHeight,
+      bowlCount: sink.bowlCount,
+      bowlWidths: sink.bowlWidths,
+      bowlDepths: sink.bowlDepths,
+      bowlHeights: sink.bowlHeights,
+      drainInsetRight: sink.drainInsetRight,
+      drainInsetBack: sink.drainInsetBack,
+      exteriorHeight: sink.exteriorHeight,
+      apronFront: sink.apronFront,
+      surfaceFinish: sink.surfaceFinish,
+      autoDesignFaucet: sink.autoDesignFaucet,
+      defaultFaucet: sink.defaultFaucet,
+      pelicanFaucetProductId: sink.pelicanFaucetProductId,
+      pelicanFaucetProductName: sink.pelicanFaucetProductName,
+      pelicanFaucetProductImage: sink.pelicanFaucetProductImage,
+      pelicanFaucetProfileId: sink.pelicanFaucetProfileId,
+      faucetOverallHeight: sink.faucetOverallHeight,
+      faucetSpoutLength: sink.faucetSpoutLength,
+      faucetSpoutHeight: sink.faucetSpoutHeight,
+      faucetFinish: sink.faucetFinish,
+      faucetForm: sink.faucetForm,
+    };
+  });
+  return { sinks: changed ? next : [...sinks], changed, notes };
+}
+
+/**
+ * Owner rule: a sink base keeps a real counter landing between itself and a tall
+ * cabinet or refrigerator. Called once the base runs and the tall picks are both
+ * seated, so the exact gap is known. The sink base is the only piece that moves,
+ * and only within its own anchor cap; the tall unit is never moved.
+ *
+ * A sink that cannot slide free is left where it is and reported by name, so the
+ * plan never hides a basin jammed against a pantry.
+ */
+function slideSinkForLanding(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  notes: string[];
+  reviewFindings: DesignerReviewFinding[];
+}): { placed: PlacedCabinet[] } {
+  let working = [...input.placed];
+  const landingIn = sinkTallLandingIn();
+  for (let guard = 0; guard < 4; guard += 1) {
+    const gaps = sinkLandingGaps(working, input.room, landingIn);
+    if (gaps.length === 0) break;
+    const gap = gaps[0]!;
+    const sink = working.find((item) => item.uid === gap.sinkUid);
+    if (!sink) break;
+    const slides = planSinkLandingSlides({ sink, placed: working, room: input.room, landingIn });
+    const slide = slides[0];
+    if (!slide) {
+      input.reviewFindings.push({
+        ruleId: "sink-landing-before-tall",
+        code: "sink-landing-short",
+        severity: "warning",
+        title: `${gap.sinkCode} has no counter landing before ${gap.blockerCode}`,
+        detail: `The sink base and ${gap.blockerCode} are ${Math.max(0, gap.gapIn)}″ apart on ${gap.wallId}, so the basin is jammed against the tall unit. The sink base could not slide the ${landingIn}″ needed inside its own anchor allowance. Shorten the run or move the sink base, then rebuild.`,
+        cabinetUid: sink.uid,
+        cabinetCode: sink.masterCode,
+      });
+      break;
+    }
+    const spot = wallPlacementAt(slide.startIn, sink.width, sink.depth, gap.wallId as WallSide, input.room);
+    const moved: PlacedCabinet = {
+      ...sink,
+      ...spot,
+      wallId: spot.wallId ?? sink.wallId,
+      wallOffset: spot.wallOffset ?? slide.startIn,
+    };
+    const without = working.filter((item) => item.uid !== sink.uid);
+    const accepted = appendCollisionFreePlacements(without, [moved], input.room);
+    if (accepted.rejected.length > 0) {
+      input.reviewFindings.push({
+        ruleId: "sink-landing-before-tall",
+        code: "sink-landing-short",
+        severity: "warning",
+        title: `${gap.sinkCode} has no counter landing before ${gap.blockerCode}`,
+        detail: `The sink base needs to slide ${Math.abs(slide.deltaIn)}″ to open a ${landingIn}″ landing before ${gap.blockerCode}, and that spot is already occupied. Nothing was moved. Shorten the run or move the sink base, then rebuild.`,
+        cabinetUid: sink.uid,
+        cabinetCode: sink.masterCode,
+      });
+      break;
+    }
+    working = accepted.placed;
+    input.notes.push(`${gap.sinkCode} slid ${Math.abs(slide.deltaIn)}″ to keep a ${landingIn}″ counter landing before ${gap.blockerCode}.`);
+  }
+  return { placed: working };
 }
 
 /**
@@ -617,6 +755,7 @@ export function runAutoDesignLayout(args: {
     // A sink picked in the sink pop-up is seated in the sink base the build
     // actually placed, so the pairing decided above is what gets a basin.
     const pickedSink = pickedSinkProducts[0];
+    const setbackIn = sinkFrontSetbackIn();
     const pelicanSink = pickedSink && sinkBase
       ? buildPelicanSinkOnCabinet({
         id: pickedSink.productId,
@@ -624,14 +763,19 @@ export function runAutoDesignLayout(args: {
         name: pickedSink.name,
         imageUrl: pickedSink.imageUrl ?? null,
         size: pickedSink.size ?? null,
-      }, sinkBase, room)
+      }, sinkBase, room, { frontSetbackIn: setbackIn })
       : null;
     if (pelicanSink) {
       sinks = keepSingleAutoDesignSink([pelicanSink], sinkBase.uid);
       if (resolvedSinkBase.note) notes.push(resolvedSinkBase.note);
     } else {
       const defaultSinkType = isFarmSinkBasePaletteItem(sinkBase) ? "farmhouse" : sinkBase.width >= 33 ? "double" : "single";
-      sinks = keepSingleAutoDesignSink([makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType)], sinkBase.uid);
+      // The basin is centered on its own sink base and set back into the approved
+      // 2"–2½" band from the finished countertop front. No build path seats it
+      // flush with the front edge or off-center on the base.
+      sinks = keepSingleAutoDesignSink([
+        makeSinkForCabinet(defaultSinkType, sinkBase, room, undefined, { frontSetbackIn: setbackIn }),
+      ], sinkBase.uid);
     }
   }
   let sinkWindow: WallOpening | null = null;
@@ -841,6 +985,9 @@ export function runAutoDesignLayout(args: {
       // that another run is about to occupy.
       runWallIds: runWalls,
       allowMultiple: tallPicks.length > 1,
+      // A tall box is a run terminator; it must not leave the sink base as the
+      // last floor box at a run end with the basin jammed against it.
+      sinkLandingIn: sinkTallLandingIn(),
     });
     if (!fit.ok) {
       reviewFindings.push({
@@ -1096,6 +1243,12 @@ export function runAutoDesignLayout(args: {
   });
   working = leftover.placed;
   notes.push(...leftover.notes);
+  // Owner rule: the sink base is never the last floor box against a tall unit or
+  // refrigerator. The base runs and the tall picks are both down, so a slide that
+  // opens the landing is known exactly. The sink base slides (within its own
+  // anchor cap); nothing else moves. A sink that still has no landing is named.
+  const landingFix = slideSinkForLanding({ placed: working, room, notes, reviewFindings });
+  working = landingFix.placed;
   // HARD RULE (owner, Nov 5 2026): a real bridge wall cabinet is placed above the
   // range on EVERY build, and it goes in BEFORE the upper run tiles. Seating it
   // first makes the bridge an occupied upper, so the wall run never lays an
@@ -1210,6 +1363,12 @@ export function runAutoDesignLayout(args: {
   // Rule 11: the 54 / 84-90-96 upper datum, and rule 4's one continuous board per filler.
   working = normalizeUpperHeights(working, { room, openings: stageOpenings });
   working = normalizeContinuousVerticalFillers(working, room).placed;
+  // Owner rule: the uppers line up with the bases beneath them. A shared pass
+  // later in the pipeline can still mirror a run-end base filler up into the wall
+  // layer, so the last word is here: flat stock that hangs past the end of the
+  // base run is removed. Filler inside the run (and beside a window or corner) stays.
+  const endTrim = trimWallFillersOutsideRun({ placed: working, room });
+  working = endTrim.placed;
   // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
   const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls });
   reviewFindings.push(...exposedPanelFindings(panelRequirements, new Set()));
@@ -1312,6 +1471,33 @@ export function runAutoDesignLayout(args: {
       ];
       notes.push(...raisedForFaucet.notes.map((note) => note.text));
     }
+  }
+  // Owner rule: the basin is centered on the sink base that actually holds it and
+  // set back 2"–2½" from the finished countertop front. The base can slide after
+  // the fixture is first built (the sink-landing rule moves it), so the fixtures
+  // are re-seated onto the FINAL bases here, before the faucet is attached.
+  const reseatedSinks = reSeatSinkFixtures(sinks, working, room, sinkFrontSetbackIn());
+  if (reseatedSinks.changed) {
+    sinks = reseatedSinks.sinks;
+    notes.push(...reseatedSinks.notes);
+  }
+  // A basin the geometry cannot seat the owner's way (a Pelican sink deeper than
+  // the finished top allows at a 2" setback, say) is named on the review list
+  // rather than left as an unexplained offset.
+  for (const sink of sinks) {
+    const base = working.find((item) => item.uid === sink.cabinetUid);
+    if (!base) continue;
+    const seat = sinkSeatCheck(sink, base, room);
+    if (seat.ok) continue;
+    reviewFindings.push({
+      ruleId: "sink-seat-on-base",
+      code: "sink-not-centered-or-setback",
+      severity: "warning",
+      title: `${sink.pelicanProductName ?? sink.type} does not sit the way the sink rule asks`,
+      detail: seat.reason ?? `${sink.uid} is not seated centered on ${base.masterCode} at a ${NON_APRON_SINK_FRONT_SETBACK.minimumIn}″–${NON_APRON_SINK_FRONT_SETBACK.maximumIn}″ front setback.`,
+      cabinetUid: base.uid,
+      cabinetCode: base.masterCode,
+    });
   }
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));

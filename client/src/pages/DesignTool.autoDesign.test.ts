@@ -103,7 +103,10 @@ describe("public Auto-Design Designer wiring", () => {
     expect(dialogSource).toContain("Two source-priced side panels");
     expect(dialogSource).toContain("Matching source-priced {refrigeratorWidth}″ cabinet above");
     expect(layoutSource).toContain("No source-priced SB${sinkBaseWidth} sink base");
-    expect(layoutSource).toContain("makeDefaultSinkForCabinet(sinkBase");
+    // The basin is seated centered on its own sink base with the approved 2"–2½"
+    // front setback; the measured (neutral) basin comes from the same geometry.
+    expect(layoutSource).toContain("makeSinkForCabinet(defaultSinkType, sinkBase, room");
+    expect(layoutSource).toContain("frontSetbackIn: setbackIn");
     expect(layoutSource).toContain("buildMandatoryAutoDesignRefrigeratorBay");
   });
 
