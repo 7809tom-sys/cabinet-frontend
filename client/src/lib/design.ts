@@ -1624,24 +1624,21 @@ export function designDefaultStyleId(
 
 /**
  * Older drafts autosaved with Color 2 active did not record Color 1. Recover it
- * from the most common per-cabinet finish that is not Color 2.
+ * only when the cabinets carry exactly one finish besides Color 2; with two or
+ * more, any of them could be a third accent, so keep `inheritedFallbackStyleId`
+ * (the finish the inherited cabinets were showing when the draft was saved).
  */
 export function inferColorOneStyleId(
   cabinets: Array<{ styleId?: number | null }>,
   colorTwoStyleId: number | null,
+  inheritedFallbackStyleId: number | null,
 ): number | null {
-  const counts = new Map<number, number>();
+  const others = new Set<number>();
   for (const cabinet of cabinets) {
     const id = cabinet.styleId;
-    if (id == null || id === colorTwoStyleId) continue;
-    counts.set(id, (counts.get(id) ?? 0) + 1);
+    if (id != null && id !== colorTwoStyleId) others.add(id);
   }
-  let best: number | null = null;
-  let bestCount = 0;
-  counts.forEach((count, id) => {
-    if (count > bestCount) { best = id; bestCount = count; }
-  });
-  return best;
+  return others.size === 1 ? Array.from(others)[0]! : inheritedFallbackStyleId;
 }
 
 /**

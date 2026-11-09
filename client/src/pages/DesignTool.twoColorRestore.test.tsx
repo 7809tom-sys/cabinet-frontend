@@ -157,6 +157,18 @@ describe("#352: a draft saved with Color 2 highlighted restores on Color 1", () 
     expect((await autosaved()).styleA).toBe(COLOR_ONE);
   });
 
+  it("never guesses a third accent as Color 1; the inherited finish stays as saved", { timeout: 90_000 }, async () => {
+    const THIRD_ACCENT = 390019;
+    await renderDesigner({
+      styleId: COLOR_TWO, styleB: COLOR_TWO, activeSlot: "B",
+      placed: [...KITCHEN.slice(0, 3), { ...KITCHEN[3]!, styleId: THIRD_ACCENT }],
+    });
+    expect(savedPlan.styleId).toBe(COLOR_TWO);
+    const saved = await autosaved();
+    expect(saved.styleA).toBe(COLOR_TWO);
+    expect(saved.placed?.map((item) => item.styleId)).toEqual([COLOR_ONE, COLOR_ONE, null, THIRD_ACCENT]);
+  });
+
   it("leaves a Color 1 draft as it was", { timeout: 90_000 }, async () => {
     await renderDesigner({ styleId: COLOR_ONE, styleB: COLOR_TWO, activeSlot: "A" });
     expect(savedPlan.styleId).toBe(COLOR_ONE);

@@ -3106,6 +3106,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Refs mirror the active style + slot B so addCabinet (a stable callback) can
   // stamp the current color without going stale or re-creating on every change.
   const styleIdRef = useRef<number | null>(null);
+  // Whole-layout builders (Auto Design, Peninsula Wizard, imports) stamp the
+  // design's Color 1 so a generated kitchen is one color whichever swatch is lit.
+  const designStyleIdRef = useRef<number | null>(null);
   const styleBRef = useRef<number | null>(null);
   // Default to Homeowner for guests; overridden by user.pricingTier on login.
   const [tier, setTier] = useState<PricingTier>("Homeowner");
@@ -4483,7 +4486,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // of the base cabinet on each side of the range with a real placed panel.
       panelCatalog: autoPanelCatalog,
       preExistingPlacements,
-      styleId: styleIdRef.current ?? null,
+      styleId: designStyleIdRef.current ?? null,
       makeUid,
     }));
     if (!run.ok) return fail(run.message);
@@ -4654,7 +4657,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         blindPullIn: choice.blindPullIn,
         catalogFillers,
         makeUid,
-        styleId: styleIdRef.current ?? null,
+        styleId: designStyleIdRef.current ?? null,
         excludedWallIds,
       });
       if (!seated.ok) {
@@ -4763,7 +4766,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             description: item.isFiller ? fittedCatalogFillerDescription(source, width) : source.description,
             category: source.category, subCategory: source.subCategory, placement: "base", ...spot, width, depth,
             height: dim(source.height, standardHeight("base")), catalogImageUrl: source.catalogImageUrl ?? null,
-            numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: styleIdRef.current ?? null,
+            numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: designStyleIdRef.current ?? null,
           };
           const accepted = appendCollisionFreePlacements(working, [candidate], room);
           if (accepted.rejected.length === 0) { working = accepted.placed; surrounding.push(candidate); }
@@ -4774,7 +4777,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
     // Every layout has at least one three-drawer base (Tom, Oct 31): convert the best-fitting base run when the
     // planner's range split did not place one. A line with no drawer base only warns.
-    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
+    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: designStyleIdRef.current ?? null });
     working = drawerRule.placed;
     if (drawerRule.note) rangeNeighborNotes.push(drawerRule.note);
     if (drawerRule.warning) rangeNeighborNotes.push(drawerRule.warning);
@@ -4782,7 +4785,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // lowers before the wider seam helper closes anything they left behind.
     const baseRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
-      makeUid, styleId: styleIdRef.current ?? null,
+      makeUid, styleId: designStyleIdRef.current ?? null,
       // Filler is the last resort and never automatic at a run end.
       allowAutoFillers: false,
     });
@@ -4792,7 +4795,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // catalog filler before the wall boxes are matched to the finished lower runs.
     const seamResult = fillAutoDesignLowerSeams({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
-      styleId: styleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
+      styleId: designStyleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
       preserveHeavyCookLandings: heavyCook,
       maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
@@ -4807,7 +4810,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       room,
       wallCatalog: stage.wallPool,
       wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
-      styleId: styleIdRef.current ?? null,
+      styleId: designStyleIdRef.current ?? null,
       makeUid,
     });
     if (mandatoryBridge.added) working = mandatoryBridge.placed;
@@ -4822,12 +4825,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const upperResult = buildAutoDesignWallCabinets({
       placed: working, room, openings: stageOpenings, catalog: stage.wallPool,
       wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
-      styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
+      styleId: designStyleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
     });
     working = upperResult.placed;
     const finishedRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
-      makeUid, styleId: styleIdRef.current ?? null,
+      makeUid, styleId: designStyleIdRef.current ?? null,
     });
     working = finishedRules.placed;
     placedRef.current = working;
@@ -4943,7 +4946,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       appliancePalette,
       wallCatalog: wallCabPoolRef.current,
       wallCabinetHeightIn: wallCabHeightRef.current,
-      styleId: styleIdRef.current ?? null,
+      styleId: designStyleIdRef.current ?? null,
       makeUid,
     });
     if (!result.added) return;
@@ -5749,8 +5752,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // design's selected style and build a masterCode -> priced SKU map. Because the
   // map is scoped to styleId, any trim we price inherits the cabinets' finish.
   const trimStyleIds = useMemo(
-    () => (styleId ? [styleId] : ([] as number[])),
-    [styleId]
+    () => (designStyleId ? [designStyleId] : ([] as number[])),
+    [designStyleId]
   );
   const { data: trimSkuRows } = trpc.design.trimSkusForStyles.useQuery(
     { styleIds: trimStyleIds, distributorId: lockedDistributorId ?? undefined },
@@ -5760,7 +5763,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const trimPriceByCode = useMemo(() => {
     const m = new Map<string, TrimPrice>();
     trimSkuRows?.forEach((r) => {
-      if (styleId != null && r.styleId !== styleId) return;
+      if (designStyleId != null && r.styleId !== designStyleId) return;
       const unitPrice = priceOf(r, tier);
       if (unitPrice == null) return;
       m.set(r.masterCode, {
@@ -5771,7 +5774,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       });
     });
     return m;
-  }, [trimSkuRows, styleId, tier]);
+  }, [trimSkuRows, styleId, tier, designStyleId]);
   // NOTE: activeTrims + trimCartLines are defined lower down, after the trim
   // order memos (crownOrder/toeKickOrder/...) and activeStyleName they depend on.
 
@@ -6078,6 +6081,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     return m;
   }, [affiliateStyleName, doorStyles]);
+  const designStyleName = (designStyleId != null ? styleNameById.get(designStyleId) : null) ?? activeStyleName;
+  const designStyleRow = useMemo(
+    () => (designStyleId != null ? (doorStyles ?? []).find((row: { id: number }) => row.id === designStyleId) ?? activeStyle : activeStyle),
+    [designStyleId, doorStyles, activeStyle],
+  );
 
   // Itemized lines for the exported build sheet (cabinets aggregated by code).
   const buildRows = useMemo<BuildSheetRow[]>(() => {
@@ -6530,10 +6538,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [placed, designStyleId]
   );
 	const selectedFinishSummary = useMemo(() => {
-	  const wallStyleId = styleId;
-	  const islandStyleId = island && styleId
+	  const wallStyleId = designStyleId;
+	  const islandStyleId = island && designStyleId
 	    ? resolvedIslandCabinetStyleId(placed, island, designStyleId) ?? designStyleId
-	    : styleId;
+	    : designStyleId;
 	  const wallFinish = wallStyleId != null ? finishById.get(wallStyleId) ?? activeFinish : activeFinish;
 	  const islandFinish = islandStyleId != null ? finishById.get(islandStyleId) ?? wallFinish : wallFinish;
 	  return {
@@ -6622,8 +6630,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Priced trim cart lines (styleId-scoped). Trims without a buyable SKU for the
   // selected style are omitted rather than receiving an invented price.
   const trimCartLines = useMemo(
-    () => buildTrimCartLines(activeTrims, styleId, activeStyleName ?? "", trimPriceByCode),
-    [activeTrims, styleId, activeStyleName, trimPriceByCode]
+    () => buildTrimCartLines(activeTrims, designStyleId, designStyleName ?? "", trimPriceByCode),
+    [activeTrims, designStyleId, designStyleName, trimPriceByCode]
   );
 
   // Surfaces & Fixtures (flooring, backsplash tile, sink, faucet) picked in the
@@ -7124,7 +7132,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       failWizard(`Selected catalog items are unavailable: ${peninsulaWizardMissingIds.join(', ')}. Remove or replace them before building.`);
       return;
     }
-    if (styleIdRef.current == null) {
+    if (designStyleIdRef.current == null) {
       failWizard("Select a cabinet line and door style in the Designer before building a peninsula.");
       return;
     }
@@ -7381,7 +7389,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             category: cabinet.category ?? null, subCategory: cabinet.subCategory ?? null, placement: "base",
             x: spot.x, y: spot.y, width, depth, height: dim(cabinet.height, standardHeight(cabinet.placement)),
             rotation: spot.rotation, numberOfDoors: cabinet.numberOfDoors, numberOfDrawers: cabinet.numberOfDrawers,
-            catalogImageUrl: cabinet.catalogImageUrl ?? null, styleId: styleIdRef.current ?? null,
+            catalogImageUrl: cabinet.catalogImageUrl ?? null, styleId: designStyleIdRef.current ?? null,
             wallId: spot.wallId, wallOffset: spot.wallOffset, peninsulaSide: spot.peninsulaSide,
             peninsulaWizardId: wizardRootId,
           });
@@ -7393,7 +7401,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // selected-line miter filler pair immediately; do not rely only on the later
     // restore effect because a brand-new Wizard build must never show that seam open.
     if (angledRun) {
-      const miterRepair = repairMissingAngledWallFillers(working, nextRoom, catalogFillers, makeUid, styleIdRef.current ?? null);
+      const miterRepair = repairMissingAngledWallFillers(working, nextRoom, catalogFillers, makeUid, designStyleIdRef.current ?? null);
       if (miterRepair.added.length === 0) {
         failWizard(`The 135° joint needs a matching catalog filler pair on this line. No peninsula was added.${draft.endDirection === "left" && draft.cabinetSide === "left" ? " A left return with cabinets on the left side is not supported yet; set Cabinet placement side to Right side." : " Choose a line with a suitable filler or adjust the selected cabinet plan."}`);
         return;
@@ -7766,7 +7774,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const out: MaterialsListSupplement[] = [];
     const pricedCodes = new Set(cartableLines.map((line) => line.masterCode));
     const surfaceRoles = new Set(selectedSurfaces.map((surface) => surfaceRole(surface)));
-    const styleColor = activeStyleName ?? null;
+    const styleColor = designStyleName ?? null;
     const trimLabels: Record<TrimKind, string> = {
       crown: "Crown moulding",
       toeKick: "Toe kick",
@@ -7805,7 +7813,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
 
     return out;
-  }, [activeStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, openings, trimPriceByCode]);
+  }, [designStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, openings, trimPriceByCode]);
 
   const materialsListRows = useMemo(() => buildMaterialsListRows({
     buildRows,
@@ -7815,8 +7823,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     distributorNames: distributorNameById,
     defaultDistributorId: lockedDistributorId,
     defaultDistributorName: lockedDistributorId != null ? distributorNameById.get(lockedDistributorId) ?? null : null,
-    defaultStyleName: activeStyleName,
-  }), [activeStyleName, buildRows, cartableLines, distributorNameById, lockedDistributorId, materialsListSupplements, selectedPlanSurfaces]);
+    defaultStyleName: designStyleName,
+  }), [designStyleName, buildRows, cartableLines, distributorNameById, lockedDistributorId, materialsListSupplements, selectedPlanSurfaces]);
   // The Materials button repeats the same exact affected-placement count used by
   // the canvas notice and the conflict-only Materials filter. It is advisory;
   // existing cart and secure-order safeguards remain authoritative.
@@ -11691,7 +11699,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         category: pantry.category ?? null, subCategory: pantry.subCategory ?? null, placement: "tall",
         x: spot.x, y: spot.y, width: pantryW, depth: num(pantry.depth, 24), height: num(pantry.height, 96),
         rotation: spot.rotation, numberOfDoors: pantry.numberOfDoors, numberOfDrawers: pantry.numberOfDrawers,
-        catalogImageUrl: pantry.catalogImageUrl ?? null, styleId: styleIdRef.current ?? null,
+        catalogImageUrl: pantry.catalogImageUrl ?? null, styleId: designStyleIdRef.current ?? null,
       });
       along += pantryW;
     }
@@ -11703,7 +11711,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         uid: makeUid(), cabinetId: panel.id, masterCode: panel.masterCode, description: panel.description,
         placement: "tall", x: spot.x, y: spot.y, width: panelThick, depth: num(panel.width, fridgeD),
         height: num(panel.height, 96), rotation: spot.rotation, catalogImageUrl: panel.catalogImageUrl ?? null,
-        styleId: styleIdRef.current ?? null,
+        styleId: designStyleIdRef.current ?? null,
       });
       along += panelThick;
     }
@@ -11716,7 +11724,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         category: "Appliance", subCategory: null, placement: "appliance",
         x: spot.x, y: spot.y, width: fridgeW, depth: fridgeD, height: fridgeDef.elevHeight,
         rotation: spot.rotation, numberOfDoors: null, numberOfDrawers: null, catalogImageUrl: null,
-        styleId: styleIdRef.current ?? null,
+        styleId: designStyleIdRef.current ?? null,
       });
       if (deep) {
         const aWidth = num(deep.width, fridgeW);
@@ -11728,7 +11736,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           uid: makeUid(), cabinetId: deep.id, masterCode: deep.masterCode, description: deep.description,
           placement: "wall", x: upSpot.x, y: upSpot.y, width: aWidth, depth: aDepth, height: aHeight,
           rotation: upSpot.rotation, numberOfDoors: deep.numberOfDoors ?? undefined,
-          catalogImageUrl: deep.catalogImageUrl ?? null, styleId: styleIdRef.current ?? null,
+          catalogImageUrl: deep.catalogImageUrl ?? null, styleId: designStyleIdRef.current ?? null,
           // The deep refrigerator upper begins at the fixed 72" datum,
           // independent of the room ceiling or pantry cap.
           mountBottom: refrigeratorSurroundElevation(room, fridgeDef.elevHeight, aHeight).mountBottom,
@@ -11744,7 +11752,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         uid: makeUid(), cabinetId: panel.id, masterCode: panel.masterCode, description: panel.description,
         placement: "tall", x: spot.x, y: spot.y, width: panelThick, depth: num(panel.width, fridgeD),
         height: num(panel.height, 96), rotation: spot.rotation, catalogImageUrl: panel.catalogImageUrl ?? null,
-        styleId: styleIdRef.current ?? null,
+        styleId: designStyleIdRef.current ?? null,
       });
       along += panelThick;
     }
@@ -11764,7 +11772,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         uid: makeUid(), cabinetId: cab.id, masterCode: cab.masterCode, description: cab.description,
         placement: "wall", x: spot.x, y: spot.y, width: cw, depth: STD.WALL_DEPTH, height: ch,
         rotation: spot.rotation, numberOfDoors: cab.numberOfDoors ?? undefined,
-        catalogImageUrl: cab.catalogImageUrl ?? null, styleId: styleIdRef.current ?? null,
+        catalogImageUrl: cab.catalogImageUrl ?? null, styleId: designStyleIdRef.current ?? null,
         mountBottom: STD.WALL_MOUNT_BOTTOM,
       });
       along += cw;
@@ -11883,8 +11891,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       roomWidthFt: Math.round((room.width / 12) * 10) / 10,
       roomDepthFt: Math.round((room.depth / 12) * 10) / 10,
       ceilingFt: Math.round((roomCeiling(room) / 12) * 10) / 10,
-      finishName: activeStyleName || undefined,
-      doorStyle: activeStyle ? ((activeStyle as { doorStyle?: string | null }).doorStyle || activeStyleName || undefined) : undefined,
+      finishName: designStyleName || undefined,
+      doorStyle: designStyleRow ? ((designStyleRow as { doorStyle?: string | null }).doorStyle || designStyleName || undefined) : undefined,
       secondFinishName: secondFinish,
       countertop: islandCountertopName && perimeterCountertopName && islandCountertopName !== perimeterCountertopName
         ? `Wall runs: ${perimeterCountertopName}; Island: ${islandCountertopName}`
@@ -11903,7 +11911,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       layoutType,
       hasIsland: island != null,
     };
-	}, [placed, room, island, selectedSurfaces, activeStyleName, activeStyle, styleA, styleB, doorStyles, countertopMaterialId, hardwareStyleId, catalogHardwareSelection]);
+	}, [placed, room, island, selectedSurfaces, designStyleName, designStyleRow, styleA, styleB, doorStyles, countertopMaterialId, hardwareStyleId, catalogHardwareSelection]);
 
   // The room's four walls as spans (usable length = full wall minus the openings
   // on it), so the consultant works with realistic numbers.
@@ -11947,7 +11955,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               rotation: spot.rotation,
               catalogImageUrl: null,
               // Stamp the active color so Consultant-placed cabinets keep it.
-              styleId: styleIdRef.current ?? null,
+              styleId: designStyleIdRef.current ?? null,
             };
             const resolution = appendCollisionFreePlacements(working, [newCab]);
             working = resolution.placed;
@@ -14093,6 +14101,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // (Don't apply cart lock here; it may conflict once the style loads.)
   }, [selectedStyleDistributorId, placed.length, mixedWarehouseOverride]);
   useEffect(() => { styleIdRef.current = styleId; }, [styleId]);
+  useEffect(() => { designStyleIdRef.current = designStyleId; }, [designStyleId]);
   useEffect(() => { styleBRef.current = styleB; }, [styleB]);
 
   // Click a color swatch: make that slot active. If the slot already has a
@@ -14824,8 +14833,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (d.activeSlot === "B") {
             const colorOne = typeof d.styleA === "number"
               ? d.styleA
-              : inferColorOneStyleId(Array.isArray(d.placed) ? d.placed as PlacedCabinet[] : [], typeof d.styleB === "number" ? d.styleB : null);
-            setStyleA(colorOne ?? d.styleId ?? null);
+              : inferColorOneStyleId(
+                Array.isArray(d.placed) ? d.placed as PlacedCabinet[] : [],
+                typeof d.styleB === "number" ? d.styleB : null,
+                typeof d.styleId === "number" ? d.styleId : null,
+              );
+            setStyleA(colorOne);
           }
           // The legacy draft value `retail` is the public/Homeowner price tier.
           // Normalize before state reaches the price resolver so the visible tier
@@ -15178,7 +15191,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         pullMin: match.cabinet.pullMin ?? null,
         pullMax: match.cabinet.pullMax ?? null,
         cornerType: match.cabinet.cornerType ?? null,
-        styleId: styleIdRef.current ?? null,
+        styleId: designStyleIdRef.current ?? null,
       });
     }
 
@@ -15216,7 +15229,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         nominalWidth: width,
         nominalHeight: height,
         nominalDepth: depth,
-        styleId: styleIdRef.current ?? null,
+        styleId: designStyleIdRef.current ?? null,
       });
     }
 
@@ -15562,12 +15575,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       priceOverride: override != null && Number.isFinite(override) ? override : undefined,
       discountAmount: discount != null && Number.isFinite(discount) ? discount : undefined,
       layoutLabel: bundleDraft.layoutLabel.trim() || `${room.width}" × ${room.depth}"`,
-      doorColor: bundleDraft.doorColor.trim() || activeStyleName || undefined,
+      doorColor: bundleDraft.doorColor.trim() || designStyleName || undefined,
       homeownerPrice: packageAutoPrice > 0 ? packageAutoPrice : (total > 0 ? total : undefined),
       designSnapshot: {
         room: roomWithPersistedEntities(room, { openings, sinks, potFillers, island, furniture, ponyWalls }),
         placed,
-        styleId,
+        styleId: designStyleId,
         lockedDistributorId,
         roomType,
         selectedSurfaces: normalizeInstalledMaterialSelections(selectedSurfaces),
@@ -15580,8 +15593,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         // fixtures were embedded under room.persistedEntities.
         sinks,
       },
-      styleId: styleId ?? undefined,
-      styleName: activeStyleName ?? undefined,
+      styleId: designStyleId ?? undefined,
+      styleName: designStyleName ?? undefined,
       roomWidthInches: room.width,
       roomDepthInches: room.depth,
       cabinetCount: placed.length,
@@ -18056,7 +18069,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             threeDPresentation={threeDPresentationForSave}
             styleId={designStyleId}
             lockedDistributorId={lockedDistributorId}
-            styleName={(designStyleId != null ? styleNameById.get(designStyleId) : null) ?? activeStyleName}
+            styleName={designStyleName}
             tier={tier}
             total={total}
             extraLines={extraLines}
@@ -18437,7 +18450,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         <SelectItem value="__match__" data-testid="selected-cabinet-finish-match-option">
                           <span className="flex items-center gap-2.5">
                             {activeStyle && <DoorStyleSwatch style={activeStyle} className="h-12 w-9 shrink-0 rounded border border-border object-cover" />}
-                            <span>{t("dt_cx_match_design")}{activeStyleName ? ` (${activeStyleName})` : ""}</span>
+                            <span>{t("dt_cx_match_design")}{designStyleName ? ` (${designStyleName})` : ""}</span>
                           </span>
                         </SelectItem>
                         {uniqueDoorStyles.map((s) => (
@@ -18943,7 +18956,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                         <SelectItem value="__match__" data-testid="selected-cabinet-mobile-finish-match-option">
                           <span className="flex items-center gap-2.5">
                             {activeStyle && <DoorStyleSwatch style={activeStyle} className="h-12 w-9 shrink-0 rounded border border-border object-cover" />}
-                            <span>{t("dt_cx_match_design")}{activeStyleName ? ` (${activeStyleName})` : ""}</span>
+                            <span>{t("dt_cx_match_design")}{designStyleName ? ` (${designStyleName})` : ""}</span>
                           </span>
                         </SelectItem>
                         {uniqueDoorStyles.map((s) => (
@@ -21876,14 +21889,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   <p key="select" className="text-[11px] text-amber-600">{t("dt_bs_select_style_pricing")}</p>,
                 );
               }
-              if (styleId && activeStyleName && !designIsMixedFinish) {
+              if (designStyleId && designStyleName && !designIsMixedFinish) {
+                const designFinish = finishById.get(designStyleId) ?? activeFinish;
                 noteItems.push(
                   <div key="finish" className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     <span
                       className="inline-block h-3.5 w-3.5 rounded-sm border"
-                      style={{ background: activeFinish.face, borderColor: activeFinish.edge }}
+                      style={{ background: designFinish.face, borderColor: designFinish.edge }}
                     />
-                    {t("dt_bs_finish_applied")} <span className="font-medium text-foreground">{activeStyleName}</span>
+                    {t("dt_bs_finish_applied")} <span className="font-medium text-foreground">{designStyleName}</span>
                   </div>,
                 );
               }

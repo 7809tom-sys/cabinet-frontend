@@ -187,13 +187,37 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
       .toEqual([AERO_BLANC.id, AERO_OBSIDIAN.id]);
   });
 
-  it("recovers Color 1 from a draft autosaved with Color 2 active before Color 1 was saved", () => {
-    const placed = fronts(autoDesignL()).map((cabinet, index) => (
-      index % 2 === 0 ? { ...cabinet, styleId: null } : cabinet
-    ));
-    placed[0] = { ...placed[0]!, styleId: AERO_OBSIDIAN.id };
-    expect(inferColorOneStyleId(placed, AERO_OBSIDIAN.id)).toBe(AERO_BLANC.id);
-    expect(inferColorOneStyleId(placed.map((cabinet) => ({ ...cabinet, styleId: null })), AERO_OBSIDIAN.id)).toBeNull();
+  it("recovers Color 1 from a draft autosaved with Color 2 active, but never guesses a third accent", () => {
+    const AERO_TERRA = 390019;
+    const kitchen = fronts(autoDesignL());
+    // Auto Design stamped Color 1; a later pass left half inherited; one cabinet was painted Color 2.
+    const stamped = kitchen.map((cabinet, index) => (index % 2 === 0 ? { ...cabinet, styleId: null } : cabinet));
+    stamped[0] = { ...stamped[0]!, styleId: AERO_OBSIDIAN.id };
+    expect(inferColorOneStyleId(stamped, AERO_OBSIDIAN.id, AERO_OBSIDIAN.id)).toBe(AERO_BLANC.id);
+
+    // A deliberate third accent makes the stamps ambiguous: keep what the
+    // inherited cabinets were showing when the draft was saved.
+    const withAccent = stamped.map((cabinet, index) => (index === 1 || index === 3 || index === 5 ? { ...cabinet, styleId: AERO_TERRA } : cabinet));
+    expect(inferColorOneStyleId(withAccent, AERO_OBSIDIAN.id, AERO_OBSIDIAN.id)).toBe(AERO_OBSIDIAN.id);
+    expect(inferColorOneStyleId(withAccent, AERO_OBSIDIAN.id, AERO_SAGE.id)).toBe(AERO_SAGE.id);
+
+    // Nothing stamped besides Color 2: the inherited finish stands.
+    expect(inferColorOneStyleId(kitchen.map((cabinet) => ({ ...cabinet, styleId: null })), AERO_OBSIDIAN.id, AERO_SAGE.id)).toBe(AERO_SAGE.id);
+  });
+
+  it("Auto Design run with Color 2 lit still builds a one-color Color 1 kitchen", () => {
+    // The Designer hands Auto Design the design's Color 1, not the lit swatch.
+    const slots: Slots = { styleId: AERO_OBSIDIAN.id, styleA: AERO_BLANC.id, styleB: AERO_OBSIDIAN.id, activeSlot: "B" };
+    const built = autoDesignL();
+    expect(fronts(built).every((cabinet) => cabinet.styleId == null || cabinet.styleId === AERO_BLANC.id)).toBe(true);
+    expectOneFinish(surfaces(fronts(built), slots), AERO_BLANC.id);
+    const autoDesign = designToolSource.slice(
+      designToolSource.indexOf("const buildAutoDesignLayout = useCallback("),
+      designToolSource.indexOf("const closetGroups = useMemo("),
+    );
+    expect(autoDesign.match(/designStyleIdRef\.current \?\? null/g)?.length ?? 0).toBeGreaterThanOrEqual(10);
+    expect(autoDesign).not.toMatch(/(?<!design)styleIdRef\.current/);
+    expect(designToolSource).toContain("useEffect(() => { designStyleIdRef.current = designStyleId; }, [designStyleId]);");
   });
 
   it("the Designer resolves inherited cabinets, saves and drafts against Color 1, not the brush", () => {
@@ -204,6 +228,20 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource).toContain("selectedStyleId: designStyleId ?? null,");
     expect(designToolSource).toMatch(/threeDPresentation=\{threeDPresentationForSave\}\s+styleId=\{designStyleId\}/);
     expect(designToolSource).toContain("styleA: designStyleId,");
+    // Package (bundle) save, the wall/island color summary, trims and the
+    // materials list name and price Color 1, not the lit swatch.
+    const bundleSave = designToolSource.slice(designToolSource.indexOf("const handleSaveBundle = () => {"), designToolSource.indexOf("const [csvImportOpen, setCsvImportOpen]"));
+    expect(bundleSave).toContain("doorColor: bundleDraft.doorColor.trim() || designStyleName || undefined,");
+    expect(bundleSave).toContain("styleId: designStyleId,");
+    expect(bundleSave).toContain("styleId: designStyleId ?? undefined,");
+    expect(bundleSave).toContain("styleName: designStyleName ?? undefined,");
+    expect(bundleSave).not.toMatch(/\bactiveStyleName\b|\bstyleId: styleId\b|^\s*styleId,$/m);
+    const summary = designToolSource.slice(designToolSource.indexOf("const selectedFinishSummary = useMemo"), designToolSource.indexOf("const selectedFinishSummary = useMemo") + 400);
+    expect(summary).toContain("const wallStyleId = designStyleId;");
+    expect(summary).not.toMatch(/: styleId;|= styleId;/);
+    expect(designToolSource).toContain("() => (designStyleId ? [designStyleId] : ([] as number[])),");
+    expect(designToolSource).toContain("buildTrimCartLines(activeTrims, designStyleId, designStyleName");
+    expect(designToolSource).toContain("defaultStyleName: designStyleName,");
     expect(designToolSource).not.toMatch(/pricingStyleIdFor\([^)]*\) \?\? styleId\b/);
   });
 });
