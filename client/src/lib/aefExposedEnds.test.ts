@@ -41,6 +41,8 @@ function place(partial: {
     constructionMethod: partial.constructionMethod === undefined
       ? AEF_PRINTED_GEOMETRY_MARKER
       : partial.constructionMethod,
+    ...(partial.overRangeMicrowaveBridge ? { overRangeMicrowaveBridge: true } : {}),
+    ...(partial.refrigeratorAssemblyRole ? { refrigeratorAssemblyRole: partial.refrigeratorAssemblyRole } : {}),
   };
 }
 
@@ -78,27 +80,49 @@ describe("AEF exposed-end panels", () => {
   it("treats a shorter or shallower neighbor as a visible side", () => {
     const tall = place({ uid: "tall-wall", masterCode: "W3640", placement: "wall", offset: 0, width: 36, depth: 13.5, height: 40.25, mountBottom: wallTop(40.25) });
     const short = place({ uid: "short-wall", masterCode: "W3030", placement: "wall", offset: 36, width: 30, depth: 13.5, height: 30.25, mountBottom: wallTop(30.25) });
-    const deep = place({ uid: "deep-wall", masterCode: "W362430", placement: "wall", offset: 66, width: 36, depth: 24, height: 30.25, mountBottom: wallTop(30.25) });
-    const shallow = place({ uid: "shallow-wall", masterCode: "W3036", placement: "wall", offset: 102, width: 36, depth: 13.5, height: 30.25, mountBottom: wallTop(30.25) });
+    // A 24-inch-deep refrigerator cap: an appliance surround, so it keeps its
+    // TEP3096 end panel even though it is only 22 5/8 inches tall.
+    const deep = place({
+      uid: "deep-wall", masterCode: "W362324", placement: "wall", offset: 66, width: 36, depth: 24, height: 22.625,
+      mountBottom: wallTop(22.625), refrigeratorAssemblyRole: "bridge",
+    });
+    const shallow = place({ uid: "shallow-wall", masterCode: "W3023", placement: "wall", offset: 102, width: 30, depth: 13.5, height: 22.625, mountBottom: wallTop(22.625) });
     const requirements = aefExposedEndRequirements([tall, short, deep, shallow], [], room, panelCatalog);
 
     expect(requirements).toEqual(expect.arrayContaining([
       expect.objectContaining({ cabinetUid: "tall-wall", end: "end", masterCode: "WEP1542", stockHeight: 41.75, height: 40.25, depth: 14.25 }),
-      // A shallow 24-inch-deep wall is deeper than every WEP sheet, so it is
-      // flagged on the real tall spec code instead of an undersized board.
-      expect.objectContaining({ cabinetUid: "deep-wall", end: "end", masterCode: "TEP3096", pendingSku: true, depth: 24.75, height: 30.25 }),
+      // Deep enough to need the tall sheet, and it keeps that board.
+      expect.objectContaining({ cabinetUid: "deep-wall", end: "end", masterCode: "TEP3096", pendingSku: true, depth: 24.75, height: 22.625 }),
     ]));
+    // The covered side of each neighbour is still skipped.
     expect(requirements.some((requirement) => requirement.cabinetUid === "short-wall" && requirement.end === "start")).toBe(false);
     expect(requirements.some((requirement) => requirement.cabinetUid === "shallow-wall" && requirement.end === "start")).toBe(false);
     expect(requirements.find((requirement) => requirement.cabinetUid === "deep-wall")?.masterCode.startsWith("WEP")).toBe(false);
   });
 
-  it("generates no panel for a 24-inch-or-shorter upper at all", () => {
-    // A short upper (a W3024 bridge, a 22 5/8 inch above-fridge cabinet) is a
-    // one-face appliance surround, never an upper-run end (issue 353 outcome 8).
-    const bridge = place({ uid: "bridge", masterCode: "W362324", placement: "wall", offset: 0, width: 36, depth: 24, height: 22.625, mountBottom: wallTop(22.625) });
-    const shallowBridge = place({ uid: "shallow-bridge", masterCode: "W3023", placement: "wall", offset: 60, width: 30, depth: 13.5, height: 22.625, mountBottom: wallTop(22.625) });
-    expect(aefExposedEndRequirements([bridge, shallowBridge], [], room, panelCatalog)).toEqual([]);
+  it("keeps the end panel on an over-range bridge and on an over-fridge cap", () => {
+    // Issue 353 outcome 8 must not overreach: a short upper that is an appliance
+    // surround still gets its finished end.
+    const bridge = place({
+      uid: "bridge", masterCode: "W362324", placement: "wall", offset: 0, width: 36, depth: 24, height: 22.625,
+      mountBottom: wallTop(22.625), overRangeMicrowaveBridge: true,
+    });
+    const cap = place({
+      uid: "cap", masterCode: "W3623", placement: "wall", offset: 60, width: 36, depth: 13.5, height: 22.625,
+      mountBottom: wallTop(22.625), refrigeratorAssemblyRole: "bridge",
+    });
+    const requirements = aefExposedEndRequirements([bridge, cap], [], room, panelCatalog);
+    expect(requirements).toEqual(expect.arrayContaining([
+      expect.objectContaining({ cabinetUid: "bridge", end: "end", masterCode: "TEP3096", pendingSku: true }),
+      expect.objectContaining({ cabinetUid: "cap", end: "end", masterCode: "WEP1523" }),
+    ]));
+  });
+
+  it("generates no panel for a standalone short upper with nothing to surround", () => {
+    // The reported defect: a lone 24-inch upper with no appliance under it and
+    // no counter beneath it is not an upper-run end.
+    const lone = place({ uid: "lone", masterCode: "W3024", placement: "wall", offset: 40, width: 30, depth: 13.5, height: 24, mountBottom: 60 });
+    expect(aefExposedEndRequirements([lone], [], room, panelCatalog)).toEqual([]);
   });
 
   it("panels the side next to an appliance", () => {
@@ -138,14 +162,16 @@ describe("AEF exposed-end panels", () => {
     const window: WallOpening = { uid: "win", kind: "window", side: "top", offset: 48, width: 36, sill: 42, height: 36 };
     const catalog = [...panelCatalog, { id: 106, masterCode: "TEP3096", constructionMethod: AEF_PRINTED_GEOMETRY_MARKER }];
     const requirements = aefExposedEndRequirements([
-      // A 30-inch upper beside the window on a 24-inch-deep refrigerator wall:
-      // the short 22 5/8 inch cap itself gets nothing (issue 353 outcome 8), but
-      // the full-height neighbour keeps its TEP3096 and is never listed twice.
-      place({ uid: "bridge", masterCode: "W362430", placement: "wall", offset: 0, width: 44.25, depth: 24, height: 30.25, mountBottom: wallTop(30.25) }),
+      // A 24-inch-deep over-fridge cap beside the window keeps its TEP3096 and is
+      // never listed twice.
+      place({
+        uid: "bridge", masterCode: "W362324", placement: "wall", offset: 0, width: 44.25, depth: 24, height: 22.625,
+        mountBottom: wallTop(22.625), refrigeratorAssemblyRole: "bridge",
+      }),
     ], [window], room, catalog);
     const ends = requirements.filter((requirement) => requirement.cabinetUid === "bridge");
     expect(ends).toHaveLength(1);
-    expect(ends[0]).toMatchObject({ end: "end", windowUid: "win", masterCode: "TEP3096", cabinetId: 106, pendingSku: false, depth: 24.75, height: 30.25 });
+    expect(ends[0]).toMatchObject({ end: "end", windowUid: "win", masterCode: "TEP3096", cabinetId: 106, pendingSku: false, depth: 24.75, height: 22.625 });
   });
 
   it("lets a butted filler hide the end and ignores framed cabinets", () => {

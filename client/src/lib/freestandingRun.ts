@@ -33,11 +33,14 @@ import {
   insideCornerHoldIn,
   isAgainstWall,
   isOnIsland,
+  peninsulaRunById,
   placedCornerGeometryKind,
   placedFootprint,
   wallPlacementAt,
   wallRunAlongAtPoint,
   wallRunFrame,
+  wallRunOffset,
+  wallRunSpan,
   type CountertopPlanPoint,
   type CountertopSurface,
   type IslandZone,
@@ -83,6 +86,61 @@ export function isFreestandingBase(cabinet: PlacedCabinet, room: RoomData, islan
   const nearest = cabinetWall(cabinet, room);
   if (nearest && isAgainstWall(cabinet, nearest as never, room)) return false;
   return !(["top", "bottom", "left", "right"] as const).some((side) => isAgainstWall(cabinet, side, room));
+}
+
+/**
+ * A cabinet turned off the square axis — the angled cabinet of a 45° return.
+ * It is the joint that turns a wall-attached run into a second leg, whichever
+ * wall (or none) its own record still names.
+ */
+export function isAngledReturnCabinet(cabinet: PlacedCabinet): boolean {
+  if (cabinet.placement !== "base" || cabinet.islandFace) return false;
+  if (placedCornerGeometryKind(cabinet) !== "standard") return false;
+  const rotation = ((Math.round(Number(cabinet.rotation) || 0) % 360) + 360) % 360;
+  return rotation % 90 !== 0;
+}
+
+/**
+ * True for a base that takes part in a free-standing chain: either a genuinely
+ * unseated box, or an angled return cabinet that has come loose from its wall.
+ *
+ * The regular designer seats a run on the room wall and then drops the angled
+ * return beside it. That angled box is not "free standing" by the strict test
+ * (its AABB can still overlap the wall band), so without this the wall run and
+ * the angled leg were topped as two independent pieces: two rectangular slabs
+ * with a gap and no miter, and no two-piece 45° front filler, because neither
+ * `snapFreestandingFortyFive` nor `measuredAngledWallTransition` had a pair to
+ * measure. See issue 353 outcomes 3 and 4.
+ */
+export function participatesInFreestandingChain(cabinet: PlacedCabinet, room: RoomData, island?: IslandZone | null): boolean {
+  if (island && isOnIsland(cabinet, island)) return false;
+  if (isAngledReturnCabinet(cabinet)) {
+    // The synthetic Continuous Wall Builder room re-enters `countertopSurfaces`,
+    // where every chain member is already seated on a drawn wall. Only the real
+    // room may promote an angled box into a chain.
+    if (room.openWallPath) return false;
+    // A genuine measured-wall seat is the Wall Builder's job, not the chain's.
+    if (room.customWalls?.some((wall) => wall.id === cabinet.wallId)) return false;
+    // A peninsula owns its own continuous slab and miter; the 45° leg of a
+    // Wizard peninsula is not a loose cabinet.
+    if (peninsulaRunById(room, cabinet.wallId ?? "")) return false;
+    // A rotated body only touches a cardinal wall at one corner, so its
+    // axis-aligned footprint cannot decide this. The join test does: an angled
+    // box that reaches no run stays its own single-body chain.
+    return true;
+  }
+  return isFreestandingBase(cabinet, room, island);
+}
+
+/**
+ * True when this wall-seated cabinet belongs to a wall that a returned chain
+ * continues. It is the anchor the angled leg is measured from, so the chain
+ * builder can read the wall run's real frame instead of only the loose bodies.
+ */
+export function isChainWallAnchor(cabinet: PlacedCabinet, room: RoomData): boolean {
+  if (cabinet.placement !== "base" || cabinet.islandFace) return false;
+  if (placedCornerGeometryKind(cabinet) !== "standard") return false;
+  return Boolean(cabinet.wallId);
 }
 
 /** Resolves the rotated body frame of a free-standing cabinet from its AABB record. */
@@ -187,7 +245,7 @@ function bodiesJoin(a: FreestandingBody, b: FreestandingBody): boolean {
 
 /** Groups free-standing bases into chains of physically touching bodies, ordered along the run. */
 export function freestandingChains(placed: readonly PlacedCabinet[], room: RoomData, island?: IslandZone | null): FreestandingBody[][] {
-  const bodies = placed.filter((cabinet) => isFreestandingBase(cabinet, room, island)).map(freestandingBody);
+  const bodies = placed.filter((cabinet) => participatesInFreestandingChain(cabinet, room, island)).map(freestandingBody);
   const unvisited = new Set(bodies.map((_, index) => index));
   const chains: FreestandingBody[][] = [];
   while (unvisited.size) {
@@ -293,15 +351,95 @@ export interface FreestandingWallModel {
   room: RoomData;
   /** Chain cabinets re-seated on the synthetic walls via `wallPlacementAt`. */
   seated: PlacedCabinet[];
-  chainUids: string[];
+  /** Every cabinet the model carries: the chain's own bodies plus any joined wall run. */
+  memberUids: string[];
 }
 
-export function freestandingChainWallModel(chain: FreestandingBody[], room: RoomData, chainIndex = 0): FreestandingWallModel | null {
+/**
+ * The wall-seated run an angled chain leg continues.
+ *
+ * The regular designer keeps its straight bases seated on a real room wall; only
+ * the angled return comes loose. The chain builder therefore has to open its
+ * wall path with that wall's own back line, running from the far end of the
+ * seated run up to the shared corner vertex — exactly the shape the Wall Builder
+ * draws. Without this leg the angled cabinet is measured against nothing.
+ */
+function joinedWallRunLeg(
+  chain: readonly FreestandingBody[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): { bodies: FreestandingBody[]; start: Pt; end: Pt; radians: number } | null {
+  const angled = chain.find((body) => isAngledReturnCabinet(body.cabinet));
+  if (!angled) return null;
+  let best: {
+    bodies: FreestandingBody[];
+    start: Pt;
+    end: Pt;
+    radians: number;
+    join: FreestandingJoin;
+  } | null = null;
+  const walls = Array.from(new Set(placed
+    .filter((item) => isChainWallAnchor(item, room))
+    .map((item) => item.wallId)
+    .filter((wallId): wallId is string => Boolean(wallId))));
+  for (const wallId of walls) {
+    const frame = wallRunFrame(wallId, room);
+    if (!frame) continue;
+    const members = placed
+      .filter((item) => item.wallId === wallId
+        && isChainWallAnchor(item, room)
+        && item.uid !== angled.cabinet.uid)
+      .map((item) => ({ item, body: freestandingBody(item) }))
+      .sort((left, right) => wallRunOffset(left.item, wallId, room) - wallRunOffset(right.item, wallId, room));
+    if (!members.length) continue;
+    // Only the run ends the angled leg actually reaches can turn onto it.
+    for (const end of ["start", "end"] as const) {
+      const ordered = end === "end" ? members : [...members].reverse();
+      const touching = ordered[ordered.length - 1]!;
+      const join = freestandingJoin(touching.body, angled);
+      if (!join || join.turnDeg !== 45) continue;
+      if (best && best.join.vertex && Math.hypot(best.join.vertex.x - join.vertex.x, best.join.vertex.y - join.vertex.y) <= FREESTANDING_JOIN_TOLERANCE_IN) continue;
+      // The wall's own back line, from the far end of the seated run to the corner.
+      const farItem = ordered[0]!.item;
+      const farAlong = end === "end"
+        ? wallRunOffset(farItem, wallId, room)
+        : wallRunOffset(farItem, wallId, room) + wallRunSpan(farItem, wallId, room);
+      const start = {
+        x: frame.start.x + frame.tangent.x * farAlong,
+        y: frame.start.y + frame.tangent.y * farAlong,
+      };
+      best = {
+        bodies: ordered.map((entry) => entry.body),
+        start,
+        end: join.vertex,
+        // The run's cabinet fronts face along the frame's inward normal.
+        radians: Math.atan2(frame.tangent.y, frame.tangent.x),
+        join,
+      };
+    }
+  }
+  return best
+    ? { bodies: best.bodies, start: best.start, end: best.end, radians: best.radians }
+    : null;
+}
+
+export function freestandingChainWallModel(
+  chain: FreestandingBody[],
+  room: RoomData,
+  chainIndex = 0,
+  placed: readonly PlacedCabinet[] = [],
+): FreestandingWallModel | null {
   const oriented = orientChain(chain);
   if (oriented.length === 0) return null;
-  type Segment = { start: Pt; end: Pt; radians: number; bodies: FreestandingBody[] };
+  type Segment = { start: Pt; end: Pt; radians: number; bodies: FreestandingBody[]; joinedWallSeat?: boolean };
   const segments: Segment[] = [];
-  oriented.forEach((body, index) => {
+  const wallLeg = joinedWallRunLeg(oriented, placed, room);
+  // A joined wall run comes first, so the angled leg reads as its continuation.
+  if (wallLeg) segments.push({ ...wallLeg, joinedWallSeat: true });
+  const bodiesToSeat = wallLeg
+    ? oriented.filter((body) => !wallLeg.bodies.some((member) => member.cabinet.uid === body.cabinet.uid))
+    : oriented;
+  bodiesToSeat.forEach((body, index) => {
     const [bl, br] = freestandingBodyCorners(body);
     const heading = headingOf(body);
     const last = segments[segments.length - 1];
@@ -311,12 +449,14 @@ export function freestandingChainWallModel(chain: FreestandingBody[], room: Room
       return;
     }
     // A turn: both walls meet at the Wall Builder's shared vertex (each leg holds 11" back at 45°).
-    const join = last ? freestandingJoin(oriented[index - 1]!, body) : null;
+    const previous = bodiesToSeat[index - 1];
+    const join = last && previous ? freestandingJoin(previous, body) : null;
     if (last && join) last.end = join.vertex;
     const start = join ? join.vertex : bl;
     const bodyEnd = br;
     segments.push({ start, end: bodyEnd, radians: heading, bodies: [body] });
   });
+  if (!segments.length) return null;
   // The last wall also ends where the Wall Builder would end it: at the last body's end corner.
   const prefix = `fs${chainIndex}`;
   const vertices = [
@@ -359,7 +499,31 @@ export function freestandingChainWallModel(chain: FreestandingBody[], room: Room
     }
   });
   if (seated.length === 0) return null;
-  return { room: syntheticRoom, seated, chainUids: chain.map((body) => body.cabinet.uid) };
+  return {
+    room: syntheticRoom,
+    seated,
+    memberUids: seated.map((item) => item.uid),
+  };
+}
+
+/**
+ * The cabinets a joined chain's top covers: the angled return leg plus the wall
+ * run it continues. `countertopSurfaces` leaves these to the chain so one
+ * continuous mitered piece is built, never a square slab plus a separate one.
+ */
+export function freestandingChainMemberUids(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  island?: IslandZone | null,
+): Set<string> {
+  const uids = new Set<string>();
+  for (const chain of freestandingChains(placed, room, island)) {
+    if (!chain.some((body) => isAngledReturnCabinet(body.cabinet))) continue;
+    const model = freestandingChainWallModel(chain, room, 0, placed);
+    if (!model) continue;
+    for (const uid of model.memberUids) uids.add(uid);
+  }
+  return uids;
 }
 
 /**
@@ -370,7 +534,7 @@ export function freestandingChainWallModel(chain: FreestandingBody[], room: Room
 export function freestandingCountertopSurfaces(placed: readonly PlacedCabinet[], room: RoomData, island?: IslandZone | null): CountertopSurface[] {
   const out: CountertopSurface[] = [];
   freestandingChains(placed, room, island).forEach((chain, chainIndex) => {
-    const model = freestandingChainWallModel(chain, room, chainIndex);
+    const model = freestandingChainWallModel(chain, room, chainIndex, placed);
     if (!model) return;
     const surfaces = countertopSurfaces(model.seated, model.room, null);
     for (const surface of surfaces) {
@@ -384,8 +548,8 @@ export function freestandingCountertopSurfaces(placed: readonly PlacedCabinet[],
         customWallRunStartIn: undefined,
         customWallMiterWallIds: undefined,
         customWallMiterVertexId: undefined,
-        cabinetRunId: `freestanding:${model.chainUids.slice().sort().join("+")}`,
-        freestandingMemberUids: model.chainUids,
+        cabinetRunId: `freestanding:${model.memberUids.slice().sort().join("+")}`,
+        freestandingMemberUids: model.memberUids,
       });
     }
   });

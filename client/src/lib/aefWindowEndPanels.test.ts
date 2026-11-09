@@ -14,7 +14,14 @@ const window: WallOpening = {
   height: 36,
 };
 
-function wall(uid: string, x: number, width = 24, height = 30.25, depth = 13.5): PlacedCabinet {
+function wall(
+  uid: string,
+  x: number,
+  width = 24,
+  height = 30.25,
+  depth = 13.5,
+  extra: Partial<PlacedCabinet> = {},
+): PlacedCabinet {
   return {
     uid,
     cabinetId: 1,
@@ -28,6 +35,7 @@ function wall(uid: string, x: number, width = 24, height = 30.25, depth = 13.5):
     depth,
     rotation: 0,
     constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
+    ...extra,
   };
 }
 
@@ -55,18 +63,19 @@ describe("AEF window-break wall end panels", () => {
 
   it("selects the shortest source stock that covers the upper height", () => {
     const requirements = aefWindowEndPanelRequirements([
-      // A 30-inch upper needs the 30 1/4 sheet; a 40 1/4-inch one the 41 3/4 sheet.
-      wall("left-of-window", 24, 24, 30.25),
+      // An over-fridge cap (an appliance surround) by the window takes the
+      // 22 5/8-inch sheet; a 40 1/4-inch upper takes the 41 3/4-inch sheet.
+      wall("left-of-window", 24, 24, 22.625, 13.5, { refrigeratorAssemblyRole: "bridge" }),
       wall("right-of-window", 84, 24, 40.25),
     ], [window], room, panelCatalog);
-    expect(requirements.map((requirement) => requirement.masterCode).sort()).toEqual(["WEP1530", "WEP1542"]);
+    expect(requirements.map((requirement) => requirement.masterCode).sort()).toEqual(["WEP1523", "WEP1542"]);
     const tallPanel = requirements.find((requirement) => requirement.masterCode === "WEP1542");
     expect(tallPanel).toMatchObject({ stockHeight: 41.75, height: 40.25, depth: 14.25 });
   });
 
-  it("generates no WEP panel beside a 24-inch-or-shorter upper at a window", () => {
-    // A short upper is a one-face appliance surround, not an upper-run end
-    // (issue 353 outcome 8), so the window break finds no end to finish there.
+  it("generates no WEP panel beside a standalone short upper at a window", () => {
+    // A lone 24-inch upper is not an upper-run end (issue 353 outcome 8), so the
+    // window break finds no end to finish there.
     expect(aefWindowEndPanelRequirements([
       wall("left-of-window", 24, 24, 22.625),
       wall("right-of-window", 84, 24, 22.625),

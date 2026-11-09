@@ -20,7 +20,7 @@ import {
   type AefEndPanelCatalogItem,
   type AefEndPanelSelection,
 } from "./aefEndPanelStock";
-import { isShortUpperCabinet } from "./shortUpper";
+import { isStandaloneShortUpper, panelFitsUpperBand } from "./shortUpper";
 
 /**
  * A side is exposed when a customer can see it.
@@ -54,16 +54,21 @@ export type AefExposedEndRequirement = AefEndPanelSelection & {
   description: string;
 };
 
-function isOwnedCabinet(cabinet: PlacedCabinet): cabinet is PlacedCabinet & { placement: "wall" | "base" | "tall" } {
+function isOwnedCabinet(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  placed: readonly PlacedCabinet[],
+): cabinet is PlacedCabinet & { placement: "wall" | "base" | "tall" } {
   return (cabinet.placement === "wall" || cabinet.placement === "base" || cabinet.placement === "tall")
     && hasAefPrintedGeometry(cabinet)
     && !cabinet.islandFace
     && !isPanelItem(cabinet)
     && !isFillerItem(cabinet)
     && !isRefrigerator(cabinet)
-    // A 24-inch-or-shorter upper is a one-face appliance surround, never an
-    // upper-run end that a WEP board finishes (issue 353 outcome 8).
-    && !isShortUpperCabinet(cabinet);
+    // Over-fridge caps, bridge cabinets and every other legitimate upper keep
+    // their end panel. Only a standalone short upper that serves no appliance
+    // surround is skipped (issue 353 outcome 8).
+    && !isStandaloneShortUpper(cabinet, room, placed);
 }
 
 function spans(cabinet: PlacedCabinet, room: RoomData) {
@@ -144,7 +149,7 @@ export function aefExposedEndRequirements(
   const seen = new Set<string>();
 
   for (const cabinet of placed) {
-    if (!isOwnedCabinet(cabinet)) continue;
+    if (!isOwnedCabinet(cabinet, room, placed)) continue;
     const ownerSpan = spans(cabinet, room);
     const wallLen = wallLength(ownerSpan.side, room);
     for (const end of ["start", "end"] as const) {
@@ -164,8 +169,19 @@ export function aefExposedEndRequirements(
       if (coveringNeighbor || flushToWall) continue;
       seen.add(key);
       const selection = selectAefEndPanel(cabinet.placement, rotatedSize(cabinet).d, placedHeight(cabinet), panelCatalog);
+      // Never bill a board that reaches below the upper it finishes.
+      const band = cabinet.placement === "wall"
+        ? panelFitsUpperBand({
+          upperBottomIn: elevationBox(cabinet, room).bottom,
+          upperHeightIn: placedHeight(cabinet),
+          panelBottomIn: elevationBox(cabinet, room).bottom,
+          panelHeightIn: selection.height,
+        })
+        : null;
+      if (cabinet.placement === "wall" && !band) continue;
       requirements.push({
         ...selection,
+        ...(band ? { height: band.heightIn } : {}),
         cabinetUid: cabinet.uid,
         windowUid: window?.uid ?? null,
         end,

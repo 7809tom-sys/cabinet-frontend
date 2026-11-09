@@ -15,6 +15,12 @@ import {
 } from "@/lib/design";
 import { catalogFillerForGap, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { installedFillerVerticalSpec } from "@/lib/smallGapFiller";
+import {
+  freestandingChainMemberUids,
+  freestandingChainWallModel,
+  freestandingChains,
+  isAngledReturnCabinet,
+} from "@/lib/freestandingRun";
 
 const JOIN_EPSILON_IN = 0.25;
 const FRONT_FILLER_DEPTH_IN = 0.75;
@@ -579,5 +585,65 @@ export function repairMissingAngledWallFillers(
     next = appended.placed;
     added.push(...resolution.fillers);
   }
+  // A 45° return on a WALL-ATTACHED run has no measured-wall pair: the wall run
+  // is seated on a cardinal room wall and the angled leg is a loose body, so the
+  // two legs never share a drawn vertex. The chain model already resolves them
+  // into one two-wall path, so the same front-miter pair is measured there and
+  // the same source boards are seated in the REAL room (issue 353 outcome 4).
+  const chainPair = repairMissingChainFortyFive(placed, next, room, candidates, makeUid, styleId);
+  next = chainPair.placed;
+  added.push(...chainPair.added);
   return { placed: added.length > 0 ? next : [...placed], added };
+}
+
+/**
+ * Seat the two-piece 45° front-miter filler at a wall-attached run's angled
+ * return. Returns the plan unchanged when the layout has no such joint, when a
+ * pair is already fitted, or when neither source board can be seated.
+ */
+function repairMissingChainFortyFive(
+  original: readonly PlacedCabinet[],
+  working: readonly PlacedCabinet[],
+  room: RoomData,
+  candidates: readonly CatalogFillerCandidate[],
+  makeUid: () => string,
+  styleId: number | null,
+): AngledWallFillerRepair {
+  if (!working.some((item) => item.fillerTransitionKind === "front-miter-pair")) {
+    const memberUids = freestandingChainMemberUids(original, room, null);
+    if (memberUids.size === 0) return { placed: [...working], added: [] };
+    for (const chain of freestandingChains(original, room, null)) {
+      if (!chain.some((body) => isAngledReturnCabinet(body.cabinet))) continue;
+      const model = freestandingChainWallModel(chain, room, 0, original);
+      if (!model) continue;
+      for (const cabinet of model.seated) {
+        const measurement = measuredAngledWallTransition(cabinet, model.room, model.seated);
+        if (!measurement) continue;
+        // Re-seat the measured pair in the room the plan actually stands in.
+        const pairRoom: RoomData = {
+          ...room,
+          vertices: model.room.vertices,
+          customWalls: model.room.customWalls,
+          openWallPath: model.room.openWallPath,
+        };
+        const resolution = automaticAngledWallFiller(cabinet, pairRoom, model.seated, candidates, makeUid, styleId);
+        if (!resolution) continue;
+        const owner = model.seated.find((item) => item.uid === measurement.ownerUid);
+        const neighbour = model.seated.find((item) => item.uid === measurement.neighborUid);
+        if (!owner || !neighbour) continue;
+        const boardUids = new Set(resolution.fillers.map((filler) => filler.uid));
+        const withoutBoards = working.filter((item) => !boardUids.has(item.uid));
+        const accepted = appendCollisionFreePlacements(withoutBoards, resolution.fillers, pairRoom);
+        if (!resolution.fillers.every((filler) => accepted.placed.some((item) => item.uid === filler.uid))) continue;
+        // Keep the plan's own cabinet records; only the boards are new.
+        return {
+          placed: accepted.placed.map((item) => model.seated.some((seated) => seated.uid === item.uid)
+            ? (working.find((existing) => existing.uid === item.uid) ?? item)
+            : item),
+          added: resolution.fillers,
+        };
+      }
+    }
+  }
+  return { placed: [...working], added: [] };
 }

@@ -2,7 +2,7 @@
 // All real-world units are INCHES. The canvas converts inches → pixels via PPI.
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
-import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
+import { freestandingChainMemberUids, freestandingCountertopSurfaces, participatesInFreestandingChain } from "@/lib/freestandingRun";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
   REFRIGERATOR_PANEL_LIMIT_EPSILON_IN,
@@ -13284,6 +13284,44 @@ function countertopSupportSpanOnWall(
  * box with no invented end allowance. Interior seams (a filler-sized gap, an
  * appliance opening, a continuous-wall miter) are untouched.
  */
+/**
+ * The exact rotated contour of a base cabinet's own countertop: its body
+ * footprint grown by the standard finished front edge, in world coordinates.
+ *
+ * A cabinet standing off the square axis used to reach the plain-rectangle
+ * branch, which built its slab from the axis-aligned bounding box — a square
+ * corner of stone beyond the cabinet's real outline, hanging over open floor.
+ * This keeps the top on the cabinet it stands on, whatever its rotation.
+ */
+function rotatedBaseCountertopWorldPolygon(
+  cabinet: PlacedCabinet,
+  depthIn: number,
+): CountertopPlanPoint[] | null {
+  const body = placedFootprint(cabinet);
+  if (!(body.w > 0) || !(body.d > 0)) return null;
+  const radians = ((Number(cabinet.rotation) || 0) * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const width = Math.max(0, Number(cabinet.width) || body.w);
+  const depth = Math.max(0, Number(cabinet.depth) || body.d);
+  const center = { x: cabinet.x + body.w / 2, y: cabinet.y + body.d / 2 };
+  // Local frame: x along the run, y from the cabinet back toward its front.
+  const local = (x: number, y: number) => ({
+    x: center.x + x * cos - y * sin,
+    y: center.y + x * sin + y * cos,
+  });
+  const halfWidth = width / 2;
+  // The slab runs from the cabinet back to the finished front edge.
+  const back = -depth / 2;
+  const front = -depth / 2 + depthIn;
+  return [
+    local(-halfWidth, back),
+    local(halfWidth, back),
+    local(halfWidth, front),
+    local(-halfWidth, front),
+  ];
+}
+
 function clipStandardSlabsToCabinetSupport(
   surfaces: CountertopSurface[],
   placed: readonly PlacedCabinet[],
@@ -14963,10 +15001,15 @@ export function countertopSurfaces(
   ponyWalls: readonly PonyWall[] = [],
 ): CountertopSurface[] {
   const out: CountertopSurface[] = [];
+  // A 45-degree return chain (a wall-attached run plus its angled leg) is built
+  // as ONE continuous mitered top on the synthetic Wall Builder model, so its
+  // members are not given a plain square slab each here.
+  const chainMembers = freestandingChainMemberUids(placed, room, island);
   for (const p of placed) {
     // Countertop-bearing bases and confirmed installed filler pieces get a slab.
     // Loose fillers, tall cabinets, appliances, and panels remain excluded.
     if (!bearsCountertop(p)) continue;
+    if (chainMembers.has(p.uid)) continue;
     if (island && isOnIsland(p, island)) continue;
     const side = cabinetWall(p, room);
     const D = countertopDepthForRunItem(p, placed, room);
@@ -14979,7 +15022,9 @@ export function countertopSurfaces(
     // Free-standing bases in the open room (no wall seat, not against a wall)
     // are collected below into one mitered chain slab, exactly like the
     // Continuous Wall Builder's 45° turn. Their top never snaps onto a wall.
-    if (isFreestandingBase(p, room, island)) continue;
+    // The angled cabinet of a 45° return continues a wall-attached run, so it
+    // joins the same chain and never gets a plain square slab of its own.
+    if (participatesInFreestandingChain(p, room, island)) continue;
     // A Lazy Susan/easy-reach base owns two physical cabinet legs. A drawn
     // room's straight-run branch below cannot replace that physical L with one
     // rectangle, including when its supporting wall is at 45°. Keep the exact
@@ -14995,6 +15040,17 @@ export function countertopSurfaces(
       const surface = countertopSurfaceFromWorldPolygon(baseAngleEndCountertopWorldPolygon(p));
       if (surface) out.push(customWall ? { ...surface, customWallId: customWall.id } : surface);
       continue;
+    }
+    // A base standing off the square axis keeps its own rotated contour. The
+    // axis-aligned rectangle below would put a square of stone beyond the box,
+    // over open floor (issue 353 outcome 2 on an angled run).
+    if (!customWall && Math.abs(((Math.round(Number(p.rotation) || 0) % 360) + 360) % 360 % 90) > COLLISION_EPSILON_IN) {
+      const rotated = rotatedBaseCountertopWorldPolygon(p, D);
+      const surface = rotated ? countertopSurfaceFromWorldPolygon(rotated) : null;
+      if (surface) {
+        out.push({ ...surface, rotation: Number(p.rotation) || 0, linearInches: Math.max(0, Number(p.width) || 0), supportWallId: side });
+        continue;
+      }
     }
     if (customWall) {
       const runSpan = wallRunSpan(p, side, room);

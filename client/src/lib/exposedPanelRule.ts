@@ -24,7 +24,7 @@ import {
 } from "./design";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
-import { isShortUpperCabinet } from "./shortUpper";
+import { isStandaloneShortUpper } from "./shortUpper";
 
 /** Rule 10: finished end stock is 3/4 inch. */
 export const EXPOSED_PANEL_THICKNESS_IN = STD.PANEL_THICKNESS;
@@ -84,10 +84,10 @@ export function exposedPanelRequirements(input: {
     && !item.islandFace
     && !isPanelItem(item)
     && !isFillerItem(item)
-    // A 24-inch-or-shorter upper is a one-face appliance surround, not an
-    // upper-run end, so rule 10 never asks for a board beside it (issue 353
-    // outcome 8).
-    && !isShortUpperCabinet(item)
+    // Only a standalone short upper is outside the run, so rule 10 never asks
+    // for a board beside it (issue 353 outcome 8). A bridge or a cap keeps its
+    // finished end.
+    && !isStandaloneShortUpper(item, input.room, input.placed)
   ));
   for (const cabinet of owned) {
     const wallId = cabinetWall(cabinet, input.room);

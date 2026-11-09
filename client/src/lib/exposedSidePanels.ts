@@ -15,6 +15,8 @@ import { requiresAutoEndPanels, type DoorStyleEndPanelInput } from "./autoEndPan
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
   cabinetPlacementCollisionDetail,
+  elevationBox,
+  placedHeight,
   cabinetWall,
   isCornerCabinet,
   isFillerItem,
@@ -37,7 +39,7 @@ import {
 import type { CartItem } from "@/contexts/CartContext";
 import { buildDesignCabinetCartLines } from "./designCartLines";
 import { calculateCartSubtotal } from "./cartTotals";
-import { isShortUpperCabinet } from "./shortUpper";
+import { isStandaloneShortUpper, panelFitsUpperBand } from "./shortUpper";
 
 const FLUSH = 0.125;
 /** Butt joints, fillers, and corner returns within about an inch count as covered. */
@@ -190,14 +192,17 @@ function enabled(reason: ExposedPanelReason): boolean {
 }
 
 /**
- * True when this cabinet is a 24-inch-or-shorter upper. A short upper (W3024,
- * W3018, W3012 and its over-range / over-fridge siblings) is a one-face
- * appliance surround hung on the 72-inch bridge datum — not the end of a
- * 54-inch upper run — so no side/end panel is generated beside it and none is
- * billed (Tom, Nov 9 2026, issue 353 outcome 8).
+ * True for the reported defect only: a STANDALONE 24-inch-or-shorter upper that
+ * is not an appliance surround, stands over no counter and sits near no
+ * refrigerator assembly. Those get no panel (Tom, Nov 9 2026, issue 353 outcome
+ * 8). An over-range bridge or an over-fridge cap keeps its end panel.
  */
-function isShortUpperHost(item: Pick<PlacedCabinet, "placement" | "height" | "masterCode">): boolean {
-  return isShortUpperCabinet(item);
+function isShortUpperHost(
+  item: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): boolean {
+  return isStandaloneShortUpper(item, room, placed);
 }
 
 /**
@@ -244,9 +249,9 @@ function isFridgeAppliance(item: PlacedCabinet): boolean {
   return /\b(fridge|refrigerator|ridge)\b/i.test(`${item.masterCode ?? ""} ${item.description ?? ""}`);
 }
 
-function isHost(item: PlacedCabinet): boolean {
+function isHost(item: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): boolean {
   if (isAutoPanel(item) || isPanelItem(item) || isRunFiller(item)) return false;
-  if (isShortUpperHost(item)) return false;
+  if (isShortUpperHost(item, placed, room)) return false;
   if (item.placement === "base" || item.placement === "wall" || item.placement === "tall") return true;
   return isDishwasherAppliance(item) || isFridgeAppliance(item);
 }
@@ -376,6 +381,17 @@ function placePanel(template: PlacedCabinet, along: number, width: number, side:
   const spot = wallPlacementAt(along, width, Math.max(template.depth, 0.75), side, room, template.peninsulaSide ?? null, false);
   if (Math.abs((spot.wallOffset ?? along) - along) > 0.2) return null;
   const label = EXPOSED_PANEL_REASONS[reason];
+  // A panel beside an upper stays inside that upper's own vertical band. A
+  // board that would reach below the cabinet's bottom is the stray strip Tom
+  // reported (issue 353 outcome 8); it is cut to the band instead.
+  const band = template.placement === "wall"
+    ? panelFitsUpperBand({
+      upperBottomIn: elevationBox(template, room).bottom,
+      upperHeightIn: placedHeight(template),
+      panelBottomIn: elevationBox(template, room).bottom,
+      panelHeightIn: placedHeight(template),
+    })
+    : null;
   return {
     ...template,
     ...spot,
@@ -387,9 +403,10 @@ function placePanel(template: PlacedCabinet, along: number, width: number, side:
     subCategory: "End panel",
     width,
     depth: template.depth,
-    height: template.height,
+    height: band?.heightIn ?? template.height,
+    ...(band ? { mountBottom: band.bottomIn } : {}),
     nominalWidth: width,
-    nominalHeight: template.height,
+    nominalHeight: band?.heightIn ?? template.height,
     nominalDepth: template.depth,
     placement: template.placement === "wall" ? "wall" : "base",
     numberOfDoors: 0,
@@ -619,7 +636,7 @@ function syncQualifiedAutoPanels(input: QualifiedSyncInput): ExposedSidePlan {
   const hosts = input.placed.filter((item) => {
     const style = doorStyleFor(item);
     if (skinsAreNeeded(style)) return false;
-    if (isShortUpperHost(item)) return false;
+    if (isShortUpperHost(item, input.placed, input.room)) return false;
     return isRunCabinet(item) && requiresAutoEndPanels(style);
   });
 
@@ -742,7 +759,7 @@ export function syncExposedSidePanels(input: {
     return { placed: placed.length === input.placed.length ? input.placed as PlacedCabinet[] : placed, warnings: [] };
   }
   const openings = input.openings ?? [];
-  const hosts = input.placed.filter(isHost);
+  const hosts = input.placed.filter((item) => isHost(item, input.placed, input.room));
   const warnings: ExposedPanelWarning[] = [];
   const wanted = new Map<string, PlacedCabinet>();
   const seenSides = new Set<string>();
@@ -774,7 +791,7 @@ export function syncExposedSidePanels(input: {
       const sideKey = `${host.uid}:${panelSide}`;
       if (seenSides.has(sideKey)) continue;
       seenSides.add(sideKey);
-      if (coveredByNeighbor(host, panelSide, [...hostsPlaced, ...input.placed.filter((item) => !isHost(item))], input.room)) continue;
+      if (coveredByNeighbor(host, panelSide, [...hostsPlaced, ...input.placed.filter((item) => !isHost(item, input.placed, input.room))], input.room)) continue;
       const reason = reasonFor(host, panelSide, input.room, openings);
       if (!reason || !enabled(reason)) continue;
       const framedWindow = reason === "beside-window" && !frameless(host);

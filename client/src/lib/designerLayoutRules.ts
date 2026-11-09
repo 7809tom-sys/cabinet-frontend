@@ -58,6 +58,7 @@ import { kitchenRuleNumber, KITCHEN_RULE_PARAMETER_DEFAULTS } from "./kitchenRul
 import { clampTrimRunSpans } from "./refrigeratorPanelLimit";
 import { normalizeContinuousVerticalFillers } from "./verticalFiller";
 import { normalizeUpperHeights } from "./designerFaceRules";
+import { fillAutoDesignLowerSeams } from "./autoDesignSeamFillers";
 
 /**
  * The most a user-placed Auto-Design appliance may slide along its own wall
@@ -1082,6 +1083,14 @@ export function applyDesignerLayoutRules(input: {
     });
   }
   placed = normalizeInstalledFillersToAdjacentCabinets(placed, input.room);
+  // Owner rule (Tom, Nov 9 2026, issue 353 outcome 1): there is NO void between
+  // two adjoining base cabinets. A run that reaches this point with a real gap
+  // between neighbours either had the gap closed by a real cabinet earlier, or
+  // gets a priced board from this line's own filler stock. The countertop then
+  // runs continuously over a filled seam instead of floating over empty floor.
+  placed = closeAdjoiningBaseVoids({
+    placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
+  });
   // Owner rule: a filler is only ever a front-face board closing a cabinet-to-
   // cabinet, cabinet-to-wall, or cabinet-to-appliance gap. A board cut against a
   // refrigerator end panel, on a run's open outside face, or straight through a
@@ -1115,6 +1124,40 @@ export function applyDesignerLayoutRules(input: {
     trimPieces,
     appliedRuleIds: DESIGNER_LAYOUT_RULES.filter((rule) => rule.phase === "shared-pipeline").map((rule) => rule.id),
   };
+}
+
+/**
+ * Owner rule (Tom, Nov 9 2026, issue 353 outcome 1): a base run has no void
+ * between adjoining cabinets.
+ *
+ * A cabinet-to-cabinet opening inside a run is closed with that line's own
+ * priced filler stock — never left as empty floor under a slab that spans it.
+ * The board is matched to its neighbour's elevation and depth by the same
+ * helper the seam pass uses, so it is a real, billed, front-face board.
+ *
+ * A wide opening belongs to the real-cabinet passes that run before this one,
+ * so it is reported rather than filled with a stack of boards. An appliance
+ * opening, a refrigerator bay, a corner pocket and the two ends of a run are
+ * not voids and are left exactly as they are.
+ */
+export function closeAdjoiningBaseVoids(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  fillers: readonly CatalogFillerCandidate[];
+  makeUid: () => string;
+  styleId: number | null;
+}): PlacedCabinet[] {
+  const maxFiller = kitchenRuleNumber("filler_gap_max_in");
+  if (!(maxFiller > 0) || input.fillers.length === 0) return input.placed;
+  return fillAutoDesignLowerSeams({
+    placed: input.placed,
+    room: input.room,
+    openings: [],
+    fillers: input.fillers,
+    makeUid: input.makeUid,
+    styleId: input.styleId,
+    maxFillerIn: maxFiller,
+  }).placed;
 }
 
 export const CROWN_MITER_ALLOWANCE_RULE_IN = CROWN_MITER_ALLOWANCE_IN;

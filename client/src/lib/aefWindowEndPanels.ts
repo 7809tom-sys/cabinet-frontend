@@ -13,7 +13,7 @@ import {
   formatEighthInches,
 } from "./design";
 import { selectAefEndPanel } from "./aefEndPanelStock";
-import { isShortUpperCabinet } from "./shortUpper";
+import { isStandaloneShortUpper } from "./shortUpper";
 
 /**
  * A window break is one exposed end. Stock, the door-front field cut, and the
@@ -54,11 +54,7 @@ export type AefWindowEndPanelRequirement = {
 function isAefWallCabinet(cabinet: PlacedCabinet): boolean {
   return cabinet.placement === "wall"
     && cabinet.constructionMethod === AEF_PRINTED_GEOMETRY_MARKER
-    && !isPanelItem(cabinet)
-    // A 24-inch-or-shorter upper is a one-face appliance surround; a WEP board
-    // beside a window break only finishes a real upper-run end (issue 353
-    // outcome 8).
-    && !isShortUpperCabinet(cabinet);
+    && !isPanelItem(cabinet);
 }
 
 /**
@@ -86,9 +82,13 @@ export function aefWindowEndPanelRequirements(
     if (window.kind !== "window") continue;
     const windowStart = window.offset;
     const windowEnd = window.offset + window.width;
-    const candidates = placed.filter(
-      (cabinet) => isAefWallCabinet(cabinet) && cabinetWall(cabinet, room) === window.side,
-    );
+    const candidates = placed.filter((cabinet) => (
+      isAefWallCabinet(cabinet)
+      && cabinetWall(cabinet, room) === window.side
+      // Only the reported defect (a standalone short upper) is skipped; an
+      // over-range bridge or over-fridge cap by a window keeps its WEP board.
+      && !isStandaloneShortUpper(cabinet, room, placed)
+    ));
     const left = candidates
       .filter((cabinet) => wallRunOffset(cabinet, window.side, room) + wallRunSpan(cabinet, window.side, room) <= windowStart + EPSILON_IN)
       .sort((a, b) => (

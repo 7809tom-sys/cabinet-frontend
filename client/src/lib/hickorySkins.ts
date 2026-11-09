@@ -23,7 +23,7 @@ import {
   placedHeight,
   rotatedSize,
 } from "./design";
-import { isShortUpperCabinet } from "./shortUpper";
+import { isStandaloneShortUpper } from "./shortUpper";
 
 // Minimal shape of a door style we need to decide "is this Hickory?". The real
 // DoorStyle row has more fields; we only read the descriptive ones.
@@ -80,16 +80,15 @@ export interface ExposedEnd {
 const EXPOSED_GAP_TOLERANCE_IN = 1.5;
 
 /** Cabinets that can carry a finished/unfinished exposed END (base/wall/tall). */
-function canHaveExposedEnd(p: PlacedCabinet): boolean {
+function canHaveExposedEnd(p: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): boolean {
   if (p.placement !== "base" && p.placement !== "wall" && p.placement !== "tall") {
     return false;
   }
   // A panel/skin itself never needs its own skin.
   if (isPanelItem(p)) return false;
-  // A 24-inch-or-shorter upper is a one-face appliance surround on the bridge
-  // datum; it is not the end of an upper run that a skin finishes (issue 353
-  // outcome 8).
-  if (isShortUpperCabinet(p)) return false;
+  // Only a standalone short upper is outside the run; a bridge or cap keeps its
+  // finished end (issue 353 outcome 8).
+  if (isStandaloneShortUpper(p, room, placed)) return false;
   return true;
 }
 
@@ -106,7 +105,7 @@ export function exposedEnds(
 ): ExposedEnd[] {
   const out: ExposedEnd[] = [];
   for (const p of placed) {
-    if (!canHaveExposedEnd(p)) continue;
+    if (!canHaveExposedEnd(p, placed, room)) continue;
     const side = cabinetWall(p, room);
     const m = wallSpanMeasure(p, room, placed, side);
     const { d } = rotatedSize(p);
