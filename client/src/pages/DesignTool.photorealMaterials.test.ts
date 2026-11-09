@@ -20,8 +20,9 @@ describe("Designer programmed photoreal material wiring", () => {
     expect(facePlanSource).toContain("const drawerReference = preferredDrawerReferenceUrl(style);");
     expect(facePlanSource).not.toContain("rustic_hickory");
     expect(facePlanSource).not.toContain("RUSTIC_HICKORY");
-    expect(designToolSource).toContain("catalogDoorSampleUrl={active3DDoorSampleUrl}");
-    expect(designToolSource).toContain("photoUrl={paletteFinishSwatch}");
+    expect(designToolSource).toContain("catalogDoorSampleUrl={design3DDoorSampleUrl}");
+    expect(designToolSource).toContain("photoUrl={identity.photoUrl}");
+    expect(designToolSource).toContain("? designFinishSwatch\n        : kitchenAcceptedFaceImage(row as never)");
   });
 
   it("treats an uploaded sample as the approved face and does not invent a grain texture", () => {
@@ -201,7 +202,7 @@ describe("Designer programmed photoreal material wiring", () => {
   });
 
   it("records the Administration room scene without falsely representing it as an input to the exact 3D capture", () => {
-	    expect(designToolSource).toContain("catalogRoomSceneUrl={active3DRoomSceneReferenceUrl}");
+	    expect(designToolSource).toContain("catalogRoomSceneUrl={design3DRoomSceneReferenceUrl}");
 	    expect(rendererSource).toContain('renderedAsBackdropOrGeometry: false');
 	    expect(rendererSource).toContain('purpose: "material-and-lighting-reference-only"');
 	    expect(rendererSource).toContain('data-testid="photo-quality-selected-door-input"');

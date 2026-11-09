@@ -19,6 +19,7 @@ import matrixCatalog from "@/lib/__fixtures__/autoDesignMatrixCatalog.json";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
 import type { AutoDesignInputs } from "@/lib/autoDesignAutoBuild";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
+import { designStyleIds } from "@/lib/acceptedDoorAppearance";
 import {
   designDefaultStyleId,
   distinctStyleIds,
@@ -243,5 +244,61 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource).toContain("buildTrimCartLines(activeTrims, designStyleId, designStyleName");
     expect(designToolSource).toContain("defaultStyleName: designStyleName,");
     expect(designToolSource).not.toMatch(/pricingStyleIdFor\([^)]*\) \?\? styleId\b/);
+  });
+
+  it("loads the accepted render for Color 1 as well as the lit swatch", () => {
+    expect(designStyleIds({ designStyleId: AERO_BLANC.id, cabinetStyleIds: [AERO_SAGE.id, null, null] }))
+      .toEqual([AERO_BLANC.id, AERO_SAGE.id]);
+    expect(designToolSource).toMatch(/const acceptedAppearanceIds = useMemo\(\(\) => designStyleIds\(\{\s+designStyleId,\s+cabinetStyleIds: \[styleId, \.\.\.placed\.map/);
+  });
+
+  it("the Match design swatch, build-sheet trims, island dialog and stock swaps name Color 1, not the lit swatch", () => {
+    const match = designToolSource.split(/data-testid="selected-cabinet-(?:mobile-)?finish-match-option"/).slice(1).map((part) => part.slice(0, 400));
+    expect(match).toHaveLength(2);
+    for (const option of match) {
+      expect(option).toContain("<DoorStyleSwatch style={designStyle}");
+      expect(option).toContain("{designStyleName ? ` (${designStyleName})` : \"\"}");
+      expect(option).not.toMatch(/activeStyle\b|activeStyleName/);
+    }
+    expect(designToolSource.match(/\{designStyleName \? ` · \$\{designStyleName\}` : ""\}/g)).toHaveLength(4);
+    expect(designToolSource).not.toContain("{activeStyleName ? ` · ${activeStyleName}` : \"\"}");
+    expect(designToolSource).toContain("perimeterFinishName={designStyleName}");
+    expect(designToolSource).not.toContain("perimeterFinishName={activeStyleName}");
+    expect(designToolSource).not.toMatch(/designStyleId: styleId\b/);
+    expect(designToolSource.match(/^\s+designStyleId,$/gm)?.length ?? 0).toBeGreaterThanOrEqual(6);
+  });
+
+  it("inherited cabinets render, fall back and are identified as Color 1 everywhere they are shown", () => {
+    // 3D defaults (both viewers), the plan and elevation canvases, panel kind and skins.
+    for (const prop of [
+      "catalogFinishOverride={designFinish.face}",
+      "doorRenderHex={designDoorRenderHex}",
+      "catalogFaceCrop={designFaceCrop}",
+      "catalogDoorSampleUrl={design3DDoorSampleUrl}",
+      "catalogDrawerSampleUrl={design3DDrawerSampleUrl}",
+      "catalogFaceSourceKind={designFaceSourceKind}",
+      "catalogRoomSceneUrl={design3DRoomSceneReferenceUrl}",
+      "catalogDoorProfile={designCatalogDoorProfile}",
+      "catalogFinishName={designStyleName}",
+      "catalogFinishProductId={designStyleId ?? null}",
+    ]) {
+      expect(designToolSource.split(prop)).toHaveLength(3);
+    }
+    expect(designToolSource).not.toMatch(/catalog(FinishOverride|FaceCrop|DoorSampleUrl|DrawerSampleUrl|FaceSourceKind|RoomSceneUrl|DoorProfile|FinishName)=\{active/);
+    expect(designToolSource.match(/finish=\{designFinish\}/g)).toHaveLength(6);
+    // The only brush-based `finish` left is the door-style picker's own preview.
+    expect(designToolSource.match(/finish=\{activeFinish\}/g)).toHaveLength(1);
+    expect(designToolSource).toContain("return (sid != null && finishById.get(sid)) || designFinish;");
+    expect(designToolSource).toContain("return (sid != null && panelKindById.get(sid)) || designPanelKind;");
+    expect(designToolSource).toContain("dropIneligibleSkins(current, designStyle)");
+    expect(designToolSource).toContain("hickorySkinSuggestions(placed, room, designStyle as never)");
+    const withoutNameDefinition = designToolSource.replace(/^\s+const designStyleName = .*$/m, "");
+    expect(withoutNameDefinition).not.toMatch(/\?\? activeFinish\b|\?\? activeStyleName\b/);
+    // The selected cabinet shows its own finish (Color 1 when it inherits).
+    expect(designToolSource).not.toMatch(/<SelectedCabinetDoorIdentity\s+photoUrl=\{paletteFinishSwatch\}/);
+    expect(designToolSource.match(/const identity = doorIdentityForCab\(selectedCab\);/g)).toHaveLength(2);
+    // Color trace resolves inherited cabinets against Color 1.
+    expect(designToolSource).toContain(": null) ?? designStyle;");
+    expect(designToolSource).toContain(": designKitchenDoorColor;");
   });
 });

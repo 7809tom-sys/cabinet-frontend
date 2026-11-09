@@ -1069,7 +1069,7 @@ export function applyDesignerLayoutRules(input: {
   const angled = repairMissingAngledWallFillers(placed, input.room, input.fillers, input.makeUid, input.styleId);
   placed = angled.placed;
   placed = applyFramelessDoorClearanceFillers({
-    placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
+    placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid,
   }).placed;
   // Owner rule: filler is the last resort, never automatic at a run end. The
   // measured build turns this off and runs the shared real-cabinet pass instead.
