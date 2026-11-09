@@ -224,7 +224,7 @@ describe("the Designer reads the choice", () => {
     // two inputs the 3D renderer and the elevation read.
     expect(designer).toContain("doorStyles?.find((s) => s.id === styleId)");
     expect(designer).toContain("cabinetDoorProfiles={threeDCabinetDoorProfiles}");
-    expect(designer).toContain("catalogDoorProfile={activeCatalogDoorProfile}");
+    expect(designer).toContain("catalogDoorProfile={designCatalogDoorProfile}");
   });
 
   it("refreshes on a choice made in this tab, not only on a reload", () => {

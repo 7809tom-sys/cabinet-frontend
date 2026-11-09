@@ -214,6 +214,6 @@ describe("the Designer's 3D wiring reads the accepted style everywhere", () => {
     expect(deps).toContain("acceptedAppearance.rows");
     expect(deps).toContain("doorStyles");
     expect(deps).toContain("placed");
-    expect(deps).toContain("styleId");
+    expect(deps).toContain("designStyleId");
   });
 });

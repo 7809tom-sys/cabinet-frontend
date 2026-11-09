@@ -25,6 +25,6 @@ describe("Peninsula Wizard sequential appliances, sink popup and style gate", ()
     expect(source).toContain('data-testid="peninsula-wizard-style-required"');
     expect(source).toContain('data-testid="peninsula-wizard-primary-cabinet-add" disabled={styleId == null}');
     expect(source).toContain('data-testid="peninsula-wizard-return-cabinet-add" disabled={styleId == null}');
-    expect(source).toContain("if (styleIdRef.current == null) {");
+    expect(source).toContain("if (designStyleIdRef.current == null) {");
   });
 });
