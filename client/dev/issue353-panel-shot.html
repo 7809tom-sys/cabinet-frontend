@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  Before / after screenshots for issue 353 outcome 8: the tall flat side/end
+  panel that showed beside a 24-inch W3024 upper and ran past its bottom.
+
+  Left: the board the old rule wrote (floor to 96 inches).
+  Right: the board the fixed rule writes (the upper band only).
+
+  Served by the Vite dev server; used only by e2e/issue353-panel-before-after.spec.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Issue 353 outcome 8: panel beside a short upper</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px; height: 100vh; box-sizing: border-box; }
+      .pane { position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 8px 24px rgba(15,23,42,0.16); background: #fff; }
+      .pane canvas { display: block; }
+      .caption {
+        position: absolute; left: 14px; top: 12px; padding: 10px 13px;
+        background: rgba(255,255,255,0.95); border-radius: 10px; color: #0f172a;
+        font-size: 12px; line-height: 1.5; max-width: 84%;
+      }
+      .caption strong { font-size: 14px; }
+      .caption .bad { color: #b91c1c; font-weight: 600; }
+      .caption .ok { color: #047857; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div id="grid">
+      <div class="pane" id="pane-before"><div class="caption" id="caption-before">Building…</div></div>
+      <div class="pane" id="pane-after"><div class="caption" id="caption-after">Building…</div></div>
+    </div>
+    <script type="module" src="/src/issue353PanelHarness.ts"></script>
+  </body>
+</html>

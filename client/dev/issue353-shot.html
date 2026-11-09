@@ -1,0 +1,43 @@
+<!doctype html>
+<!--
+  Before / after screenshots for issue 353.
+
+  Top row: the 3D view of Tom's reported run (a raised bar wall behind a base
+  run with a cooktop). Bottom row: the same run in a top-down view. The left
+  column is the old rules, the right column the fixed rules. Every box and slab
+  is produced by the real designer code.
+
+  Served by the Vite dev server; used only by e2e/issue353-before-after.spec.ts.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Issue 353: countertop before / after</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #grid {
+        display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+        gap: 10px; padding: 10px; height: 100vh; box-sizing: border-box;
+      }
+      .pane { position: relative; border-radius: 10px; overflow: hidden; box-shadow: 0 8px 24px rgba(15,23,42,0.16); background: #fff; }
+      .pane canvas { display: block; }
+      .caption {
+        position: absolute; left: 12px; top: 12px; padding: 9px 12px;
+        background: rgba(255,255,255,0.95); border-radius: 10px; color: #0f172a;
+        font-size: 12px; line-height: 1.45; max-width: 82%;
+      }
+      .caption strong { font-size: 13px; }
+      .caption .bad { color: #b91c1c; font-weight: 600; }
+      .caption .ok { color: #047857; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <div id="grid">
+      <div class="pane" id="pane-3d-before"><div class="caption" id="caption-3d-before">Building…</div></div>
+      <div class="pane" id="pane-3d-after"><div class="caption" id="caption-3d-after">Building…</div></div>
+      <div class="pane" id="pane-2d-before"><div class="caption" id="caption-2d-before">Building…</div></div>
+      <div class="pane" id="pane-2d-after"><div class="caption" id="caption-2d-after">Building…</div></div>
+    </div>
+    <script type="module" src="/src/issue353ScreenshotHarness.ts"></script>
+  </body>
+</html>
