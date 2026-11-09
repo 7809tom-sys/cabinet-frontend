@@ -190,9 +190,10 @@ describe("3D view after a GPU reset", () => {
     expect(mountEffect).toContain("if (current && current !== host) current.release();");
   });
 
-  it("holds the Auto-Design faucet chooser while the paused notice shows", () => {
+  it("holds the Auto-Design sink and faucet choosers while the paused notice shows", () => {
     const designTool = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
     expect(designTool).toContain("open={autoDesignFaucetPrompt != null && !threeDGraphicsPaused}");
+    expect(designTool).toContain("open={autoDesignSinkPrompt != null && !threeDGraphicsPaused}");
     expect(designTool.match(/onGraphicsPausedChange=\{setThreeDGraphicsPaused\}/g)?.length).toBe(2);
     expect(source).toContain("onGraphicsPausedChangeRef.current?.(webglContextLost);");
   });

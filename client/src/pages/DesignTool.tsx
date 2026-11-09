@@ -1401,7 +1401,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   ) => { ok: true } | { ok: false; message: string }) | null>(null);
   autoDesignSessionRef.current = autoDesignOpen || autoDesignCornerStage != null;
   const [autoDesignFaucetPrompt, setAutoDesignFaucetPrompt] = useState<{ sinkUid: string; queue: string[] } | null>(null);
-  // A GPU reset pauses the 3D view; its notice must not sit under a modal.
+  // A GPU reset pauses the 3D view; its notice must not sit under the Auto-Design sink or faucet chooser.
   const [threeDGraphicsPaused, setThreeDGraphicsPaused] = useState(false);
   /**
    * Cancels the required corner choice. The staged build is transactional, so
@@ -22505,7 +22505,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      )}
 	      {autoDesignAvailable && (
 	        <AutoDesignSinkDialog
-	          open={autoDesignSinkPrompt != null}
+	          open={autoDesignSinkPrompt != null && !threeDGraphicsPaused}
 	          sinkBaseLabel={autoDesignSinkDialogLabel}
 	          products={autoDesignSinkProducts}
 	          loading={autoDesignSinkCatalogLoading}
