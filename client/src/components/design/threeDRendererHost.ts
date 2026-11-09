@@ -19,15 +19,55 @@ export function createThreeDWebGLRenderer(): THREE.WebGLRenderer | null {
     try {
       return new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
     } catch {
-      // Last resort for Chrome with a restricted GPU: default options only.
+      // Hybrid-graphics laptops can refuse the discrete GPU; ask for the
+      // integrated one and accept a software-backed context.
       try {
-        return new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
-      } catch (error) {
-        console.warn("[3D] WebGL could not start", error);
-        return null;
+        return new THREE.WebGLRenderer({ preserveDrawingBuffer: true, powerPreference: "low-power", failIfMajorPerformanceCaveat: false });
+      } catch {
+        // Last resort for Chrome with a restricted GPU: default options only.
+        try {
+          return new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
+        } catch (error) {
+          console.warn("[3D] WebGL could not start", error);
+          return null;
+        }
       }
     }
   }
+}
+
+/**
+ * Why no renderer could start. three.js only renders through WebGL 2, so a
+ * browser that still offers WebGL 1 (WebGL 2 switched off) cannot be fixed by
+ * retrying, and neither can one that offers no WebGL at all (graphics
+ * acceleration off, or the GPU blocked for this page after repeated resets).
+ */
+export type ThreeDWebGLSupport = "webgl2" | "webgl1-only" | "none";
+
+export function detectThreeDWebGLSupport(createCanvas: () => HTMLCanvasElement = () => document.createElement("canvas")): ThreeDWebGLSupport {
+  const tryContext = (type: "webgl2" | "webgl"): boolean => {
+    try {
+      const context = createCanvas().getContext(type) as WebGLRenderingContext | WebGL2RenderingContext | null;
+      if (!context) return false;
+      context.getExtension("WEBGL_lose_context")?.loseContext();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (tryContext("webgl2")) return "webgl2";
+  return tryContext("webgl") ? "webgl1-only" : "none";
+}
+
+export function threeDWebGLUnavailableMessage(support: ThreeDWebGLSupport): string {
+  const keep = "Your 2D plan and elevation preview remain available.";
+  if (support === "webgl1-only") {
+    return `This browser has WebGL 2 turned off, and the 3D view needs it. In Chrome, open Settings > System, turn on "Use graphics acceleration when available", relaunch Chrome, then press Retry. ${keep}`;
+  }
+  if (support === "none") {
+    return `This browser is not letting this page use 3D graphics (WebGL is off or blocked). In Chrome, open Settings > System, turn on "Use graphics acceleration when available", and relaunch Chrome. If it is already on, chrome://gpu shows whether WebGL is blocked. Then press Retry. ${keep}`;
+  }
+  return `The interactive 3D view could not start. Close other 3D tabs, then press Retry. ${keep}`;
 }
 
 /**

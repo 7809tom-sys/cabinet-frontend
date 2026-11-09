@@ -1,6 +1,16 @@
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Component, Fragment, createContext, useContext, useEffect, useLayoutEffect, useRef, type ErrorInfo, type ReactNode } from "react";
+import {
+  STALE_CHUNK_RELOAD_FLAG,
+  clearReloadGuard,
+  guardedPageReload,
+  isChunkLoadError,
+  pageReloadEnv,
+  pageReloadPending,
+  reloadForStaleChunk,
+  reloadGuardUsed,
+} from "@/lib/staleChunkReload";
 
 interface Props {
   /** Which surface this guards, for the console log and test hooks. */
@@ -38,64 +48,13 @@ export function designerBoundaryReloadFlag(surface: string): string {
   return `${DESIGNER_BOUNDARY_RELOAD_FLAG}:${surface}`;
 }
 
-/** Swappable in tests; jsdom cannot reload. */
-export const designerBoundaryEnv = {
-  reload: () => window.location.reload(),
-  storage: (): Storage | null => {
-    try {
-      return window.sessionStorage;
-    } catch {
-      return null;
-    }
-  },
-  now: () => Date.now(),
-};
+/** Swappable in tests; jsdom cannot reload. Shared with the page's stale-chunk reload. */
+export const designerBoundaryEnv = pageReloadEnv;
+export { isChunkLoadError };
 
-const CHUNK_LOAD_ERROR = /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|ChunkLoadError|Loading (?:CSS )?chunk [\w-]+ failed|Unable to preload CSS/i;
-
-/** A lazy page whose chunk could not load. React caches the rejection, so only a page reload recovers. */
-export function isChunkLoadError(error: unknown): boolean {
-  if (!error) return false;
-  const { name, message } = error as { name?: unknown; message?: unknown };
-  return CHUNK_LOAD_ERROR.test(`${String(name ?? "")}: ${String(message ?? error)}`);
-}
-
-/**
- * One automatic page reload per session until a surface has run cleanly for
- * DESIGNER_BOUNDARY_STABLE_MS, so a page that fails again after reloading shows
- * the panel instead of reloading forever. Without session storage there is no
- * guard, so nothing reloads automatically.
- */
-function guardedPageReload(surface: string, reason: string): boolean {
-  const storage = designerBoundaryEnv.storage();
-  if (!storage) return false;
-  try {
-    const flag = designerBoundaryReloadFlag(surface);
-    if (storage.getItem(flag) != null) return false;
-    storage.setItem(flag, JSON.stringify({ surface, reason, at: designerBoundaryEnv.now() }));
-  } catch {
-    return false;
-  }
-  // Deferred so the crash commit finishes and the crashed surface's unload
-  // listeners are removed before the page starts to unload.
-  setTimeout(() => designerBoundaryEnv.reload(), 0);
-  return true;
-}
-
-function reloadGuardUsed(surface: string): boolean {
-  try {
-    return designerBoundaryEnv.storage()?.getItem(designerBoundaryReloadFlag(surface)) != null;
-  } catch {
-    return false;
-  }
-}
-
-function clearReloadFlag(surface: string) {
-  try {
-    designerBoundaryEnv.storage()?.removeItem(designerBoundaryReloadFlag(surface));
-  } catch {
-    /* storage unavailable */
-  }
+/** A chunk from an older deploy, or the error React throws while the reload for one is on its way. */
+function isStaleChunk(error: unknown): boolean {
+  return isChunkLoadError(error) || pageReloadPending();
 }
 
 type CrashHandlers = {
@@ -145,8 +104,10 @@ export function useDesignerCrashFlush(flush: () => void, discard?: () => void) {
  * next mount can offer Restore previous or Start fresh; a design opened from a
  * saved design or package link reloads that saved version, without unsaved
  * edits. A chunk that failed to load, or a third crash in a row after Reload
- * designer, reloads the page once (see guardedPageReload) unless `pageReload`
- * is off. Once that reload has been used, the panel also offers Discard draft.
+ * designer, reloads the page once (the shared guard in staleChunkReload) unless
+ * `pageReload` is off. Once that reload has been used, the panel also offers
+ * Discard draft. Reload on a stale chunk always reloads the page, since a
+ * remount replays the same failed import.
  */
 export class DesignerErrorBoundary extends Component<Props, State> {
   state: State = { error: null, mountKey: 0, canDiscard: false };
@@ -180,6 +141,8 @@ export class DesignerErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error(`Designer surface "${this.props.surface}" failed to render`, error, info.componentStack);
+    // The page is already reloading for a stale chunk; the draft autosave on unload keeps the last good state.
+    if (!isChunkLoadError(error) && pageReloadPending()) return;
     if (this.stableTimer) clearTimeout(this.stableTimer);
     this.stableTimer = null;
     this.discards = [];
@@ -193,9 +156,10 @@ export class DesignerErrorBoundary extends Component<Props, State> {
     });
     this.crashes = designerBoundaryEnv.now() - this.remountedAt <= DESIGNER_BOUNDARY_STABLE_MS ? this.crashes + 1 : 1;
     if (this.props.pageReload === false) return;
-    const guardUsed = reloadGuardUsed(this.props.surface);
-    if (isChunkLoadError(error)) guardedPageReload(this.props.surface, "chunk-load");
-    else if (this.crashes >= DESIGNER_BOUNDARY_MAX_CRASHES) guardedPageReload(this.props.surface, "repeated-crash");
+    const surfaceFlag = designerBoundaryReloadFlag(this.props.surface);
+    const guardUsed = reloadGuardUsed(surfaceFlag);
+    if (isChunkLoadError(error)) reloadForStaleChunk(this.props.surface, [surfaceFlag]);
+    else if (this.crashes >= DESIGNER_BOUNDARY_MAX_CRASHES) guardedPageReload([surfaceFlag], { surface: this.props.surface, reason: "repeated-crash" });
     if (guardUsed && this.discards.length > 0) this.setState({ canDiscard: true });
   }
 
@@ -205,7 +169,9 @@ export class DesignerErrorBoundary extends Component<Props, State> {
       this.stableTimer = null;
       if (this.state.error) return;
       this.crashes = 0;
-      if (this.props.pageReload !== false) clearReloadFlag(this.props.surface);
+      if (this.props.pageReload === false) return;
+      clearReloadGuard(designerBoundaryReloadFlag(this.props.surface));
+      clearReloadGuard(STALE_CHUNK_RELOAD_FLAG);
     }, DESIGNER_BOUNDARY_STABLE_MS);
   }
 
@@ -214,8 +180,15 @@ export class DesignerErrorBoundary extends Component<Props, State> {
     this.setState((current) => ({ error: null, mountKey: current.mountKey + 1, canDiscard: false }));
   }
 
+  /** Whether Reload loads the page again instead of remounting the surface. */
+  private reloadsPage(): boolean {
+    // A remount can never recover a stale chunk, so that reload is a page reload even where automatic ones are off.
+    if (isStaleChunk(this.state.error)) return true;
+    return this.props.pageReload !== false && this.crashes >= DESIGNER_BOUNDARY_MAX_CRASHES;
+  }
+
   reload = () => {
-    if (this.props.pageReload !== false && (isChunkLoadError(this.state.error) || this.crashes >= DESIGNER_BOUNDARY_MAX_CRASHES)) {
+    if (this.reloadsPage()) {
       designerBoundaryEnv.reload();
       return;
     }
@@ -237,6 +210,7 @@ export class DesignerErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.error) {
+      const staleBuild = isStaleChunk(this.state.error);
       return (
         <div
           role="alert"
@@ -246,10 +220,17 @@ export class DesignerErrorBoundary extends Component<Props, State> {
         >
           <div className="flex max-w-sm flex-col items-center gap-3 rounded-lg border border-destructive/40 bg-background p-5 text-center shadow-sm">
             <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
-            <p className="text-sm font-medium">The designer hit a problem</p>
-            <Button type="button" variant="outline" size="sm" onClick={this.reload}>
+            <p className="text-sm font-medium">
+              {staleBuild ? "A newer version of the designer was published" : "The designer hit a problem"}
+            </p>
+            {staleBuild && (
+              <p className="text-xs text-muted-foreground">
+                This page is still running the previous version. Reload the page to load the current one; your autosaved draft on this device is kept.
+              </p>
+            )}
+            <Button type="button" variant="outline" size="sm" onClick={this.reload} data-testid="designer-error-reload">
               <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              Reload designer
+              {this.reloadsPage() ? "Reload page" : "Reload designer"}
             </Button>
             {this.state.canDiscard && (
               <Button type="button" variant="ghost" size="sm" onClick={this.discardDraft}>

@@ -13,6 +13,7 @@ import {
   useDesignerCrashFlush,
   useLastCommitted,
 } from "./DesignerErrorBoundary";
+import { STALE_CHUNK_RELOAD_FLAG, resetPageReloadState } from "@/lib/staleChunkReload";
 
 const DESIGNER_FLAG = designerBoundaryReloadFlag("designer");
 
@@ -32,6 +33,7 @@ beforeEach(() => {
   reload = vi.fn();
   designerBoundaryEnv.reload = reload;
   window.sessionStorage.clear();
+  resetPageReloadState();
 });
 
 afterEach(() => {
@@ -88,6 +90,85 @@ describe("designer error boundary", () => {
     expect(host.querySelector("[data-testid='designer-error-boundary']")).toBeNull();
     expect(host.querySelector("[data-testid='designer-ok']")).not.toBeNull();
     expect(mounts).toBe(1);
+  });
+
+  it("reloads the page for a stale build chunk, because remounting replays the same failed import", async () => {
+    let imports = 0;
+    const StaleDesigner = React.lazy(() => {
+      imports += 1;
+      return Promise.reject(new TypeError("Failed to fetch dynamically imported module: https://www.cabinetdealz.com/assets/DesignTool-BF--MoSG.js"));
+    });
+    await act(async () => {
+      root.render(<DesignerErrorBoundary surface="designer"><React.Suspense fallback={null}><StaleDesigner /></React.Suspense></DesignerErrorBoundary>);
+    });
+    await settle();
+    const stalePanel = panel();
+    expect(stalePanel?.textContent).toContain("A newer version of the designer was published");
+    expect(stalePanel?.textContent).toContain("Reload page");
+    expect(reloadButton()).toBeUndefined();
+    expect(reload).toHaveBeenCalledTimes(1);
+    act(() => (host.querySelector("[data-testid='designer-error-reload']") as HTMLButtonElement).click());
+    expect(reload).toHaveBeenCalledTimes(2);
+    expect(imports).toBe(1);
+    expect(panel()).not.toBeNull();
+  });
+
+  it("labels Reload by what it does: the page for a stale chunk, even in the 3D view; a remount otherwise", async () => {
+    const staleImport = () => Promise.reject(new TypeError("Failed to fetch dynamically imported module: https://www.cabinetdealz.com/assets/three-old.js"));
+    let imports = 0;
+    const StaleScene = React.lazy(() => {
+      imports += 1;
+      return staleImport();
+    });
+    await act(async () => {
+      root.render(<DesignerErrorBoundary surface="3d" pageReload={false}><React.Suspense fallback={null}><StaleScene /></React.Suspense></DesignerErrorBoundary>);
+    });
+    await settle();
+    expect(panel()?.textContent).toContain("A newer version of the designer was published");
+    expect(reloadButton()).toBeUndefined();
+    expect(reload).not.toHaveBeenCalled();
+    act(() => button("Reload page")!.click());
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(imports).toBe(1);
+    expect(window.sessionStorage.length).toBe(0);
+
+    act(() => root.unmount());
+    root = createRoot(host);
+    function BrokenScene(): React.ReactNode {
+      throw new Error("scene setup failed");
+    }
+    act(() => root.render(<DesignerErrorBoundary surface="3d" pageReload={false}><BrokenScene /></DesignerErrorBoundary>));
+    expect(button("Reload page")).toBeUndefined();
+    act(() => reloadButton()!.click());
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one stale-chunk guard with the page, so a chunk never reloads the page twice", async () => {
+    const mountStale = async () => {
+      const Stale = React.lazy(() => Promise.reject(new TypeError("Importing a module script failed.")));
+      act(() => root.render(<React.Suspense fallback={null}><DesignerErrorBoundary surface="designer"><Stale /></DesignerErrorBoundary></React.Suspense>));
+      await settle();
+    };
+    // The page's vite:preloadError handler already reloaded for this chunk.
+    window.sessionStorage.setItem(STALE_CHUNK_RELOAD_FLAG, JSON.stringify({ surface: "page", reason: "chunk-load" }));
+    await mountStale();
+    expect(reload).not.toHaveBeenCalled();
+    expect(panel()?.textContent).toContain("Reload page");
+
+    // Without session storage there is no guard, so nothing reloads by itself.
+    act(() => root.unmount());
+    root = createRoot(host);
+    window.sessionStorage.clear();
+    designerBoundaryEnv.storage = () => null;
+    await mountStale();
+    expect(reload).not.toHaveBeenCalled();
+    designerBoundaryEnv.storage = () => ({ getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } }) as unknown as Storage;
+    act(() => root.unmount());
+    root = createRoot(host);
+    await mountStale();
+    expect(reload).not.toHaveBeenCalled();
+    act(() => button("Reload page")!.click());
+    expect(reload).toHaveBeenCalledTimes(1);
   });
 
   it("catches React #185 (maximum update depth) from a runaway ref callback", () => {
@@ -149,7 +230,7 @@ describe("designer error boundary", () => {
     expect(reload).toHaveBeenCalledTimes(1);
     expect(panel()).not.toBeNull();
     // Remounting cannot recover a cached rejected import, so the button reloads the page.
-    act(() => reloadButton()!.click());
+    act(() => button("Reload page")!.click());
     expect(reload).toHaveBeenCalledTimes(2);
     expect(panel()).not.toBeNull();
   });
@@ -170,7 +251,7 @@ describe("designer error boundary", () => {
     expect(reload).toHaveBeenCalledTimes(1);
     expect(JSON.parse(window.sessionStorage.getItem(DESIGNER_FLAG)!)).toMatchObject({ reason: "repeated-crash" });
     // Still crashing after that reload: no automatic reload again; the button reloads the page by hand.
-    act(() => reloadButton()!.click());
+    act(() => button("Reload page")!.click());
     expect(reload).toHaveBeenCalledTimes(2);
   });
 
@@ -302,7 +383,7 @@ describe("designer error boundary", () => {
     expect(reload).not.toHaveBeenCalled();
     expect(window.sessionStorage.length).toBe(0);
 
-    // A chunk that failed to load inside the 3D view also stays in place.
+    // A chunk that failed to load inside the 3D view does not reload the page by itself.
     act(() => root.unmount());
     root = createRoot(host);
     const LazyScene = React.lazy(() => Promise.reject(new TypeError("Failed to fetch dynamically imported module: /assets/three-old.js")));
@@ -312,9 +393,9 @@ describe("designer error boundary", () => {
       </React.Suspense>,
     ));
     for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
-    act(() => reloadButton()!.click());
     act(() => vi.runAllTimers());
     expect(reload).not.toHaveBeenCalled();
+    expect(window.sessionStorage.length).toBe(0);
   });
 
   it("does not count remounts from a reset key toward the crash streak", () => {
