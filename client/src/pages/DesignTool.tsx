@@ -27,6 +27,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { designStyleIds, kitchenAcceptedFaceImage, resolveKitchenDoorColor, withAcceptedAppearance, type AcceptedAppearanceRow } from "@/lib/acceptedDoorAppearance";
 import { useAcceptedDoorAppearance } from "@/lib/acceptedAppearanceQuery";
+import { useStableFaceCrop } from "@/lib/stableFaceCrop";
 import { DoorStyleEditButton } from "@/components/design/DoorStyleEditButton";
 import { doorStyleEditUrl } from "@/lib/doorStyleEditLink";
 import { colorTraceEnabled, createColorTraceRecorder, type ColorTrace } from "@/lib/colorTrace";
@@ -5820,9 +5821,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
-  const activeFaceCrop = activeFacePlan?.dlcCrop
-    ? { slug: activeFacePlan.dlcCrop.slug, doorSize: activeFacePlan.dlcCrop.doorSize, drawerSize: activeFacePlan.dlcCrop.drawerSize, drawerSolidColor: activeFacePlan.dlcCrop.drawerSolidColor, solidColor: activeFacePlan.dlcCrop.solidColor, grainUrl: activeFacePlan.dlcCrop.grainUrl, faceTileIn: activeFacePlan.dlcCrop.faceTileIn, faceTileDrawerIn: activeFacePlan.dlcCrop.faceTileDrawerIn, normalUrl: activeFacePlan.dlcCrop.normalUrl, tintHex: activeFacePlan.dlcCrop.tintHex, tintLinear: activeFacePlan.dlcCrop.tintLinear, grainSubstituted: activeFacePlan.dlcCrop.grainSubstituted }
-    : null;
+  const activeFaceCrop = useStableFaceCrop(activeFacePlan?.dlcCrop);
   const active3DRoomSceneReferenceUrl = useMemo(() => {
     const s = doorStyles?.find((d) => d.id === styleId) as { roomSceneImageUrl?: string | null } | undefined;
     return s?.roomSceneImageUrl ?? null;
