@@ -4,7 +4,7 @@ import { Printer, ArrowLeft } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import {
-  type IslandZone, type PlacedCabinet, type RoomData, type WallSide,
+  type IslandZone, type PlacedCabinet, type PonyWall, type RoomData, type WallSide,
   type SinkFixture,
   COUNTERTOP_DEPTH_IN, countertopMaterial, edgeProfile,
   countertopArea, countertopSurfaces, cabinetWall, placedFootprint,
@@ -41,6 +41,8 @@ interface DraftSnapshot {
   placed: PlacedCabinet[];
   island?: IslandZone | null;
   sinks?: SinkFixture[];
+  /** Bar-height / drywall partitions, so a bar wall's top reaches this sheet. */
+  ponyWalls?: PonyWall[];
   countertopMaterialId?: string | null;
   edgeProfileId?: string | null;
   backsplashMaterialId?: string | null;
@@ -213,6 +215,7 @@ export default function FabricatorSheet() {
       draft.island,
       draft.island ? islandCountertopVisibleRects(draft.island, draft.placed) : null,
       draft.room,
+      draft.ponyWalls ?? [],
     );
   }, [draft]);
 

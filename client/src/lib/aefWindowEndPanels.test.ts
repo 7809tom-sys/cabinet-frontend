@@ -55,12 +55,22 @@ describe("AEF window-break wall end panels", () => {
 
   it("selects the shortest source stock that covers the upper height", () => {
     const requirements = aefWindowEndPanelRequirements([
-      wall("left-of-window", 24, 24, 22.625),
+      // A 30-inch upper needs the 30 1/4 sheet; a 40 1/4-inch one the 41 3/4 sheet.
+      wall("left-of-window", 24, 24, 30.25),
       wall("right-of-window", 84, 24, 40.25),
     ], [window], room, panelCatalog);
-    expect(requirements.map((requirement) => requirement.masterCode).sort()).toEqual(["WEP1523", "WEP1542"]);
+    expect(requirements.map((requirement) => requirement.masterCode).sort()).toEqual(["WEP1530", "WEP1542"]);
     const tallPanel = requirements.find((requirement) => requirement.masterCode === "WEP1542");
     expect(tallPanel).toMatchObject({ stockHeight: 41.75, height: 40.25, depth: 14.25 });
+  });
+
+  it("generates no WEP panel beside a 24-inch-or-shorter upper at a window", () => {
+    // A short upper is a one-face appliance surround, not an upper-run end
+    // (issue 353 outcome 8), so the window break finds no end to finish there.
+    expect(aefWindowEndPanelRequirements([
+      wall("left-of-window", 24, 24, 22.625),
+      wall("right-of-window", 84, 24, 22.625),
+    ], [window], room, panelCatalog)).toEqual([]);
   });
 
   it("does not apply to framed wall cabinets, cabinets away from the window, or the frozen Wall Builder data model", () => {

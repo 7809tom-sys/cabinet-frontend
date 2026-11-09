@@ -100,9 +100,19 @@ export function readOverRangeAnswer(value: unknown): OverRangeAnswerValue | null
  * and "range hood", so `isRangeOrOven` alone would read them as ranges and this
  * module would try to hang a bridge above a microwave.
  */
+/**
+ * Freestanding ranges in the plan: the appliances the mandatory over-range
+ * bridge and the hood/microwave question belong to.
+ *
+ * A countertop-opening cooktop (a range top seated in a base cabinet, including
+ * a sink base) is deliberately NOT one of these. It is a cut-out in the finished
+ * top, not a floor-standing range, so it never forces a bridge, a range or a
+ * hood (Tom, Nov 9 2026, issue 353 outcome 7: a cooktop may sit on a sink base).
+ */
 export function rangesInPlan(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
   return placed.filter((item) => (
     item.placement === "appliance"
+    && item.applianceRole !== "countertop-opening"
     && isRangeOrOven(item.masterCode, item.description)
     && !isOverRangeMicrowave(item)
     && !/^HOOD[-_]/i.test(item.masterCode ?? "")

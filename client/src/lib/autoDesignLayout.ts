@@ -1500,7 +1500,10 @@ export function runAutoDesignLayout(args: {
     });
   }
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
-  const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
+  const bareRange = working.find((item) => item.placement === "appliance"
+    && item.applianceRole !== "countertop-opening"
+    && isRangeOrOven(item.masterCode, item.description)
+    && autoDesignRangeNeedsVentilation(working, item));
   return {
     ok: true,
     placed: working.filter((item) => !preExisting.some((kept) => kept.uid === item.uid)),

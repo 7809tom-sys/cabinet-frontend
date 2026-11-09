@@ -2129,6 +2129,7 @@ export function PlanCanvas({
                     key={`ct${i}`}
                     data-countertop-scope={s.kind === "island" ? "island" : "perimeter"}
                     data-raised-bar={s.raisedBar ? "true" : undefined}
+                    data-bar-wall-countertop={s.cabinetRunId?.startsWith("bar-wall:") ? "true" : undefined}
                     className="absolute"
                     style={{
                       left: s.x * ppi,

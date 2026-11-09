@@ -7717,6 +7717,7 @@ export function countertopArea(
   island?: IslandZone | null,
   islandSlabs?: readonly CountertopSlabMeasurement[] | null,
   room?: RoomData | null,
+  ponyWalls: readonly PonyWall[] = [],
 ): CountertopMeasurement {
   const hasExplicitIslandFaces = island ? placed.some((item) => item.islandFace != null) : false;
   const isIslandMember = (item: PlacedCabinet) => island != null && (
@@ -7731,12 +7732,19 @@ export function countertopArea(
   const straightCountertopSquareIn = straightBases
     .reduce((sum, p) => sum + rotatedSize(p).w * (room ? countertopDepthForRunItem(p, perimeterPlaced, room) : countertopDepthForCabinet(p)), 0);
   const peninsulaSurfaces = room
-    ? countertopSurfaces(perimeterPlaced, room).filter((surface) => Boolean(surface.peninsulaRunId))
+    ? countertopSurfaces(perimeterPlaced, room, null, ponyWalls).filter((surface) => Boolean(surface.peninsulaRunId))
     : [];
   const peninsulaRunInches = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.runLinearInches ?? surface.linearInches ?? 0), 0);
   const peninsulaSquareIn = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.areaInches ?? 0), 0);
-  const runInches = straightRunInches + peninsulaRunInches;
-  let squareIn = straightCountertopSquareIn + peninsulaSquareIn;
+  // A bar-height drywall wall's top is real stone the fabricator cuts, so it is
+  // measured on the same run and area the cart, quote and build sheet read.
+  const barWallSurfaces = room
+    ? countertopSurfaces(perimeterPlaced, room, null, ponyWalls).filter((surface) => surface.cabinetRunId?.startsWith("bar-wall:"))
+    : [];
+  const barWallRunInches = barWallSurfaces.reduce((sum, surface) => sum + (surface.linearInches ?? surface.width ?? 0), 0);
+  const barWallSquareIn = barWallSurfaces.reduce((sum, surface) => sum + (surface.areaInches ?? 0), 0);
+  const runInches = straightRunInches + peninsulaRunInches + barWallRunInches;
+  let squareIn = straightCountertopSquareIn + peninsulaSquareIn + barWallSquareIn;
   let islandSquareIn = 0;
   const islandSupports = island ? placed.filter((item) => isIslandMember(item) && bearsIslandCountertop(item)) : [];
   const measuredIslandSquareIn = island && islandSlabs != null
@@ -7794,7 +7802,7 @@ export function countertopArea(
   }
   squareIn += waterfallSqIn;
   const waterfallSqFt = Math.ceil((waterfallSqIn / 144) * 10) / 10;
-  const perimeterSquareFeet = Math.ceil(((straightCountertopSquareIn + peninsulaSquareIn + waterfallSqIn) / 144) * 10) / 10;
+  const perimeterSquareFeet = Math.ceil(((straightCountertopSquareIn + peninsulaSquareIn + barWallSquareIn + waterfallSqIn) / 144) * 10) / 10;
   const islandSquareFeet = Math.ceil((islandSquareIn / 144) * 10) / 10;
   return {
     runInches,
@@ -13219,6 +13227,117 @@ export function unifiedFortyFivePeninsulaCountertopSurfaces(
 }
 
 /**
+ * The along-run span a countertop may cover on one wall: the first
+ * counter-bearing cabinet to the last, with the standard 1½-inch finished end
+ * allowance only where the run itself has neither a cabinet nor a wall to stop
+ * it. A run that begins or ends at the room wall stops flush there, so no slab
+ * ever hangs past the cabinets over open floor (Tom, Nov 9 2026, issue 353
+ * outcome 2).
+ *
+ * Blind corners are counter-bearing but reserve a dead-corner pull along the
+ * run; that pull is covered by the cabinet's own slab, so it counts as support
+ * here.
+ */
+function countertopSupportSpanOnWall(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  wallId: string,
+): { start: number; end: number } | null {
+  const frame = wallRunFrame(wallId, room);
+  const spans = placed.flatMap((item) => {
+    if (!bearsCountertop(item)) return [];
+    let wall: string | null = null;
+    try { wall = cabinetWall(item, room) as string | null; } catch { wall = null; }
+    if (wall !== wallId) return [];
+    const start = wallRunOffset(item, wallId, room);
+    const span = wallRunSpan(item, wallId, room);
+    if (!Number.isFinite(start) || !Number.isFinite(span) || span <= 0) return [];
+    let low = start;
+    let high = start + span;
+    // A blind corner's slab reaches into the dead corner it reserves. That
+    // reach is still cabinet-supported stone, so it must not be trimmed.
+    if (isBlindCorner(item.masterCode, item.description)) {
+      const horizontalWall = wallId === "top" || wallId === "bottom";
+      const runStart = horizontalWall ? item.x : item.y;
+      const runMax = horizontalWall ? room.width : room.depth;
+      const nearStart = runStart <= runMax - (runStart + span);
+      const actualCornerGap = nearStart ? runStart : runMax - (runStart + span);
+      const pullMax = blindPullRange(item)?.max ?? BLIND_CORNER_FILLER_WIDTH_IN * 2;
+      if (actualCornerGap > COLLISION_EPSILON_IN && actualCornerGap <= pullMax + COLLISION_EPSILON_IN) {
+        const gap = Math.round(actualCornerGap * 8) / 8;
+        if (nearStart) low -= gap;
+        else high += gap;
+      }
+    }
+    return [{ start: low, end: high }];
+  });
+  if (!spans.length) return null;
+  const start = Math.max(frame?.runStart ?? Number.NEGATIVE_INFINITY, Math.min(...spans.map((span) => span.start)));
+  const end = Math.min(frame?.runEnd ?? Number.POSITIVE_INFINITY, Math.max(...spans.map((span) => span.end)));
+  return end - start > COLLISION_EPSILON_IN ? { start, end } : null;
+}
+
+/**
+ * Trim every standard-room slab so it never runs past the cabinets that support
+ * it. The slab is a physical piece of stone: where the run stops at the room
+ * wall it stops flush, and where it stops in open floor it ends at the cabinet
+ * box with no invented end allowance. Interior seams (a filler-sized gap, an
+ * appliance opening, a continuous-wall miter) are untouched.
+ */
+function clipStandardSlabsToCabinetSupport(
+  surfaces: CountertopSurface[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): CountertopSurface[] {
+  const spansByWall = new Map<string, { start: number; end: number } | null>();
+  const spanFor = (wallId: string) => {
+    if (!spansByWall.has(wallId)) spansByWall.set(wallId, countertopSupportSpanOnWall(placed, room, wallId));
+    return spansByWall.get(wallId) ?? null;
+  };
+  const out: CountertopSurface[] = [];
+  for (const surface of surfaces) {
+    // Only a plain, axis-aligned standard-room run rectangle is trimmed here.
+    // Measured walls carry their own miters and peninsulas their own outline.
+    if (surface.kind !== "base" || surface.polygon?.length || surface.rotation || surface.peninsulaRunId) {
+      out.push(surface);
+      continue;
+    }
+    const wallId = surface.supportWallId;
+    if (!wallId) {
+      out.push(surface);
+      continue;
+    }
+    const support = spanFor(wallId);
+    if (!support) {
+      out.push(surface);
+      continue;
+    }
+    const horizontal = wallId === "top" || wallId === "bottom";
+    const start = Number(surface.customWallRunStartIn ?? (horizontal ? surface.x : surface.y));
+    const length = Number(surface.linearInches ?? (horizontal ? surface.width : surface.depth));
+    if (!Number.isFinite(start) || !Number.isFinite(length)) {
+      out.push(surface);
+      continue;
+    }
+    const clippedStart = Math.max(start, support.start);
+    const clippedEnd = Math.min(start + length, support.end);
+    if (clippedEnd - clippedStart <= COLLISION_EPSILON_IN) continue;
+    if (Math.abs(clippedStart - start) <= 1e-6 && Math.abs(clippedEnd - (start + length)) <= 1e-6) {
+      out.push(surface);
+      continue;
+    }
+    const trimmedLength = clippedEnd - clippedStart;
+    const offset = clippedStart - start;
+    if (horizontal) {
+      out.push({ ...surface, x: surface.x + offset, width: trimmedLength, linearInches: trimmedLength, areaInches: trimmedLength * surface.depth });
+    } else {
+      out.push({ ...surface, y: surface.y + offset, depth: trimmedLength, linearInches: trimmedLength, areaInches: trimmedLength * surface.width });
+    }
+  }
+  return out;
+}
+
+/**
  * Compute the visible countertop surfaces for a layout. Every base cabinet gets
  * a slab the width of the cabinet and the standard countertop depth, pinned to
  * the wall the cabinet sits on (so the overhang projects into the room). The
@@ -14970,6 +15089,7 @@ export function countertopSurfaces(
   // A peninsula follows the same cabinet-run rule as every other wall: touching
   // counter-bearing pieces share one slab, while an actual unsupported gap ends
   // the run. Appliances remain explicit openings inside a supported run.
+  out.splice(0, out.length, ...clipStandardSlabsToCabinetSupport(out, placed, room));
   for (const run of room.peninsulaRuns ?? []) {
     const supportSegments = peninsulaCountertopSupportSegments(run, placed, room);
     if (supportSegments.length === 0) continue;
@@ -15098,6 +15218,67 @@ export function countertopSurfaces(
     }
   }
   out.push(...freestandingCountertopSurfaces(placed, room, island));
+  out.push(...barWallCountertopSurfaces(placed, room, ponyWalls));
+  return out;
+}
+
+/** Finished overhang each side of a bar-height seating wall. */
+export const RAISED_BAR_WALL_OVERHANG_IN = 1.5;
+
+/**
+ * The bar top over a raised drywall bar wall.
+ *
+ * The regular designer can raise a drywall partition behind a base run as a
+ * bar-height seating wall (Tom's bar area). Before this pass that wall carried
+ * its stone only where a peninsula run happened to own it; a plain room-wall
+ * bar behind a cooktop had no top at all, so the 3D showed the bare wall edge
+ * and the cart, quote and build sheet had nothing to bill (issue 353, outcome 5).
+ *
+ * A bar wall earns one continuous 42-inch slab over its own measured frame. It
+ * is a real `raisedBar` surface, so the plan, 3D, materials list, cart and
+ * fabrication sheet all read the one geometry. The drywall wall itself owns the
+ * height; this pass only adds the stone it was missing.
+ */
+function barWallCountertopSurfaces(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  ponyWalls: readonly PonyWall[],
+): CountertopSurface[] {
+  void placed;
+  const walls = ponyWalls.filter((wall) => (
+    !wall.peninsulaRunId
+    && Number(wall.height) >= RAISED_BAR_HEIGHT_IN - STD.COUNTERTOP_THICKNESS - 0.5
+  ));
+  if (!walls.length) return [];
+  const out: CountertopSurface[] = [];
+  for (const wall of walls) {
+    const frame = ponyWallPlanFrame(wall, room);
+    const length = Math.max(0, frame.width);
+    if (length <= COLLISION_EPSILON_IN) continue;
+    const slabDepth = Math.max(Number(wall.depth) || 0, 0) + RAISED_BAR_WALL_OVERHANG_IN * 2;
+    const planRotation = ((Math.round((frame.radians * 180) / Math.PI) % 360) + 360) % 360;
+    // `CountertopSurface` stores a local rectangle rotated about its centre, so
+    // the world centre of the wall frame is the slab centre.
+    const center = {
+      x: frame.start.x + Math.cos(frame.radians) * (length / 2),
+      y: frame.start.y + Math.sin(frame.radians) * (length / 2),
+    };
+    out.push({
+      x: center.x - length / 2,
+      y: center.y - slabDepth / 2,
+      width: length,
+      depth: slabDepth,
+      kind: "base",
+      rotation: planRotation,
+      linearInches: length,
+      areaInches: length * slabDepth,
+      raisedBar: true,
+      raisedBarUsesSharedCountertopOutline: true,
+      raisedBarOverhangIn: RAISED_BAR_WALL_OVERHANG_IN,
+      countertopHeightIn: RAISED_BAR_HEIGHT_IN,
+      cabinetRunId: `bar-wall:${wall.uid}`,
+    });
+  }
   return out;
 }
 

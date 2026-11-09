@@ -3088,6 +3088,24 @@ export function isEnclosedWallMicrowaveCabinet(sku: EnclosedWallMicrowaveCandida
   return isEnclosedWallMicrowaveCode || isExplicitWallMicrowaveDescription;
 }
 
+/**
+ * A BASE microwave cabinet (BMC30, and any base whose face the catalog
+ * describes as a microwave opening) carries a real microwave bay above its
+ * drawer, exactly like the enclosed wall family. Before this it rendered as one
+ * big door over the drawer, which is what Tom reported in issue 353 outcome 6.
+ */
+export function isBaseMicrowaveCabinet(
+  sku: EnclosedWallMicrowaveCandidate & Partial<Pick<SceneSku, "subCategory" | "category">>,
+): boolean {
+  if ((sku.placementType ?? "").trim().toLowerCase() !== "base") return false;
+  if (!sku.openingType) return false;
+  const code = (sku.masterCode ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+  const text = `${sku.description ?? ""} ${sku.subCategory ?? ""} ${sku.category ?? ""}`.toLowerCase();
+  const isMicrowaveBaseCode = /^(?:BMC|BMW|MB)\d/.test(code);
+  const isExplicitMicrowaveBase = /microwave\s*base|base\s*microwave/.test(text);
+  return isMicrowaveBaseCode || isExplicitMicrowaveBase;
+}
+
 /** A supplied Cabinet Config product visual is authoritative for a cabinet front. */
 export function threeDCabinetFrontVisualUrl(sku: EnclosedWallMicrowaveCandidate & Pick<SceneSku, "catalogImageUrl">): string | null {
   if ((sku.placementType ?? "").toLowerCase() === "appliance") return null;
@@ -7872,6 +7890,8 @@ export function addCabinet(
     drawerCursor += drawersAtBottom ? row.height : -row.height;
   }
   if (hasConfiguredOpening) {
+    const isMicrowaveBay = sku.openingType === "top"
+      && (isEnclosedWallMicrowaveCabinet(sku) || isBaseMicrowaveCabinet(sku));
     const availableOpeningWidth = Math.max(0.2, bodyWidth - 0.11);
     const availableOpeningHeight = Math.max(0.2, usableHeight - drawerHeight - (doorCount > 0 ? doorHeight : 0));
     // Cabinet Config is authoritative: a built-in appliance/opening can be
@@ -7895,7 +7915,7 @@ export function addCabinet(
         ? bodyHeight / 2 - 0.04 - openingHeight / 2
         : 0;
     const isWallMicrowave = isEnclosedWallMicrowaveCabinet(sku);
-    if (!isWallMicrowave) {
+    if (!isWallMicrowave && !isMicrowaveBay) {
       opening.position.set(0, openingCenterY, 0.006);
       opening.userData = {
         configuredOpening: true,
@@ -7929,7 +7949,10 @@ export function addCabinet(
       face.position.set(0, openingCenterY, 0.012);
       face.userData = {
         configuredOpening: true,
-        wallMicrowaveFront: true,
+        // A base microwave cabinet (BMC) draws the same constructed appliance
+        // face as the enclosed wall family; only the mount identity differs.
+        ...(isWallMicrowave ? { wallMicrowaveFront: true } : { baseMicrowaveFront: true }),
+        microwaveFront: true,
         microwaveFaceKind: "unbranded-stainless",
         openingType: sku.openingType,
         openingWidthIn: openingWidth / INCH,
@@ -8861,6 +8884,9 @@ export function threeDStandardCountertopSurfaces(
     && (
       bases.some((cabinet) => countertopSurfaceCoversCabinet(surface, cabinet))
       || Boolean(surface.cabinetRunId?.startsWith("corner-fill"))
+      // A bar-height drywall wall's top sits over the wall, not over a cabinet,
+      // so it is kept by its own identity rather than by cabinet coverage.
+      || Boolean(surface.cabinetRunId?.startsWith("bar-wall:"))
       || (surface.freestandingMemberUids?.length ? coveredChains.has(surface.cabinetRunId ?? "") : false)
     )
   ));
@@ -8905,7 +8931,8 @@ export function addThreeDStandardCountertops(
       materialOnlyNoGeometryChange: true,
     };
     const slab = new THREE.Mesh(threeDPeninsulaCountertopGeometry(surface, length, depth), material);
-    slab.position.set(centerX * INCH, (STD.COUNTERTOP_HEIGHT - STD.COUNTERTOP_THICKNESS / 2) * INCH, centerZ * INCH);
+    const finishedHeight = surface.countertopHeightIn ?? STD.COUNTERTOP_HEIGHT;
+    slab.position.set(centerX * INCH, (finishedHeight - STD.COUNTERTOP_THICKNESS / 2) * INCH, centerZ * INCH);
     slab.rotation.y = rotation;
     slab.userData = {
       standardRunCountertop: true,
@@ -8914,6 +8941,16 @@ export function addThreeDStandardCountertops(
       preservesRangeOpening: true,
       bridgesCabinetVoids: false,
       sourcePolygonVertices: surface.polygon?.length ?? 4,
+      // A bar-height drywall wall's top is drawn here, on the same shared
+      // geometry the plan, cart, quote and build sheet read.
+      ...(surface.raisedBar
+        ? {
+          raisedBar: true,
+          barWallCountertop: Boolean(surface.cabinetRunId?.startsWith("bar-wall:")),
+          countertopHeightIn: finishedHeight,
+          raisedBarOverhangIn: surface.raisedBarOverhangIn ?? null,
+        }
+        : {}),
     };
     root.add(slab);
   }

@@ -478,7 +478,11 @@ function runLabel(surface: CountertopSurface, room: RoomData): { label: string; 
       ? { label: `${base} · raised bar`, kind: "raised-bar" }
       : { label: base, kind: "peninsula" };
   }
-  if (surface.raisedBar) return { label: "Raised bar", kind: "raised-bar" };
+  if (surface.raisedBar) {
+    return surface.cabinetRunId?.startsWith("bar-wall:")
+      ? { label: "Bar · drywall bar wall", kind: "raised-bar" }
+      : { label: "Raised bar", kind: "raised-bar" };
+  }
   if (surface.customWallId) {
     const wall = room.customWalls?.find((candidate) => candidate.id === surface.customWallId);
     return { label: text(wall?.label) ?? "Measured wall", kind: "measured-wall" };

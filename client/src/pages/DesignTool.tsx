@@ -4863,8 +4863,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     // A range with nothing above it asks what belongs there: hood, bridge + microwave,
     // or nothing — but only while no answer is saved with the layout. With an answer,
-    // the add-only over-range pass applies it instead of asking again.
-    const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
+    // the add-only over-range pass applies it instead of asking again. A
+    // countertop-opening cooktop is not a range: it sits in the finished top and
+    // never prompts for a hood (issue 353 outcome 7).
+    const bareRange = working.find((item) => item.placement === "appliance"
+      && item.applianceRole !== "countertop-opening"
+      && isRangeOrOven(item.masterCode, item.description)
       && autoDesignRangeNeedsVentilation(working, item));
     if (bareRange && readOverRangeAnswer(stage.input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
     return { ok: true as const };
@@ -6644,7 +6648,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ).reduce((total, segment) => total + ((segment.end - segment.start) * (segment.top - segment.bottom)) / 144, 0)) * 10) / 10;
     const flooringSqFt = Math.round(((room.width * room.depth) / 144) * 10) / 10;
     const countertopMeasurement = countertop
-	      ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room)
+	      ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room, ponyWalls)
       : null;
     const areas = {
       backsplashSqFt,
@@ -6655,7 +6659,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       flooringPattern,
     };
     return buildSurfaceCartLines(selectedPlanSurfaces, DESIGN_TIER_TO_SHARED[tier], areas, placedFixtureQuantityByProduct) as CartItem[];
-  }, [selectedPlanSurfaces, tier, placed, openings, room, island, countertop, backsplashHeightMode, countertopBacksplashHeightIn, placedFixtureQuantityByProduct, flooringPattern]);
+  }, [selectedPlanSurfaces, tier, placed, openings, room, island, countertop, backsplashHeightMode, countertopBacksplashHeightIn, placedFixtureQuantityByProduct, flooringPattern, ponyWalls]);
 
   // Final cart lines = cabinets + required source panels + roll-out shelves + priced trim + surfaces &
   // fixtures. Trim/surfaces are folded in here (aggregated by masterCode+styleId)
@@ -6935,8 +6939,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [hasBaseRun]);
   // Countertop measurement (base run + island), shown as a quote request.
   const counter = useMemo(
-	    () => (countertop ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room) : null),
-	    [countertop, placed, island, room]
+	    () => (countertop ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room, ponyWalls) : null),
+	    [countertop, placed, island, room, ponyWalls]
   );
 
   // Countertop fabrication sheet: everything the shop needs, read from the live
