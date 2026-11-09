@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
+import { isChunkLoadError } from "@/lib/staleChunkReload";
 
 interface Props {
   /** Which surface this guards, for the console log and test hooks. */
@@ -17,7 +18,8 @@ interface State {
  * Keeps a render error inside a designer surface (including React #185, the
  * update-depth limit) in place instead of the full-page error screen. Reload
  * remounts the surface, which restores the design from its saved draft or the
- * saved design it was opened from.
+ * saved design it was opened from. A chunk that failed to load cannot be
+ * recovered by a remount, so that case reloads the page instead.
  */
 export class DesignerErrorBoundary extends Component<Props, State> {
   state: State = { error: null, resetKey: 0 };
@@ -31,11 +33,16 @@ export class DesignerErrorBoundary extends Component<Props, State> {
   }
 
   reload = () => {
+    if (isChunkLoadError(this.state.error)) {
+      window.location.reload();
+      return;
+    }
     this.setState((current) => ({ error: null, resetKey: current.resetKey + 1 }));
   };
 
   render() {
     if (this.state.error) {
+      const staleBuild = isChunkLoadError(this.state.error);
       return (
         <div
           role="alert"
@@ -45,10 +52,17 @@ export class DesignerErrorBoundary extends Component<Props, State> {
         >
           <div className="flex max-w-sm flex-col items-center gap-3 rounded-lg border border-destructive/40 bg-background p-5 text-center shadow-sm">
             <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
-            <p className="text-sm font-medium">The designer hit a problem</p>
-            <Button type="button" variant="outline" size="sm" onClick={this.reload}>
+            <p className="text-sm font-medium">
+              {staleBuild ? "A newer version of the designer was published" : "The designer hit a problem"}
+            </p>
+            {staleBuild && (
+              <p className="text-xs text-muted-foreground">
+                This page is still running the previous version. Reload the page to load the current one; your autosaved draft on this device is kept.
+              </p>
+            )}
+            <Button type="button" variant="outline" size="sm" onClick={this.reload} data-testid="designer-error-reload">
               <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              Reload designer
+              {staleBuild ? "Reload page" : "Reload designer"}
             </Button>
           </div>
         </div>

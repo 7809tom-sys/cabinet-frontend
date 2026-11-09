@@ -58,6 +58,32 @@ describe("designer error boundary", () => {
     expect(mounts).toBe(1);
   });
 
+  it("reloads the page for a stale build chunk, because remounting replays the same failed import", async () => {
+    const reload = vi.fn();
+    const location = window.location;
+    Object.defineProperty(window, "location", { configurable: true, value: { ...location, reload } });
+    let imports = 0;
+    const StaleDesigner = React.lazy(() => {
+      imports += 1;
+      return Promise.reject(new TypeError("Failed to fetch dynamically imported module: https://www.cabinetdealz.com/assets/DesignTool-BF--MoSG.js"));
+    });
+    try {
+      await act(async () => {
+        root.render(<DesignerErrorBoundary surface="designer"><React.Suspense fallback={null}><StaleDesigner /></React.Suspense></DesignerErrorBoundary>);
+      });
+      const panel = host.querySelector("[data-testid='designer-error-boundary']");
+      expect(panel?.textContent).toContain("A newer version of the designer was published");
+      expect(panel?.textContent).toContain("Reload page");
+      expect(reloadButton()).toBeUndefined();
+      act(() => (host.querySelector("[data-testid='designer-error-reload']") as HTMLButtonElement).click());
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(imports).toBe(1);
+      expect(host.querySelector("[data-testid='designer-error-boundary']")).not.toBeNull();
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: location });
+    }
+  });
+
   it("catches React #185 (maximum update depth) from a runaway ref callback", () => {
     function RunawayRef() {
       const [, setCount] = React.useState(0);
