@@ -20,6 +20,7 @@ import {
   type AefEndPanelCatalogItem,
   type AefEndPanelSelection,
 } from "./aefEndPanelStock";
+import { isShortUpperCabinet } from "./shortUpper";
 
 /**
  * A side is exposed when a customer can see it.
@@ -59,7 +60,10 @@ function isOwnedCabinet(cabinet: PlacedCabinet): cabinet is PlacedCabinet & { pl
     && !cabinet.islandFace
     && !isPanelItem(cabinet)
     && !isFillerItem(cabinet)
-    && !isRefrigerator(cabinet);
+    && !isRefrigerator(cabinet)
+    // A 24-inch-or-shorter upper is a one-face appliance surround, never an
+    // upper-run end that a WEP board finishes (issue 353 outcome 8).
+    && !isShortUpperCabinet(cabinet);
 }
 
 function spans(cabinet: PlacedCabinet, room: RoomData) {

@@ -9,6 +9,7 @@
  */
 import {
   STD,
+  elevationBox,
   isFillerItem,
   isRefrigerator,
   isRefrigeratorEndPanel,
@@ -28,7 +29,13 @@ export type VerticalFillerSpec = {
   /** Stored board height (top - bottom), which is what the order and the elevation read. */
   heightIn: number;
   /** Why this top line was chosen, for the review list. */
-  reason: "floor-to-upper-top" | "floor-to-stacker-top" | "floor-to-tall-top" | "floor-to-base-top";
+  reason:
+    | "floor-to-upper-top"
+    | "floor-to-stacker-top"
+    | "floor-to-tall-top"
+    | "floor-to-base-top"
+    /** A wall-layer board that finishes an upper band only (never floor-standing). */
+    | "upper-band";
 };
 
 /** Top of a cabinet including any glass stacker resting on it. */
@@ -55,6 +62,11 @@ export function continuousVerticalFiller(input: {
   room: RoomData;
   /** The cabinet the filler is fitted against. Its vertical stack sets the top line. */
   owner?: PlacedCabinet | null;
+  /**
+   * Which layer the board is installed on. A base board is the one continuous
+   * floor-to-upper-top piece. A wall board only ever finishes the upper band.
+   */
+  layer?: "base" | "wall" | "tall";
 }): VerticalFillerSpec {
   const onWall = input.placed.filter((item) => (
     !item.islandFace
@@ -80,6 +92,12 @@ export function continuousVerticalFiller(input: {
     return spans.some((span) => start < span.end + tolerance && end > span.start - tolerance);
   });
   if (!touching.length) {
+    // A wall-layer board is an upper-run filler: it can only ever cover the
+    // upper band, so it is never a floor-standing 96-inch strip with nothing
+    // beside it.
+    if (input.layer === "wall") {
+      return { bottomIn: STD.WALL_MOUNT_BOTTOM, topIn: STD.WALL_MOUNT_BOTTOM + STD.WALL_HEIGHT, heightIn: STD.WALL_HEIGHT, reason: "upper-band" };
+    }
     // Nothing beside it: a bare board from the floor to the base box top.
     return { bottomIn: 0, topIn: STD.BASE_HEIGHT, heightIn: STD.BASE_HEIGHT, reason: "floor-to-base-top" };
   }
@@ -89,6 +107,19 @@ export function continuousVerticalFiller(input: {
     || touching.some((item) => isStacker(item));
   const hasTall = touching.some((item) => item.placement === "tall");
   const hasUpper = touching.some((item) => item.placement === "wall");
+  // A wall board that touches no floor-standing cabinet finishes the upper band
+  // only. Anchoring it at the floor is what grew the stray 96-inch strip beside
+  // a short upper (issue 353 outcome 8): the board must start at the bottom of
+  // the uppers it stands between and stop at their top.
+  if (input.layer === "wall" && !hasTall && !hasTopper) {
+    const upperItems = touching.filter((item) => item.placement === "wall");
+    const boxes = upperItems.map((item) => elevationBox(item, input.room));
+    const bottoms = boxes.map((box) => box.bottom).filter((value) => Number.isFinite(value));
+    const top = Math.max(topIn, ...boxes.map((box) => box.bottom + box.height));
+    const bottomIn = bottoms.length ? Math.round(Math.min(...bottoms) * 1000) / 1000 : STD.WALL_MOUNT_BOTTOM;
+    const bandTop = Math.round(top * 1000) / 1000;
+    return { bottomIn, topIn: bandTop, heightIn: Math.round((bandTop - bottomIn) * 1000) / 1000, reason: "upper-band" };
+  }
   const reason: VerticalFillerSpec["reason"] = hasTopper
     ? "floor-to-stacker-top"
     : hasTall
@@ -112,6 +143,7 @@ export function asContinuousVerticalFiller(
   if (!isFillerItem(filler) || filler.islandFace) return filler;
   const wallId = filler.wallId;
   if (!wallId) return filler;
+  const layer = filler.placement === "wall" ? "wall" : filler.placement === "tall" ? "tall" : "base";
   const spec = continuousVerticalFiller({
     wallId,
     startIn: wallRunOffset(filler, wallId, room),
@@ -119,6 +151,7 @@ export function asContinuousVerticalFiller(
     placed,
     room,
     owner,
+    layer,
   });
   if (
     filler.mountBottom === spec.bottomIn

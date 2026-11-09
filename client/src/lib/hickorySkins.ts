@@ -23,6 +23,7 @@ import {
   placedHeight,
   rotatedSize,
 } from "./design";
+import { isShortUpperCabinet } from "./shortUpper";
 
 // Minimal shape of a door style we need to decide "is this Hickory?". The real
 // DoorStyle row has more fields; we only read the descriptive ones.
@@ -85,6 +86,10 @@ function canHaveExposedEnd(p: PlacedCabinet): boolean {
   }
   // A panel/skin itself never needs its own skin.
   if (isPanelItem(p)) return false;
+  // A 24-inch-or-shorter upper is a one-face appliance surround on the bridge
+  // datum; it is not the end of an upper run that a skin finishes (issue 353
+  // outcome 8).
+  if (isShortUpperCabinet(p)) return false;
   return true;
 }
 

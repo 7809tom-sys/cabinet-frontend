@@ -37,6 +37,7 @@ import {
 import type { CartItem } from "@/contexts/CartContext";
 import { buildDesignCabinetCartLines } from "./designCartLines";
 import { calculateCartSubtotal } from "./cartTotals";
+import { isShortUpperCabinet } from "./shortUpper";
 
 const FLUSH = 0.125;
 /** Butt joints, fillers, and corner returns within about an inch count as covered. */
@@ -189,6 +190,17 @@ function enabled(reason: ExposedPanelReason): boolean {
 }
 
 /**
+ * True when this cabinet is a 24-inch-or-shorter upper. A short upper (W3024,
+ * W3018, W3012 and its over-range / over-fridge siblings) is a one-face
+ * appliance surround hung on the 72-inch bridge datum — not the end of a
+ * 54-inch upper run — so no side/end panel is generated beside it and none is
+ * billed (Tom, Nov 9 2026, issue 353 outcome 8).
+ */
+function isShortUpperHost(item: Pick<PlacedCabinet, "placement" | "height" | "masterCode">): boolean {
+  return isShortUpperCabinet(item);
+}
+
+/**
  * Strips panels the broad engine auto-placed. Frameless and Hickory panels
  * from the narrow pass stay; every other auto panel is removed. User-chosen
  * panels have no auto-placed reason and always stay.
@@ -234,6 +246,7 @@ function isFridgeAppliance(item: PlacedCabinet): boolean {
 
 function isHost(item: PlacedCabinet): boolean {
   if (isAutoPanel(item) || isPanelItem(item) || isRunFiller(item)) return false;
+  if (isShortUpperHost(item)) return false;
   if (item.placement === "base" || item.placement === "wall" || item.placement === "tall") return true;
   return isDishwasherAppliance(item) || isFridgeAppliance(item);
 }
@@ -606,6 +619,7 @@ function syncQualifiedAutoPanels(input: QualifiedSyncInput): ExposedSidePlan {
   const hosts = input.placed.filter((item) => {
     const style = doorStyleFor(item);
     if (skinsAreNeeded(style)) return false;
+    if (isShortUpperHost(item)) return false;
     return isRunCabinet(item) && requiresAutoEndPanels(style);
   });
 
