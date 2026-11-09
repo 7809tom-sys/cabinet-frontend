@@ -1,14 +1,15 @@
 /**
- * Before / after screenshot harness for issue 353 outcome 8.
+ * Before / after screenshot harness for issue 353 outcome 8, round 2.
  *
- * The reported layout: a 30-inch upper beside a 24-inch W3024 bridge with a
- * 1-1/2 inch seam between them. The board that closes that seam is placed by
- * the same continuous vertical-filler contract every filler writer uses.
+ * BOTH columns are real designer code:
+ *   - BEFORE calls `legacyMain/verticalFiller.ts`, a verbatim copy of main's
+ *     continuous vertical-filler contract, which anchored EVERY board at the
+ *     floor and ran it to the highest top beside it. Beside a 24-inch W3024
+ *     upper that becomes a floor-standing 96-inch strip — Tom's report.
+ *   - AFTER calls this branch's own contract, which finishes the upper band.
  *
- * BEFORE is the old contract: the wall board is anchored at the floor and runs
- * to the top of the highest cabinet beside it, so it becomes a floor-standing
- * 96-inch strip beside the 24-inch upper — the panel Tom photographed.
- * AFTER is the fixed contract: a wall board finishes the upper band only.
+ * The upper run is real too: a 30-inch upper, a 1-1/2 inch seam, a 24-inch
+ * W3024 bridge, a 30-inch upper. Nothing here invents an elevation.
  *
  * Loaded only by client/dev/issue353-panel-shot.html during the screenshot run.
  */
@@ -21,11 +22,21 @@ import {
   type PlacedCabinet,
   type RoomData,
 } from "@/lib/design";
+import { continuousVerticalFiller as branchFiller } from "@/lib/verticalFiller";
+import { continuousVerticalFiller as mainFiller } from "@/lib/legacyMain/verticalFiller";
+import { DEFAULT_ROOM as MAIN_ROOM } from "@/lib/legacyMain/design";
 
 const INCH = 1 / 12;
 const ROOM: RoomData = { ...DEFAULT_ROOM, width: 156, depth: 132, ceilingHeight: 96 };
 
-function wallCabinet(uid: string, code: string, offset: number, width: number, height: number, mountBottom?: number): PlacedCabinet {
+function wallCabinet(
+  uid: string,
+  code: string,
+  offset: number,
+  width: number,
+  height: number,
+  mountBottom: number,
+): PlacedCabinet {
   const spot = wallPlacementAt(offset, width, 12, "top", ROOM);
   return {
     uid,
@@ -42,46 +53,68 @@ function wallCabinet(uid: string, code: string, offset: number, width: number, h
     rotation: spot.rotation,
     wallId: "top",
     wallOffset: offset,
+    mountBottom,
     numberOfDoors: 2,
     numberOfDrawers: 0,
-    ...(mountBottom != null ? { mountBottom } : {}),
   } as PlacedCabinet;
 }
 
-// The run Tom reported: a 30-inch upper, a 1-1/2 inch seam, then the W3024.
+// Tom's reported run: a 30-inch upper, a 1-1/2 inch seam, the 24-inch W3024
+// bridge at the 72-inch datum, then another 30-inch upper.
 const UPPERS: PlacedCabinet[] = [
-  wallCabinet("u-left", "W3030", 0, 30, 30),
+  wallCabinet("u-left", "W3030", 0, 30, 30, 54),
   wallCabinet("u-bridge", "W3024", 31.5, 30, 24, 72),
-  wallCabinet("u-right", "W3030", 61.5, 30, 30),
+  wallCabinet("u-right", "W3030", 61.5, 30, 30, 54),
 ];
-const BASES: PlacedCabinet[] = [0, 30, 60].map((offset, index) => {
-  const spot = wallPlacementAt(offset, 30, 24, "top", ROOM);
-  return {
-    uid: `b${index}`,
-    cabinetId: 90 + index,
-    masterCode: "B30",
-    description: "B30",
-    category: "Base",
-    subCategory: "Standard Base",
-    placement: "base",
-    ...spot,
-    width: 30,
-    depth: 24,
-    height: 34.5,
-    rotation: spot.rotation,
+const SEAM_START = 30;
+const SEAM_WIDTH = 1.5;
+
+const BASES: PlacedCabinet[] = [0, 30, 60].map((offset, index) => ({
+  uid: `b${index}`,
+  cabinetId: 90 + index,
+  masterCode: "B30",
+  description: "B30",
+  category: "Base",
+  subCategory: "Standard Base",
+  placement: "base" as const,
+  x: offset,
+  y: 0,
+  width: 30,
+  depth: 24,
+  height: 34.5,
+  rotation: 0,
+  wallId: "top",
+  wallOffset: offset,
+  numberOfDoors: 2,
+  numberOfDrawers: 0,
+} as PlacedCabinet));
+
+type Band = { bottom: number; height: number; label: string };
+
+/** The seam board, read from the real contract in each column. */
+function seamBoard(useMain: boolean): Band {
+  if (useMain) {
+    const spec = mainFiller({
+      wallId: "top",
+      startIn: SEAM_START,
+      widthIn: SEAM_WIDTH,
+      placed: UPPERS as never,
+      room: MAIN_ROOM as never,
+    });
+    return { bottom: spec.bottomIn, height: spec.heightIn, label: `main: ${spec.bottomIn}"–${spec.bottomIn + spec.heightIn}"` };
+  }
+  const spec = branchFiller({
     wallId: "top",
-    wallOffset: offset,
-    numberOfDoors: 2,
-    numberOfDrawers: 0,
-  } as PlacedCabinet;
-});
+    startIn: SEAM_START,
+    widthIn: SEAM_WIDTH,
+    placed: UPPERS,
+    room: ROOM,
+    layer: "wall",
+  });
+  return { bottom: spec.bottomIn, height: spec.heightIn, label: `branch: ${spec.bottomIn}"–${spec.bottomIn + spec.heightIn}"` };
+}
 
-/** The old contract: one board from the floor to the highest top beside it. */
-const BEFORE_BOARD = { x: 30, y: 0, width: 1.5, bottom: 0, height: 96 };
-/** The fixed contract: a wall board finishes the upper band only. */
-const AFTER_BOARD = { x: 30, y: 0, width: 1.5, bottom: 54, height: 42 };
-
-function build(container: HTMLElement, board: { x: number; width: number; bottom: number; height: number }, highlight: boolean) {
+function build(container: HTMLElement, board: Band) {
   const width = container.clientWidth;
   const height = container.clientHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -97,12 +130,11 @@ function build(container: HTMLElement, board: { x: number; width: number; bottom
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#eef1f4");
-
   const roomW = ROOM.width * INCH;
   const ceiling = (ROOM.ceilingHeight ?? 96) * INCH;
 
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(roomW * 1.4, 14),
+    new THREE.PlaneGeometry(roomW * 1.5, 14),
     new THREE.MeshStandardMaterial({ color: "#d9d3c7", roughness: 0.9 }),
   );
   floor.rotation.x = -Math.PI / 2;
@@ -110,14 +142,14 @@ function build(container: HTMLElement, board: { x: number; width: number; bottom
   scene.add(floor);
 
   const wallMat = new THREE.MeshStandardMaterial({ color: "#f7f5f1", roughness: 0.95 });
-  const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, ceiling, 4 * INCH), wallMat);
-  backWall.position.set(roomW / 2, ceiling / 2, -2 * INCH);
-  scene.add(backWall);
-  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(4 * INCH, ceiling, 12), wallMat);
-  leftWall.position.set(-2 * INCH, ceiling / 2, 6);
-  scene.add(leftWall);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(roomW, ceiling, 4 * INCH), wallMat);
+  back.position.set(roomW / 2, ceiling / 2, -2 * INCH);
+  scene.add(back);
+  const left = new THREE.Mesh(new THREE.BoxGeometry(4 * INCH, ceiling, 12), wallMat);
+  left.position.set(-2 * INCH, ceiling / 2, 6);
+  scene.add(left);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.2));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.15));
   const key = new THREE.DirectionalLight(0xffffff, 1.3);
   key.position.set(roomW * 0.4, ceiling + 2, 9);
   key.castShadow = true;
@@ -126,56 +158,46 @@ function build(container: HTMLElement, board: { x: number; width: number; bottom
   cam.left = -roomW; cam.right = roomW; cam.top = ceiling * 2; cam.bottom = -2;
   cam.near = 0.1; cam.far = 60;
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xffffff, 0.4);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.45);
   fill.position.set(-roomW * 0.5, ceiling * 0.7, 14);
   scene.add(fill);
 
   const root = new THREE.Group();
   scene.add(root);
 
-  const carcass = new THREE.MeshStandardMaterial({ color: "#4a3122", roughness: 0.6, metalness: 0 });
-  const counter = new THREE.MeshPhysicalMaterial({ color: "#f3f1ec", roughness: 0.34, metalness: 0, clearcoat: 0.22 });
+  const carcass = new THREE.MeshStandardMaterial({ color: "#efece5", roughness: 0.62, metalness: 0 });
+  const counter = new THREE.MeshPhysicalMaterial({ color: "#dfe3e8", roughness: 0.34, metalness: 0, clearcoat: 0.22 });
 
-  for (const item of BASES) {
-    const w = Number(item.width);
-    const d = Number(item.depth);
-    const h = Number(item.height);
-    const box = new THREE.Mesh(new THREE.BoxGeometry(w * INCH, h * INCH, d * INCH), carcass);
-    box.position.set((item.x + w / 2) * INCH, (h / 2) * INCH, (item.y + d / 2) * INCH);
+  for (const base of BASES) {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(base.width * INCH, 34.5 * INCH, 24 * INCH), carcass);
+    box.position.set((base.x + base.width / 2) * INCH, 17.25 * INCH, 12 * INCH);
     box.castShadow = true;
     root.add(box);
-    const top = new THREE.Mesh(new THREE.BoxGeometry((w + 0) * INCH, STD.COUNTERTOP_THICKNESS * INCH, 25.5 * INCH), counter);
-    top.position.set((item.x + w / 2) * INCH, (STD.COUNTERTOP_HEIGHT + STD.COUNTERTOP_THICKNESS / 2) * INCH, (item.y + 25.5 / 2) * INCH);
-    top.castShadow = true;
+    const top = new THREE.Mesh(new THREE.BoxGeometry(base.width * INCH, STD.COUNTERTOP_THICKNESS * INCH, 25.5 * INCH), counter);
+    top.position.set((base.x + base.width / 2) * INCH, (STD.COUNTERTOP_HEIGHT + STD.COUNTERTOP_THICKNESS / 2) * INCH, 12.75 * INCH);
     root.add(top);
   }
 
-  for (const item of UPPERS) {
-    const w = Number(item.width);
-    const d = Number(item.depth);
-    const box3 = elevationBox(item, ROOM);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w * INCH, box3.height * INCH, d * INCH), carcass);
-    mesh.position.set(
-      (item.x + w / 2) * INCH,
-      (box3.bottom + box3.height / 2) * INCH,
-      (item.y + d / 2) * INCH,
+  // Real uppers, at their real elevations.
+  for (const upper of UPPERS) {
+    const box = elevationBox(upper, ROOM);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(upper.width * INCH, box.height * INCH, upper.depth * INCH),
+      carcass,
     );
+    mesh.position.set((upper.x + upper.width / 2) * INCH, (box.bottom + box.height / 2) * INCH, 6 * INCH);
     mesh.castShadow = true;
     root.add(mesh);
   }
 
-  // The board that closes the seam, drawn from its own measured envelope.
-  const boardMat = new THREE.MeshStandardMaterial({
-    color: highlight ? "#b45309" : "#4a3122",
-    roughness: 0.55,
-    metalness: 0,
-  });
+  // The seam board, at the elevation the real contract gave it.
+  const boardMat = new THREE.MeshStandardMaterial({ color: "#b45309", roughness: 0.55, metalness: 0 });
   const boardMesh = new THREE.Mesh(
-    new THREE.BoxGeometry(board.width * INCH, board.height * INCH, 12 * INCH),
+    new THREE.BoxGeometry(SEAM_WIDTH * INCH, Math.max(0.05, board.height) * INCH, 12 * INCH),
     boardMat,
   );
   boardMesh.position.set(
-    (board.x + board.width / 2) * INCH,
+    (SEAM_START + SEAM_WIDTH / 2) * INCH,
     (board.bottom + board.height / 2) * INCH,
     6 * INCH,
   );
@@ -190,27 +212,31 @@ function build(container: HTMLElement, board: { x: number; width: number; bottom
   bounds.getCenter(center);
   const span = Math.max(size.x, size.y, 6);
   const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 300);
-  camera.position.set(center.x - span * 0.30, center.y + span * 0.18, center.z + span * 1.05);
-  camera.lookAt(center.x, center.y - span * 0.05, center.z);
-
+  camera.position.set(center.x - span * 0.26, center.y + span * 0.16, center.z + span * 1.05);
+  camera.lookAt(center.x, center.y - span * 0.04, center.z);
   renderer.render(scene, camera);
-  return { renderer, scene, camera };
 }
 
 function run() {
   try {
-    build(document.getElementById("pane-before")!, BEFORE_BOARD, true);
-    build(document.getElementById("pane-after")!, AFTER_BOARD, true);
+    const before = seamBoard(true);
+    const after = seamBoard(false);
+    build(document.getElementById("pane-before")!, before);
+    build(document.getElementById("pane-after")!, after);
+    const beforeTop = before.bottom + before.height;
+    const afterTop = after.bottom + after.height;
     document.getElementById("caption-before")!.innerHTML =
-      `<strong>BEFORE</strong><br /><span class="bad">&#10007; board runs from the floor to 96″</span><br />` +
-      `<span class="bad">&#10007; a 96″ strip beside a 24″ upper</span>`;
+      `<strong>BEFORE · main</strong><br />` +
+      `<span class="bad">&#10007; seam board ${before.bottom}&#8243;&#8211;${beforeTop}&#8243;: runs to the floor</span><br />` +
+      `<span class="bad">&#10007; ${before.height}&#8243; strip beside a 24&#8243; upper</span>`;
     document.getElementById("caption-after")!.innerHTML =
-      `<strong>AFTER</strong><br /><span class="ok">&#10003; board finishes the upper band: 54″–96″</span><br />` +
-      `<span class="ok">&#10003; nothing beside the W3024 runs to the floor</span>`;
+      `<strong>AFTER · branch</strong><br />` +
+      `<span class="ok">&#10003; seam board ${after.bottom}&#8243;&#8211;${afterTop}&#8243;: finishes the upper band</span><br />` +
+      `<span class="ok">&#10003; never reaches below the cabinet bottom</span>`;
     (window as unknown as { __issue353Panel?: unknown }).__issue353Panel = {
       ok: true,
-      before: { bottom: BEFORE_BOARD.bottom, height: BEFORE_BOARD.height },
-      after: { bottom: AFTER_BOARD.bottom, height: AFTER_BOARD.height },
+      before: { bottom: before.bottom, height: before.height },
+      after: { bottom: after.bottom, height: after.height },
     };
   } catch (error) {
     (window as unknown as { __issue353Panel?: unknown }).__issue353Panel = { ok: false, message: (error as Error).message };
