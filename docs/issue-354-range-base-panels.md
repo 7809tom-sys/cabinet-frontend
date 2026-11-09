@@ -64,7 +64,7 @@ line. There is no 30-1/4"-only-run exemption.**
 
 | File | Change |
 |---|---|
-| `client/src/lib/framelessWallTopAlignment.ts` | `framelessWallTopDatumIn()` is the single 94-1/4" line; `framelessBridgeTopHeightIn()` is 22-1/4" from the 72" datum. `alignFramelessWallCabinetTops()` now targets 94-1/4" on **every** frameless wall (it no longer derives the line from whichever boxes happen to be present), and the bridge/cap branch is no longer an exemption: a bridge that still misses the line is named with its shortfall. A wall counts as frameless when any cabinet on it carries the marker, so a marker-less auto-built bridge still belongs to its frameless wall. |
+| `client/src/lib/framelessWallTopAlignment.ts` | `framelessWallTopDatumIn()` is the single 94-1/4" line; `framelessBridgeTopHeightIn()` is 22-1/4" from the 72" datum. `alignFramelessWallCabinetTops()` targets 94-1/4" on **every** frameless wall (it no longer derives the line from whichever boxes happen to be present), and bridges are not exempt: a bridge that still misses the line is named with its shortfall. **A wall counts as frameless when ANY cabinet on it is** (so a marker-less auto-built bridge still belongs to its frameless wall), **but only frameless cabinets and bridges are rewritten** — a framed box on a mixed / two-style wall keeps its own 84" line exactly. `framelessWallTopLineFor()` reports the one 94-1/4" line for any wall the rule touches, independent of which heights are present. |
 | `client/src/lib/autoDesignLayout.ts` (`isFramelessWallCatalog`) | Decides the line from the wall catalog: the geometry marker, else the presence of a 40-1/4" wall row (frameless-only — a framed line sells 30/36/42). |
 | `client/src/lib/design.ts` (`normalizeStandardWallMounts`) | A `refrigeratorAssemblyRole === "bridge"` box is left to its own bay instead of being re-hung below the line. |
 | `client/src/lib/overRangeCompanion.ts` | `microwaveBridgeHeightPick`, `overRangeBridgeFor`, `overRangeBridgeHeightFor`, `overRangeBridgeOptions` accept `topLineIn`; when set, the pick takes the height whose top reaches that line from the fixed datum, and the tallest the line sells when none reaches it. `singleTopLineFor()` answers whether a catalog finishes on a single line. `BRIDGE_STOCK_HEIGHTS` and the bridge code regex now include **23** (the frameless 22-5/8" box: 72 + 22-5/8 = 94-5/8", the closest the line sells to 94-1/4"). |
@@ -78,6 +78,9 @@ line. There is no 30-1/4"-only-run exemption.**
   What changed is the height: the picker now chooses the box whose top reaches
   94-1/4", so a frameless kitchen takes `W30xx23` (22-5/8") instead of the old
   12" `W3012` that topped out at 84-1/4".
+* **Mixed / two-style walls** are safe: the wall marking only decides that the
+  rule applies. A framed W3030 sharing a wall with a frameless W2440 stays at
+  bottom 54" / top 84" while the frameless box finishes on 94-1/4".
 * **Over-range / over-sink** minimums are bottom floors and the pass never lowers
   a bottom, so they cannot be violated.
 * **Other lines are untouched**: without a `topLineIn` the neighbour mapping
@@ -93,15 +96,15 @@ line. There is no 30-1/4"-only-run exemption.**
 
 `designerCabinetNames.test.ts`, `rangeBaseGuard.test.ts`,
 `sidePanelForExposedSide.test.ts`, `singleDoorTwentyFour.test.ts`,
-`framelessWallTopAlignment.test.ts`, `framelessBridgeTopLine.test.ts` — 56 tests,
+`framelessWallTopAlignment.test.ts`, `framelessBridgeTopLine.test.ts` — 60 tests,
 all passing.
 
 ## Verification
 
 * `tsc --noEmit`: **2,295** errors — identical to the main baseline, and no error
   in any file this branch adds or touches.
-* `vitest run`: **118 failed / 8,589 passed** (baseline 118 / 8,533). The failing
-  file set is byte-identical to main's 66 files; the extra 56 passes are the new
+* `vitest run`: **118 failed / 8,593 passed** (baseline 118 / 8,533). The failing
+  file set is byte-identical to main's 66 files; the extra 60 passes are the new
   suites.
 * `vite build`: passes (needs `NODE_OPTIONS=--max-old-space-size=6144` on this
   VM; the default 2 GB heap OOMs on the repo's existing bundle size, not on this

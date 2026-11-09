@@ -6,30 +6,29 @@
  * 40-1/4 in wall cabinet, including any cabinet placed above a microwave."
  *
  * The book's frameless wall heights are 30-1/4", 35-1/4" and 40-1/4" (altaeuro
- * V8.2 pp. 37-39). With the standard 54" bottom, a 40-1/4" box tops out at
- * 94-1/4". A 30-1/4" box beside it would leave a 10" step that the customer
- * should never have to notice, so on the frameless line a wall run finishes on
- * ONE top line: the top of the tallest wall cabinet on that wall, and never
- * below 94-1/4" once the run contains a 40-1/4" box.
+ * V8.2 pp. 37-39). With the standard 54" bottom, the 40-1/4" box tops out at
+ * 94-1/4", and that is the ONE line a frameless wall run finishes on.
  *
- * How this sits beside the rules that already exist:
+ * Tom's decision (Nov 9 2026, issue #354 item 5), with no exceptions:
  *
- * - **The 72" bridge datum** (`OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM`) is a
- *   BOTTOM line, not a top line, and it is set by the microwave: the bridge must
- *   start above the OTR appliance. This pass never moves it. A bridge that
- *   already carries that datum is left exactly where the bridge rule put it, and
- *   the over-range rules own the tops of the boxes over the range — so a kitchen
- *   whose uppers are all 30-1/4" keeps its historical 84-1/4" line, and its 12"
- *   W3012 bridge keeps topping out on that same line. The pass only raises a
- *   SHORTER box so it meets the run's tallest top; it can never pull a box down
- *   onto a line that would break the 72" bridge.
+ * - **Every frameless wall cabinet top is 94-1/4".** The line does not depend on
+ *   which boxes happen to be present: a run of nothing but 30-1/4" cabinets is
+ *   raised to it too, and there is no 30-1/4"-only exemption.
+ * - **Bridges are not exempt.** The over-microwave bridge
+ *   (`OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM`) and the refrigerator-bay bridge
+ *   keep their fixed 72" BOTTOM datum; the SKU's HEIGHT is what puts the top on
+ *   the line (the frameless 22-5/8" box reaches 94-5/8"). This pass never moves a
+ *   bridge's bottom, and it names any bridge whose SKU still finishes short, so a
+ *   low bridge is visible rather than silent.
  * - **Over-range / over-sink rules** still own their own bottom lines
  *   (`OVER_RANGE_UPPER_MIN_BOTTOM_IN`, `OVER_SINK_WALL_MOUNT_BOTTOM`). This pass
  *   never lowers a box: a bottom only ever moves up, so a cooking-clearance or
  *   window-clearance minimum can never be violated by it.
- * - **Other lines are untouched.** The pass runs only when the line is the
- *   frameless line (`hasAefPrintedGeometry`), so a framed line keeps its own
- *   84" top line exactly.
+ * - **Other lines are untouched.** A wall counts as frameless when ANY cabinet on
+ *   it carries the frameless marker (so a marker-less auto-built bridge still
+ *   belongs to its frameless wall), but only two kinds of cabinet are ever
+ *   rewritten: a frameless cabinet, and a bridge. A framed box standing on a
+ *   mixed / two-style wall keeps its own 84" line exactly.
  * - A cabinet the customer moved by hand is kept: this repairs the default
  *   datum, it does not override an explicit choice.
  */
@@ -77,6 +76,20 @@ export function framelessBridgeTopHeightIn(bridgeBottomIn: number): number {
 /** True for the USCD frameless line, read from the same geometry marker every frameless pass uses. */
 export function isFramelessLine(cabinet: { constructionMethod?: string | null } | null | undefined): boolean {
   return hasAefPrintedGeometry(cabinet ?? {});
+}
+
+/**
+ * An over-microwave or refrigerator-bay bridge: the two short boxes that hang
+ * from the fixed 72" datum rather than from an upper run. The rule applies to
+ * them even when an auto-built record arrives without the frameless marker, so
+ * they are recognised by their role flags instead of by geometry.
+ */
+export function isBridgeCabinet(cabinet: {
+  overRangeMicrowaveBridge?: boolean | null;
+  refrigeratorAssemblyRole?: string | null;
+} | null | undefined): boolean {
+  if (!cabinet) return false;
+  return cabinet.overRangeMicrowaveBridge === true || cabinet.refrigeratorAssemblyRole === "bridge";
 }
 
 export type FramelessWallTopAlignment = {
@@ -135,9 +148,12 @@ export function alignFramelessWallCabinetTops(input: {
   let changed = false;
   const next = placed.map((cabinet) => {
     if (cabinet.placement !== "wall") return cabinet;
-    // Decide by the wall, not by this one record's marker: a bridge built from a
-    // marker-less catalog row still belongs to the frameless wall it hangs on.
+    // The WALL decides that the rule applies (a marker-less auto-built bridge
+    // still hangs on a frameless wall), but the CABINET decides whether it may be
+    // rewritten. Only a frameless box or a bridge is this rule's business; a
+    // framed box sharing a mixed / two-style wall keeps its own line exactly.
     if (!framelessWalls.has(cabinet.wallId ?? "")) return cabinet;
+    if (!isFramelessLine(cabinet) && !isBridgeCabinet(cabinet)) return cabinet;
     if (eligible && !eligible.has(cabinet.uid)) return cabinet;
     if (cabinet.islandFace) return cabinet;
     if (isStacker(cabinet)) return cabinet;
@@ -148,7 +164,7 @@ export function alignFramelessWallCabinetTops(input: {
     // the line (the 22-5/8" box reaches 94-5/8"). This pass therefore never moves
     // a bridge's bottom; it reports any bridge whose chosen SKU still finishes off
     // the line, so the shortfall is visible instead of silent.
-    if (cabinet.overRangeMicrowaveBridge === true || cabinet.refrigeratorAssemblyRole === "bridge") {
+    if (isBridgeCabinet(cabinet)) {
       const target = targets.get(cabinet.wallId ?? "");
       if (target == null) return cabinet;
       const top = wallTopOf(cabinet, room);
@@ -199,24 +215,26 @@ export function isFramelessStyle(style: FramelessStyleInput | null | undefined):
 }
 
 /**
- * The top line the pass will use for one wall, exposed so the elevation and the
+ * The top line the pass uses for one wall, exposed so the elevation and the
  * review list can quote the same number the plan was aligned to.
+ *
+ * Under Tom's decision (issue #354 item 5) that is simply the one frameless line,
+ * 94-1/4", for any wall this rule touches — it no longer depends on which heights
+ * or which boxes happen to be present, and bridges do not change it. Null when no
+ * frameless cabinet or bridge stands on the wall, so a framed-only wall has no
+ * frameless line at all. A wall this rule touches is frameless even when the
+ * frameless cabinet on it is a bridge row, mirroring `alignFramelessWallCabinetTops`.
  */
 export function framelessWallTopLineFor(
   placed: readonly PlacedCabinet[],
-  room: RoomData,
+  _room: RoomData,
   wallId: string | null | undefined,
 ): number | null {
-  const group = placed.filter((item) => item.placement === "wall"
-    && isFramelessLine(item)
-    && !isStacker(item)
-    && !item.overRangeMicrowaveBridge
-    && item.refrigeratorAssemblyRole !== "bridge"
-    && (item.wallId ?? "") === (wallId ?? ""));
-  if (group.length === 0) return null;
-  const measured = group.map((item) => wallTopOf(item, room));
-  const hasTopHeightBox = group.some((item) => placedHeight(item) >= FRAMELESS_TOP_WALL_HEIGHT_IN - 0.01);
-  return Math.max(hasTopHeightBox ? framelessWallTopDatumIn() : 0, ...measured);
+  const wall = wallId ?? "";
+  const touchesFrameless = placed.some((item) => item.placement === "wall"
+    && (item.wallId ?? "") === wall
+    && (isFramelessLine(item) || isBridgeCabinet(item)));
+  return touchesFrameless ? framelessWallTopDatumIn() : null;
 }
 
 /** The frameless height class nearest a nominal 30/36/42 request (30.25 / 35.25 / 40.25). */

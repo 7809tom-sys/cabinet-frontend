@@ -167,6 +167,52 @@ describe("frameless wall top alignment (issue #354 item 7)", () => {
     expect(framelessWallTopLineFor([], room, "top")).toBeNull();
   });
 
+  it("leaves a framed box on a mixed wall alone", () => {
+    // A framed W3030 standing on a wall with one frameless W2440 must keep its own
+    // 84" line: the rule is frameless-only, and rewriting every cabinet on a wall
+    // that merely contains a frameless box would change another line's design.
+    const framed = wall("framed", "W3030", 0, 30, 30, 54, { constructionMethod: "Framed" });
+    const frameless = wall("frameless", "W2440", 30, 24, 40.25, 54);
+    const result = alignFramelessWallCabinetTops({ placed: [framed, frameless], room });
+    // The framed box keeps bottom 54 / top 84 exactly.
+    expect(result.placed.find((item) => item.uid === "framed")?.mountBottom).toBe(54);
+    expect(result.aligned.some((entry) => entry.uid === "framed")).toBe(false);
+    // The frameless box still finishes on 94-1/4".
+    expect(topOf(result.placed.find((item) => item.uid === "frameless")!)).toBeCloseTo(94.25, 5);
+  });
+
+  it("raises a frameless 30-1/4 box on a mixed wall without touching the framed neighbour", () => {
+    const framed = wall("framed", "W3030", 0, 30, 30, 54, { constructionMethod: "Framed" });
+    const frameless = wall("frameless", "W3030", 30, 30, 30.25, 54);
+    const result = alignFramelessWallCabinetTops({ placed: [framed, frameless], room });
+    expect(result.placed.find((item) => item.uid === "framed")?.mountBottom).toBe(54);
+    expect(result.placed.find((item) => item.uid === "frameless")?.mountBottom).toBeCloseTo(64, 5);
+    expect(result.aligned).toEqual([{ uid: "frameless", masterCode: "W3030", from: 54, to: 64 }]);
+  });
+
+  it("still aligns a marker-less bridge on a frameless wall and still names a shortfall", () => {
+    // An auto-built bridge record can arrive without the geometry marker. The wall
+    // is frameless, so the bridge rule applies: the bottom stays on 72" and its
+    // shortfall is still reported. A marker-less NON-bridge box is not rewritten.
+    const bridge = wall("bridge", "W3012", 0, 30, 12, 72, { overRangeMicrowaveBridge: true, constructionMethod: null });
+    const markerless = wall("markerless", "W3030", 30, 30, 30.25, 54, { constructionMethod: null });
+    const frameless = wall("frameless", "W2440", 60, 24, 40.25, 54);
+    const result = alignFramelessWallCabinetTops({ placed: [bridge, markerless, frameless], room });
+    expect(result.placed.find((item) => item.uid === "bridge")?.mountBottom).toBe(72);
+    expect(result.warnings.join(" ")).toContain("W3012");
+    expect(result.placed.find((item) => item.uid === "markerless")?.mountBottom).toBe(54);
+    expect(result.placed.find((item) => item.uid === "frameless")?.mountBottom).toBe(54);
+  });
+
+  it("treats a frameless wall top line as the one 94-1/4 line, whatever is on it", () => {
+    const short = wall("short", "W3030", 0, 30, 30.25, 54);
+    const bridge = wall("bridge", "W3023", 30, 30, 22.625, 72, { overRangeMicrowaveBridge: true });
+    expect(framelessWallTopLineFor([short], room, "top")).toBe(94.25);
+    expect(framelessWallTopLineFor([short, bridge], room, "top")).toBe(94.25);
+    expect(framelessWallTopLineFor([wall("f", "W3030", 0, 30, 30, 54, { constructionMethod: "Framed" })], room, "top")).toBeNull();
+    expect(framelessWallTopLineFor([], room, "top")).toBeNull();
+  });
+
   it("restricts the rewrite to the uids the caller owns", () => {
     const tall = wall("tall", "W2440", 0, 24, 40.25, 54);
     const short = wall("short", "W3030", 24, 30, 30.25, 54);
