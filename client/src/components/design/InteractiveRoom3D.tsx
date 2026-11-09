@@ -67,6 +67,7 @@ import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
+import { designerCabinetName } from "@/lib/designerCabinetNames";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup, pelicanChinaMaterial } from "@/lib/pelicanToiletMesh";
@@ -2306,7 +2307,10 @@ export function threeDSelectedCabinetDescription(cabinet: Pick<PlacedCabinet, "m
         ?? description.match(/cut\s+to\s+.+$/i)?.[0];
       return cut ? `Filler — ${cut}` : "Filler";
     }
-    return description;
+    // Issue #354 item 1 (Tom): the designer never shows the RB prefix or the
+    // words "range base" on a cabinet. The stored description and the order
+    // code are untouched; only this designer-facing label changes.
+    return designerCabinetName({ masterCode: cabinet.masterCode, description });
   }
 
   const code = cabinet.masterCode?.trim();
