@@ -1,21 +1,22 @@
 /**
- * Before / after proof for issue 353, round 2 (Tom, Nov 9 2026).
+ * Before / after proof for issue 353 (Tom, Nov 9 2026).
  *
  * Both columns are REAL designer code, not a hand-written model:
- *   - "before" calls `client/src/lib/legacyMain/design.ts`, a verbatim copy of
- *     `design.ts` + `freestandingRun.ts` from `main`;
+ *   - "before" imports `virtual:issue353-main/design.ts`, served from
+ *     `git show origin/main:client/src/lib/design.ts` by
+ *     `plugins/issue353MainSnapshot.ts` — nothing is vendored into this repo;
  *   - "after" calls this branch's `countertopSurfaces`.
  *
- * The `issue353LegacyParity` unit test proves the vendored copy still reproduces
- * Tom's report on main (two slabs with a gap and no mitre).
+ * That plugin is registered only by `vite.issue353-shots.config.ts`, so run this
+ * spec with `playwright.issue353.config.ts` (or `pnpm issue353:shots:test`). A
+ * plain `playwright test` uses `vite.config.ts`, which has no such plugin.
  *
  * Layout: Tom's L — four straight bases on the back wall, the angled leg of the
  * 45-degree return dropped beside them at the Wall Builder's 11-inch hold, and a
  * raised bar wall behind the run.
  *
  * Run with:
- *   npx vite --port 5178 --strictPort
- *   npx playwright test e2e/issue353-before-after.spec.ts
+ *   npx playwright test -c playwright.issue353.config.ts e2e/issue353-before-after.spec.ts
  *
  * Output: /opt/cursor/artifacts/issue353-countertop-before-after.png
  */

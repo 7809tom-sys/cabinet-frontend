@@ -1,10 +1,11 @@
 /**
- * Before / after screenshot harness for issue 353, round 2.
+ * Before / after screenshot harness for issue 353.
  *
  * BOTH columns are real designer code, not a hand-written model:
- *   - BEFORE calls `legacyMain/design.ts` — a verbatim copy of `design.ts` and
- *     `freestandingRun.ts` as they stand on `main` (the `__parity` test proves
- *     that copy still reproduces Tom's report: two slabs, a gap, no miter).
+ *   - BEFORE imports `virtual:issue353-main/design.ts`, which
+ *     `plugins/issue353MainSnapshot.ts` serves from
+ *     `git show origin/main:client/src/lib/design.ts`. Nothing is vendored into
+ *     the repository, so the BEFORE column is always literally main.
  *   - AFTER calls the branch's own `countertopSurfaces`.
  *
  * The layout is Tom's: an L-shaped run. Straights are seated on the back wall,
@@ -27,9 +28,9 @@ import {
 } from "@/lib/design";
 import { DEFAULT_ROOM } from "@/lib/design";
 // Main's real geometry modules, served straight out of git by the
-// `issue353-main-snapshot` Vite plugin (see vite.config.ts). Nothing is vendored
-// into this repository: the plugin runs `git show origin/main:<path>` when it
-// resolves the id, so the BEFORE column can never drift from main.
+// `issue353-main-snapshot` plugin (plugins/issue353MainSnapshot.ts), which only
+// vite.issue353-shots.config.ts registers. Nothing is vendored into this
+// repository, so the BEFORE column can never drift from main.
 import {
   countertopSurfaces as mainCountertops,
   countertopSurfacePlanPolygon as mainPolygon,

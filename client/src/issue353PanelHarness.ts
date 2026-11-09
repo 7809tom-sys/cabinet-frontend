@@ -1,12 +1,14 @@
 /**
- * Before / after screenshot harness for issue 353 outcome 8, round 2.
+ * Before / after screenshot harness for issue 353 outcome 8.
  *
- * Tom's actual case: a STANDALONE W3024 upper, and the end panel the designer
- * hung on its left side, which used to run down past the cabinet's own bottom.
+ * Tom's actual case: a STANDALONE W3024 upper (a plain wall cabinet, NOT a
+ * microwave bridge), and the end panel the designer hung on its side, which
+ * used to run down past the cabinet's own bottom.
  *
  * BOTH columns are real designer code:
- *   - BEFORE runs main's exposed-side engine, served straight out of git by the
- *     `issue353-main-snapshot` Vite plugin, so the panel really is the one main
+ *   - BEFORE runs main's exposed-side engine, served from
+ *     `git show origin/main:client/src/lib/exposedSidePanels.ts` by
+ *     `plugins/issue353MainSnapshot.ts`, so the panel really is the one main
  *     places;
  *   - AFTER runs this branch's engine, whose panel is clamped to the upper band.
  *
@@ -25,7 +27,8 @@ import {
   type RoomData,
 } from "@/lib/design";
 import { syncExposedSidePanels } from "@/lib/exposedSidePanels";
-// Main's real exposed-side engine, from git. See vite.config.ts.
+// Main's real exposed-side engine, from git. Registered only by
+// vite.issue353-shots.config.ts.
 import {
   syncExposedSidePanels as mainSyncExposedSidePanels,
 } from "virtual:issue353-main/exposedSidePanels.ts";
@@ -40,9 +43,12 @@ function w3024(): PlacedCabinet {
     uid: "w3024",
     cabinetId: 9001,
     masterCode: "W3024",
-    description: '30" Microwave Bridge',
+    // A plain wall cabinet. A "Microwave Bridge" description would make this an
+    // appliance surround, which is a different (legitimate) case; the defect Tom
+    // reported is the standalone box.
+    description: '30" W × 24" H Wall Cabinet',
     category: "Wall",
-    subCategory: "Microwave Bridge",
+    subCategory: "Standard Wall",
     placement: "wall",
     ...spot,
     width: 30,
@@ -53,7 +59,6 @@ function w3024(): PlacedCabinet {
     wallOffset: 48,
     // A standalone W3024: no bridge flag, no appliance under it, no counter run
     // beneath it. This is the cabinet Tom reported.
-
     numberOfDoors: 2,
     numberOfDrawers: 0,
     constructionMethod: "frameless",
@@ -220,7 +225,7 @@ function run() {
       : "no end panel placed";
     const afterLine = afterPanels.length
       ? `end panel starts at the ${afterLow}&#8243; cabinet bottom`
-      : "no end panel placed";
+      : "no end panel placed at all beside a standalone short upper";
 
     document.getElementById("caption-before")!.innerHTML =
       `<strong>BEFORE · main</strong><br />` +
