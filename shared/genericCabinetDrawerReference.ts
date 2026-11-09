@@ -7,8 +7,17 @@ import { stripHandedness } from "./codeMatch";
  * same codes with dashes). Full-height, drawer-base, sink, corner, wall, tall,
  * and vanity codes are not this family.
  *
- * Door rule (owner): B21 and under always has ONE door. B24 and wider standard
- * bases have TWO doors. A stored numberOfDoors value does not override this.
+ * Door rule (owner + USCD altaeuro frameless book V8.2, pp. 20-22): B21 and
+ * under always has ONE door. B24 and wider standard bases have TWO doors. A
+ * stored numberOfDoors value does not override this.
+ *
+ * The book also lists single-door variants at 24" — B24S, B24SFH, SB24S,
+ * VSB24S, and W2430S. Those codes are real, orderable rows and are never
+ * deleted or renamed. They are excluded from this reference deliberately: the
+ * reference is what the designer DRAWS and what Auto-Design PICKS, and the
+ * owner rule (issue #354 item 4) is that a 24" box is drawn and defaulted as
+ * the two-door version. A single-door 24" row stays selectable by hand.
+ *
  * B09/B9 is included in the one-door rule. It is the 9-inch tray base, so the
  * empty-layout drawer row stays empty; the existing tray rule already forces
  * zero drawers. A saved drawerLayout can still add fronts.
