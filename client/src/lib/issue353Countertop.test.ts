@@ -22,6 +22,7 @@ import {
   type RoomData,
 } from "./design";
 import { addThreeDStandardCountertops } from "@/components/design/InteractiveRoom3D";
+import { freestandingBody, snapFreestandingFortyFive } from "./freestandingRun";
 import { rangesInPlan } from "./overRangeFill";
 import { applyDesignerLayoutRules } from "./designerLayoutRules";
 import { buildCountertopFabricationSheet } from "./countertopFabricationSheet";
@@ -185,6 +186,39 @@ describe("outcome 3 + 4: the 45-degree angled corner is one continuous top with 
     const polygon = countertopSurfacePlanPolygon(infill!);
     expect(polygon.some((point) => Math.hypot(point.x - 60, point.y - 60) < 1e-6)).toBe(true);
     expect(infill!.areaInches ?? 0).toBeGreaterThan(0);
+  });
+
+  it("is one continuous mitered top in the regular designer's free-standing run too", () => {
+    // Tom's screenshot came from the regular designer, where the angled cabinet
+    // is a free-standing body snapped to the run. That path builds the same
+    // Continuous Wall Builder model, so it must be one mitered top as well.
+    const straight = ["a", "b", "c"].map((uid, index) => ({
+      uid, cabinetId: 1, masterCode: "B24", description: "24\" Base", category: "Base",
+      placement: "base" as const, x: 40 + index * 24, y: 70, width: 24, depth: 24, height: 34.5, rotation: 0,
+    } as PlacedCabinet));
+    const loose = { ...straight[0]!, uid: "d", x: 118, y: 76, rotation: 45 } as PlacedCabinet;
+    const snap = snapFreestandingFortyFive(loose, straight, { ...ROOM, width: 192, depth: 144 }, null, 12);
+    expect(snap).not.toBeNull();
+    const placed = [...straight, { ...loose, x: snap!.x, y: snap!.y }];
+    const surfaces = countertopSurfaces(placed, { ...ROOM, width: 192, depth: 144 }, null);
+    expect(surfaces.length).toBeGreaterThan(0);
+    // Both legs carry the one shared miter and every slab belongs to the chain.
+    expect(surfaces.some((surface) => surface.miteredStart || surface.miteredEnd)).toBe(true);
+    for (const surface of surfaces) {
+      expect(surface.freestandingMemberUids?.slice().sort()).toEqual(["a", "b", "c", "d"]);
+    }
+    // The angled cabinet is under a slab, so its top continues into the return.
+    const body = freestandingBody(placed[3]!);
+    const inside = (point: { x: number; y: number }, polygon: { x: number; y: number }[]) => {
+      let hit = false;
+      for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+        const a = polygon[index]!;
+        const b = polygon[previous]!;
+        if ((a.y > point.y) !== (b.y > point.y) && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+      }
+      return hit;
+    };
+    expect(surfaces.some((surface) => inside(body.center, countertopSurfacePlanPolygon(surface)))).toBe(true);
   });
 });
 
