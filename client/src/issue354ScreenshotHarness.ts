@@ -1,19 +1,19 @@
 /**
- * Screenshot harness for issue #354 — the RB3DB24 beside a freestanding range.
+ * Screenshot harness for issue #354 — a frameless drop-in cooktop base.
  *
- * Renders the SAME kitchen twice with the real 3D engine (`existingCabinetSku` +
- * `existingCabinetTransform` + `addCabinet` from InteractiveRoom3D):
+ * ONE cabinet, rendered by the real 3D engine (`existingCabinetSku` +
+ * `existingCabinetTransform` + `addCabinet` + `addThreeDStandardCountertops`
+ * from InteractiveRoom3D), exactly the way the Designer draws a sink base:
  *
- *   before  the plan as reported: dishwasher, then an RB3DB24 (drop-in cooktop
- *           base) in the plain base run, then a freestanding range at the end.
- *           That is the cabinet from the screenshot on the issue.
- *   after   the plan the branch produces: the RB3DB24 becomes the plain B24 of
- *           the same width, the run slides over, and the 3/4" BEP2535 side panel
- *           the rule adds appears on the side that faces the range.
+ *   the box      the frameless `RB3DB24` cooktop base (two drawers with one
+ *                false front), labelled with its designer-facing name
+ *   the top      the shared countertop slab over the box
+ *   the cooktop  the `countertop-opening` appliance set INTO that top, drawn by
+ *                the engine's built-in cooktop branch (glass surface + burners)
  *
- * The "after" side is produced by the real branch modules —
- * `repairRangeBasesWithoutCooktop` and `syncRangeAndNeighbourSidePanels` — not by
- * hand-drawn geometry, so the image is what the Designer now builds.
+ * There is NO freestanding range anywhere in this scene: the cooking surface is
+ * the drop-in cooktop seated in the cabinet's top, the same relationship a sink
+ * basin has to its sink base.
  *
  * Loaded only by `dev/issue354-shot.html` during the screenshot run
  * (`e2e/issue354-before-after.spec.ts`). Not part of the app bundle.
@@ -22,15 +22,19 @@ import * as THREE from "three";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import {
   DEFAULT_ROOM,
+  STD,
   wallPlacementAt,
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
 } from "@/lib/design";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
-import { repairRangeBasesWithoutCooktop } from "@/lib/rangeBaseGuard";
-import { syncRangeAndNeighbourSidePanels } from "@/lib/sidePanelForExposedSide";
-import { addCabinet, existingCabinetSku, existingCabinetTransform } from "@/components/design/InteractiveRoom3D";
+import {
+  addCabinet,
+  addThreeDStandardCountertops,
+  existingCabinetSku,
+  existingCabinetTransform,
+} from "@/components/design/InteractiveRoom3D";
 import { designerCatalogDoorProfile, doorStyleFinishColors } from "@/lib/doorStyleAppearance";
 
 const INCH = 1 / 12;
@@ -46,39 +50,34 @@ const STYLE = {
   distributorId: 210001,
 } as const;
 
-const ROOM: RoomData = { ...DEFAULT_ROOM, width: 150, depth: 120, ceilingHeight: 96 };
+const ROOM: RoomData = { ...DEFAULT_ROOM, width: 144, depth: 120, ceilingHeight: 96 };
+const CABINET_WIDTH_IN = 30;
+const CABINET_OFFSET_IN = 24;
 
-function catalogRow(masterCode: string, width: number, description: string, doors: number, drawers: number): DesignCabinet {
+/** The frameless drop-in cooktop base, at the width the render uses. */
+function cooktopBaseRow(): DesignCabinet {
   return {
-    id: 1000 + masterCode.length + width,
-    masterCode,
-    description,
+    id: 2030,
+    masterCode: `RB3DB${CABINET_WIDTH_IN}`,
+    description: `${CABINET_WIDTH_IN}" W × 34.75" H × 24" D Two Drawer Base with One False Front for a drop-in cooktop`,
     category: "Base",
     subCategory: null,
-    width: String(width),
+    width: String(CABINET_WIDTH_IN),
     height: "34.75",
     depth: "24",
     placement: "base",
-    numberOfDoors: doors,
-    numberOfDrawers: drawers,
+    numberOfDoors: 0,
+    numberOfDrawers: 2,
     constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
   } as DesignCabinet;
 }
 
-const CATALOG: DesignCabinet[] = [
-  catalogRow("B24", 24, '24" W × 34.75" H × 24" D Double Door Single Drawer Base', 2, 1),
-  catalogRow("RB3DB24", 24, '24" W × 34.75" H × 24" D Three Drawer Range Base with One False Front', 0, 3),
-];
-
-const PANEL_CATALOG = [
-  { id: 2051, masterCode: "BEP2535", constructionMethod: AEF_PRINTED_GEOMETRY_MARKER },
-];
-
-function base(kind: "b24" | "rb3db24", offset: number, uid: string): PlacedCabinet {
-  const row = kind === "b24" ? CATALOG[0]! : CATALOG[1]!;
-  const spot = wallPlacementAt(offset, 24, 24, "top", ROOM);
+/** The base box, seated on the wall like any other base cabinet. */
+function cooktopBase(): PlacedCabinet {
+  const row = cooktopBaseRow();
+  const spot = wallPlacementAt(CABINET_OFFSET_IN, CABINET_WIDTH_IN, 24, "top", ROOM);
   return {
-    uid,
+    uid: "cooktop-base",
     cabinetId: row.id,
     masterCode: row.masterCode,
     description: row.description,
@@ -86,67 +85,45 @@ function base(kind: "b24" | "rb3db24", offset: number, uid: string): PlacedCabin
     subCategory: null,
     placement: "base",
     ...spot,
-    width: 24,
+    width: CABINET_WIDTH_IN,
     depth: 24,
     height: 34.75,
-    numberOfDoors: row.numberOfDoors,
-    numberOfDrawers: row.numberOfDrawers,
+    numberOfDoors: 0,
+    numberOfDrawers: 2,
     styleId: STYLE.id,
     constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
   };
 }
 
-function appliance(masterCode: string, offset: number, width: number, height: number, depth: number, description: string, uid: string): PlacedCabinet {
-  const spot = wallPlacementAt(offset, width, depth, "top", ROOM);
-  return {
-    uid,
-    cabinetId: 0,
-    masterCode,
-    description,
-    category: "Appliance",
-    subCategory: null,
-    placement: "appliance",
-    ...spot,
-    width,
-    depth,
-    height,
-    numberOfDoors: 0,
-    numberOfDrawers: 0,
-  };
-}
-
 /**
- * The reported plan: a normal 24" base run, the dishwasher, an RB3DB24 standing
- * where the plain base belongs, and the freestanding range at the run end.
+ * The drop-in cooktop, seated on the base's own top exactly as the frameless
+ * cooktop conversion seats it: a `countertop-opening` appliance on the base uid,
+ * its top meeting the finished 36" countertop line.
  */
-function beforePlan(): PlacedCabinet[] {
-  return [
-    base("b24", 0, "run-base"),
-    appliance("DW-24", 24, 24, 34.5, 24, "Dishwasher", "dw"),
-    base("rb3db24", 48, "range-base"),
-    appliance("RANGE-30", 72, 30, 36, 25, "30 inch Freestanding Range", "range"),
-  ];
-}
-
-/** What the branch builds: the plain B24, a shifted run, and the BEP2535 panel. */
-function afterPlan(): PlacedCabinet[] {
-  // Auto Design's range-flank pass reserves the 3/4" the finished end needs by
-  // wiggling the range within its own anchor cap (autoDesignRangeFlanks.ts).
-  // This is that reservation, applied to the reported plan first.
-  const withReservedSlot = beforePlan().map((item) => {
-    if (!/RANGE/i.test(item.masterCode ?? "")) return item;
-    const spot = wallPlacementAt(72.75, 30, 25, "top", ROOM);
-    return { ...item, ...spot };
-  });
-  const repaired = repairRangeBasesWithoutCooktop({ placed: withReservedSlot, room: ROOM, catalog: CATALOG }).placed;
-  const withPanels = syncRangeAndNeighbourSidePanels({
-    placed: repaired,
-    room: ROOM,
-    catalog: PANEL_CATALOG,
-    styleId: STYLE.id,
-    makeUid: (() => { let n = 0; return () => `side-panel-${++n}`; })(),
-  });
-  return withPanels.placed;
+function cooktopOn(base: PlacedCabinet): PlacedCabinet {
+  return {
+    uid: `${base.uid}:cooktop`,
+    cabinetId: 0,
+    masterCode: "CATALOG-APPLIANCE-gas",
+    description: 'Gas cooktop 30"',
+    category: "Appliance",
+    subCategory: "Cooktop",
+    placement: "appliance",
+    applianceRole: "countertop-opening",
+    applianceProductId: 30001,
+    applianceCatalogCode: "CATALOG-APPLIANCE-gas",
+    applianceCatalogName: 'Gas cooktop 30"',
+    x: base.x,
+    y: base.y,
+    rotation: base.rotation,
+    wallId: base.wallId,
+    wallOffset: base.wallOffset,
+    width: base.width,
+    depth: base.depth,
+    height: STD.COUNTERTOP_THICKNESS,
+    mountBottom: STD.COUNTERTOP_HEIGHT - STD.COUNTERTOP_THICKNESS,
+    rangeTopFinish: null,
+  };
 }
 
 function stylePack() {
@@ -168,7 +145,7 @@ function makeRenderer(width: number, height: number) {
   return renderer;
 }
 
-function buildScene(placed: readonly PlacedCabinet[], width: number, height: number) {
+function buildScene(placed: PlacedCabinet[], width: number, height: number) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#eef1f4");
   const roomW = ROOM.width * INCH;
@@ -212,6 +189,7 @@ function buildScene(placed: readonly PlacedCabinet[], width: number, height: num
   const root = new THREE.Group();
   scene.add(root);
 
+  // 1. The cabinet box, exactly as the Designer draws it.
   for (const cabinet of placed) {
     if (cabinet.placement === "appliance") continue;
     const sku = existingCabinetSku(cabinet, ROOM, placed);
@@ -232,28 +210,32 @@ function buildScene(placed: readonly PlacedCabinet[], width: number, height: num
       { countertop: null, selectedToeKick: false },
     );
   }
-  // The appliances are drawn as simple real boxes so the reader can see which
-  // side is exposed: a black dishwasher and a stainless range.
+
+  // 2. The shared countertop slab over the box — the same call the Designer
+  //    makes, so a sink base and this cooktop base finish their tops identically.
+  addThreeDStandardCountertops(root, ROOM, placed, "#eeeae2", null);
+
+  // 3. The drop-in cooktop, set into that top by the engine's own
+  //    countertop-opening branch (glass surface, burners, no range chassis).
   for (const cabinet of placed) {
     if (cabinet.placement !== "appliance") continue;
-    const isRange = /RANGE/i.test(cabinet.masterCode);
-    const bodyHeight = Number(cabinet.height ?? 34.5);
-    const box = new THREE.Mesh(
-      new THREE.BoxGeometry(cabinet.width * INCH, bodyHeight * INCH, cabinet.depth * INCH),
-      new THREE.MeshStandardMaterial({
-        color: isRange ? 0xb9bec6 : 0x1b1d20,
-        metalness: isRange ? 0.75 : 0.2,
-        roughness: isRange ? 0.32 : 0.6,
-      }),
+    const sku = existingCabinetSku(cabinet, ROOM, placed);
+    const transform = existingCabinetTransform(cabinet, ROOM, placed);
+    addCabinet(
+      root,
+      { ...sku, catalogImageUrl: null },
+      cabinet.wallId ?? "top",
+      { back: 0, left: 0, right: 0, front: 0 },
+      ROOM.width,
+      ROOM.depth,
+      finish.face,
+      "#eeeeee",
+      profile as never,
+      transform,
+      null,
+      undefined,
+      { countertop: null, selectedToeKick: false },
     );
-    box.position.set(
-      (cabinet.x + cabinet.width / 2) * INCH,
-      (bodyHeight / 2) * INCH,
-      (cabinet.y + cabinet.depth / 2) * INCH,
-    );
-    box.castShadow = true;
-    box.receiveShadow = true;
-    root.add(box);
   }
 
   const bounds = new THREE.Box3().setFromObject(root);
@@ -262,68 +244,64 @@ function buildScene(placed: readonly PlacedCabinet[], width: number, height: num
   bounds.getSize(size);
   bounds.getCenter(center);
 
-  // Both panes share one camera, framed on the union of the two plans, so the
-  // before and after images are the same view of the same wall and nothing is
-  // cropped.
-  const camera = new THREE.PerspectiveCamera(32, width / height, 0.05, 500);
-  const target = new THREE.Vector3(center.x + 0.35, 2.0, center.z);
-  const offset = new THREE.Vector3(0.9, 0.55, 16.4);
+  // A three-quarter view from above the countertop, framed on the one cabinet.
+  const camera = new THREE.PerspectiveCamera(33, width / height, 0.05, 500);
+  const target = new THREE.Vector3(center.x, 2.0, center.z);
+  const offset = new THREE.Vector3(2.5, 2.5, 5.6);
   camera.position.set(target.x + offset.x, target.y + offset.y, target.z + offset.z);
   camera.lookAt(target);
-  return { scene, camera, target };
+  return { scene, camera };
 }
 
 function facts(placed: readonly PlacedCabinet[]) {
-  return placed
-    .filter((item) => item.placement !== "appliance")
-    .map((item) => ({
-      code: item.masterCode,
-      name: designerCabinetName(item),
-      start: Number((item.wallOffset ?? 0).toFixed(3)),
-      width: Number(Number(item.width).toFixed(3)),
-      panelFor: item.autoPlacedForUid ?? null,
-    }));
-}
-
-function renderPane(host: HTMLElement, title: string, placed: readonly PlacedCabinet[], accent: string) {
-  const pane = document.createElement("div");
-  pane.style.cssText = "position:relative;flex:1 1 50%;min-width:0;height:100vh;overflow:hidden";
-
-  const canvasHost = document.createElement("div");
-  canvasHost.style.cssText = "position:absolute;inset:0";
-  pane.appendChild(canvasHost);
-
-  const width = Math.floor(window.innerWidth / 2);
-  const height = window.innerHeight;
-  const renderer = makeRenderer(width, height);
-  canvasHost.appendChild(renderer.domElement);
-  renderer.domElement.style.width = `${width}px`;
-  renderer.domElement.style.height = `${height}px`;
-
-  const { scene, camera } = buildScene(placed, width, height);
-  renderer.render(scene, camera);
-
-  const caption = document.createElement("div");
-  caption.id = title === "before" ? "before-caption" : "after-caption";
-  const rows = facts(placed);
-  const lines = [
-    `<strong style="color:${accent}">${title.toUpperCase()}</strong>`,
-    ...rows.map((row) => `${row.code}${row.panelFor ? ` (panel for ${row.panelFor})` : ""} · ${row.width}&Prime; at ${row.start}&Prime; · ${row.name}`),
-  ];
-  caption.innerHTML = lines.join("<br />");
-  caption.style.cssText = "position:absolute;left:14px;top:12px;max-width:calc(100% - 28px);padding:10px 12px;background:rgba(255,255,255,0.95);border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,0.16);color:#0f172a;font-size:11px;line-height:1.5";
-  pane.appendChild(caption);
-  host.appendChild(pane);
+  const base = placed.find((item) => item.placement === "base")!;
+  const cooktop = placed.find((item) => item.placement === "appliance")!;
+  const baseTop = Number(base.mountBottom ?? 0) + Number(base.height ?? 0);
+  const cooktopTop = Number(cooktop.mountBottom ?? 0) + Number(cooktop.height ?? 0);
+  return {
+    name: designerCabinetName(base),
+    code: base.masterCode,
+    width: Number(base.width),
+    baseTop,
+    cooktopTop,
+    cooktopName: cooktop.applianceCatalogName ?? cooktop.description,
+  };
 }
 
 function run() {
   const flag = (state: string) => { (window as unknown as { __issue354Shot?: string }).__issue354Shot = state; };
   try {
     const host = document.getElementById("root")!;
-    const before = beforePlan();
-    const after = afterPlan();
-    renderPane(host, "before", before, "#b91c1c");
-    renderPane(host, "after", after, "#047857");
+    const base = cooktopBase();
+    const placed = [base, cooktopOn(base)];
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const renderer = makeRenderer(width, height);
+    host.appendChild(renderer.domElement);
+    renderer.domElement.style.width = `${width}px`;
+    renderer.domElement.style.height = `${height}px`;
+
+    const { scene, camera } = buildScene(placed, width, height);
+    renderer.render(scene, camera);
+
+    const f = facts(placed);
+    const caption = document.getElementById("caption")!;
+    caption.id = "after-caption";
+    caption.innerHTML = [
+      `<strong style="color:#047857">${f.code} &middot; ${f.name}</strong>`,
+      `${f.width}&Prime; W &times; 34.75&Prime; H &times; 24&Prime; D`,
+      `countertop top ${f.baseTop}&Prime; &middot; ${f.cooktopName} set into it (top ${f.cooktopTop}&Prime;)`,
+      `no freestanding range`,
+    ].join("<br />");
+
+    let frames = 0;
+    const tick = () => {
+      renderer.render(scene, camera);
+      frames += 1;
+      if (frames < 30) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
     flag("ok");
   } catch (error) {
     document.getElementById("root")!.textContent = `Render failed: ${(error as Error).message}`;

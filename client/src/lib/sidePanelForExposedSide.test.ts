@@ -4,8 +4,11 @@ import { wallPlacementAt, type PlacedCabinet, type RoomData } from "@/lib/design
 import {
   SIDE_PANEL_THICKNESS_IN,
   applySidePanels,
+  cabinetSidePanelFor,
+  dropFillersOvertakenByPanel,
   rangeOrMicrowaveInPlan,
   rangesFinishedBySidePanels,
+  setCabinetSidePanel,
   sidePanelNeeds,
   syncRangeAndNeighbourSidePanels,
 } from "@/lib/sidePanelForExposedSide";
@@ -67,15 +70,15 @@ const base = (uid: string, offset: number, width = 24) => cab({ uid, masterCode:
 describe("automatic side panels on an exposed side (issue #354 items 3 and 4)", () => {
   it("finishes the cabinet side that faces a range with BEP2535, not a filler", () => {
     const needs = sidePanelNeeds({
-      placed: [base("left", 0), range(24), base("right", 54)],
+      placed: [base("left", 6), range(30), base("right", 60)],
       room,
       catalog: panelCatalog,
     });
-    const beside = needs.filter((need) => need.reason === "beside-range");
+    const beside = needs.filter((need) => need.reason === "beside-range" || need.reason === "beside-oven");
     expect(beside.map((need) => `${need.hostUid}:${need.side}`).sort()).toEqual(["left:end", "right:start"]);
     expect(beside.every((need) => need.selection.masterCode === "BEP2535")).toBe(true);
     expect(beside[0]!.message).toMatch(/3\/4″ side panel \(BEP2535\)/);
-    expect(beside[0]!.message).toMatch(/exposed beside the range/);
+    expect(beside[0]!.message).toMatch(/oven\/range|beside the range/);
     expect(beside[0]!.message).not.toMatch(/filler/i);
   });
 
@@ -290,7 +293,7 @@ describe("automatic side panels on an exposed side (issue #354 items 3 and 4)", 
   });
 
   it("marks a range finished once a side panel covers each side that faces it", () => {
-    const placed = [base("left", 0.75), range(24), base("right", 54)];
+    const placed = [base("left", 6), range(30), base("right", 60)];
     const needs = sidePanelNeeds({ placed, room, catalog: panelCatalog });
     // Both flanks are covered, so the old 3" handle-clearance filler prompt must
     // not be raised for this range (issue #354 item 3: fillers are for gaps).
@@ -300,9 +303,168 @@ describe("automatic side panels on an exposed side (issue #354 items 3 and 4)", 
   it("does not mark a range finished when a side has no panel", () => {
     // The right cabinet is a panel-free framed box: it is not a frameless host,
     // so nothing finishes its side and the range is not claimed as finished.
-    const framedRight = { ...base("right", 54), constructionMethod: "Framed" };
-    const placed = [base("left", 0.75), range(24), framedRight];
+    const framedRight = { ...base("right", 60), constructionMethod: "Framed" };
+    const placed = [base("left", 6), range(30), framedRight];
     const needs = sidePanelNeeds({ placed, room, catalog: panelCatalog });
     expect(Array.from(rangesFinishedBySidePanels({ placed, room, needs }))).toEqual([]);
+  });
+});
+
+describe("required panel rules (Tom, Nov 9 2026)", () => {
+  const hood = (offset: number) => cab({
+    uid: "hood",
+    masterCode: "HOOD-30",
+    placement: "appliance",
+    offset,
+    width: 30,
+    height: 18,
+    depth: 18,
+    description: "30 inch Range Hood",
+  });
+
+  it("requires a wall end panel on the wall cabinet side that faces a range hood", () => {
+    const upper = cab({ uid: "upper", masterCode: "W3030", placement: "wall", offset: 54, width: 30, height: 30.25, mountBottom: 54 });
+    const needs = sidePanelNeeds({ placed: [hood(24), upper], room, catalog: panelCatalog });
+    const hoodSide = needs.find((need) => need.reason === "beside-hood");
+    expect(hoodSide?.hostUid).toBe("upper");
+    expect(hoodSide?.side).toBe("start");
+    // A wall board sized to the wall cabinet, never a base panel.
+    expect(hoodSide?.selection.masterCode).toBe("WEP1530");
+    expect(hoodSide?.selection.family).toBe("wall");
+  });
+
+  it("requires a base end panel on the base side that faces the oven/range", () => {
+    const needs = sidePanelNeeds({ placed: [base("left", 0.75), range(24)], room, catalog: panelCatalog });
+    const ovenSide = needs.find((need) => need.reason === "beside-oven");
+    expect(ovenSide?.hostUid).toBe("left");
+    expect(ovenSide?.side).toBe("end");
+    expect(ovenSide?.selection.masterCode).toBe("BEP2535");
+    expect(ovenSide?.selection.family).toBe("base");
+  });
+
+  it("never lets a filler stand in for a required panel on the same side", () => {
+    // A filler board sitting in the slot the panel needs is removed; the panel wins.
+    const host = base("left", 6);
+    // A filler board standing exactly in the 3/4" slot the required panel needs.
+    const filler: PlacedCabinet = {
+      ...base("filler", 30),
+      uid: "loose-filler",
+      masterCode: "OF330",
+      description: '3" Filler',
+      width: 3,
+    };
+    // The range butts the host directly. The requirement is measured on the plan
+    // without the filler, so this asserts the panel keeps priority on that side.
+    const placed = [host, filler, range(30)];
+    const needs = sidePanelNeeds({ placed: [host, range(30)], room, catalog: panelCatalog });
+    const required = needs.filter((need) => need.reason === "beside-oven" || need.reason === "beside-range");
+    expect(required.length).toBeGreaterThan(0);
+    const pruned = dropFillersOvertakenByPanel({ placed, needs, room });
+    expect(pruned.removed.map((item) => item.uid)).toContain("loose-filler");
+    expect(pruned.placed.some((item) => item.uid === "loose-filler")).toBe(false);
+  });
+
+  it("adds no panel on a side that another cabinet already finishes", () => {
+    // Two equal bases butted together: neither side is exposed, so no panel.
+    const needs = sidePanelNeeds({ placed: [base("a", 0), base("b", 24)], room, catalog: panelCatalog });
+    expect(needs).toEqual([]);
+  });
+
+  it("adds no panel on a side that a tall unit in the run finishes", () => {
+    const pantry = cab({ uid: "pantry", masterCode: "T3084", placement: "tall", offset: 24, width: 24, height: 84 });
+    const needs = sidePanelNeeds({ placed: [base("a", 0), pantry], room, catalog: panelCatalog });
+    expect(needs.filter((need) => need.hostUid === "a")).toEqual([]);
+  });
+
+  it("never auto-places a panel against a pantry that is NOT included in the run", () => {
+    // An excluded pantry stands beside the run but is not in it. Tom's
+    // correction: this is NEVER automatic — no board is invented here by the
+    // needs pass, by applySidePanels, or on restore. The customer adds it with
+    // the per-cabinet Left/Right panel toggle.
+    const needs = sidePanelNeeds({ placed: [base("a", 6)], room, catalog: panelCatalog });
+    expect(needs.some((need) => need.hostUid === "a")).toBe(false);
+    const applied = applySidePanels({ placed: [base("a", 6)], room, needs, styleId: 1, makeUid: () => "auto" });
+    expect(applied.additions).toEqual([]);
+  });
+
+  it("places a panel against an excluded pantry only after the user toggles it on", () => {
+    const run = base("a", 6);
+    // No automatic board exists yet.
+    const auto = syncRangeAndNeighbourSidePanels({ placed: [run], room, catalog: panelCatalog, styleId: 1, makeUid: () => "auto" });
+    expect(auto.additions).toEqual([]);
+    // The customer toggles the right side, which faces the separate pantry.
+    const toggled = setCabinetSidePanel({
+      placed: [run],
+      hostUid: "a",
+      side: "end",
+      enabled: true,
+      room,
+      catalog: panelCatalog,
+      styleId: 1,
+      makeUid: () => "manual",
+    });
+    expect(toggled.ok).toBe(true);
+    if (!toggled.ok) return;
+    expect(toggled.panel.masterCode).toBe("BEP2535");
+    expect(cabinetSidePanelFor("a", "end", toggled.placed)).not.toBeNull();
+  });
+});
+
+describe("per-cabinet Left / Right panel toggles", () => {
+  it("seats the line's end panel on the toggled side, as a real catalog row", () => {
+    const host = base("host", 24, 24);
+    expect(host.wallOffset).toBe(24);
+    const result = setCabinetSidePanel({
+      placed: [host],
+      hostUid: "host",
+      side: "start",
+      enabled: true,
+      room,
+      catalog: panelCatalog,
+      styleId: 540005,
+      makeUid: () => "unused",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.panel.masterCode).toBe("BEP2535");
+    expect(result.panel.cabinetId).toBe(105);
+    expect(result.placed.some((item) => item.uid === "host:manual-panel:start")).toBe(true);
+    expect(cabinetSidePanelFor("host", "start", result.placed)?.masterCode).toBe("BEP2535");
+  });
+
+  it("keeps the two sides independent", () => {
+    // 3/4" of free run on each side, and not against the wall, so both toggles
+    // can be satisfied without moving anything.
+    const host = base("host", 6, 24);
+    expect(host.wallOffset).toBe(6);
+    const left = setCabinetSidePanel({ placed: [host], hostUid: "host", side: "start", enabled: true, room, catalog: panelCatalog, styleId: 1, makeUid: () => "x" });
+    expect(left.ok).toBe(true);
+    if (!left.ok) return;
+    const right = setCabinetSidePanel({ placed: left.placed, hostUid: "host", side: "end", enabled: true, room, catalog: panelCatalog, styleId: 1, makeUid: () => "y" });
+    expect(right.ok).toBe(true);
+    if (!right.ok) return;
+    expect(cabinetSidePanelFor("host", "start", right.placed)).not.toBeNull();
+    expect(cabinetSidePanelFor("host", "end", right.placed)).not.toBeNull();
+    const removedLeft = setCabinetSidePanel({ placed: right.placed, hostUid: "host", side: "start", enabled: false, room, catalog: panelCatalog, styleId: 1, makeUid: () => "z" });
+    expect(removedLeft.ok).toBe(true);
+    if (!removedLeft.ok) return;
+    expect(cabinetSidePanelFor("host", "start", removedLeft.placed)).toBeNull();
+    expect(cabinetSidePanelFor("host", "end", removedLeft.placed)).not.toBeNull();
+  });
+
+  it("refuses a panel on a side that is not exposed", () => {
+    const result = setCabinetSidePanel({
+      placed: [base("a", 0), base("b", 24)],
+      hostUid: "a",
+      side: "end",
+      enabled: true,
+      room,
+      catalog: panelCatalog,
+      styleId: 1,
+      makeUid: () => "x",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/already finished/);
   });
 });

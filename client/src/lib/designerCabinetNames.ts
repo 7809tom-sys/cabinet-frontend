@@ -6,6 +6,12 @@
  * range base, and the RB designation is what made a 24" box beside a
  * freestanding range look like the right pick.
  *
+ * Product meaning (Tom, Nov 9 2026): **a range base is the cabinet you put a RANGE
+ * TOP on, exactly the way a sink base is the cabinet you put a sink on.** It is a
+ * drawer box with a false front whose top is opened for the range top — NOT a
+ * full range unit with an oven. The thing that goes on it is a range top; a
+ * freestanding or slide-in range is a different product and never sits on one.
+ *
  * This module is presentation only. `PlacedCabinet.masterCode` and
  * `DesignCabinet.masterCode` are NEVER rewritten: the distributor's native code
  * (RB3DB24) is what the cart, quote, purchase order, and distributor hand-off
@@ -13,7 +19,7 @@
  *
  * What the designer shows instead is the cabinet the book actually sells
  * (altaeuro frameless spec book V8.2, pp. 29-30):
- *   RB2DB##  "Two Drawer Range Bases"                      -> two drawers
+ *   RB2DB##  "Two Drawer Range Bases"                       -> two drawers
  *   RB3DB##  "Two Drawer One False Drawer Front Range Bases" -> two drawers + one false front
  *
  * The book never calls RB3DB a three-drawer cabinet: it is one false front plus
@@ -24,7 +30,7 @@
 /** The dimension block the catalog rows lead with, e.g. `24" W × 34.75" H × 24" D `. */
 const LEADING_DIMENSIONS = /^(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*W\s*[×x]\s*(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*H\s*[×x]\s*(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*D\s*/i;
 
-/** `RB3DB24`, `RB-2DB-30`, `rb3db36` — the frameless drop-in cooktop base family. */
+/** `RB3DB24`, `RB-2DB-30`, `rb3db36` — the frameless range base family (a base for a range top). */
 const RANGE_BASE_CODE = /^RB-?([23])DB-?(\d{1,2})$/;
 
 export type RangeBaseFamily = "two-drawer" | "two-drawer-one-false-front";

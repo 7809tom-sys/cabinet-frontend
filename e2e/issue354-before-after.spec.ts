@@ -1,11 +1,12 @@
 /**
- * Before / after proof for issue #354: the RB3DB24 that stood in a plain base
- * run beside a freestanding range.
+ * Screenshot proof for issue #354: a frameless drop-in cooktop base with its
+ * range top seated on it, drawn the way a sink base is drawn — the shared
+ * countertop slab over the box and the cooktop set into that top, with no
+ * freestanding range in the scene.
  *
- * Both panes are the same real 3D engine (`existingCabinetSku`/`addCabinet`).
- * The left pane is the plan as reported; the right pane is built by the branch's
- * own rules (`repairRangeBasesWithoutCooktop` + `syncRangeAndNeighbourSidePanels`),
- * so the panel you see beside the range is the one the Designer now adds.
+ * Everything comes from the real 3D engine (`existingCabinetSku` +
+ * `addCabinet` + `addThreeDStandardCountertops`), so the image is what the
+ * Designer draws.
  *
  * Run with:
  *   npx vite --port 5178 --strictPort
@@ -19,7 +20,7 @@ import { mkdirSync } from "node:fs";
 const OUT_DIR = "/opt/cursor/artifacts";
 const OUT_FILE = `${OUT_DIR}/issue354-before-after.png`;
 
-test("a range base is replaced by the plain base and a side panel is added", async ({ page }) => {
+test("shows the cooktop base with its range top seated in the countertop", async ({ page }) => {
   mkdirSync(OUT_DIR, { recursive: true });
   page.on("pageerror", (error) => console.log("[pageerror]", error.message));
   page.on("console", (message) => {
@@ -35,13 +36,14 @@ test("a range base is replaced by the plain base and a side panel is added", asy
   const status = await page.evaluate(() => (window as unknown as { __issue354Shot?: string }).__issue354Shot!);
   expect(status).toBe("ok");
 
-  // The captions carry the measured facts, so both claims are checkable in the image.
-  await expect(page.locator("#before-caption")).toContainText("RB3DB24");
-  await expect(page.locator("#after-caption")).toContainText("B24");
-  await expect(page.locator("#after-caption")).toContainText("BEP2535");
-  await expect(page.locator("#after-caption")).not.toContainText("RB3DB24");
-  // The designer-facing name never says "range base".
-  await expect(page.locator("#before-caption")).not.toContainText("Range Base");
+  // The caption carries the measured facts, so the claim is checkable from the image.
+  const caption = page.locator("#after-caption");
+  await expect(caption).toContainText("RB3DB30");
+  await expect(caption).toContainText("drop-in cooktop");
+  await expect(caption).toContainText("no freestanding range");
+  // The cooktop sits ON the countertop line, like a basin in a sink base.
+  await expect(caption).toContainText("countertop top 34.75");
+  await expect(caption).toContainText("set into it");
 
   await page.waitForTimeout(900);
   await page.screenshot({ path: OUT_FILE });

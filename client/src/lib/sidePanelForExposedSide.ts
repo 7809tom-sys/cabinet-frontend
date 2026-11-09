@@ -61,7 +61,12 @@ const SEAM_IN = 0.125;
 /** How far past its neighbour a taller/deeper box has to stand to have a visible side. */
 const EXPOSURE_MIN_IN = 0.125;
 
-export type SidePanelReason = "beside-range" | "beside-microwave" | "smaller-neighbour";
+export type SidePanelReason =
+  | "beside-range"
+  | "beside-microwave"
+  | "beside-hood"
+  | "beside-oven"
+  | "smaller-neighbour";
 
 export type SidePanelNeed = {
   /** The cabinet whose side is exposed. */
@@ -112,6 +117,33 @@ function isMicrowaveAppliance(item: PlacedCabinet): boolean {
 function isRangeAppliance(item: PlacedCabinet): boolean {
   if (isMicrowaveAppliance(item)) return false;
   return item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description);
+}
+
+/**
+ * A range hood: the ventilation box that hangs in the UPPER band over the range.
+ * A wood hood front (RHF*) is a cabinet face, not the appliance, so it is
+ * excluded exactly as the rest of the app excludes it.
+ */
+function isHoodAppliance(item: PlacedCabinet): boolean {
+  const code = (item.masterCode ?? "").toUpperCase();
+  const desc = (item.description ?? "").toLowerCase();
+  if (/^RHF/.test(code) || /range\s*hood\s*front/.test(desc)) return false;
+  return /^HOOD(?:-|\b)/.test(code) || (item.placement === "appliance" && /\bhood\b/.test(desc));
+}
+
+/**
+ * A built-in OVEN (the appliance, or a tall oven cabinet). The base panel rule
+ * needs the oven/range that the base stands beside, whichever form it takes.
+ */
+function isOvenUnit(item: PlacedCabinet): boolean {
+  if (isMicrowaveAppliance(item)) return false;
+  const code = (item.masterCode ?? "").toUpperCase();
+  const desc = (item.description ?? "").toLowerCase();
+  if (/^(?:UOC|TOS|TOD|O3\d)/.test(code)) return true;
+  if (item.placement === "appliance" && /\b(?:single|double|wall)\s+oven\b/.test(desc)) return true;
+  // A tall oven cabinet is a tall box that already carries its own finished
+  // sides; it is handled by the included-pantry rule, not by this trigger.
+  return false;
 }
 
 function spanOf(item: PlacedCabinet, room: RoomData): { side: WallSide; start: number; end: number } | null {
@@ -198,9 +230,62 @@ function describe(reason: SidePanelReason, hostCode: string, selection: AefEndPa
       return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because that side is exposed beside the range.`;
     case "beside-microwave":
       return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because that side is exposed beside the microwave.`;
+    case "beside-hood":
+      return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because that side faces the range hood.`;
+    case "beside-oven":
+      return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because that side faces the oven/range.`;
     case "smaller-neighbour":
       return `A 3/4″ side panel (${selection.masterCode}) was added to the ${where} side of ${hostCode} because the adjacent cabinet is smaller and leaves that side exposed.`;
   }
+}
+
+/**
+ * A tall unit that already carries its own finished end: a pantry, a tall oven
+ * tower, or a refrigerator bay box. A run that butts one of these needs no
+ * separate board on that side — the tall box finishes it.
+ */
+function isTallUnitCabinet(item: PlacedCabinet): boolean {
+  if (item.placement !== "tall") return false;
+  if (isFillerItem(item) || isPanelItem(item)) return false;
+  return true;
+}
+
+/**
+ * True when a box on this side finishes the host's side completely, so no board
+ * may go there. That is: another cabinet of the same layer at full height and
+ * depth, a filler, an existing panel, or a tall unit that covers the side.
+ *
+ * Tom's rules (Nov 9 2026): a panel goes ONLY on an exposed side — never on a
+ * side that abuts another cabinet or a finished tall unit. A tall unit that is
+ * part of the run already has its own end treatment.
+ */
+function sideIsCovered(
+  host: PlacedCabinet,
+  side: "start" | "end",
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): boolean {
+  return placed.some((other) => {
+    if (other.uid === host.uid) return false;
+    if (!neighbourAt(host, other, side, room)) return false;
+    // A panel or filler only "covers" the side when it actually stands in this
+    // side's 3/4" slot. A panel on the opposite side must not block this one.
+    const hostSpan = spanOf(host, room);
+    const otherSpan = spanOf(other, room);
+    if (!hostSpan || !otherSpan) return false;
+    const inThisSlot = side === "start"
+      ? otherSpan.end >= hostSpan.start - SEAM_IN && otherSpan.end <= hostSpan.start + SIDE_PANEL_THICKNESS_IN + SEAM_IN
+      : otherSpan.start >= hostSpan.end - SEAM_IN && otherSpan.start <= hostSpan.end + SIDE_PANEL_THICKNESS_IN + SEAM_IN;
+    if (isPanelItem(other) || isFillerItem(other)) return inThisSlot;
+    // A tall unit always finishes the side it stands against.
+    if (isTallUnitCabinet(other)) return true;
+    // Appliances never finish a cabinet's side: a range, oven, microwave or hood
+    // is exactly the case where a panel IS required.
+    if (other.placement === "appliance") return false;
+    if (other.placement !== host.placement) return false;
+    // A same-layer box at least as tall and as deep covers the side entirely.
+    return uncoveredBand(host, other) == null;
+  });
 }
 
 /**
@@ -254,17 +339,33 @@ export function sidePanelNeeds(input: {
     for (const side of ["start", "end"] as const) {
       const span = spanOf(host, room);
       if (!span) continue;
+      // A side that another cabinet, filler, panel or tall unit already finishes
+      // is not exposed: no board goes there (Tom's rule b).
+      if (sideIsCovered(host, side, placed, room)) continue;
       // The neighbour on this side, whatever layer it belongs to: an appliance
       // in the same plan bay hides nothing unless it is the same height, and a
       // cabinet of another layer never covers this one's side.
       const neighbour = placed.find((other) => {
         if (other.uid === host.uid) return false;
         if (isPanelItem(other)) return false;
-        // Cooking equipment may stand 3/4" off the host: that gap is the panel.
-        const appliance = isRangeAppliance(other) || isMicrowaveAppliance(other);
+        // Cooking equipment and hoods may stand 3/4" off the host: that gap is
+        // the panel.
+        const appliance = isRangeAppliance(other) || isMicrowaveAppliance(other) || isHoodAppliance(other);
         return neighbourAt(host, other, side, room, appliance ? SEAM_IN + SIDE_PANEL_THICKNESS_IN : SEAM_IN);
       }) ?? null;
 
+      // Rule 1 (Tom, Nov 9 2026): the wall cabinet side that faces a RANGE HOOD
+      // is required to carry a wall end panel sized to that cabinet's height.
+      if (host.placement === "wall" && neighbour && isHoodAppliance(neighbour)) {
+        record(host, side, "beside-hood", uncoveredBand(host, neighbour) ?? wholeSideBand(host));
+        continue;
+      }
+      // Rule 2 (Tom, Nov 9 2026): the base cabinet side that faces the oven/range
+      // is required to carry a base end panel.
+      if (host.placement === "base" && neighbour && (isRangeAppliance(neighbour) || isOvenUnit(neighbour))) {
+        record(host, side, "beside-oven", uncoveredBand(host, neighbour) ?? wholeSideBand(host));
+        continue;
+      }
       if (neighbour && isRangeAppliance(neighbour)) {
         record(host, side, "beside-range", uncoveredBand(host, neighbour) ?? wholeSideBand(host));
         continue;
@@ -468,7 +569,11 @@ export function rangesFinishedBySidePanels(input: {
   room: RoomData;
   needs: readonly SidePanelNeed[];
 }): Set<string> {
-  const covered = new Set(input.needs.filter((need) => need.reason === "beside-range").map((need) => need.hostUid));
+  // A base side facing the range reports as `beside-oven`; both count as the
+  // panel that satisfies the range's handle clearance.
+  const covered = new Set(input.needs
+    .filter((need) => need.reason === "beside-range" || need.reason === "beside-oven")
+    .map((need) => need.hostUid));
   const finished = new Set<string>();
   for (const range of input.placed) {
     if (!isRangeAppliance(range)) continue;
@@ -491,4 +596,198 @@ export function rangesFinishedBySidePanels(input: {
  */
 export function rangeOrMicrowaveInPlan(placed: readonly PlacedCabinet[]): boolean {
   return placed.some((item) => isRangeAppliance(item) || isMicrowaveAppliance(item));
+}
+
+/**
+ * A side panel the customer asked for by hand: the per-cabinet Left panel /
+ * Right panel toggle.
+ *
+ * Tom (Nov 9 2026): these are PANEL options, not fillers. A toggle puts the
+ * line's real end panel (frameless: the 3/4" WEP/BEP/TEP board; framed: the
+ * line's own end panel / skin row) on that side, priced as a real catalog row.
+ *
+ * A panel goes ONLY on an exposed side: a side that abuts another cabinet, a
+ * filler, or a tall unit that finishes it is refused with the reason, so a
+ * toggle can never stack a board where nothing shows.
+ */
+export type ManualPanelSide = "start" | "end";
+
+export type ManualPanelResult =
+  | { ok: true; panel: PlacedCabinet; placed: PlacedCabinet[] }
+  | { ok: false; reason: string };
+
+/** The board a per-cabinet toggle would put on this side, or the reason it cannot. */
+export function manualPanelSelection(
+  host: PlacedCabinet,
+  side: ManualPanelSide,
+  catalog: readonly AefEndPanelCatalogItem[],
+): AefEndPanelSelection | null {
+  if (host.placement !== "wall" && host.placement !== "base" && host.placement !== "tall") return null;
+  return selectAefEndPanel(host.placement, rotatedSize(host).d, placedHeight(host), catalog);
+}
+
+/**
+ * Place or remove the per-cabinet panel on one side.
+ *
+ * `enabled` true seats the line's end panel as a real catalog row outside the
+ * host body (marking it as a customer choice, so the automatic pass never
+ * removes it); false removes the board this toggle owns. The run slides by the
+ * 3/4" when the slot is not free, exactly like the automatic pass.
+ */
+export function setCabinetSidePanel(input: {
+  placed: PlacedCabinet[];
+  hostUid: string;
+  side: ManualPanelSide;
+  enabled: boolean;
+  room: RoomData;
+  catalog: readonly AefEndPanelCatalogItem[];
+  styleId: number | null;
+  makeUid: () => string;
+}): ManualPanelResult {
+  const { hostUid, side, enabled, room, catalog } = input;
+  const host = input.placed.find((item) => item.uid === hostUid);
+  if (!host) return { ok: false, reason: "Select a cabinet first." };
+  const ownedUid = `${hostUid}:manual-panel:${side}`;
+
+  if (!enabled) {
+    const without = input.placed.filter((item) => item.uid !== ownedUid);
+    return without.length === input.placed.length
+      ? { ok: false, reason: "There is no panel on that side to remove." }
+      : { ok: true, panel: input.placed.find((item) => item.uid === ownedUid)!, placed: without };
+  }
+
+  // A panel goes only on a side that is really exposed.
+  const currentHost = input.placed.find((item) => item.uid === hostUid) ?? host;
+  if (sideIsCovered(currentHost, side, input.placed, room)) {
+    const span = spanOf(currentHost, room);
+    const wallLen = span ? wallLength(span.side, room) : 0;
+    const againstWall = span != null
+      && (side === "start" ? span.start <= SEAM_IN : wallLen - span.end <= SEAM_IN);
+    return {
+      ok: false,
+      reason: againstWall
+        ? `${currentHost.masterCode}'s ${side === "start" ? "left" : "right"} side is against the wall, so it needs no panel.`
+        : `${currentHost.masterCode}'s ${side === "start" ? "left" : "right"} side is already finished by the cabinet or tall unit beside it, so it needs no panel.`,
+    };
+  }
+
+  const selection = manualPanelSelection(host, side, catalog);
+  if (!selection) return { ok: false, reason: `${host.masterCode} cannot take a side panel.` };
+
+  const span = spanOf(currentHost, room);
+  if (!span) return { ok: false, reason: `${currentHost.masterCode} is not on a wall, so it has no side to finish.` };
+  let working = input.placed.filter((item) => item.uid !== ownedUid);
+  let startIn = side === "start" ? span.start - SIDE_PANEL_THICKNESS_IN : span.end;
+
+  // The board goes in the 3/4" immediately outside the host, and only that slot
+  // is tested: an existing panel on the OTHER side must never force a shift.
+  const slotIsFree = (items: readonly PlacedCabinet[], at: number, hostUid: string) => items.every((item) => {
+    // `true` = "this item does not block the slot".
+    if (item.uid === hostUid) return true;
+    if (isPanelItem(item)) return true;
+    if (cabinetWall(item, room) !== span.side) return true;
+    const other = spanOf(item, room);
+    if (!other) return true;
+    return !(other.start < at + SIDE_PANEL_THICKNESS_IN - SEAM_IN && other.end > at + SEAM_IN);
+  });
+  if (!slotIsFree(working, startIn, host.uid)) {
+    const shifted = shiftRunForPanel({ placed: working, host, side, wallId: span.side, room });
+    if (!shifted) {
+      return {
+        ok: false,
+        reason: `There is no free 3/4″ on the ${side === "start" ? "left" : "right"} of ${host.masterCode} for a panel, and the run cannot be slid over.`,
+      };
+    }
+    working = shifted;
+    const movedHost = working.find((item) => item.uid === host.uid) ?? host;
+    const movedSpan = spanOf(movedHost, room);
+    if (!movedSpan) return { ok: false, reason: `${host.masterCode} is not on a wall, so it has no side to finish.` };
+    startIn = side === "start" ? movedSpan.start : movedSpan.end;
+  }
+
+  const depth = Math.max(Number(host.depth) || STD.BASE_DEPTH, SIDE_PANEL_THICKNESS_IN);
+  const spot = wallPlacementAt(startIn, SIDE_PANEL_THICKNESS_IN, depth, span.side, room, host.peninsulaSide ?? null, false);
+  if (Math.abs((spot.wallOffset ?? startIn) - startIn) > 0.2) {
+    return { ok: false, reason: `The run has no free 3/4″ on the ${side === "start" ? "left" : "right"} of ${host.masterCode}.` };
+  }
+  const panel: PlacedCabinet = {
+    uid: ownedUid,
+    cabinetId: selection.cabinetId ?? 0,
+    masterCode: selection.masterCode,
+    description: `${selection.masterCode} 3/4" Frameless End Panel`,
+    category: "Panels",
+    subCategory: "End panel",
+    placement: host.placement as "wall" | "base" | "tall",
+    ...spot,
+    wallId: spot.wallId ?? span.side,
+    wallOffset: spot.wallOffset ?? startIn,
+    width: SIDE_PANEL_THICKNESS_IN,
+    nominalWidth: SIDE_PANEL_THICKNESS_IN,
+    depth,
+    nominalDepth: depth,
+    height: Math.max(0, Math.min(placedHeight(host), placedHeight(host))),
+    nominalHeight: selection.stockHeight,
+    mountBottom: typeof host.mountBottom === "number" ? host.mountBottom : null,
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+    styleId: host.styleId ?? input.styleId,
+    // A customer choice, not an auto panel: the automatic pass never removes it.
+    fieldModificationNote: `Customer panel: ${side === "start" ? "left" : "right"} side of ${host.masterCode}. Cut from ${selection.masterCode}.`,
+  };
+  const accepted = appendCollisionFreePlacements(
+    working.filter((item) => item.placement !== "appliance" && item.uid !== host.uid),
+    [panel],
+    room,
+  );
+  if (accepted.rejected.length > 0) {
+    return { ok: false, reason: `Another piece already occupies the 3/4″ on the ${side === "start" ? "left" : "right"} of ${host.masterCode}.` };
+  }
+  return {
+    ok: true,
+    panel,
+    placed: [
+      ...accepted.placed,
+      ...working.filter((item) => item.uid === host.uid),
+      ...working.filter((item) => item.placement === "appliance"),
+    ],
+  };
+}
+
+/** True when the per-cabinet toggle already owns a panel on this side. */
+export function cabinetSidePanelFor(
+  hostUid: string,
+  side: ManualPanelSide,
+  placed: readonly PlacedCabinet[],
+): PlacedCabinet | null {
+  return placed.find((item) => item.uid === `${hostUid}:manual-panel:${side}`) ?? null;
+}
+
+/**
+ * Remove the filler boards that a REQUIRED panel has made redundant on the same
+ * side. Tom's rule (Nov 9 2026): when a panel is required, the panel wins; a
+ * filler only fills whatever gap is left over, never the panel's own slot.
+ */
+export function dropFillersOvertakenByPanel(input: {
+  placed: readonly PlacedCabinet[];
+  needs: readonly SidePanelNeed[];
+  room: RoomData;
+}): { placed: PlacedCabinet[]; removed: PlacedCabinet[] } {
+  const required = new Set(input.needs.map((need) => need.hostUid));
+  const removed = input.placed.filter((item) => {
+    if (!isFillerItem(item)) return false;
+    // A filler attached to a host that now requires a panel moves aside.
+    if (item.fillerForCabinetUid && required.has(item.fillerForCabinetUid)) return true;
+    // Any filler standing in a required panel's own 3/4" column also moves
+    // aside: the panel is required there, and the filler only fills what is left.
+    const fillerSpan = spanOf(item, input.room);
+    if (!fillerSpan) return false;
+    return input.needs.some((need) => {
+      if (cabinetWall(item, input.room) !== need.wallId) return false;
+      return fillerSpan.end > need.startIn + SEAM_IN
+        && fillerSpan.start < need.startIn + SIDE_PANEL_THICKNESS_IN - SEAM_IN;
+    });
+  });
+  if (removed.length === 0) return { placed: input.placed as PlacedCabinet[], removed: [] };
+  const gone = new Set(removed.map((item) => item.uid));
+  return { placed: input.placed.filter((item) => !gone.has(item.uid)), removed };
 }
