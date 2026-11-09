@@ -9361,6 +9361,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  const addApprovedRangeCompanions = useCallback(() => {
 	    const prompt = rangeCompanionPrompt;
 	    if (!prompt) return;
+	    const approvedBridge = prompt.proposal.bridge;
+	    if (!approvedBridge) {
+	      toast.error(prompt.proposal.bridgeUnavailableReason ?? "No bridge cabinet can be added over this range. Nothing was added.");
+	      return;
+	    }
 	    const range = placedRef.current.find((cabinet) => cabinet.uid === prompt.rangeUid);
 	    if (!range || !isRangeOrOven(range.masterCode, range.description)) {
 	      setRangeCompanionPrompt(null);
@@ -9372,7 +9377,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // availability refresh. The bridge must still be a selected-line source;
 	    // the microwave must still be an available layout appliance at confirm.
 	    const bridgeStillAvailable = wallCabPoolRef.current.some((cabinet) => (
-	      cabinet.id === prompt.proposal.bridge.id && cabinet.masterCode === prompt.proposal.bridge.masterCode
+	      cabinet.id === approvedBridge.id && cabinet.masterCode === approvedBridge.masterCode
 	    ));
 	    const microwaveStillAvailable = appliancePalette.some((cabinet) => (
 	      cabinet.masterCode === prompt.proposal.microwave.masterCode
@@ -9402,9 +9407,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    );
 	    // The chosen height must still be the same real SKU; never place a
 	    // different bridge than the one the person approved.
-	    if (proposal && (proposal.bridge.id !== prompt.proposal.bridge.id || proposal.bridge.masterCode !== prompt.proposal.bridge.masterCode)) {
+	    if (proposal && (proposal.bridge?.id !== approvedBridge.id || proposal.bridge?.masterCode !== approvedBridge.masterCode)) {
 	      setRangeCompanionPrompt(null);
-	      toast.error(`${prompt.proposal.bridge.masterCode} is no longer available at that height for this range. Nothing was added.`);
+	      toast.error(`${approvedBridge.masterCode} is no longer available at that height for this range. Nothing was added.`);
 	      return;
 	    }
 	    if (!proposal) {
@@ -9421,7 +9426,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      null,
 	    );
 	    const bridge = rangeCompanionPlacement(
-	      proposal.bridge,
+	      approvedBridge,
 	      proposal.bridgeSpot,
 	      proposal.bridgeMountBottom,
 	      makeUid(),
@@ -23771,7 +23776,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                : ""}
 	            </AlertDialogDescription>
 	          </AlertDialogHeader>
-	          {rangeCompanionPrompt && rangeCompanionPrompt.proposal.bridgeHeightIn != null && (
+	          {rangeCompanionPrompt && (
 	            <fieldset data-testid="range-bridge-height-choices" className="space-y-2">
 	              <legend className="text-sm font-semibold">Cabinet height over the microwave</legend>
 	              <div role="radiogroup" aria-label="Cabinet height over the microwave" className="grid grid-cols-5 gap-1.5">
@@ -23808,7 +23813,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <div data-testid="range-companion-source-preview" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
 	              <p className="font-semibold">{rangeCompanionPrompt.microwaveAlreadyPlaced ? "The matching bridge will be added above the existing MW-30 only if the upper span is clear." : "Two aligned items will be added only if the upper span is clear."}</p>
 	              <ul className="mt-2 space-y-1 text-xs leading-relaxed">
-	                <li><span className="font-medium">{rangeCompanionPrompt.proposal.bridge.masterCode}</span> — {rangeCompanionPrompt.proposal.bridge.description} <span className="text-emerald-800">({Number(rangeCompanionPrompt.proposal.bridge.height)}″ bridge)</span></li>
+	                {rangeCompanionPrompt.proposal.bridge ? (
+	                  <li><span className="font-medium">{rangeCompanionPrompt.proposal.bridge.masterCode}</span> — {rangeCompanionPrompt.proposal.bridge.description} <span className="text-emerald-800">({Number(rangeCompanionPrompt.proposal.bridge.height)}″ bridge)</span></li>
+	                ) : (
+	                  <li data-testid="range-bridge-unavailable" className="font-medium text-amber-900">{rangeCompanionPrompt.proposal.bridgeUnavailableReason}</li>
+	                )}
 	                <li><span className="font-medium">{rangeCompanionPrompt.proposal.microwave.masterCode}</span> — {rangeCompanionPrompt.proposal.microwave.description} <span className="text-emerald-800">({rangeCompanionPrompt.microwaveAlreadyPlaced ? "already placed" : "layout appliance; quote separately"})</span></li>
 	              </ul>
 	              <p className="mt-3 border-t border-emerald-200 pt-3 text-xs leading-relaxed">{rangeCompanionDetail(rangeCompanionPrompt.proposal)}</p>
@@ -23817,7 +23826,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          )}
 	          <AlertDialogFooter>
 	            <AlertDialogCancel>No — keep the range as placed</AlertDialogCancel>
-	            <AlertDialogAction onClick={addApprovedRangeCompanions}>{rangeCompanionPrompt?.microwaveAlreadyPlaced ? "Yes — add bridge" : "Yes — add bridge and microwave"}</AlertDialogAction>
+	            <AlertDialogAction onClick={addApprovedRangeCompanions} disabled={!rangeCompanionPrompt?.proposal.bridge}>{rangeCompanionPrompt?.microwaveAlreadyPlaced ? "Yes — add bridge" : "Yes — add bridge and microwave"}</AlertDialogAction>
 	          </AlertDialogFooter>
 	        </AlertDialogContent>
 	      </AlertDialog>

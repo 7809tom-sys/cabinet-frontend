@@ -60,8 +60,8 @@ describe("microwave bridge height choice (Tom, Nov 8)", () => {
     for (const choice of choices) {
       const proposal = proposalFor(30, catalog(), { bridgeHeightIn: choice.heightIn })!;
       expect(proposal.bridgeHeightIn).toBe(choice.heightIn);
-      expect(proposal.bridge.masterCode).toBe(`W30${choice.heightIn}`);
-      expect(proposal.bridgeMountBottom + Number(proposal.bridge.height)).toBe(choice.topIn);
+      expect(proposal.bridge!.masterCode).toBe(`W30${choice.heightIn}`);
+      expect(proposal.bridgeMountBottom + Number(proposal.bridge!.height)).toBe(choice.topIn);
     }
   });
 
@@ -73,9 +73,9 @@ describe("microwave bridge height choice (Tom, Nov 8)", () => {
     expect(microwaveBridgeHeightForNeighbor(neighborHeight)).toBe(bridgeHeight);
     const proposal = proposalFor(neighborHeight)!;
     expect(proposal.bridgeHeightIn).toBe(bridgeHeight);
-    expect(proposal.bridge.masterCode).toBe(sku);
+    expect(proposal.bridge!.masterCode).toBe(sku);
     expect(proposal.bridgeMountBottom).toBe(72);
-    expect(proposal.bridgeMountBottom + Number(proposal.bridge.height)).toBe(top);
+    expect(proposal.bridgeMountBottom + Number(proposal.bridge!.height)).toBe(top);
     // Auto Design's build selector uses the same mapping.
     expect(overRangeBridgeHeightFor(neighborHeight, catalog())).toBe(bridgeHeight);
     expect(overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: neighborHeight, wallCatalog: catalog(), ceilingIn: 96 })?.masterCode).toBe(sku);
@@ -101,12 +101,12 @@ describe("microwave bridge height choice (Tom, Nov 8)", () => {
     expect(low.filter((choice) => choice.bridge == null).map((choice) => choice.heightIn)).toEqual([21, 24]);
     expect(low.find((choice) => choice.heightIn === 24)?.disabledReason).toContain("past the 90″ ceiling");
     // A disabled height cannot be forced through the request.
-    expect(proposalFor(30, catalog([21]), { bridgeHeightIn: 21 })!.bridge.masterCode).toBe("W3012");
+    expect(proposalFor(30, catalog([21]), { bridgeHeightIn: 21 })!.bridge!.masterCode).toBe("W3012");
   });
 
   it("places, normalizes and bills exactly the chosen SKU", () => {
     const proposal = proposalFor(36, catalog(), { bridgeHeightIn: 15 })!;
-    const bridge = rangeCompanionPlacement(proposal.bridge, proposal.bridgeSpot, proposal.bridgeMountBottom, "bridge", 11);
+    const bridge = rangeCompanionPlacement(proposal.bridge!, proposal.bridgeSpot, proposal.bridgeMountBottom, "bridge", 11);
     expect(bridge).toMatchObject({ cabinetId: 3015, masterCode: "W3015", height: 15, mountBottom: 72, overRangeMicrowaveBridge: true });
     const microwave = rangeCompanionPlacement(proposal.microwave, proposal.microwaveSpot, proposal.microwaveMountBottom, "mw", null);
     const plan = [range, ...neighbors(36), microwave, bridge];

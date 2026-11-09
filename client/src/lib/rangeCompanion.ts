@@ -13,10 +13,13 @@ import {
   wallRunOffset,
 	wallRunSpan,
   adjoiningUpperIn,
-  MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN,
-  microwaveBridgeHeightForNeighbor,
 } from "@/lib/design";
-import { bridgeFamilyGeometry, overRangeBridgeFor } from "@/lib/overRangeCompanion";
+import {
+  bridgeFamilyGeometry,
+  microwaveBridgeClearsCeiling,
+  microwaveBridgeHeightPick,
+  overRangeSettingTopLineIn,
+} from "@/lib/overRangeCompanion";
 
 /**
  * A source-backed proposal for an over-range microwave with its short bridge
@@ -25,7 +28,8 @@ import { bridgeFamilyGeometry, overRangeBridgeFor } from "@/lib/overRangeCompani
  * room-aware collision gate at commit time.
  */
 export type RangeCompanionProposal = {
-  bridge: DesignCabinet;
+  /** The chosen enabled height's real SKU; null when no height can be added (see bridgeUnavailableReason). */
+  bridge: DesignCabinet | null;
   microwave: DesignCabinet;
   bridgeSpot: { x: number; y: number; rotation: number; wallId?: string; wallOffset?: number };
   microwaveSpot: { x: number; y: number; rotation: number; wallId?: string; wallOffset?: number };
@@ -33,8 +37,10 @@ export type RangeCompanionProposal = {
   bridgeMountBottom: number;
   /** The five bridge heights offered over the microwave, in order. */
   bridgeChoices: RangeBridgeHeightChoice[];
-  /** The offered height `bridge` is; null when the line sells none of the five at this width. */
+  /** The offered height `bridge` is; null when every one of the five is disabled. */
   bridgeHeightIn: number | null;
+  /** Shown in the pop-up when `bridge` is null; nothing is added in that case. */
+  bridgeUnavailableReason: string | null;
 };
 
 /** Tom's rule (Nov 8): the cabinet over the microwave is one of exactly these heights. */
@@ -109,35 +115,30 @@ export function rangeBridgeHeightChoices(input: {
     if (!bridge) {
       return { heightIn, topIn, bridge: null, disabledReason: `${sku} is not in ${line} catalog.` };
     }
-    if (Number.isFinite(ceiling) && ceiling > 0 && topIn > ceiling + 0.01) {
+    if (!microwaveBridgeClearsCeiling(topIn - OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM_IN, ceiling)) {
       return { heightIn, topIn, bridge: null, disabledReason: `${bridge.masterCode} would end at ${topIn}″, past the ${ceiling}″ ceiling.` };
     }
     return { heightIn, topIn, bridge, disabledReason: null };
   });
 }
 
-/**
- * The preselected height. A 30/36/42" neighbour maps to its 12/18/24" bridge
- * (Tom, Nov 8); 15" and 21" stay selectable but are never the default for those
- * three, so if the mapped SKU is unavailable the fallback stays among 12/18/24.
- * Any other neighbour height takes the tallest enabled choice whose top does not
- * pass the neighbours' top line (or the shortest, when every choice passes it).
- */
+/** The preselected height: `microwaveBridgeHeightPick` over the enabled choices, as the build picks. */
 export function preselectedRangeBridgeHeight(
   choices: readonly RangeBridgeHeightChoice[],
   upperTopLineIn: number | null,
   neighborHeightIn: number | null = null,
 ): number | null {
-  const enabled = choices.filter((choice) => choice.bridge != null);
-  if (enabled.length === 0) return null;
-  const mapped = microwaveBridgeHeightForNeighbor(neighborHeightIn);
-  if (mapped != null && enabled.some((choice) => choice.heightIn === mapped)) return mapped;
-  const mappedHeights = Object.values(MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN);
-  const mappedCandidates = enabled.filter((choice) => mappedHeights.includes(choice.heightIn));
-  const candidates = mapped != null && mappedCandidates.length > 0 ? mappedCandidates : enabled;
-  if (upperTopLineIn == null || !Number.isFinite(upperTopLineIn)) return candidates[candidates.length - 1]!.heightIn;
-  const fitting = candidates.filter((choice) => choice.topIn <= upperTopLineIn + 0.01);
-  return (fitting.length ? fitting[fitting.length - 1]! : candidates[0]!).heightIn;
+  return microwaveBridgeHeightPick(choices.filter((choice) => choice.bridge != null), upperTopLineIn, neighborHeightIn);
+}
+
+/** Why no bridge can go over this range: no SKU at the range width, or none that clears the ceiling. */
+export function rangeBridgeUnavailableReason(choices: readonly RangeBridgeHeightChoice[], rangeWidthIn: number, lineName?: string | null): string {
+  const width = Math.round(rangeWidthIn);
+  const line = lineName?.trim() ? `The ${lineName.trim()} line` : "The selected door line";
+  const missing = choices.every((choice) => /is not in .* catalog\.$/.test(choice.disabledReason ?? ""));
+  return missing
+    ? `${line} sells no ${width}″-wide bridge (W${width}12–W${width}24) for this ${width}″ range, so no cabinet can be added over the microwave.`
+    : `None of the ${width}″-wide bridges fits this room (see the heights above), so no cabinet can be added over the microwave.`;
 }
 
 /** The upper beside the range's bridge span that sets the top line, with its height. */
@@ -156,8 +157,9 @@ export function rangeAdjoiningUpperIn(
 }
 
 /** The dialog sentence, written for the chosen height. */
-export function rangeCompanionSummary(proposal: Pick<RangeCompanionProposal, "bridge" | "microwave" | "bridgeMountBottom">): string {
+export function rangeCompanionSummary(proposal: Pick<RangeCompanionProposal, "bridge" | "microwave" | "bridgeMountBottom"> & { bridgeUnavailableReason?: string | null }): string {
   const microwaveHeight = numberDimension(proposal.microwave.height);
+  if (!proposal.bridge) return proposal.bridgeUnavailableReason ?? "No bridge cabinet can be added over this range.";
   const top = proposal.bridgeMountBottom + numberDimension(proposal.bridge.height);
   return `The ${microwaveHeight}″ ${proposal.microwave.masterCode} ends at the fixed ${proposal.bridgeMountBottom}″ bridge datum. The selected ${numberDimension(proposal.bridge.height)}″ ${proposal.bridge.masterCode} begins at ${proposal.bridgeMountBottom}″ and ends at ${top}″.`;
 }
@@ -165,6 +167,7 @@ export function rangeCompanionSummary(proposal: Pick<RangeCompanionProposal, "br
 /** The detail line under the item list, written for the chosen height. */
 export function rangeCompanionDetail(proposal: Pick<RangeCompanionProposal, "bridge" | "microwave" | "bridgeMountBottom" | "microwaveMountBottom">): string {
   const microwaveHeight = numberDimension(proposal.microwave.height);
+  if (!proposal.bridge) return `The ${microwaveHeight}″ ${proposal.microwave.masterCode} would run from ${proposal.microwaveMountBottom}″ to ${proposal.bridgeMountBottom}″, but no real bridge is available above it, so nothing is added.`;
   const top = proposal.bridgeMountBottom + numberDimension(proposal.bridge.height);
   return `The ${microwaveHeight}″ ${proposal.microwave.masterCode} runs from ${proposal.microwaveMountBottom}″ to ${proposal.bridgeMountBottom}″. The selected real ${proposal.bridge.masterCode} begins at ${proposal.bridgeMountBottom}″ with no gap or trim and ends at ${top}″.`;
 }
@@ -198,32 +201,22 @@ export function rangeCompanionProposal(
   const microwaveBottom = OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM_IN - microwaveHeight;
   const ceilingIn = wallCeilingFor(range, room);
   const bridgeChoices = rangeBridgeHeightChoices({ rangeWidthIn: rangeWidth, wallCatalog: wallCabinets, ceilingIn, lineName: options.lineName });
+  // A disabled height is never applied, whether requested or preselected.
   const requested = bridgeChoices.find((choice) => choice.heightIn === options.bridgeHeightIn && choice.bridge != null);
-  // The shared build selector sizes a bridge from the wall-height setting. Its
-  // top stands in for the upper line when no upper adjoins the range yet, and
-  // it is the fallback when the line sells none of the five at this width.
-  const settingBridge = overRangeBridgeFor({
-    rangeWidthIn: rangeWidth,
-    wallCabinetHeightIn: wallCabinetHeight,
-    wallCatalog: wallCabinets,
-    ceilingIn,
-  });
   const neighbor = options.placed ? rangeAdjoiningUpperIn(range, options.placed, room) : null;
-  // Without an adjoining upper yet, the wall-height setting is the neighbour.
-  const upperTopLine = neighbor?.topIn
-    ?? (settingBridge ? OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM_IN + numberDimension(settingBridge.height) : null);
+  // Without an adjoining upper yet, the wall-height setting is the neighbour,
+  // exactly as the Auto Design build reads it.
+  const upperTopLine = neighbor?.topIn ?? overRangeSettingTopLineIn(wallCabinetHeight, wallCabinets);
   const neighborHeight = neighbor?.heightIn ?? wallCabinetHeight;
   const preselected = requested?.heightIn ?? preselectedRangeBridgeHeight(bridgeChoices, upperTopLine, neighborHeight);
-  const chosen = bridgeChoices.find((choice) => choice.heightIn === preselected)?.bridge ?? null;
-  const bridge = chosen ?? settingBridge;
-  if (!bridge) return null;
+  const bridge = bridgeChoices.find((choice) => choice.heightIn === preselected)?.bridge ?? null;
 
   const microwaveWidth = numberDimension(microwave.width);
   const microwaveDepth = numberDimension(microwave.depth);
-  const bridgeWidth = numberDimension(bridge.width);
-  const bridgeDepth = numberDimension(bridge.depth);
-  const bridgeHeight = numberDimension(bridge.height);
-  if (!microwaveWidth || !microwaveDepth || !bridgeWidth || !bridgeDepth || !bridgeHeight) return null;
+  const bridgeWidth = bridge ? numberDimension(bridge.width) : rangeWidth;
+  const bridgeDepth = bridge ? numberDimension(bridge.depth) : microwaveDepth;
+  const bridgeHeight = bridge ? numberDimension(bridge.height) : 0;
+  if (!microwaveWidth || !microwaveDepth || !bridgeWidth || !bridgeDepth || (bridge && !bridgeHeight)) return null;
 
   const microwaveSpot = mountedMicrowaveOverRangeSpot({ width: microwaveWidth, depth: microwaveDepth }, range, room);
   const side = cabinetWall(range, room);
@@ -242,7 +235,8 @@ export function rangeCompanionProposal(
     microwaveMountBottom: microwaveBottom,
     bridgeMountBottom: OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM_IN,
     bridgeChoices,
-    bridgeHeightIn: chosen ? preselected : null,
+    bridgeHeightIn: bridge ? preselected : null,
+    bridgeUnavailableReason: bridge ? null : rangeBridgeUnavailableReason(bridgeChoices, rangeWidth, options.lineName),
   };
 }
 
@@ -327,7 +321,7 @@ export function repairLegacyWscMicrowaveBridges(
     ));
     if (alreadyHasBridge) return candidate;
     const proposal = rangeCompanionProposal(range, room, wallCabinets, appliancePalette, wallCabinetHeight, { placed });
-    if (!proposal) return candidate;
+    if (!proposal?.bridge) return candidate;
     repaired = true;
     repairedUids.push(candidate.uid);
     return {

@@ -15,6 +15,7 @@
 import {
   BRIDGE_STOCK_HEIGHTS,
   bridgeHeightForWallHeight,
+  MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN,
   microwaveBridgeHeightForNeighbor,
   cabinetWall,
   dim,
@@ -96,6 +97,62 @@ function isUsableBridgeRow(cabinet: DesignCabinet): { width: number; height: num
   return { width, height };
 }
 
+/** A frameless line sells 17-5/8" where a framed line sells 18"; both are the 18" bridge. */
+const BRIDGE_STOCK_HEIGHT_MATCH_IN = 0.5;
+
+/** The stock bridge height (12/15/18/21/24) a real box stands for, or null. */
+export function stockBridgeHeightIn(heightIn: number): number | null {
+  const nearest = BRIDGE_STOCK_HEIGHTS.reduce((best, height) => (
+    Math.abs(height - heightIn) < Math.abs(best - heightIn) ? height : best
+  ));
+  return Math.abs(nearest - heightIn) <= BRIDGE_STOCK_HEIGHT_MATCH_IN ? nearest : null;
+}
+
+/** Whether a microwave bridge on the 72" datum fits under the wall's ceiling. Never clipped, never past it. */
+export function microwaveBridgeClearsCeiling(boxHeightIn: number, ceilingIn: number | null | undefined): boolean {
+  const ceiling = Number(ceilingIn);
+  return !(Number.isFinite(ceiling) && ceiling > 0)
+    || OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + boxHeightIn <= ceiling + 0.01;
+}
+
+/** Where the uppers beside the range finish when none is placed yet: the wall-height setting. */
+export function overRangeSettingTopLineIn(
+  wallCabinetHeightIn: number,
+  wallCatalog: readonly { placement?: string | null; width?: string | number | null; height?: string | number | null }[] = [],
+): number {
+  return overRangeUpperRunTop(wallCabinetHeightIn, wallCatalog)
+    ?? kitchenRuleNumber("wall_bottom_in") + wallCabinetHeightIn;
+}
+
+/**
+ * The one height pick for a microwave bridge, shared by the range-companion
+ * pop-up and the Auto Design build. `available` lists the heights the line
+ * really sells at this width and that clear the ceiling, with the top each
+ * lands on from the 72" datum.
+ *
+ * A 30/36/42" neighbour maps to its 12/18/24" bridge (Tom, Nov 8). 15" and 21"
+ * are never the default for those three, so when the mapped SKU is missing the
+ * pick stays among 12/18/24. Any other neighbour height takes the tallest
+ * height whose top does not pass the neighbours' top line, or the shortest
+ * when every height passes it.
+ */
+export function microwaveBridgeHeightPick(
+  available: readonly { heightIn: number; topIn: number }[],
+  upperTopLineIn: number | null,
+  neighborHeightIn: number | null,
+): number | null {
+  const sorted = [...available].sort((left, right) => left.heightIn - right.heightIn);
+  if (sorted.length === 0) return null;
+  const mapped = microwaveBridgeHeightForNeighbor(neighborHeightIn);
+  if (mapped != null && sorted.some((option) => option.heightIn === mapped)) return mapped;
+  const mappedHeights: number[] = Object.values(MICROWAVE_BRIDGE_HEIGHT_BY_NEIGHBOR_IN);
+  const mappedOptions = sorted.filter((option) => mappedHeights.includes(option.heightIn));
+  const candidates = mapped != null && mappedOptions.length > 0 ? mappedOptions : sorted;
+  if (upperTopLineIn == null || !Number.isFinite(upperTopLineIn)) return candidates[candidates.length - 1]!.heightIn;
+  const fitting = candidates.filter((option) => option.topIn <= upperTopLineIn + 0.01);
+  return (fitting.length ? fitting[fitting.length - 1]! : candidates[0]!).heightIn;
+}
+
 /**
  * The solid bridge cabinet above the range. MANDATORY on every build (owner rule,
  * Nov 5 2026): the bridge is placed first, ahead of any microwave or hood, and is
@@ -104,8 +161,8 @@ function isUsableBridgeRow(cabinet: DesignCabinet): { width: number; height: num
  * Selection, in order:
  *   1. the width that matches the RANGE width (a 36" range takes a 36" bridge);
  *   2. else the nearest stock bridge width the line sells;
- *   3. the height that lands the bridge's top on the upper line, else the nearest
- *      real height that still clears the wall's ceiling.
+ *   3. among that width's heights that clear the ceiling, the one
+ *      `microwaveBridgeHeightPick` takes - the same pick the pop-up preselects.
  *
  * The height comes from the run top line, not from a nominal bridge size: with
  * 30" uppers (top 84") a microwave bridge at the 72" datum must be 12" tall, which
@@ -131,18 +188,31 @@ export function overRangeBridgeFor(input: {
   if (rows.length === 0) return null;
 
   const wantedWidth = numberOrZero(input.rangeWidthIn);
-  const requiredHeight = overRangeBridgeHeightFor(input.wallCabinetHeightIn, input.wallCatalog);
-  const ceiling = Number(input.ceilingIn);
-  const heightAllowed = (height: number) => !(Number.isFinite(ceiling) && ceiling > 0)
-    || OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + height <= ceiling + 0.5;
   // Width first: the bridge spans the range, so the exact range width wins and the
-  // nearest stock width is the fallback. Then the height that lands on the upper
-  // line, and only then a real height that still clears the wall's ceiling.
-  return rows
-    .filter((row) => heightAllowed(row.height))
+  // nearest stock width is the fallback. Then the shared height pick among the
+  // real heights at that width that clear the wall's ceiling.
+  const fitting = rows
+    .map((row) => ({ ...row, stockHeight: stockBridgeHeightIn(row.height) }))
+    .filter((row): row is typeof row & { stockHeight: number } => (
+      row.stockHeight != null && microwaveBridgeClearsCeiling(row.height, input.ceilingIn)
+    ));
+  if (fitting.length === 0) return null;
+  const widthGap = Math.min(...fitting.map((row) => Math.abs(row.width - wantedWidth)));
+  const atWidth = fitting.filter((row) => Math.abs(Math.abs(row.width - wantedWidth) - widthGap) <= 0.01);
+  const available = BRIDGE_STOCK_HEIGHTS.flatMap((heightIn) => {
+    const heights = atWidth.filter((row) => row.stockHeight === heightIn).map((row) => row.height);
+    return heights.length ? [{ heightIn, topIn: OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + Math.min(...heights) }] : [];
+  });
+  const heightIn = microwaveBridgeHeightPick(
+    available,
+    overRangeSettingTopLineIn(input.wallCabinetHeightIn, input.wallCatalog),
+    input.wallCabinetHeightIn,
+  );
+  return atWidth
+    .filter((row) => row.stockHeight === heightIn)
     .sort((left, right) => (
       Math.abs(left.width - wantedWidth) - Math.abs(right.width - wantedWidth)
-      || Math.abs(left.height - requiredHeight) - Math.abs(right.height - requiredHeight)
+      || Math.abs(left.height - heightIn!) - Math.abs(right.height - heightIn!)
       || left.cabinet.masterCode.localeCompare(right.cabinet.masterCode)
       || left.cabinet.id - right.cabinet.id
     ))[0]?.cabinet ?? null;
@@ -221,11 +291,8 @@ export function overRangeBridgeOptions(input: {
     .filter((entry): entry is { cabinet: DesignCabinet; width: number; height: number } => entry != null);
   const wantedWidth = numberOrZero(input.rangeWidthIn);
   const requiredHeight = overRangeBridgeHeightFor(input.wallCabinetHeightIn, input.wallCatalog);
-  const ceiling = Number(input.ceilingIn);
-  const heightFits = (height: number) => !(Number.isFinite(ceiling) && ceiling > 0)
-    || OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + height <= ceiling + 0.5;
   return rows
-    .filter((row) => heightFits(row.height))
+    .filter((row) => microwaveBridgeClearsCeiling(row.height, input.ceilingIn))
     .sort((left, right) => (
       Math.abs(left.width - wantedWidth) - Math.abs(right.width - wantedWidth)
       || Math.abs(left.height - requiredHeight) - Math.abs(right.height - requiredHeight)
