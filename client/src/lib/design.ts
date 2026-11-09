@@ -1610,6 +1610,41 @@ export function effectiveStyleId(
 }
 
 /**
+ * The finish a cabinet without its own override inherits. `activeStyleId` is the
+ * placement brush and follows the highlighted Color 1/Color 2 slot; inherited
+ * cabinets must stay on the design's Color 1 while Color 2 is the brush.
+ */
+export function designDefaultStyleId(
+  activeStyleId: number | null,
+  colorOneStyleId: number | null,
+  activeSlot: "A" | "B",
+): number | null {
+  return activeSlot === "B" && colorOneStyleId != null ? colorOneStyleId : activeStyleId;
+}
+
+/**
+ * Older drafts autosaved with Color 2 active did not record Color 1. Recover it
+ * from the most common per-cabinet finish that is not Color 2.
+ */
+export function inferColorOneStyleId(
+  cabinets: Array<{ styleId?: number | null }>,
+  colorTwoStyleId: number | null,
+): number | null {
+  const counts = new Map<number, number>();
+  for (const cabinet of cabinets) {
+    const id = cabinet.styleId;
+    if (id == null || id === colorTwoStyleId) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  let best: number | null = null;
+  let bestCount = 0;
+  counts.forEach((count, id) => {
+    if (count > bestCount) { best = id; bestCount = count; }
+  });
+  return best;
+}
+
+/**
  * When Color 1 changes in a single-finish design (no Color 2), ALL per-cabinet
  * style overrides must be cleared so every cabinet inherits the new active style.
  * This handles the case where cabinets were placed under different styles during
