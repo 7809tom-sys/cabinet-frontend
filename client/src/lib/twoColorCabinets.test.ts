@@ -20,6 +20,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/auto
 import type { AutoDesignInputs } from "@/lib/autoDesignAutoBuild";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
 import { designStyleIds } from "@/lib/acceptedDoorAppearance";
+import { buildDesignCabinetCartLines } from "@/lib/designCartLines";
 import {
   designDefaultStyleId,
   distinctStyleIds,
@@ -337,4 +338,32 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource).toContain("dropIneligibleSkins(pricedPlaced, (item) => (item.styleId != null");
   });
 
+  it("Color 2 lit with no Color 2 chosen still prices every inherited cabinet from Color 1", () => {
+    const designStyleId = designDefaultStyleId(null, AERO_BLANC.id, "B");
+    expect(designStyleId).toBe(AERO_BLANC.id);
+    const placed = [
+      { uid: "b1", cabinetId: 11, masterCode: "B24", description: "Base 24", placement: "base", x: 0, y: 0, width: 24, depth: 24, rotation: 0, styleId: null },
+      { uid: "w1", cabinetId: 12, masterCode: "W3030", description: "Wall 30", placement: "wall", x: 0, y: 0, width: 30, depth: 12, rotation: 0 },
+    ] as PlacedCabinet[];
+    const lines = buildDesignCabinetCartLines({
+      placed,
+      styleId: designStyleId,
+      distributorId: DISTRIBUTOR,
+      tier: "homeowner",
+      styleNameById: new Map([[AERO_BLANC.id, "Aero Blanc"]]),
+      unitPriceFor: (cabinet) => (cabinet.masterCode === "B24" ? 300 : 250),
+    });
+    expect(lines.map((line) => [line.masterCode, line.styleId, line.unitPrice])).toEqual([["B24", AERO_BLANC.id, 300], ["W3030", AERO_BLANC.id, 250]]);
+    // No pricing, cart, build-sheet or 3D pricing gate reads the brush.
+    const cart = designToolSource.slice(designToolSource.indexOf("const cabinetCartLines = useMemo(() => {"), designToolSource.indexOf("const cabinetCartLines = useMemo(() => {") + 400);
+    expect(cart).toContain("if (!designStyleId) return [] as CartItem[];");
+    expect(cart).toContain("styleId: designStyleId,");
+    expect(designToolSource).toContain("push(filler.id, designStyleId, filler.masterCode)");
+    expect(designToolSource).not.toMatch(/if \(!styleId\) return (\[\]|null)/);
+    expect(designToolSource).not.toMatch(/!!styleId\b|styleId \? (unit|pricingStyleIdFor)/);
+    expect(designToolSource).toContain("const unitPrice = priceMap.get(`${panel.cabinetId}:${panel.styleId}`) ?? null;");
+    expect(designToolSource).toMatch(/bundleCabinetPricingSignature\(\s+placed\.map\(\(cabinet\) => \(\{ \.\.\.cabinet, styleId: pricingStyleIdFor\(cabinet\) \}\)\),\s+designStyleId,/);
+    expect(designToolSource).toContain("{missingPricePopoverTarget && designStyleId && (");
+    expect(designToolSource).toContain('if (!designStyleId && placed.length > 0 && paletteType !== "closetparts") {');
+  });
 });
