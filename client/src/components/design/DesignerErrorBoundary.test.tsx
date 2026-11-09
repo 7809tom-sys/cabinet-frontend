@@ -115,7 +115,7 @@ describe("designer error boundary", () => {
 
   it("treats the error after a cancelled preload as the same stale chunk while its reload is on the way", async () => {
     const saves: string[] = [];
-    function Designer() {
+    function Designer(): React.ReactNode {
       useDesignerCrashFlush(React.useCallback(() => saves.push("crash"), []));
       // What React throws for a lazy import that resolved with nothing.
       throw new Error("Element type is invalid. Received a promise that resolves to: undefined.");
