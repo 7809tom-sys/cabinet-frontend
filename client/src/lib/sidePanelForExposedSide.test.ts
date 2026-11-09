@@ -118,6 +118,51 @@ describe("automatic side panels on an exposed side (issue #354 items 3 and 4)", 
     expect(result.skipped[0]?.why).toMatch(/cannot be slid over/);
   });
 
+  it("returns the same array reference on a settled second pass", () => {
+    // The Designer runs this in an effect and calls setPlaced whenever the array
+    // identity changes, so a fresh array on a settled plan would loop forever.
+    const first = syncRangeAndNeighbourSidePanels({
+      placed: [base("left", 0.75), range(24)],
+      room,
+      catalog: panelCatalog,
+      styleId: 540005,
+      makeUid: (() => { let n = 0; return () => `panel-${++n}`; })(),
+    });
+    expect(first.additions).toHaveLength(1);
+    const second = syncRangeAndNeighbourSidePanels({
+      placed: first.placed,
+      room,
+      catalog: panelCatalog,
+      styleId: 540005,
+      makeUid: () => { throw new Error("no panel may be added on a settled pass"); },
+    });
+    expect(second.placed).toBe(first.placed);
+    expect(second.additions).toEqual([]);
+  });
+
+  it("never stacks a duplicate board on a side that already has one", () => {
+    const alreadyPanelled = {
+      ...base("left", 0.75),
+      uid: "existing-panel",
+      masterCode: "BEP2535",
+      description: 'BEP2535 3/4" Frameless End Panel',
+      category: "Panels",
+      subCategory: "End panel",
+      width: SIDE_PANEL_THICKNESS_IN,
+      autoPlacedForUid: "left",
+      autoPlacedSide: "end" as const,
+    };
+    const result = syncRangeAndNeighbourSidePanels({
+      placed: [base("left", 0.75), range(24), alreadyPanelled],
+      room,
+      catalog: panelCatalog,
+      styleId: 540005,
+      makeUid: () => "duplicate",
+    });
+    expect(result.additions).toEqual([]);
+    expect(result.placed.filter((item) => item.autoPlacedForUid === "left").length).toBe(1);
+  });
+
   it("finishes a wall cabinet side beside a microwave with the wall panel for its height", () => {
     const microwave = cab({
       uid: "mw",
@@ -153,6 +198,33 @@ describe("automatic side panels on an exposed side (issue #354 items 3 and 4)", 
     expect(smaller?.side).toBe("end");
     expect(smaller?.selection.masterCode).toBe("WEP1542");
     expect(smaller?.message).toMatch(/adjacent cabinet is smaller/);
+    // The exposed band is the 10" above the short neighbour's top, not the
+    // whole 40-1/4" box.
+    expect(smaller?.bottomIn).toBeCloseTo(84.25, 5);
+    expect(smaller?.heightIn).toBeCloseTo(10, 5);
+  });
+
+  it("mounts the smaller-neighbour panel on the band that really shows", () => {
+    const tall = cab({ uid: "tall-wall", masterCode: "W2440", placement: "wall", offset: 0, width: 24, height: 40.25, mountBottom: 54 });
+    const short = cab({ uid: "short-wall", masterCode: "W3030", placement: "wall", offset: 24, width: 30, height: 30.25, mountBottom: 54 });
+    const result = syncRangeAndNeighbourSidePanels({
+      placed: [tall, short],
+      room,
+      catalog: panelCatalog,
+      styleId: 540005,
+      makeUid: (() => { let n = 0; return () => `panel-${++n}`; })(),
+    });
+    const panel = result.additions.find((item) => item.autoPlacedForUid === "tall-wall")!;
+    expect(panel.masterCode).toBe("WEP1542");
+    // The real geometry: the board covers 84-1/4"–94-1/4" on the tall box's side,
+    // so it sits on the exposed band rather than hanging at the 54" bottom.
+    expect(panel.mountBottom).toBeCloseTo(84.25, 5);
+    expect(panel.height).toBeCloseTo(10, 5);
+    expect((panel.mountBottom ?? 0) + Number(panel.height)).toBeCloseTo(94.25, 5);
+    // It stands outside the 54"-tall cabinet's end, and does not overlap the
+    // shorter neighbour's own footprint.
+    expect(panel.wallOffset).toBeCloseTo(tall.wallOffset! + 24, 5);
+    expect((panel.mountBottom ?? 0)).toBeGreaterThan(Number(short.mountBottom) + 24);
   });
 
   it("leaves two equal cabinets alone", () => {

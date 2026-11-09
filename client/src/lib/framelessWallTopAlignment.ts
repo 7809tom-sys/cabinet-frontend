@@ -54,9 +54,24 @@ export const FRAMELESS_TOP_WALL_HEIGHT_IN = 40.25;
 /** The frameless frameless wall heights the book prints (30-1/4", 35-1/4", 40-1/4"). */
 export const FRAMELESS_WALL_HEIGHTS_IN = [30.25, 35.25, 40.25] as const;
 
-/** The top line a 40-1/4" frameless wall cabinet finishes on above the standard 54" bottom. */
+/**
+ * THE frameless wall top line: 54" bottom + 40-1/4" = 94-1/4".
+ *
+ * Tom's decision (Nov 9 2026, issue #354 item 5): ALL frameless wall cabinet tops
+ * line up here, with no exceptions. A run of nothing but 30-1/4" boxes is raised
+ * too, and the over-microwave and refrigerator bridges are brought onto the same
+ * line from their own 72" datum.
+ */
 export function framelessWallTopDatumIn(): number {
   return kitchenRuleNumber("wall_bottom_in") + FRAMELESS_TOP_WALL_HEIGHT_IN;
+}
+
+/**
+ * The bridge height that puts a bridge's top on the frameless line from a fixed
+ * 72" bottom: 94-1/4 − 72 = 22-1/4".
+ */
+export function framelessBridgeTopHeightIn(bridgeBottomIn: number): number {
+  return Math.max(0, framelessWallTopDatumIn() - bridgeBottomIn);
 }
 
 /** True for the USCD frameless line, read from the same geometry marker every frameless pass uses. */
@@ -95,49 +110,50 @@ export function alignFramelessWallCabinetTops(input: {
   const { placed, room } = input;
   const eligible = input.eligible ? new Set(input.eligible) : null;
   const walls = new Map<string, PlacedCabinet[]>();
+  // A wall is frameless when ANY cabinet on it says so. Auto-Design's bridge and
+  // refrigerator-cap records are built from catalog rows that can arrive without
+  // the geometry marker, so requiring the marker on every piece would silently
+  // skip the very bridges this rule has to bring onto the line.
+  const framelessWalls = new Set<string>();
   for (const cabinet of placed) {
     if (cabinet.placement !== "wall") continue;
-    if (!isFramelessLine(cabinet)) continue;
     const wall = cabinet.wallId ?? "";
     const group = walls.get(wall);
     if (group) group.push(cabinet);
     else walls.set(wall, [cabinet]);
+    if (isFramelessLine(cabinet)) framelessWalls.add(wall);
   }
   if (walls.size === 0) return { placed: placed as PlacedCabinet[], aligned: [], warnings: [] };
 
   const aligned: FramelessWallTopAlignment["aligned"] = [];
   const warnings: string[] = [];
   const targets = new Map<string, number>();
-  Array.from(walls.entries()).forEach(([wall, group]) => {
-    // The run line is the top of the tallest box really on this wall. The
-    // 40-1/4" datum is only the line once a 40-1/4" box is in the run: a
-    // kitchen of 30-1/4" uppers keeps its 84-1/4" top, and the mandatory 72"
-    // bridge above the range keeps its own 12" box topping out on it. A bridge
-    // never sets the line and is never measured into it.
-    const measured = group
-      .filter((item: PlacedCabinet) => !isStacker(item) && !item.overRangeMicrowaveBridge && item.refrigeratorAssemblyRole !== "bridge")
-      .map((item: PlacedCabinet) => wallTopOf(item, room));
-    const hasTopHeightBox = group.some((item: PlacedCabinet) => placedHeight(item) >= FRAMELESS_TOP_WALL_HEIGHT_IN - 0.01);
-    const tallest = Math.max(hasTopHeightBox ? framelessWallTopDatumIn() : 0, ...measured);
-    if (tallest > 0) targets.set(wall, tallest);
-  });
+  // Every wall the pass touches finishes on the one frameless line, 94-1/4",
+  // whatever heights are in the run and whoever is over the range or fridge.
+  framelessWalls.forEach((wall) => targets.set(wall, framelessWallTopDatumIn()));
 
   let changed = false;
   const next = placed.map((cabinet) => {
     if (cabinet.placement !== "wall") return cabinet;
-    if (!isFramelessLine(cabinet)) return cabinet;
+    // Decide by the wall, not by this one record's marker: a bridge built from a
+    // marker-less catalog row still belongs to the frameless wall it hangs on.
+    if (!framelessWalls.has(cabinet.wallId ?? "")) return cabinet;
     if (eligible && !eligible.has(cabinet.uid)) return cabinet;
     if (cabinet.islandFace) return cabinet;
     if (isStacker(cabinet)) return cabinet;
     if (cabinet.mountBottomAdjusted === true) return cabinet;
-    // The 72" microwave bridge and the refrigerator-bay bridge are hung from
-    // their own appliance datum. Moving them to make a top line even by a
-    // quarter inch would put them inside the microwave they rest on, so their
-    // bottoms are never rewritten; a real difference is named instead.
+    // Issue #354 item 5 (Tom, Nov 9 2026): the over-microwave bridge and the
+    // refrigerator bridge are NOT exempt from the one 94-1/4" line. Their bottom
+    // stays on the fixed 72" datum and the SKU's HEIGHT is what puts the top on
+    // the line (the 22-5/8" box reaches 94-5/8"). This pass therefore never moves
+    // a bridge's bottom; it reports any bridge whose chosen SKU still finishes off
+    // the line, so the shortfall is visible instead of silent.
     if (cabinet.overRangeMicrowaveBridge === true || cabinet.refrigeratorAssemblyRole === "bridge") {
       const target = targets.get(cabinet.wallId ?? "");
-      if (target != null && Math.abs(wallTopOf(cabinet, room) - target) > 0.5) {
-        warnings.push(`${cabinet.masterCode} keeps its own appliance datum and finishes ${Math.abs(wallTopOf(cabinet, room) - target).toFixed(2)}″ off the ${target}″ wall-cabinet top line.`);
+      if (target == null) return cabinet;
+      const top = wallTopOf(cabinet, room);
+      if (Math.abs(top - target) > 0.51) {
+        warnings.push(`${cabinet.masterCode} finishes at ${top}″, ${Math.round((target - top) * 8) / 8}″ off the ${target}″ frameless wall-cabinet top line.`);
       }
       return cabinet;
     }

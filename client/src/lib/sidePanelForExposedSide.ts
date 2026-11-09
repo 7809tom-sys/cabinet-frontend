@@ -73,6 +73,11 @@ export type SidePanelNeed = {
   wallId: WallSide;
   /** Along-wall start the 3/4" board occupies, outside the host body. */
   startIn: number;
+  /**
+   * Finished-floor bottom of the exposed band, so the board is mounted where the
+   * side really shows. Equal to the host's own bottom when the whole side shows.
+   */
+  bottomIn: number;
   /** The exposed side only needs finishing for this much of the box. */
   heightIn: number;
   depthIn: number;
@@ -123,17 +128,42 @@ function verticalOf(item: PlacedCabinet): { bottom: number; top: number } {
   return { bottom, top: bottom + placedHeight(item) };
 }
 
-/** The band of the host's side that no neighbour covers, in inches. */
-function uncoveredBand(host: PlacedCabinet, neighbour: PlacedCabinet): { heightIn: number; depthIn: number } | null {
+/**
+ * True when two pieces share vertical space. The 3/4" column a side panel
+ * occupies is only taken where the panel's own band is already covered: a
+ * shorter neighbour under the exposed band leaves that column free.
+ */
+function verticalOverlap(a: { bottom: number; top: number }, b: { bottom: number; top: number }): boolean {
+  return Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom) > EXPOSURE_MIN_IN;
+}
+
+/**
+ * The band of the host's side that no neighbour covers, in inches.
+ *
+ * `bottomIn` is where that band starts, measured from the floor — not the
+ * host's own bottom. A 40-1/4" wall cabinet beside a 30-1/4" one has its visible
+ * side in the 84-1/4"–94-1/4" band, so the panel has to be mounted there; a
+ * panel pinned to 54" would hang over the part the neighbour already covers and
+ * leave the exposed inch face bare.
+ */
+function uncoveredBand(
+  host: PlacedCabinet,
+  neighbour: PlacedCabinet,
+): { bottomIn: number; heightIn: number; depthIn: number } | null {
   const hostV = verticalOf(host);
   const neighbourV = verticalOf(neighbour);
   const hostDepth = rotatedSize(host).d;
   const neighbourDepth = rotatedSize(neighbour).d;
-  const vertical = hostV.top - Math.max(hostV.bottom, Math.min(hostV.top, neighbourV.top));
+  // The neighbour covers from the floor up to its own top. Whatever the host
+  // shows above that line (and above its own bottom) is the exposed band.
+  const coveredTop = Math.max(hostV.bottom, Math.min(hostV.top, neighbourV.top));
+  const vertical = hostV.top - coveredTop;
   const horizontal = hostDepth - neighbourDepth;
   if (vertical <= EXPOSURE_MIN_IN && horizontal <= EXPOSURE_MIN_IN) return null;
+  const heightIn = Math.max(vertical, 0);
   return {
-    heightIn: Math.max(vertical, 0),
+    bottomIn: hostV.top - heightIn,
+    heightIn,
     depthIn: Math.max(horizontal, 0),
   };
 }
@@ -174,6 +204,16 @@ function describe(reason: SidePanelReason, hostCode: string, selection: AefEndPa
 }
 
 /**
+ * The whole host side, bottom to top — the fallback when a neighbour hides
+ * nothing measurable but the side is still exposed (a range narrower than the
+ * host, say).
+ */
+function wholeSideBand(host: PlacedCabinet): { bottomIn: number; heightIn: number; depthIn: number } {
+  const v = verticalOf(host);
+  return { bottomIn: v.bottom, heightIn: placedHeight(host), depthIn: rotatedSize(host).d };
+}
+
+/**
  * Every side that is exposed for a reason this rule owns, with the book panel
  * that finishes it. Read-only: nothing moves and nothing is placed here.
  */
@@ -185,7 +225,7 @@ export function sidePanelNeeds(input: {
   const { placed, room, catalog } = input;
   const needs: SidePanelNeed[] = [];
   const seen = new Set<string>();
-  const record = (host: PlacedCabinet, side: "start" | "end", reason: SidePanelReason, band: { heightIn: number; depthIn: number }) => {
+  const record = (host: PlacedCabinet, side: "start" | "end", reason: SidePanelReason, band: { bottomIn: number; heightIn: number; depthIn: number }) => {
     const key = `${host.uid}:${side}`;
     if (seen.has(key)) return;
     const span = spanOf(host, room);
@@ -200,6 +240,7 @@ export function sidePanelNeeds(input: {
       reason,
       wallId: span.side,
       startIn: side === "start" ? span.start - SIDE_PANEL_THICKNESS_IN : span.end,
+      bottomIn: band.bottomIn,
       heightIn: band.heightIn > 0 ? band.heightIn : placedHeight(host),
       depthIn: band.depthIn > 0 ? band.depthIn : rotatedSize(host).d,
       placement,
@@ -225,11 +266,11 @@ export function sidePanelNeeds(input: {
       }) ?? null;
 
       if (neighbour && isRangeAppliance(neighbour)) {
-        record(host, side, "beside-range", uncoveredBand(host, neighbour) ?? { heightIn: placedHeight(host), depthIn: rotatedSize(host).d });
+        record(host, side, "beside-range", uncoveredBand(host, neighbour) ?? wholeSideBand(host));
         continue;
       }
       if (neighbour && isMicrowaveAppliance(neighbour)) {
-        record(host, side, "beside-microwave", uncoveredBand(host, neighbour) ?? { heightIn: placedHeight(host), depthIn: rotatedSize(host).d });
+        record(host, side, "beside-microwave", uncoveredBand(host, neighbour) ?? wholeSideBand(host));
         continue;
       }
       if (!neighbour) continue;
@@ -288,6 +329,11 @@ function shiftRunForPanel(input: {
  * larger cabinet slides the run over by the 3/4" first, which is the owner's
  * "shift the cabinets over and put a panel on". A side that cannot take the
  * board is reported so the caller can say why.
+ *
+ * Idempotent: a side that already carries an auto-placed panel is left alone,
+ * and a pass that changes nothing returns `input.placed` by reference. The
+ * Designer runs this in an effect and calls `setPlaced` on a new array, so a
+ * fresh array on a settled plan would re-render (and re-run) forever.
  */
 export function applySidePanels(input: {
   placed: PlacedCabinet[];
@@ -296,20 +342,31 @@ export function applySidePanels(input: {
   styleId: number | null;
   makeUid: () => string;
 }): SidePanelResult {
-  let working = [...input.placed];
+  let working = input.placed;
+  let changed = false;
   const additions: PlacedCabinet[] = [];
   const skipped: SidePanelResult["skipped"] = [];
+  // One board per host side. The board this rule seats records the pair, so a
+  // second pass (or a pass after the run slid) never stacks a duplicate.
+  const alreadyPanelled = new Set(input.placed
+    .filter((item) => item.autoPlacedForUid && item.autoPlacedSide)
+    .map((item) => `${item.autoPlacedForUid}:${item.autoPlacedSide}`));
   for (const need of input.needs) {
+    if (alreadyPanelled.has(`${need.hostUid}:${need.side}`)) continue;
     let host = working.find((item) => item.uid === need.hostUid);
     if (!host) continue;
     let startIn = need.startIn;
     const wallLengthIn = wallLength(need.wallId, input.room);
+    // The 3/4" column is free unless something standing in it shares the band
+    // the panel will occupy. A shorter cabinet under that band is not in the way.
+    const panelBand = { bottom: need.bottomIn, top: need.bottomIn + Math.min(need.heightIn, placedHeight(host)) };
     const occupied = working.some((item) => {
       if (item.uid === host!.uid || isPanelItem(item)) return false;
       if (cabinetWall(item, input.room) !== need.wallId) return false;
       const span = spanOf(item, input.room);
       if (!span) return false;
-      return span.start < startIn + SIDE_PANEL_THICKNESS_IN - SEAM_IN && span.end > startIn + SEAM_IN;
+      const inColumn = span.start < startIn + SIDE_PANEL_THICKNESS_IN - SEAM_IN && span.end > startIn + SEAM_IN;
+      return inColumn && verticalOverlap(verticalOf(item), panelBand);
     });
     const fitsInPlace = startIn >= -0.01 && startIn + SIDE_PANEL_THICKNESS_IN <= wallLengthIn + 0.01 && !occupied;
     if (!fitsInPlace) {
@@ -319,6 +376,7 @@ export function applySidePanels(input: {
         continue;
       }
       working = shifted;
+      changed = true;
       host = working.find((item) => item.uid === need.hostUid) ?? host;
       const hostSpan = spanOf(host, input.room);
       if (!hostSpan) continue;
@@ -330,6 +388,11 @@ export function applySidePanels(input: {
       skipped.push({ hostCode: need.hostCode, side: need.side, reason: need.reason, why: "the run has no free 3/4″ outside the cabinet" });
       continue;
     }
+    // Mount the board on the band that is really showing, never on the host's
+    // own bottom: a 40-1/4" wall beside a 30-1/4" one shows 84-1/4"–94-1/4".
+    const height = Math.max(0, Math.min(need.heightIn, placedHeight(host)));
+    const hostTop = verticalOf(host).top;
+    const mountBottom = Math.max(0, Math.min(need.bottomIn, hostTop - height));
     const panel: PlacedCabinet = {
       uid: input.makeUid(),
       cabinetId: need.selection.cabinetId ?? 0,
@@ -345,15 +408,15 @@ export function applySidePanels(input: {
       nominalWidth: SIDE_PANEL_THICKNESS_IN,
       depth,
       nominalDepth: depth,
-      height: Math.max(0, Math.min(need.heightIn, placedHeight(host))),
+      height,
       nominalHeight: need.selection.stockHeight,
-      mountBottom: host.mountBottom ?? null,
+      mountBottom,
       numberOfDoors: 0,
       numberOfDrawers: 0,
       styleId: host.styleId ?? input.styleId,
       autoPlacedForUid: host.uid,
       autoPlacedSide: need.side,
-      fieldModificationNote: `Auto-added: side panel because the side is exposed (${need.reason}). Cut from ${need.selection.masterCode}.`,
+      fieldModificationNote: `Auto-added: side panel because the side is exposed (${need.reason}). Cut from ${need.selection.masterCode}. Mounted ${mountBottom}″–${mountBottom + height}″.`,
     };
     // A 3/4" board flush against an appliance is the intended contact — the
     // panel is the finished face the range sits against — so the appliance is
@@ -366,9 +429,18 @@ export function applySidePanels(input: {
     }
     const appliances = working.filter((item) => item.placement === "appliance");
     working = [...accepted.placed, ...appliances];
+    changed = true;
+    alreadyPanelled.add(`${need.hostUid}:${need.side}`);
     additions.push(panel);
   }
-  return { placed: working, additions, needs: [...input.needs], skipped };
+  // A settled plan is returned by reference, the same contract
+  // `syncExposedSidePanels` and `syncDishwasherPanels` use.
+  return {
+    placed: changed ? working : (input.placed as PlacedCabinet[]),
+    additions,
+    needs: [...input.needs],
+    skipped,
+  };
 }
 
 /** One call for the design-check rail: what is exposed and what panel finishes it. */

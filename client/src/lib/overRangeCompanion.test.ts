@@ -136,7 +136,7 @@ describe("microwave and bridge are placed during the build", () => {
       room: DEFAULT_ROOM,
       appliancePalette,
       // A line with only full-height uppers and no short bridge family.
-      wallCatalog: wallRows("540005").filter((row) => !/^W\d{2}(?:12|15|18|21|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))),
+      wallCatalog: wallRows("540005").filter((row) => !/^W\d{2}(?:12|15|18|21|23|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))),
       wallCabinetHeightIn: 30,
     });
     expect(result.ok).toBe(false);

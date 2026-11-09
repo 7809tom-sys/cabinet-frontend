@@ -58,12 +58,15 @@ describe("frameless wall top alignment (issue #354 item 7)", () => {
     expect(result.placed.find((item) => item.uid === "tall")?.mountBottom).toBe(54);
   });
 
-  it("keeps a 30-1/4 inch run on its own 84-1/4 inch line", () => {
+  it("raises a run of nothing but 30-1/4 inch boxes to the one 94-1/4 inch line", () => {
+    // Tom's decision (Nov 9 2026): no 30-1/4-only-run exemption. Every frameless
+    // wall cabinet top finishes at 94-1/4".
     const a = wall("a", "W3030", 0, 30, 30.25, 54);
     const b = wall("b", "W2430", 30, 24, 30.25, 54);
     const result = alignFramelessWallCabinetTops({ placed: [a, b], room });
-    expect(result.placed).toEqual([a, b]);
-    expect(result.aligned).toEqual([]);
+    expect(topOf(result.placed.find((item) => item.uid === "a")!)).toBeCloseTo(94.25, 5);
+    expect(topOf(result.placed.find((item) => item.uid === "b")!)).toBeCloseTo(94.25, 5);
+    expect(result.aligned.map((entry) => entry.masterCode).sort()).toEqual(["W2430", "W3030"]);
   });
 
   it("leaves the 72 inch microwave bridge exactly where the bridge rule put it", () => {
@@ -77,22 +80,47 @@ describe("frameless wall top alignment (issue #354 item 7)", () => {
     expect(framelessWallTopLineFor(result.placed, room, "top")).toBeCloseTo(94.25, 5);
   });
 
-  it("keeps the 12 inch bridge on the line when every upper is 30-1/4", () => {
+  it("names the bridge when its own bottom cannot reach the line", () => {
+    // Tom's decision: a bridge is never exempt. Its bottom stays on its fixed
+    // datum, so a 12" W3012 tops at 84" — 10-1/4" short of 94-1/4" — and that
+    // shortfall is reported rather than left silent.
     const bridge = wall("bridge", "W3012", 0, 30, 12, 72, { overRangeMicrowaveBridge: true });
     const neighbour = wall("neighbour", "W3030", 30, 30, 30.25, 54);
     const result = alignFramelessWallCabinetTops({ placed: [bridge, neighbour], room });
-    expect(result.aligned).toEqual([]);
     expect(result.placed.find((item) => item.uid === "bridge")?.mountBottom).toBe(72);
+    expect(topOf(result.placed.find((item) => item.uid === "neighbour")!)).toBeCloseTo(94.25, 5);
+    expect(result.warnings.join(" ")).toContain("W3012");
+    expect(result.warnings.join(" ")).toContain("10.25");
   });
 
-  it("never lowers a bottom, so over-range and over-sink minimums stay satisfied", () => {
-    const raised = wall("raised", "W2440", 0, 24, 40.25, 66);
-    // The over-range upper sits on its own 72" cooking-clearance bottom. The
-    // run top is 106.25" here, so joining it would push the box to 76".
+  it("leaves a bridge that already tops out on the line alone and reports nothing", () => {
+    // The frameless bridge picker now chooses W3023 (22-5/8"): 72 + 22.625 = 94.625.
+    const bridge = wall("bridge", "W3023", 0, 30, 22.625, 72, { overRangeMicrowaveBridge: true });
+    const neighbour = wall("neighbour", "W3030", 30, 30, 30.25, 54);
+    const result = alignFramelessWallCabinetTops({ placed: [bridge, neighbour], room });
+    expect(result.placed.find((item) => item.uid === "bridge")?.mountBottom).toBe(72);
+    expect(result.warnings).toEqual([]);
+    expect(result.aligned.some((entry) => entry.uid === "bridge")).toBe(false);
+  });
+
+  it("never pulls a box down, so the over-range clearance and window minimums survive", () => {
+    // A 40-1/4" box tops exactly on the line; a box already hung higher than the
+    // line (an over-range upper on its 72" cooking clearance) is left alone. The
+    // rule raises a top to the line; lowering one would break the clearance.
+    const onLine = wall("on-line", "W2440", 0, 24, 40.25, 54);
     const over = wall("over", "W3030", 24, 30, 30.25, 72);
-    const result = alignFramelessWallCabinetTops({ placed: [raised, over], room });
-    expect(result.placed.find((item) => item.uid === "over")?.mountBottom).toBe(76);
-    expect((result.placed.find((item) => item.uid === "over")?.mountBottom ?? 0)).toBeGreaterThanOrEqual(72);
+    const result = alignFramelessWallCabinetTops({ placed: [onLine, over], room });
+    expect(topOf(result.placed.find((item) => item.uid === "on-line")!)).toBeCloseTo(94.25, 5);
+    const after = result.placed.find((item) => item.uid === "over")!;
+    expect(after.mountBottom).toBe(72);
+    expect(after.mountBottom!).toBeGreaterThanOrEqual(72);
+  });
+
+  it("raises a whole 30-1/4 inch kitchen to 94-1/4 with no 40-1/4 box present", () => {
+    const a = wall("a", "W3030", 0, 30, 30.25, 54);
+    const result = alignFramelessWallCabinetTops({ placed: [a], room });
+    expect(topOf(result.placed[0]!)).toBeCloseTo(94.25, 5);
+    expect(result.placed[0]!.mountBottom).toBeCloseTo(64, 5);
   });
 
   it("keeps a cabinet the customer moved by hand", () => {

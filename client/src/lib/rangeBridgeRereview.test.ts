@@ -64,7 +64,9 @@ describe("designer re-review: microwave bridge and over-range uppers", () => {
     const onlyW3018 = proposalFor({ neighborHeight: 36, wallCatalog: catalog(30, [18]), ceiling: 89.75 })!;
     expect(onlyW3018.bridge).toBeNull();
     expect(onlyW3018.bridgeHeightIn).toBeNull();
-    expect(onlyW3018.bridgeChoices).toHaveLength(5);
+    // 6 offered heights now: the frameless 22-5/8" (nominal 23) box was added
+    // so a frameless bridge can reach the 94-1/4" line (issue #354 item 5).
+    expect(onlyW3018.bridgeChoices).toHaveLength(6);
     expect(onlyW3018.bridgeChoices.find((choice) => choice.heightIn === 18)?.disabledReason).toBe("W3018 would end at 90″, past the 89.75″ ceiling.");
     expect(onlyW3018.bridgeUnavailableReason).toMatch(/no cabinet can be added over the microwave/);
     expect(rangeCompanionSummary(onlyW3018)).toBe(onlyW3018.bridgeUnavailableReason);

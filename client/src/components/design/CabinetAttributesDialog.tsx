@@ -1159,7 +1159,10 @@ export function CabinetAttributesDialog({
                     <SelectItem value="Blind Corner">Blind Corner</SelectItem>
                     <SelectItem value="Lazy Susan">Lazy Susan</SelectItem>
                     <SelectItem value="Oven Base">Oven Base</SelectItem>
-                    <SelectItem value="Range Base">Range Base</SelectItem>
+                    {/* The stored sub-category value is unchanged so saved rows and
+                        nomenclature keep working; the label the designer reads
+                        never says "range base" (issue #354 item 1). */}
+                    <SelectItem value="Range Base">Cooktop Base</SelectItem>
                     <SelectItem value="Microwave">Microwave</SelectItem>
                     <SelectItem value="Refrigerator">Refrigerator</SelectItem>
                     <SelectItem value="Pantry">Pantry</SelectItem>

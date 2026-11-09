@@ -31,7 +31,7 @@ and the distributor PO.
 
 | File | Change |
 |---|---|
-| `client/src/lib/sidePanelForExposedSide.ts` (new) | `sidePanelNeeds()` finds (a) a side facing a range, (b) a side facing a microwave, (c) the side a shorter/shallower neighbour leaves showing. `applySidePanels()` seats the book's 3/4" panel (`WEP1523/1530/1535/1542`, `BEP2535`, `TEP3096`, `BP9642` via `selectAefEndPanel`) as a real priced catalog row, sliding the run by the 3/4" when the slot is not free. `rangesFinishedBySidePanels()` suppresses the old 3" handle-clearance **filler** prompt where the panel finishes the side. |
+| `client/src/lib/sidePanelForExposedSide.ts` (new) | `sidePanelNeeds()` finds (a) a side facing a range, (b) a side facing a microwave, (c) the side a shorter/shallower neighbour leaves showing, and reports the `bottomIn` / `heightIn` of the band that actually shows. `applySidePanels()` seats the book's 3/4" panel (`WEP1523/1530/1535/1542`, `BEP2535`, `TEP3096`, `BP9642` via `selectAefEndPanel`) as a real priced catalog row **mounted on that band** (a 40-1/4" wall beside a 30-1/4" one gets a 10" panel at 84-1/4"–94-1/4", not one hanging at 54"), sliding the run by the 3/4" when the slot is not free. It is **idempotent**: a side that already carries an `autoPlacedForUid`/`autoPlacedSide` panel is skipped, and a settled pass returns `input.placed` **by reference** so the Designer effect cannot re-render in a loop (the same contract `syncExposedSidePanels` and `syncDishwasherPanels` use). `rangesFinishedBySidePanels()` suppresses the old 3" handle-clearance **filler** prompt where the panel finishes the side. |
 | `client/src/pages/DesignTool.tsx` (new effect) | Frameless lines only; places the panels and raises the notices. |
 | `client/src/pages/DesignTool.tsx` (`designCheckWarnings`) | The design-check rail now lists "A 3/4″ side panel (BEP2535) was added to the right side of B24 because that side is exposed beside the range." |
 | `client/src/pages/DesignTool.tsx` (`rangeClearanceUids`) | Deletes a range from the filler-violation set when the panels cover both its sides. |
@@ -54,26 +54,34 @@ Fillers remain for gaps only (`OF*`, `AF3006`, `SM8` scribe).
 3. An existing saved plan / order line that already carries the code — the
    cart re-sends exactly what was saved.
 
-## 6. Frameless wall tops align to the 40-1/4" top line
+## 6. Frameless wall tops align to the ONE 40-1/4" top line
+
+**Tom's decision (Nov 9 2026, item 5): every frameless wall cabinet top lines up
+to 94-1/4" (54" bottom + the book's 40-1/4" box), with no exceptions. The
+over-microwave/OTR bridge and the refrigerator bridge also top out at 94-1/4": the
+bridge keeps its fixed 72" bottom and the HEIGHT is chosen so its top meets the
+line. There is no 30-1/4"-only-run exemption.**
 
 | File | Change |
 |---|---|
-| `client/src/lib/framelessWallTopAlignment.ts` (new) | `alignFramelessWallCabinetTops()` raises every shorter frameless wall cabinet on a wall until its top meets the tallest box on that wall, and never below the 40-1/4" datum (94-1/4" from the 54" bottom). `framelessWallTopDatumIn`, `framelessWallTopLineFor`, `framelessWallHeightClass`, `isFramelessLine`, `isFramelessStyle`. |
-| `client/src/lib/autoDesignLayout.ts:1372` | Runs after `normalizeUpperHeights`; reports each raised box and any box whose ceiling will not allow it. |
-| `client/src/pages/DesignTool.tsx` (wall-mount effect, restore, draft restore) | Same pass so a manual or loaded plan settles on the same line. |
+| `client/src/lib/framelessWallTopAlignment.ts` | `framelessWallTopDatumIn()` is the single 94-1/4" line; `framelessBridgeTopHeightIn()` is 22-1/4" from the 72" datum. `alignFramelessWallCabinetTops()` now targets 94-1/4" on **every** frameless wall (it no longer derives the line from whichever boxes happen to be present), and the bridge/cap branch is no longer an exemption: a bridge that still misses the line is named with its shortfall. A wall counts as frameless when any cabinet on it carries the marker, so a marker-less auto-built bridge still belongs to its frameless wall. |
+| `client/src/lib/autoDesignLayout.ts` (`isFramelessWallCatalog`) | Decides the line from the wall catalog: the geometry marker, else the presence of a 40-1/4" wall row (frameless-only — a framed line sells 30/36/42). |
+| `client/src/lib/design.ts` (`normalizeStandardWallMounts`) | A `refrigeratorAssemblyRole === "bridge"` box is left to its own bay instead of being re-hung below the line. |
+| `client/src/lib/overRangeCompanion.ts` | `microwaveBridgeHeightPick`, `overRangeBridgeFor`, `overRangeBridgeHeightFor`, `overRangeBridgeOptions` accept `topLineIn`; when set, the pick takes the height whose top reaches that line from the fixed datum, and the tallest the line sells when none reaches it. `singleTopLineFor()` answers whether a catalog finishes on a single line. `BRIDGE_STOCK_HEIGHTS` and the bridge code regex now include **23** (the frameless 22-5/8" box: 72 + 22-5/8 = 94-5/8", the closest the line sells to 94-1/4"). |
+| `client/src/lib/overRangeFill.ts` | Passes the line into the mandatory bridge seat and raises a visible finding when the tallest bridge the line sells still falls short — the bridge is placed, never dropped, and the shortfall is named. |
+| `client/src/lib/rangeCompanion.ts` | Offers the 23" choice and preselects from the single line. |
+| `client/src/lib/autoDesignRefrigeratorBay.ts` | On the frameless line the cap is the 22-5/8" box and its top is measured to 94-1/4" (from the 72" clearance datum), not 54 + the requested height. `framelessLine` now defaults to **false** so a framed line never inherits the frameless line. |
 
-**Interaction with the existing datums (unchanged, and guarded):**
+**Interaction with the existing rules:**
 
-* The **72" bridge datum** (`OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM`) is a
-  *bottom* line set by the OTR microwave. The pass never moves a bridge and never
-  measures a bridge into the run line; a bridge that sits off the line is named,
-  never shortened or dropped. A kitchen whose uppers are all 30-1/4" keeps its
-  84-1/4" line, so its 12" W3012 bridge still tops out exactly on it.
-* **Over-range / over-sink** minimums are bottom floors; the pass only ever
-  raises a bottom, so `OVER_RANGE_UPPER_MIN_BOTTOM_IN` and
-  `OVER_SINK_WALL_MOUNT_BOTTOM` can never be violated.
-* **Other lines** never enter the pass: it keys off the frameless geometry
-  marker (`hasAefPrintedGeometry`), so a framed line keeps its 84" line.
+* The **72" bridge datum** is still the fixed BOTTOM of every over-range bridge.
+  What changed is the height: the picker now chooses the box whose top reaches
+  94-1/4", so a frameless kitchen takes `W30xx23` (22-5/8") instead of the old
+  12" `W3012` that topped out at 84-1/4".
+* **Over-range / over-sink** minimums are bottom floors and the pass never lowers
+  a bottom, so they cannot be violated.
+* **Other lines are untouched**: without a `topLineIn` the neighbour mapping
+  (30→12, 36→18, 42→24) and the 84" line apply exactly as before.
 
 ## 7. Other frameless data aligned to the book
 
@@ -85,14 +93,15 @@ Fillers remain for gaps only (`OF*`, `AF3006`, `SM8` scribe).
 
 `designerCabinetNames.test.ts`, `rangeBaseGuard.test.ts`,
 `sidePanelForExposedSide.test.ts`, `singleDoorTwentyFour.test.ts`,
-`framelessWallTopAlignment.test.ts` — 43 tests, all passing.
+`framelessWallTopAlignment.test.ts`, `framelessBridgeTopLine.test.ts` — 56 tests,
+all passing.
 
 ## Verification
 
 * `tsc --noEmit`: **2,295** errors — identical to the main baseline, and no error
   in any file this branch adds or touches.
-* `vitest run`: **118 failed / 8,576 passed** (baseline 118 / 8,533). The failing
-  file set is byte-identical to main's 66 files; the extra 43 passes are the new
+* `vitest run`: **118 failed / 8,589 passed** (baseline 118 / 8,533). The failing
+  file set is byte-identical to main's 66 files; the extra 56 passes are the new
   suites.
 * `vite build`: passes (needs `NODE_OPTIONS=--max-old-space-size=6144` on this
   VM; the default 2 GB heap OOMs on the repo's existing bundle size, not on this
@@ -100,10 +109,13 @@ Fillers remain for gaps only (`OF*`, `AF3006`, `SM8` scribe).
 
 ## Before / after
 
-`test-artifacts/issue354-before-after.png` — both panes are rendered by the real
-3D engine. Left: the reported plan (B24, dishwasher, **RB3DB24**, freestanding
-range). Right: the branch's output — the RB3DB24 is the plain **B24**, the run
-shifts, and **BEP2535** finishes the side facing the range.
+`test-artifacts/issue354-before-after.png` — committed on this branch. Both panes
+are rendered by the real 3D engine. Left: the reported plan (B24, dishwasher,
+**RB3DB24**, freestanding range). Right: the branch's output — the RB3DB24 is the
+plain **B24**, the run shifts, and **BEP2535** finishes the side facing the
+range.
 
 Reproduce with `npx vite --port 5178` then
-`npx playwright test e2e/issue354-before-after.spec.ts`.
+`npx playwright test e2e/issue354-before-after.spec.ts` (the spec writes
+`/opt/cursor/artifacts/issue354-before-after.png`; copy it to
+`test-artifacts/` to refresh the committed image).

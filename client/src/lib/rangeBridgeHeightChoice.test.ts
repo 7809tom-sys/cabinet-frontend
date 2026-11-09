@@ -54,8 +54,10 @@ const proposalFor = (neighborHeight: number, wallCatalog = catalog(), options: {
 describe("microwave bridge height choice (Tom, Nov 8)", () => {
   it("offers exactly 12/15/18/21/24 with the range-width SKU and the right top", () => {
     const choices = rangeBridgeHeightChoices({ rangeWidthIn: 30, wallCatalog: catalog(), ceilingIn: 96 });
+    // 23 is the frameless 22-5/8" box: 72 + 22-5/8 = 94-5/8, the top that
+    // reaches the frameless 94-1/4" wall line (issue #354 item 5).
     expect(choices.map((choice) => [choice.heightIn, choice.bridge?.masterCode, choice.topIn])).toEqual([
-      [12, "W3012", 84], [15, "W3015", 87], [18, "W3018", 90], [21, "W3021", 93], [24, "W3024", 96],
+      [12, "W3012", 84], [15, "W3015", 87], [18, "W3018", 90], [21, "W3021", 93], [23, "W3023", 95], [24, "W3024", 96],
     ]);
     for (const choice of choices) {
       const proposal = proposalFor(30, catalog(), { bridgeHeightIn: choice.heightIn })!;
@@ -98,7 +100,7 @@ describe("microwave bridge height choice (Tom, Nov 8)", () => {
     expect(missing.bridge).toBeNull();
     expect(missing.disabledReason).toBe("W3021 is not in the Natura Maple catalog.");
     const low = rangeBridgeHeightChoices({ rangeWidthIn: 30, wallCatalog: catalog(), ceilingIn: 90 });
-    expect(low.filter((choice) => choice.bridge == null).map((choice) => choice.heightIn)).toEqual([21, 24]);
+    expect(low.filter((choice) => choice.bridge == null).map((choice) => choice.heightIn)).toEqual([21, 23, 24]);
     expect(low.find((choice) => choice.heightIn === 24)?.disabledReason).toContain("past the 90″ ceiling");
     // A disabled height cannot be forced through the request.
     expect(proposalFor(30, catalog([21]), { bridgeHeightIn: 21 })!.bridge!.masterCode).toBe("W3012");

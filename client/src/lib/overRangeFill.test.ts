@@ -416,10 +416,12 @@ describe("the bridge is 12 inches over 30 inch uppers, not 24", () => {
     }
   });
 
-  it("keeps a frameless bridge on its 72 inch datum so it still rests on the microwave", () => {
-    // A frameless line stores the 12" bridge as 12" but its uppers as 30¼", so the
-    // run top is 84¼". The bridge must not be re-hung off the datum.
-    const room = { ...DEFAULT_ROOM, ceilingHeight: 96 } as RoomData;
+  it("keeps a frameless bridge on its 72 inch datum and reaches the 94-1/4 inch line", () => {
+    // Tom's decision (Nov 9 2026, issue #354 item 5): the frameless line has one
+    // wall top line, 94-1/4", and the bridge must reach it from the fixed 72"
+    // datum. So the pick is the frameless 22-5/8" box (W30xx23), not the old 12"
+    // W3012 that topped out at 84-1/4". Its bottom never moves off 72".
+    const room = { ...DEFAULT_ROOM, ceilingHeight: 108 } as RoomData;
     const seated = placeMandatoryOverRangeBridges({
       placed: [range(60)],
       room,
@@ -430,6 +432,8 @@ describe("the bridge is 12 inches over 30 inch uppers, not 24", () => {
     });
     const bridge = seated.placed.find((item) => item.overRangeMicrowaveBridge === true)!;
     expect(bridge.mountBottom).toBe(72);
-    expect(Number(bridge.height)).toBeLessThanOrEqual(12.75);
+    expect(Number(bridge.height)).toBeGreaterThan(20);
+    expect(72 + Number(bridge.height)).toBeCloseTo(94.63, 1);
+    expect(seated.findings).toEqual([]);
   });
 });

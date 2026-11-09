@@ -24128,9 +24128,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                </DialogDescription>
 	              </DialogHeader>
 	              <div className="space-y-3 text-sm">
-	                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
-	                  Choose the {formatInches(prompt.widthIn)} cooktop for its top in the next step, or place the plain {formatInches(prompt.widthIn)} base here instead. A range base is never placed beside a range or anywhere without a cooktop above it.
-	                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950">
+                  Choose the {formatInches(prompt.widthIn)} cooktop for its top in the next step, or place the plain {formatInches(prompt.widthIn)} base here instead. A cabinet whose top is opened for a cooktop can only stand where a cooktop sits on it, never beside a freestanding range.
+                </div>
 	              </div>
 	              <DialogFooter className="gap-2">
 	                <Button variant="outline" onClick={() => setRangeBaseCooktopPrompt(null)}>Cancel placement</Button>

@@ -75,13 +75,16 @@ describe("a single-door wall cabinet turned horizontal as the range bridge (Tom,
       [15, "W1536 turned horizontal", 87, true],
       [18, "W1836 turned horizontal", 90, true],
       [21, "W2136 turned horizontal", 93, true],
+      [23, null, 95, false],
       [24, null, 96, false],
     ]);
     // The turned view is as wide as the range; the 30" bridges are never used.
     for (const choice of choices.slice(0, 4)) {
       expect([Number(choice.bridge!.width), Number(choice.bridge!.height), choice.bridge!.turnedSideways]).toEqual([36, choice.heightIn, true]);
     }
-    expect(choices[4]!.disabledReason).toBe("W3624 is not in the Natura Maple catalog, and a two-door W2436 cannot be turned horizontal.");
+    expect(choices.find((choice) => choice.heightIn === 24)!.disabledReason).toBe("W3624 is not in the Natura Maple catalog, and a two-door W2436 cannot be turned horizontal.");
+    // 23 is never turned: a turned bridge only exists at 12/15/18/21.
+    expect(choices.find((choice) => choice.heightIn === 23)!.bridge).toBeNull();
   });
 
   it("never turns W2436 or any SKU the catalog lists with two doors; uses width when the door count is missing", () => {
