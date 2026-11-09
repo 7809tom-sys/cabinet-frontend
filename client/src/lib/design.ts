@@ -827,6 +827,12 @@ export interface DesignCabinet {
   cooktopConversionStatus?: CooktopConversionStatus;
   numberOfDoors: number | null;
   numberOfDrawers: number | null;
+  /**
+   * Set only on the over-range view of a single-door wall cabinet turned
+   * horizontal (Tom, Nov 9: W1836 over a 36" range): width and height hold the
+   * turned box (36 x 18); id and masterCode stay the real SKU that is billed.
+   */
+  turnedSideways?: boolean;
   isCornerCabinet: boolean | null;
   /** Cabinet Config requirement for a linked blind-corner filler assembly. */
   fillerRequired?: boolean | null;
@@ -993,6 +999,12 @@ export interface PlacedCabinet {
   mountBottomAdjusted?: boolean;
 	/** True for the short W30 cabinet directly above an MW-30 over a range. */
 	overRangeMicrowaveBridge?: boolean;
+  /**
+   * A single-door wall cabinet hung turned 90 degrees as the bridge over a
+   * range (W1836 over a 36" range). width/height are the turned box (36 x 18);
+   * the SKU and cart line stay W1836. Its door hinges on the top or bottom.
+   */
+  turnedSideways?: boolean;
   /** WSC30 spice-cabinet UID when this wall cabinet is deliberately stacked above it. */
   spiceStackParentUid?: string | null;
   /** Wall cabinet whose top physically supports this glass stacker. */
@@ -2856,7 +2868,8 @@ export function resolvedDesignCabinetDimensions(cabinet: DesignCabinet): Cabinet
         ),
     };
   }
-  const sku = cabinet.placement === "wall" ? wallCabinetSkuDimensions(cabinet.masterCode) : null;
+  const upright = cabinet.placement === "wall" ? wallCabinetSkuDimensions(cabinet.masterCode) : null;
+  const sku = upright && cabinet.turnedSideways ? { width: upright.height, height: upright.width, depth: upright.depth } : upright;
   return {
     width: isBlindCorner(cabinet.masterCode, cabinet.description)
       ? blindCornerNominalWidth(cabinet)
@@ -4245,8 +4258,10 @@ export function normalizePlacedWallCabinetSkuDimensions(cabinet: PlacedCabinet):
     if (Math.abs(cabinet.depth - depth) <= COLLISION_EPSILON_IN && cabinet.nominalDepth === depth) return cabinet;
     return { ...cabinet, depth, nominalDepth: depth };
   }
-  const sku = wallCabinetSkuDimensions(cabinet.masterCode);
-  if (!sku) return cabinet;
+  const upright = wallCabinetSkuDimensions(cabinet.masterCode);
+  if (!upright) return cabinet;
+  // A bridge turned horizontal keeps the SKU's width as its height and vice versa.
+  const sku = cabinet.turnedSideways ? { width: upright.height, height: upright.width, depth: upright.depth } : upright;
   const intentionallyCustom = (value: number, nominal: number | null | undefined) =>
     Number.isFinite(nominal) && Math.abs(value - Number(nominal)) > COLLISION_EPSILON_IN;
   const customWidth = intentionallyCustom(cabinet.width, cabinet.nominalWidth);

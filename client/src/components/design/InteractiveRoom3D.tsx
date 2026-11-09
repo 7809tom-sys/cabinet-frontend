@@ -321,6 +321,13 @@ export function addThreeDProductionLightRig(
 type SceneSku = {
   /** Stable source ID for a cabinet that came from the authoritative 2D design. */
   placementUid?: string | null;
+  /**
+   * A single-door wall cabinet hung turned horizontal as a range bridge. width
+   * and height here are the UPRIGHT catalog box (W1836: 18 x 36); the scene
+   * turns the whole case a quarter about its front normal, so it stands 36
+   * wide x 18 tall with the door hinge on top or bottom.
+   */
+  turnedSideways?: boolean;
   distributorSkuId: number;
   cabinetId: number;
   masterCode: string;
@@ -4923,8 +4930,14 @@ export function addCabinet(
       : requestedMountBottom;
   const countertopCenterY = (bottom + heightIn + 0.75) * INCH;
   const cabinet = new THREE.Group();
-  cabinet.position.set(x * INCH, (bottom + heightIn / 2) * INCH, z * INCH);
+  const turnedSideways = isWall && sku.turnedSideways === true;
+  // A turned bridge is built upright and then turned 90 degrees about its own
+  // front normal (applied before the wall-facing turn), so it stands as wide as
+  // the upright box is tall and as tall as it is wide.
+  cabinet.position.set(x * INCH, (bottom + (turnedSideways ? widthIn : heightIn) / 2) * INCH, z * INCH);
+  cabinet.rotation.order = "YXZ";
   cabinet.rotation.y = rotation;
+  if (turnedSideways) cabinet.rotation.z = Math.PI / 2;
   cabinet.userData = {
     placedUid: sku.placementUid ?? null,
     distributorSkuId: sku.distributorSkuId,
@@ -11988,6 +12001,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
     })
     : undefined;
   const codeDimensions = compactWallCodeDimensions(cabinet);
+  const turnedSideways = placementType === "wall" && cabinet.turnedSideways === true && Number(cabinet.width) > 0 && Number(cabinet.height) > 0;
   const openShelfHand = room ? wallOpenShelfExposedHand(cabinet, room, peers) : null;
   return {
     placementUid: cabinet.uid,
@@ -12010,8 +12024,11 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
     // The placed record is primary. Older appliance records can lack one of
     // these dimensions, in which case use the same APPLIANCES definition that
     // created the 2D placement—never the generic 24/12-inch cabinet defaults.
-    width: cornerBody?.width ?? footprint?.w ?? codeDimensions?.width ?? cabinet.width ?? appliance?.width,
-    height: codeDimensions?.height ?? cabinet.height ?? appliance?.elevHeight ?? (placementType === "wall" ? STD.WALL_HEIGHT : placementType === "tall" ? STD.TALL_HEIGHT : STD.BASE_HEIGHT),
+    // A turned bridge's placed record is the turned box (36 x 18); the scene
+    // draws the upright catalog box (18 x 36) and turns it.
+    ...(turnedSideways ? { turnedSideways: true } : {}),
+    width: turnedSideways ? cabinet.height : cornerBody?.width ?? footprint?.w ?? codeDimensions?.width ?? cabinet.width ?? appliance?.width,
+    height: turnedSideways ? cabinet.width : codeDimensions?.height ?? cabinet.height ?? appliance?.elevHeight ?? (placementType === "wall" ? STD.WALL_HEIGHT : placementType === "tall" ? STD.TALL_HEIGHT : STD.BASE_HEIGHT),
     depth: cornerBody?.depth ?? footprint?.d ?? cabinet.depth ?? appliance?.depth,
     numberOfDoors: cabinet.numberOfDoors ?? null,
     numberOfDrawers: cabinet.numberOfDrawers ?? null,

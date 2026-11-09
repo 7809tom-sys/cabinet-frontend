@@ -83,7 +83,7 @@ describe("designer re-review: microwave bridge and over-range uppers", () => {
     expect(wide.bridgeChoices.map((choice) => choice.disabledReason)).toEqual(
       RANGE_BRIDGE_HEIGHTS_IN.map((height) => `W36${height} is not in the Natura Maple catalog.`),
     );
-    expect(wide.bridgeUnavailableReason).toBe("The Natura Maple line sells no 36″-wide bridge (W3612–W3624) for this 36″ range, so no cabinet can be added over the microwave.");
+    expect(wide.bridgeUnavailableReason).toBe("The Natura Maple line sells no 36″-wide bridge (W3612–W3624) and no single-door W1236–W2136 to turn horizontal for this 36″ range, so no cabinet can be added over the microwave.");
 
     // The pop-up keeps the picker and its reasons, and cannot confirm without a bridge.
     const source = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");

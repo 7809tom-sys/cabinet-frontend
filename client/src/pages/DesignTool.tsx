@@ -268,6 +268,7 @@ import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
+import { overRangeBridgeLabel } from "@/lib/overRangeCompanion";
 import { rangeCompanionDetail, rangeCompanionPlacement, rangeCompanionProposal, rangeCompanionSummary, repairLegacyWscMicrowaveBridges, type RangeCompanionProposal } from "@/lib/rangeCompanion";
 import { APPLIANCE_FINISH_CHOICES, applyApplianceFinish, type ApplianceFinish } from "@/lib/applianceFinish";
 import { isWscSpiceCabinet, wsc30UpperChoices, wsc30UpperPlacement } from "@/lib/spiceStack";
@@ -23789,17 +23790,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                      role="radio"
 	                      aria-checked={selected}
 	                      disabled={!choice.bridge}
-	                      title={choice.disabledReason ?? `${choice.bridge?.masterCode}: top at ${choice.topIn}″`}
+	                      title={choice.disabledReason ?? `${choice.label}: top at ${choice.topIn}″`}
 	                      data-testid={`range-bridge-height-${choice.heightIn}`}
 	                      onClick={() => chooseRangeBridgeHeight(choice.heightIn)}
 	                      className={`rounded-md border px-1 py-1.5 text-center text-xs leading-tight transition-colors ${selected ? "border-[#244338] bg-[#244338] text-white" : "border-slate-300 bg-white text-slate-900 hover:border-[#244338]"} disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400`}
 	                    >
 	                      <span className="block font-semibold">{choice.heightIn}″</span>
 	                      <span className="block text-[10px]">{choice.bridge ? `top ${choice.topIn}″` : "n/a"}</span>
+	                      {choice.turned && <span className="block text-[10px] italic">turned</span>}
 	                    </button>
 	                  );
 	                })}
 	              </div>
+	              {rangeCompanionPrompt.proposal.bridge?.turnedSideways && (
+	                <p className="text-[11px] leading-snug text-slate-700" data-testid="range-bridge-turned-note">
+	                  {overRangeBridgeLabel(rangeCompanionPrompt.proposal.bridge)}: the single-door {Number(rangeCompanionPrompt.proposal.bridge.height)}″ × {Number(rangeCompanionPrompt.proposal.bridge.width)}″ wall cabinet hung on its side, {Number(rangeCompanionPrompt.proposal.bridge.width)}″ wide × {Number(rangeCompanionPrompt.proposal.bridge.height)}″ tall, door hinged at the top or bottom. The line sells no {Number(rangeCompanionPrompt.proposal.bridge.width)}″-wide bridge.
+	                </p>
+	              )}
 	              {rangeCompanionPrompt.proposal.bridgeChoices.some((choice) => choice.disabledReason) && (
 	                <ul className="space-y-0.5 text-[11px] leading-snug text-slate-600" data-testid="range-bridge-height-disabled-reasons">
 	                  {rangeCompanionPrompt.proposal.bridgeChoices.filter((choice) => choice.disabledReason).map((choice) => (
@@ -23814,7 +23821,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              <p className="font-semibold">{rangeCompanionPrompt.microwaveAlreadyPlaced ? "The matching bridge will be added above the existing MW-30 only if the upper span is clear." : "Two aligned items will be added only if the upper span is clear."}</p>
 	              <ul className="mt-2 space-y-1 text-xs leading-relaxed">
 	                {rangeCompanionPrompt.proposal.bridge ? (
-	                  <li><span className="font-medium">{rangeCompanionPrompt.proposal.bridge.masterCode}</span> — {rangeCompanionPrompt.proposal.bridge.description} <span className="text-emerald-800">({Number(rangeCompanionPrompt.proposal.bridge.height)}″ bridge)</span></li>
+	                  <li><span className="font-medium">{overRangeBridgeLabel(rangeCompanionPrompt.proposal.bridge)}</span> — {rangeCompanionPrompt.proposal.bridge.description} <span className="text-emerald-800">({Number(rangeCompanionPrompt.proposal.bridge.height)}″ bridge{rangeCompanionPrompt.proposal.bridge.turnedSideways ? `, billed as ${rangeCompanionPrompt.proposal.bridge.masterCode}` : ""})</span></li>
 	                ) : (
 	                  <li data-testid="range-bridge-unavailable" className="font-medium text-amber-900">{rangeCompanionPrompt.proposal.bridgeUnavailableReason}</li>
 	                )}
