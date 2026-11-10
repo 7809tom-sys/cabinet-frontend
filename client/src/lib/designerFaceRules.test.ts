@@ -131,6 +131,23 @@ describe("rule 6: every kitchen has a single-door base", () => {
     expect(result.added?.masterCode).toBe("B18");
   });
 
+  it("does not turn a 24 inch base into a single-door cabinet", () => {
+    const plan = [base("B24", 24, 0, { numberOfDoors: 2 })];
+    const result = ensureSingleDoorBase({
+      placed: plan,
+      room: DEFAULT_ROOM,
+      catalog: [
+        { id: 1, masterCode: "B24S", width: "24", numberOfDoors: 1 } as DesignCabinet,
+        { id: 2, masterCode: "B24", width: "24", numberOfDoors: 2 } as DesignCabinet,
+      ],
+      makeUid: () => "uid-new",
+      styleId: 1,
+    });
+    expect(result.added).toBeNull();
+    expect(result.placed[0]?.numberOfDoors).toBe(2);
+    expect(result.placed[0]?.masterCode).toBe("B24");
+  });
+
   it("warns instead of resizing a run when the line has no single-door base", () => {
     const plan = [base("B18", 18, 0, { numberOfDoors: 2 })];
     const result = ensureSingleDoorBase({

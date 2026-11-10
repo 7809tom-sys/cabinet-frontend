@@ -1,22 +1,18 @@
 /**
- * Filler last resort, one board per run.
+ * Filler is the last resort.
  *
- * Auto-Design used to leave a separate small board wherever one pass or another
- * found a sliver: a 1¼″ beside a stock run, a 1″ beside the range, a 3″ at each
- * window shoulder. The owner rule is:
+ * Tom: try cabinets first before using any filler, and do not leave a 4–5 inch
+ * filler strip when a stock-width combination can close the run. The order is:
  *
- *   1. close the opening with a real stock width first (widen the adjoining
- *      cabinet to the wider SKU of its own family);
- *   2. otherwise the run closes with at most ONE board, at a run end or a
- *      corner — several small boards in one run are consolidated into one board
- *      of their combined width;
- *   3. never two boards side by side, and never a board wider than the
- *      Auto-Design maximum.
+ *   1. resize or swap the run using the catalog's real widths so the stretch
+ *      sums exactly, extending a few inches into open wall or sliding the range
+ *      within its wiggle room when that is what makes a sum land;
+ *   2. only when no combination fits, one filler board.
  *
- * Both passes are pure: they take placements (plus the catalog and the filler
- * rows) and return new placements. Nothing here moves an appliance, a corner
- * cabinet, a panel, a tall box or a sink base, and the only pieces removed are
- * the boards a consolidation replaces.
+ * These fillers are required and are never traded for a cabinet: the 3 inch
+ * blind-corner filler, a gap of 1 inch or less, the 45°/135° angled filler, and
+ * the inside-L corner filler. A 24 inch cabinet this pass places is never a
+ * single door.
  */
 import {
   COLLISION_EPSILON_IN,
@@ -32,6 +28,7 @@ import {
   standardHeight,
   wallPlacementAt,
   wallRunFrame,
+  wallRunJoinAt,
   wallRunOffset,
   wallRunSpan,
   type DesignCabinet,
@@ -40,11 +37,27 @@ import {
   type WallOpening,
 } from "./design";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
+import type { DesignerReviewFinding } from "./designerReviewFindings";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { isSingleDoorTwentyFourRow } from "./singleDoorTwentyFour";
 
 export type FillerLayer = "base" | "wall";
 
 /** Narrowest board Auto-Design will cut; below this the opening is tape-measure noise. */
 export const CONSOLIDATED_FILLER_MIN_IN = 0.125;
+/**
+ * A gap this wide or narrower still gets a filler. Wider leftovers are closed
+ * with stock cabinets first. Tom: filler is the last resort, and a 4–5 inch
+ * strip is not left when cabinets can take it.
+ */
+export const FILLER_LAST_RESORT_MAX_IN = 1;
+/** How far a leftover search may extend a run into open wall to hit a stock sum. */
+const RUN_EXTEND_MAX_IN = 12;
+/**
+ * Hard cap. A filler strip wider than this is never placed. Tom: the kitchen
+ * should look good all the time, and a wide filler strip does not.
+ */
+export const FILLER_STRIP_MAX_IN = 3;
 
 /** One contiguous set of movable pieces along one layer of one wall. */
 type Stretch = {
@@ -84,16 +97,40 @@ function isFixedPiece(item: PlacedCabinet, layer: FillerLayer): boolean {
  * wider cabinet or merge them with a run's ordinary seam filler: the angled
  * miter pair, a provisional corner board, and the filler a corner cabinet owns.
  */
-function isProtectedCornerFiller(item: PlacedCabinet, placed: readonly PlacedCabinet[]): boolean {
+function isProtectedCornerFiller(item: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): boolean {
+  const fillerLike = isFillerItem(item) || item.fillerTransitionKind != null || item.integratedWallBlindFiller === true;
+  if (!fillerLike) return false;
   if (
     item.fillerTransitionKind === "front-miter-pair"
     || item.fillerTransitionKind === "angled-wedge"
     || item.fillerTransitionKind === "corner-provisional"
     || item.integratedWallBlindFiller === true
+    || (fillerTouchesCornerJoin(item, room) && (Number(item.width) || 0) <= FILLER_STRIP_MAX_IN + 0.05)
   ) return true;
-  if (!item.fillerForCabinetUid) return false;
-  const owner = placed.find((candidate) => candidate.uid === item.fillerForCabinetUid);
-  return owner != null && isCornerCabinet(owner.masterCode, owner.description, owner.cornerType ?? null);
+  if (item.fillerForCabinetUid) {
+    const owner = placed.find((candidate) => candidate.uid === item.fillerForCabinetUid);
+    if (owner != null && isCornerCabinet(owner.masterCode, owner.description, owner.cornerType ?? null)) return true;
+  }
+  return false;
+}
+
+/** The board's edge sits on a 90° inside corner or a 45°/135° angled join. */
+function fillerTouchesCornerJoin(item: PlacedCabinet, room: RoomData): boolean {
+  const wallId = cabinetWall(item, room);
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return false;
+  const start = wallRunOffset(item, wallId, room);
+  const end = start + wallRunSpan(item, wallId, room);
+  for (const at of ["start", "end"] as const) {
+    const join = wallRunJoinAt(frame, at, room);
+    if (!join) continue;
+    const corner = Math.abs(join.turnDeg - 90) <= 0.5 || Math.abs(join.turnDeg - 45) <= 0.5;
+    if (!corner) continue;
+    const vertex = at === "start" ? Math.max(0, frame.runStart) : frame.runEnd;
+    const edge = at === "start" ? start : end;
+    if (Math.abs(edge - vertex) <= 0.5) return true;
+  }
+  return false;
 }
 
 function blocksLayer(item: PlacedCabinet, layer: FillerLayer): boolean {
@@ -116,7 +153,7 @@ export function runStretches(input: {
   const { room, wallId, layer } = input;
   if (!wallRunFrame(wallId, room)) return [];
   const items = input.placed
-    .filter((item) => !isProtectedCornerFiller(item, input.placed))
+    .filter((item) => !isProtectedCornerFiller(item, input.placed, room))
     .filter((item) => blocksLayer(item, layer) && cabinetWall(item, room) === wallId)
     .map((item) => {
       const start = wallRunOffset(item, wallId, room);
@@ -157,6 +194,25 @@ function soldWidth(candidate: DesignCabinet): number {
   return dim(candidate.width, 0);
 }
 
+function heightOf(row: { height?: string | number | null }): number {
+  return dim(row.height, 0);
+}
+
+/** Among rows of one width, a 42" design must take the 42" SKU, not the 30" row listed first. */
+function rowAtWidth(
+  catalog: readonly DesignCabinet[],
+  layer: FillerLayer,
+  width: number,
+  preferHeightIn: number | null,
+): DesignCabinet | null {
+  const matches = catalog.filter((row) => sellableRunCabinet(row, layer) && Math.abs(soldWidth(row) - width) <= 0.05);
+  if (preferHeightIn != null) {
+    const atHeight = matches.find((row) => Math.abs(heightOf(row) - preferHeightIn) <= 0.05);
+    if (atHeight) return atHeight;
+  }
+  return matches[0] ?? null;
+}
+
 function sellableRunCabinet(candidate: DesignCabinet, layer: FillerLayer): boolean {
   if (candidate.placement !== layer) return false;
   if (isFillerItem(candidate) || isPanelItem(candidate)) return false;
@@ -164,6 +220,10 @@ function sellableRunCabinet(candidate: DesignCabinet, layer: FillerLayer): boole
   if (isSinkBaseCabinet(candidate)) return false;
   if (isRangeOrOven(candidate.masterCode, candidate.description)) return false;
   if (soldWidth(candidate) <= 0) return false;
+  // No 24 inch cabinet is a single door. The book still sells B24S / W2430S;
+  // an automatic resize never picks them.
+  if (isSingleDoorTwentyFourRow(candidate)) return false;
+  if (Math.abs(soldWidth(candidate) - 24) <= 0.05 && (candidate.numberOfDoors ?? 0) === 1) return false;
   const text = `${candidate.masterCode ?? ""} ${candidate.description ?? ""} ${candidate.subCategory ?? ""}`.toLowerCase();
   return !/\bfiller\b|\bscribe\b|panel|skin|moulding|molding|crown|valance/.test(text);
 }
@@ -174,15 +234,21 @@ export function widerSkuClosing(input: {
   extraIn: number;
   layer: FillerLayer;
   catalog: readonly DesignCabinet[];
+  /** When set, the wider box must be this tall. A 42" run must not grow into W2430. */
+  preferHeightIn?: number | null;
 }): { replacement: DesignCabinet; widthIn: number } | null {
   if (input.extraIn <= COLLISION_EPSILON_IN) return null;
   const current = Number(input.cabinet.width) || 0;
   const wanted = Math.round((current + input.extraIn) * 1000) / 1000;
   const family = cabinetFamilyToken(input.cabinet.masterCode);
   if (!family) return null;
-  const replacement = input.catalog.find((row) => sellableRunCabinet(row, input.layer)
-    && cabinetFamilyToken(row.masterCode) === family
-    && Math.abs(soldWidth(row) - wanted) <= 0.05);
+  const prefer = input.preferHeightIn ?? (input.layer === "wall" ? Number(input.cabinet.height) || null : null);
+  const replacement = rowAtWidth(
+    input.catalog.filter((row) => cabinetFamilyToken(row.masterCode) === family),
+    input.layer,
+    wanted,
+    prefer,
+  );
   return replacement ? { replacement, widthIn: wanted } : null;
 }
 
@@ -222,6 +288,8 @@ export function closeSmallOpeningsWithStock(input: {
   maxOpeningIn: number;
   styleId: number | null;
   makeUid: () => string;
+  /** Wall rows picked for a 42" design must be this tall, not the 30" SKU listed first. */
+  wallHeightIn?: number | null;
 }): { placed: PlacedCabinet[]; closes: StockClose[]; notes: string[] } {
   let working = [...input.placed];
   const closes: StockClose[] = [];
@@ -244,7 +312,10 @@ export function closeSmallOpeningsWithStock(input: {
         let applied = false;
         for (const neighbor of touching) {
           const onLeft = Math.abs(wallRunOffset(neighbor, wallId, input.room) + wallRunSpan(neighbor, wallId, input.room) - gap.startIn) <= 0.02;
-          const wider = widerSkuClosing({ cabinet: neighbor, extraIn: gap.widthIn, layer, catalog: input.catalog });
+          const wider = widerSkuClosing({
+            cabinet: neighbor, extraIn: gap.widthIn, layer, catalog: input.catalog,
+            preferHeightIn: layer === "wall" ? input.wallHeightIn : null,
+          });
           if (!wider) continue;
           const start = onLeft
             ? wallRunOffset(neighbor, wallId, input.room)
@@ -375,8 +446,212 @@ export function findFillerClusters(input: {
 
 export type ClusterPlan =
   | { kind: "widen"; cabinet: PlacedCabinet; replacement: DesignCabinet; widthIn: number; starts: Array<{ uid: string; startIn: number }> }
+  | {
+    kind: "repack";
+    rows: DesignCabinet[];
+    widths: number[];
+    startIn: number;
+    rangeUid: string | null;
+    rangeAlongIn: number | null;
+    /** Last-resort filler, never more than 3 inches. Null when the run closes with cabinets only. */
+    fillerIn: number | null;
+    /** Set when the closest stock sum still leaves more than 3 inches, so no filler is cut. */
+    warning: DesignerReviewFinding | null;
+  }
+  | { kind: "clear"; warning: DesignerReviewFinding }
   | { kind: "consolidate"; boardWidthIn: number; starts: Array<{ uid: string; startIn: number }>; boardStartIn: number }
   | { kind: "leave"; reason: string };
+
+function isDrawerRunCabinet(item: PlacedCabinet): boolean {
+  return (item.numberOfDrawers ?? 0) >= 3 || /^(?:3DB|DB)\d/i.test(item.masterCode ?? "");
+}
+
+function stockWidths(catalog: readonly DesignCabinet[], layer: FillerLayer, preferHeightIn: number | null): number[] {
+  const seen = new Set<number>();
+  const widths: number[] = [];
+  for (const row of catalog) {
+    if (!sellableRunCabinet(row, layer)) continue;
+    if (preferHeightIn != null && Math.abs(heightOf(row) - preferHeightIn) > 0.05) continue;
+    const width = Math.round(soldWidth(row) * 8) / 8;
+    if (width <= 0 || seen.has(width)) continue;
+    seen.add(width);
+    widths.push(width);
+  }
+  return widths.sort((left, right) => right - left);
+}
+
+function rowForWidth(
+  catalog: readonly DesignCabinet[],
+  layer: FillerLayer,
+  width: number,
+  preferHeightIn: number | null,
+): DesignCabinet | null {
+  return rowAtWidth(catalog, layer, width, preferHeightIn);
+}
+
+type LengthPack = { lengthIn: number; widths: number[]; remainderIn: number };
+
+/**
+ * Stock widths for one opening. An exact sum wins. Otherwise the leftover must
+ * be 3 inches or less — one board, never a stack. If every length in the window
+ * still leaves more than 3 inches, the closest sum is returned and the caller
+ * leaves that remainder open instead of cutting an oversized filler.
+ */
+function bestRunPack(input: {
+  minIn: number;
+  maxIn: number;
+  preferIn: number;
+  widths: readonly number[];
+}): LengthPack | null {
+  const minE = Math.max(1, Math.round(input.minIn * 8));
+  const maxE = Math.round(input.maxIn * 8);
+  const widthE = input.widths.map((width) => Math.round(width * 8)).filter((width) => width > 0).sort((left, right) => right - left);
+  if (!widthE.length || maxE < minE) return null;
+  const prev = new Int32Array(maxE + 1).fill(-1);
+  prev[0] = 0;
+  for (let sum = 0; sum <= maxE; sum += 1) {
+    if (sum !== 0 && prev[sum] < 0) continue;
+    for (const width of widthE) {
+      const next = sum + width;
+      if (next <= maxE && prev[next] < 0) prev[next] = width;
+    }
+  }
+  const unpack = (sum: number): number[] => {
+    const chosen: number[] = [];
+    let cursor = sum;
+    while (cursor > 0) {
+      const width = prev[cursor] ?? 0;
+      if (width <= 0) return [];
+      chosen.push(width / 8);
+      cursor -= width;
+    }
+    return chosen.reverse();
+  };
+  let exact: { pack: LengthPack; delta: number; pieces: number } | null = null;
+  let near: { pack: LengthPack; delta: number } | null = null;
+  let closest: LengthPack | null = null;
+  for (let opening = minE; opening <= maxE; opening += 1) {
+    let bestSum = -1;
+    for (let sum = opening; sum > 0; sum -= 1) {
+      if (prev[sum] < 0) continue;
+      bestSum = sum;
+      break;
+    }
+    if (bestSum <= 0) continue;
+    const widths = unpack(bestSum);
+    if (!widths.length) continue;
+    const remainderIn = (opening - bestSum) / 8;
+    const pack: LengthPack = { lengthIn: opening / 8, widths, remainderIn };
+    if (closest == null || remainderIn < closest.remainderIn - 1e-6) closest = pack;
+    const delta = Math.abs(opening / 8 - input.preferIn);
+    if (remainderIn <= 0.001) {
+      const better = exact == null || delta < exact.delta - 1e-6 || (Math.abs(delta - exact.delta) <= 1e-6 && widths.length < exact.pieces);
+      if (better) exact = { pack, delta, pieces: widths.length };
+    } else if (remainderIn <= FILLER_STRIP_MAX_IN + 0.001) {
+      const better = near == null
+        || remainderIn < near.pack.remainderIn - 1e-6
+        || (Math.abs(remainderIn - near.pack.remainderIn) <= 1e-6 && delta < near.delta - 1e-6);
+      if (better) near = { pack, delta };
+    }
+  }
+  if (exact) return exact.pack;
+  if (near) return near.pack;
+  return closest;
+}
+
+/**
+ * Stock widths that cover the stretch with no filler. The run may extend into
+ * open wall, or the range may slide within its wiggle cap, so a 4–5 inch
+ * leftover lands on a real sum. Shrinking is allowed only by sliding the range
+ * into the opening, which does not leave the strip empty.
+ */
+function repackCluster(input: {
+  cluster: FillerCluster;
+  catalog: readonly DesignCabinet[];
+  room: RoomData;
+  placed: readonly PlacedCabinet[];
+  openings: readonly WallOpening[];
+  preferHeightIn?: number | null;
+}): Extract<ClusterPlan, { kind: "repack" }> | null {
+  const { cluster, room, placed } = input;
+  if (cluster.cabinets.length === 0) return null;
+  if (cluster.cabinets.some(isDrawerRunCabinet)) return null;
+  const preferHeight = cluster.layer === "wall" ? input.preferHeightIn ?? null : null;
+  const widths = stockWidths(input.catalog, cluster.layer, preferHeight);
+  if (!widths.length) return null;
+  const frame = wallRunFrame(cluster.wallId, room);
+  if (!frame) return null;
+  const length0 = Math.round((cluster.endIn - cluster.startIn) * 1000) / 1000;
+  if (length0 <= 0) return null;
+  const clusterUids = new Set([...cluster.cabinets, ...cluster.fillers].map((item) => item.uid));
+  const nearestAfter = (): { at: number; range: PlacedCabinet | null } => {
+    let at = frame.runEnd;
+    let range: PlacedCabinet | null = null;
+    const take = (edge: number, candidate: PlacedCabinet | null) => {
+      if (edge < cluster.endIn - 0.05 || edge > at + 0.001) return;
+      if (edge < at - 0.001) { at = edge; range = null; }
+      if (candidate && Math.abs(edge - at) <= 0.05) range = candidate;
+    };
+    for (const item of placed) {
+      if (clusterUids.has(item.uid)) continue;
+      if (!blocksLayer(item, cluster.layer) || cabinetWall(item, room) !== cluster.wallId) continue;
+      const start = wallRunOffset(item, cluster.wallId, room);
+      const rangeItem = item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) ? item : null;
+      take(start, rangeItem);
+    }
+    for (const opening of input.openings) {
+      if (opening.side !== cluster.wallId) continue;
+      take(opening.offset, null);
+    }
+    return { at, range };
+  };
+  const after = nearestAfter();
+  const flushRange = after.range && Math.abs(after.at - cluster.endIn) <= 0.5 ? after.range : null;
+  const cap = Math.max(0, kitchenRuleNumber("anchor_wiggle_cap_in"));
+  const slack = Math.max(0, after.at - cluster.endIn);
+  const minIn = flushRange ? Math.max(widths[widths.length - 1] ?? 9, length0 - cap) : length0;
+  const maxIn = flushRange
+    ? length0 + cap
+    : length0 + Math.min(slack, RUN_EXTEND_MAX_IN);
+  const pack = bestRunPack({ minIn, maxIn, preferIn: length0, widths });
+  if (!pack || pack.widths.length === 0) return null;
+  const rows: DesignCabinet[] = [];
+  for (const width of pack.widths) {
+    const row = rowForWidth(input.catalog, cluster.layer, width, preferHeight);
+    if (!row) return null;
+    rows.push(row);
+  }
+  const occupied = Math.round(pack.widths.reduce((sum, width) => sum + width, 0) * 1000) / 1000;
+  const opening = Math.round((occupied + Math.max(0, pack.remainderIn)) * 1000) / 1000;
+  const shift = Math.round((opening - length0) * 1000) / 1000;
+  if (Math.abs(shift) > 0.001 && !flushRange && shift < -0.001) return null;
+  if (flushRange && Math.abs(shift) > cap + 0.05) return null;
+  const oversized = pack.remainderIn > FILLER_STRIP_MAX_IN + 0.001;
+  const rangeStart = flushRange ? wallRunOffset(flushRange, cluster.wallId, room) : 0;
+  return {
+    kind: "repack",
+    rows,
+    widths: pack.widths,
+    startIn: cluster.startIn,
+    rangeUid: flushRange ? flushRange.uid : null,
+    rangeAlongIn: flushRange ? Math.round((rangeStart + shift) * 1000) / 1000 : null,
+    fillerIn: oversized || pack.remainderIn <= 0.05 ? null : pack.remainderIn,
+    warning: oversized ? fillerCapWarning(cluster.wallId, pack.remainderIn) : null,
+  };
+}
+
+function fillerCapWarning(wallId: string, leftoverIn: number): DesignerReviewFinding {
+  const label = formatFillerInches(leftoverIn);
+  return {
+    ruleId: "filler-last-resort",
+    code: "filler-over-3-in",
+    severity: "warning",
+    title: `${label} left open on ${wallId}`,
+    detail: `No stock-width combination, run shift, or range move gets this leftover to ${FILLER_STRIP_MAX_IN} inches or less. The closest arrangement leaves ${label} open, so no filler strip was placed.`,
+    cabinetUid: null,
+    cabinetCode: null,
+  };
+}
 
 /** Lay the stretch's cabinets contiguously from `fromIn`, one of them at a new width. */
 function layCluster(input: {
@@ -401,25 +676,44 @@ function layCluster(input: {
 /**
  * What to do with one board-bearing stretch:
  *
- *   1. A cabinet that becomes the wider SKU of its own family absorbs the whole
- *      board width, and the run closes with no filler at all.
- *   2. A single board that already sits at the end of its stretch is the minimum
- *      and is left exactly where it is.
- *   3. Otherwise the run is re-laid from its start and ONE board of the boards'
- *      combined width takes the end.
- *
- * Either fix keeps the run spanning exactly the same stretch of wall, so nothing
- * outside it moves and the countertop keeps its support.
+ *   1. A gap of 1 inch or less keeps its filler.
+ *   2. Otherwise search real stock widths across the run, including a short
+ *      extension or a range slide, so the stretch sums exactly and the filler
+ *      goes away.
+ *   3. A single cabinet that becomes the wider SKU of its own family does the
+ *      same when that match is exact.
+ *   4. Only then, one filler board, and only when no combination fits.
  */
 export function planFillerCluster(input: {
   cluster: FillerCluster;
   catalog: readonly DesignCabinet[];
   maxFillerIn: number;
   room: RoomData;
+  placed?: readonly PlacedCabinet[];
+  openings?: readonly WallOpening[];
+  wallHeightIn?: number | null;
 }): ClusterPlan {
   const { cluster, room } = input;
+  if (cluster.fillers.length > 0 && cluster.fillers.every((item) => (Number(item.width) || 0) <= FILLER_LAST_RESORT_MAX_IN + 0.001)) {
+    return { kind: "leave", reason: "a gap of 1 inch or less keeps its filler" };
+  }
+  const repacked = repackCluster({
+    cluster,
+    catalog: input.catalog,
+    room,
+    placed: input.placed ?? [],
+    openings: input.openings ?? [],
+    preferHeightIn: input.wallHeightIn,
+  });
+  if (repacked) return repacked;
+  if (cluster.boardTotalIn > FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN) {
+    return {
+      kind: "clear",
+      warning: fillerCapWarning(cluster.wallId, cluster.boardTotalIn),
+    };
+  }
   if (cluster.boardTotalIn > input.maxFillerIn + COLLISION_EPSILON_IN) {
-    return { kind: "leave", reason: `a ${formatFillerInches(cluster.boardTotalIn)} opening is wider than a ${input.maxFillerIn}″ filler` };
+    return { kind: "leave", reason: `a ${formatFillerInches(cluster.boardTotalIn)} opening is wider than a ${input.maxFillerIn}″ filler and no stock-width combination closes it` };
   }
   const ordered = [...cluster.cabinets]
     .sort((left, right) => wallRunOffset(left, cluster.wallId, room) - wallRunOffset(right, cluster.wallId, room));
@@ -427,15 +721,18 @@ export function planFillerCluster(input: {
   // the run's start where it is, which is where the corner and the countertop
   // expect it.
   for (const cabinet of [...ordered].reverse()) {
-    const wider = widerSkuClosing({ cabinet, extraIn: cluster.boardTotalIn, layer: cluster.layer, catalog: input.catalog });
+    const wider = widerSkuClosing({
+      cabinet, extraIn: cluster.boardTotalIn, layer: cluster.layer, catalog: input.catalog,
+      preferHeightIn: cluster.layer === "wall" ? input.wallHeightIn : null,
+    });
     if (!wider) continue;
     const laid = layCluster({ cluster, room, growUid: cabinet.uid, growWidthIn: wider.widthIn });
     if (Math.abs(laid.endIn - cluster.endIn) > 0.02) continue;
     return { kind: "widen", cabinet, replacement: wider.replacement, widthIn: wider.widthIn, starts: laid.starts };
   }
   const lastBoardEnd = Math.max(...cluster.fillers.map((item) => wallRunOffset(item, cluster.wallId, room) + Number(item.width || 0)));
-  if (cluster.fillers.length < 2 && Math.abs(lastBoardEnd - cluster.endIn) <= 0.02) {
-    return { kind: "leave", reason: "one board already closes the run end" };
+  if (cluster.fillers.length < 2 && cluster.boardTotalIn <= FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN && Math.abs(lastBoardEnd - cluster.endIn) <= 0.02) {
+    return { kind: "leave", reason: "one board of 3 inches or less already closes the run end" };
   }
   const laid = layCluster({ cluster, room });
   // The cabinets that may be re-laid, plus the one board, must still fill the
@@ -445,6 +742,9 @@ export function planFillerCluster(input: {
   const expectedEnd = Math.round((cluster.endIn - cluster.boardTotalIn) * 1000) / 1000;
   if (Math.abs(laid.endIn - expectedEnd) > 0.02) {
     return { kind: "leave", reason: "the run holds a mandatory cabinet that must keep its exact seat" };
+  }
+  if (cluster.boardTotalIn > FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN) {
+    return { kind: "clear", warning: fillerCapWarning(cluster.wallId, cluster.boardTotalIn) };
   }
   return {
     kind: "consolidate",
@@ -517,14 +817,17 @@ export function consolidateAutoDesignFillers(input: {
   maxFillerIn: number;
   makeUid: () => string;
   styleId: number | null;
+  wallHeightIn?: number | null;
 }): {
   placed: PlacedCabinet[];
-  changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "consolidate"; detail: string }>;
+  changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "repack" | "consolidate"; detail: string }>;
   notes: string[];
+  warnings: DesignerReviewFinding[];
 } {
   let working = [...input.placed];
-  const changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "consolidate"; detail: string }> = [];
+  const changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "repack" | "consolidate"; detail: string }> = [];
   const notes: string[] = [];
+  const warnings: DesignerReviewFinding[] = [];
   for (const layer of ["base", "wall"] as const) {
     for (const wallId of input.wallIds) {
       if (!wallRunFrame(wallId, input.room)) continue;
@@ -534,10 +837,103 @@ export function consolidateAutoDesignFillers(input: {
           .filter((candidate) => !candidate.fillers.every((item) => skipped.has(item.uid)))
           .at(0);
         if (!cluster) break;
-        const plan = planFillerCluster({ cluster, catalog: input.catalog, maxFillerIn: input.maxFillerIn, room: input.room });
+        const plan = planFillerCluster({
+          cluster, catalog: input.catalog, maxFillerIn: input.maxFillerIn, room: input.room,
+          placed: working, openings: input.openings, wallHeightIn: input.wallHeightIn,
+        });
         if (plan.kind === "leave") {
           for (const filler of cluster.fillers) skipped.add(filler.uid);
           if (cluster.fillers.length > 1) notes.push(`${wallId}: ${plan.reason}.`);
+          continue;
+        }
+        if (plan.kind === "clear") {
+          const remove = new Set(cluster.fillers.map((item) => item.uid));
+          working = working.filter((item) => !remove.has(item.uid));
+          warnings.push(plan.warning);
+          notes.push(plan.warning.detail);
+          continue;
+        }
+        if (plan.kind === "repack") {
+          const remove = new Set([...cluster.cabinets, ...cluster.fillers].map((item) => item.uid));
+          if (plan.rangeUid) remove.add(plan.rangeUid);
+          let trial = working.filter((item) => !remove.has(item.uid));
+          let cursor = plan.startIn;
+          let failed = false;
+          const template = cluster.cabinets[0]!;
+          for (let index = 0; index < plan.rows.length; index += 1) {
+            const row = plan.rows[index]!;
+            const width = plan.widths[index] ?? soldWidth(row);
+            const depth = Math.max(0, Number(template.depth) || (cluster.layer === "wall" ? 12 : 24));
+            const spot = wallPlacementAt(cursor, width, depth, wallId as never, input.room);
+            if (!spot) { failed = true; break; }
+            const piece: PlacedCabinet = {
+              ...template,
+              uid: input.makeUid(),
+              cabinetId: row.id,
+              masterCode: row.masterCode,
+              description: row.description,
+              category: row.category,
+              subCategory: row.subCategory,
+              placement: cluster.layer,
+              width,
+              depth,
+              height: dim(row.height, Number(template.height) || standardHeight(cluster.layer === "wall" ? "wall" : "base")),
+              numberOfDoors: Math.abs(width - 24) <= 0.05 && (row.numberOfDoors ?? 0) === 1 ? 2 : (row.numberOfDoors ?? template.numberOfDoors),
+              numberOfDrawers: row.numberOfDrawers ?? 0,
+              catalogImageUrl: row.catalogImageUrl ?? template.catalogImageUrl,
+              styleId: template.styleId ?? input.styleId,
+              ...spot,
+            };
+            const accepted = appendCollisionFreePlacements(trial, [piece], input.room);
+            if (accepted.rejected.length > 0) { failed = true; break; }
+            trial = accepted.placed;
+            cursor += width;
+          }
+          if (!failed && plan.rangeUid && plan.rangeAlongIn != null) {
+            const range = working.find((item) => item.uid === plan.rangeUid);
+            if (!range) failed = true;
+            else {
+              const depth = Math.max(0, Number(range.depth) || 0);
+              const spot = wallPlacementAt(plan.rangeAlongIn, Number(range.width) || 0, depth, wallId as never, input.room);
+              if (!spot) failed = true;
+              else {
+                const moved: PlacedCabinet = { ...range, ...spot };
+                const accepted = appendCollisionFreePlacements(trial, [moved], input.room);
+                if (accepted.rejected.length > 0) failed = true;
+                else trial = accepted.placed;
+              }
+            }
+          }
+          if (!failed && plan.fillerIn != null && plan.fillerIn > 0.05) {
+            const owner = trial.filter((item) => item.placement === cluster.layer).at(-1) ?? template;
+            const board = boardFor({
+              cluster, width: plan.fillerIn, startIn: cursor, owner,
+              fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId, room: input.room,
+            });
+            if (!board) {
+              warnings.push(fillerCapWarning(wallId, plan.fillerIn));
+              notes.push(`${wallId}: a ${formatFillerInches(plan.fillerIn)} last-resort filler is not sold in this line, so the gap was left open.`);
+            } else {
+              const accepted = appendCollisionFreePlacements(trial, [board], input.room);
+              if (accepted.rejected.length > 0) failed = true;
+              else trial = accepted.placed;
+            }
+          }
+          if (failed) {
+            for (const filler of cluster.fillers) skipped.add(filler.uid);
+            notes.push(`${wallId}: stock widths would close the filler, but the resized run did not fit.`);
+            continue;
+          }
+          working = trial;
+          if (plan.warning) {
+            warnings.push(plan.warning);
+            notes.push(plan.warning.detail);
+          }
+          const detail = plan.fillerIn
+            ? `${cluster.cabinets.map((item) => item.masterCode).join(" + ")} became ${plan.rows.map((row) => row.masterCode).join(" + ")} with a ${formatFillerInches(plan.fillerIn)} filler.`
+            : `${cluster.cabinets.map((item) => item.masterCode).join(" + ")} became ${plan.rows.map((row) => row.masterCode).join(" + ")} and the run closed with no filler.`;
+          changes.push({ wallId, layer, kind: "repack", detail });
+          notes.push(detail);
           continue;
         }
         const fillerUids = new Set(cluster.fillers.map((item) => item.uid));
@@ -610,5 +1006,20 @@ export function consolidateAutoDesignFillers(input: {
       }
     }
   }
-  return { placed: working, changes, notes };
+  // Hard cap, after every cabinet attempt. An ordinary strip wider than 3 inches
+  // is removed and named. Blind-corner, angled, and inside-corner fillers stay.
+  const oversized = working.filter((item) => isFillerItem(item)
+    && !isProtectedCornerFiller(item, working, input.room)
+    && (Number(item.width) || 0) > FILLER_STRIP_MAX_IN + 0.05);
+  if (oversized.length) {
+    const drop = new Set(oversized.map((item) => item.uid));
+    working = working.filter((item) => !drop.has(item.uid));
+    for (const item of oversized) {
+      const wallId = cabinetWall(item, input.room) || "the run";
+      const warning = fillerCapWarning(wallId, Number(item.width) || 0);
+      warnings.push(warning);
+      notes.push(warning.detail);
+    }
+  }
+  return { placed: working, changes, notes, warnings };
 }

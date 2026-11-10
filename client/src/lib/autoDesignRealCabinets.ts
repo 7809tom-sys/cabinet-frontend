@@ -115,10 +115,15 @@ export function planRealCabinetFixes(input: {
   layer: "base" | "wall";
   /** Maximum legal slide for a neighbor, in inches. Anchors pass their 2 inch cap. */
   slideLimitIn?: number;
+  /** Wall boxes in a 42" design must be this tall. The 30" row is listed first. */
+  preferHeightIn?: number | null;
 }): RealCabinetFix[] {
   const fixes: RealCabinetFix[] = [];
-  const exact = input.catalog.filter((row) => isRealNarrowCabinet(row, input.layer)
-    && Math.abs(width(row) - input.gapIn) <= 0.05);
+  const prefer = input.layer === "wall" ? input.preferHeightIn ?? null : null;
+  const byPreferredHeight = (rows: DesignCabinet[]) => prefer == null ? rows : [...rows].sort((left, right) =>
+    Math.abs(dim(left.height, 0) - prefer) - Math.abs(dim(right.height, 0) - prefer));
+  const exact = byPreferredHeight(input.catalog.filter((row) => isRealNarrowCabinet(row, input.layer)
+    && Math.abs(width(row) - input.gapIn) <= 0.05));
   for (const cabinet of exact) {
     fixes.push({ kind: "seat", cabinet, startIn: 0, widthIn: input.gapIn });
   }
@@ -136,8 +141,8 @@ export function planRealCabinetFixes(input: {
       .filter((option) => Math.abs(option.delta) <= slideLimit + COLLISION_EPSILON_IN)
       .sort((left, right) => Math.abs(left.delta) - Math.abs(right.delta));
     for (const option of options) {
-      const cabinet = input.catalog.find((row) => isRealNarrowCabinet(row, input.layer)
-        && Math.abs(width(row) - option.width) <= 0.05);
+      const cabinet = byPreferredHeight(input.catalog.filter((row) => isRealNarrowCabinet(row, input.layer)
+        && Math.abs(width(row) - option.width) <= 0.05))[0];
       if (!cabinet) continue;
       fixes.push({ kind: "slide-sliver", cabinet, deltaIn: option.delta, widthIn: option.width });
       break;
@@ -151,10 +156,11 @@ export function planRealCabinetFixes(input: {
     const targetWidth = Math.round((Number(neighbor.width) + input.gapIn) * 8) / 8;
     const family = /^([A-Z]+)/i.exec(neighbor.masterCode ?? "")?.[1]?.toUpperCase();
     const wider = family
-      ? input.catalog.find((row) => row.placement === input.layer
+      ? byPreferredHeight(input.catalog.filter((row) => row.placement === input.layer
         && new RegExp(`^${family}`, "i").test(row.masterCode ?? "")
         && Math.abs(width(row) - targetWidth) <= 0.05
-        && !isCornerCabinet(row.masterCode, row.description))
+        && !isCornerCabinet(row.masterCode, row.description)
+        && !(Math.abs(width(row) - 24) <= 0.05 && (row.numberOfDoors ?? 0) === 1)))[0]
       : undefined;
     if (!wider) continue;
     fixes.push({
@@ -222,6 +228,8 @@ export function applyRealCabinetsBeforeFiller(input: {
   wallIds?: readonly string[];
   /** Per-cabinet maximum legal slide. Defaults to the filler allowance. */
   slideLimitFor?: (cabinet: PlacedCabinet) => number;
+  /** Wall cabinets seated in a 42" design use this height, not the first 30" row. */
+  wallHeightIn?: number | null;
 }): RealCabinetPassResult {
   let working = [...input.placed];
   const notes: string[] = [];
@@ -253,6 +261,7 @@ export function applyRealCabinetsBeforeFiller(input: {
           wallId,
           layer,
           slideLimitIn: neighbors.reduce((smallest, item) => Math.min(smallest, input.slideLimitFor?.(item) ?? autoDesignFillerMaxIn()), autoDesignFillerMaxIn()),
+          preferHeightIn: layer === "wall" ? input.wallHeightIn : null,
         }).sort((left, right) => rank(left) - rank(right));
         let applied = false;
         for (const fix of fixes) {

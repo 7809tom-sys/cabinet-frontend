@@ -39,6 +39,7 @@ import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegm
 import {
   closeSmallOpeningsWithStock,
   consolidateAutoDesignFillers,
+  FILLER_STRIP_MAX_IN,
   findFillerClusters,
   formatFillerInches,
 } from "./autoDesignFillerConsolidation";
@@ -58,7 +59,7 @@ import {
   tallCabinetPlacement,
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
-import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { ensureMandatorySinkFaucets, type AutoDesignFaucetProduct } from "./autoDesignFaucet";
 import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
@@ -86,9 +87,9 @@ import {
   buildAutoDesignPeninsula,
   type AutoDesignPeninsulaRequest,
   type AutoDesignPeninsulaSummary,
-} from "./autoDesignPeninsula";import {
+} from "./autoDesignPeninsula";
+import {
   COLLISION_EPSILON_IN,
-  MAX_FILLER_RUN_WIDTH_IN,
   STD,
   clampPlacedToRefrigeratorPanels,
   formatEighthInches,
@@ -564,14 +565,44 @@ function reviewFillers(
   }
 }
 
-/** Auto-Design never installs a filler board wider than 3 inches. A wider catalog filler is cut to 3 instead of being flagged over its maximum. */
-export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {  return placed.map((item) => {
-    const text = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`;
-    if (item.fillerTransitionKind === "front-miter-pair" || item.fillerTransitionKind === "angled-wedge" || item.fillerTransitionKind === "corner-provisional") return item;
-    const filler = Boolean(item.fillerPieceGroupId) || /filler|scribe|^OF\d|^FOL/i.test(text);
-    const installed = item.fillerTotalWidth ?? item.width;
-    if (!filler || installed <= autoDesignFillerMaxIn() + 0.05) return item;
-    return { ...item, width: autoDesignFillerMaxIn(), fillerTotalWidth: autoDesignFillerMaxIn() };
+/**
+ * Filler width is not shortened here. Cutting a wide board down to 3 inches
+ * would hide the rest of the gap. The filler pass either closes that gap with
+ * stock cabinets or removes the board and names the leftover.
+ */
+export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {
+  return placed;
+}
+
+/** Cabinet layers Auto Design paints. Appliances are not a door finish. */
+const AUTO_DESIGN_FINISH_PLACEMENTS = new Set(["base", "wall", "tall"]);
+
+/**
+ * The one door already stored on every base, wall, and tall cabinet, or null
+ * when the plan does not have exactly one. A follow-up piece (the range
+ * bridge) uses this so it cannot introduce a second finish.
+ */
+export function uniformCabinetStyleId(
+  placed: readonly { placement?: string | null; styleId?: number | null }[],
+): number | null {
+  const ids = placed
+    .filter((item) => item.placement === "base" || item.placement === "wall" || item.placement === "tall")
+    .map((item) => item.styleId ?? null);
+  const first = ids[0];
+  if (first == null || ids.length === 0) return null;
+  return ids.every((id) => id === first) ? first : null;
+}
+
+/** One finish on every cabinet this build generated. */
+export function stampAutoDesignSingleFinish(
+  placed: readonly PlacedCabinet[],
+  styleId: number | null,
+): PlacedCabinet[] {
+  if (styleId == null) return [...placed];
+  return placed.map((item) => {
+    if (!AUTO_DESIGN_FINISH_PLACEMENTS.has(item.placement)) return item;
+    if (item.styleId === styleId) return item;
+    return { ...item, styleId };
   });
 }
 
@@ -1374,11 +1405,19 @@ export function runAutoDesignLayout(args: {
   // The shared "real cabinets before filler" pass runs on EVERY wall and both
   // layers: slide within the wiggle room, widen a neighbor, or seat a real narrow
   // cabinet before any sliver is called unusable.
+  const wallHeightNominal = stage.input.wallCabinetHeightIn ?? 30;
+  const wallDesignHeight = Math.abs(wallHeightNominal - 42) < 0.05
+    ? resolveWallHeightClass(stage.wallPool, 42) ?? 42
+    : null;
+  const heightMatchedCatalog = catalogMatchingWallDesignHeight(
+    [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    wallHeightNominal,
+  );
   const realCabinets = applyRealCabinetsBeforeFiller({
     placed: working,
     room,
     openings: stageOpenings,
-    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    catalog: heightMatchedCatalog,
     makeUid,
     styleId: args.styleId,
     wallIds: runWalls,
@@ -1388,6 +1427,7 @@ export function runAutoDesignLayout(args: {
       || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
       ? kitchenRuleNumber("anchor_wiggle_cap_in")
       : kitchenRuleNumber("jog_max_in")),
+    wallHeightIn: wallDesignHeight,
   });
   working = realCabinets.placed;
   notes.push(...realCabinets.notes);
@@ -1462,6 +1502,7 @@ export function runAutoDesignLayout(args: {
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
   });
   working = upperResult.placed;
+  notes.push(...upperResult.substitutions);
   // The refrigerator end panels are a hard stop for the UPPER layer too. The
   // floor layer is clamped inside `applyDesignerLayoutRules`, but the wall
   // cabinets and their fillers are tiled after that, which is how a 24" upper
@@ -1483,10 +1524,11 @@ export function runAutoDesignLayout(args: {
     room,
     openings: stageOpenings,
     wallIds: runWalls,
-    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    catalog: heightMatchedCatalog,
     maxOpeningIn: autoDesignFillerMaxIn(),
     styleId: args.styleId,
     makeUid,
+    wallHeightIn: wallDesignHeight,
   });
   working = stockClosed.placed;
   notes.push(...stockClosed.notes);
@@ -1495,14 +1537,16 @@ export function runAutoDesignLayout(args: {
     room,
     openings: stageOpenings,
     wallIds: runWalls,
-    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    catalog: heightMatchedCatalog,
     fillers: catalogFillers,
-    maxFillerIn: MAX_FILLER_RUN_WIDTH_IN,
+    maxFillerIn: FILLER_STRIP_MAX_IN,
     makeUid,
     styleId: args.styleId,
+    wallHeightIn: wallDesignHeight,
   });
   working = consolidated.placed;
   notes.push(...consolidated.notes);
+  reviewFindings.push(...consolidated.warnings);
   reviewFillers(runWalls, working, room, stageOpenings, reviewFindings);
   // HARD RULE (owner, Nov 5 2026): the bridge above the range is mandatory and is
   // already seated before the upper run tiled. What follows is the existing
@@ -1525,6 +1569,16 @@ export function runAutoDesignLayout(args: {
     notes.push(...overRunCompanions.notes);
   }
   reviewFindings.push(...overRunCompanions.findings);
+  // A 42" design: every upper that is not above an appliance is the line's 42"
+  // box. The microwave bridge, the refrigerator cap, and the range/hood bridge stay.
+  const fortyTwo = enforceFortyTwoWallCabinets({
+    placed: working,
+    catalog: args.wallCatalog,
+    nominalIn: wallHeightNominal,
+    room,
+  });
+  working = fortyTwo.placed;
+  notes.push(...fortyTwo.notes);
   // Rule 6: every kitchen has at least one single-door base.
   const singleDoor = ensureSingleDoorBase({
     placed: working,
@@ -1587,7 +1641,9 @@ export function runAutoDesignLayout(args: {
       styleName: stage.input.designQuestionDoorStyleName ?? null,
       twoTone: false,
     };
-  if (doorSpec) {
+  // A door already selected in the designer is the finish. The question style
+  // is only applied when the build was not given that selection.
+  if (doorSpec && args.styleId == null) {
     working = applyDesignQuestionDoorSpec({
       cabinets: working,
       formerDefaultStyleId: args.styleId,
@@ -1706,6 +1762,11 @@ export function runAutoDesignLayout(args: {
       cabinetCode: base.masterCode,
     });
   }
+  // The door passed into the build is the one the designer has selected. It wins
+  // over a design-question id so the island and the wall runs cannot keep a
+  // second finish. With no selected door, the question style is the one finish.
+  const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
+  working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {

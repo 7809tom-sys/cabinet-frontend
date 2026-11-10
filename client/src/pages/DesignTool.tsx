@@ -315,7 +315,7 @@ import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesig
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
-import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
+import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { designerReviewLines, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
@@ -3249,8 +3249,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Refs mirror the active style + slot B so addCabinet (a stable callback) can
   // stamp the current color without going stale or re-creating on every change.
   const styleIdRef = useRef<number | null>(null);
-  // Whole-layout builders (Auto Design, Peninsula Wizard, imports) stamp the
-  // design's Color 1 so a generated kitchen is one color whichever swatch is lit.
+  // Peninsula Wizard and imports stamp Color 1. Auto Design does not: it reads
+  // `styleIdRef`, the door the designer currently has selected.
   const designStyleIdRef = useRef<number | null>(null);
   const styleBRef = useRef<number | null>(null);
   // Default to Homeowner for guests; overridden by user.pricingTier on login.
@@ -4644,7 +4644,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       panelCatalog: autoPanelCatalog,
       preExistingPlacements,
       anchoredRefrigerator,
-      styleId: designStyleIdRef.current ?? null,
+      // The door selected in the designer, not Color 1 and not a second finish.
+      styleId: styleIdRef.current ?? null,
       makeUid,
     }));
     if (!run.ok) return fail(run.message);
@@ -4820,7 +4821,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         blindPullIn: choice.blindPullIn,
         catalogFillers,
         makeUid,
-        styleId: designStyleIdRef.current ?? null,
+        styleId: styleIdRef.current ?? null,
         excludedWallIds,
       });
       if (!seated.ok) {
@@ -4954,7 +4955,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             description: item.isFiller ? fittedCatalogFillerDescription(source, width) : source.description,
             category: source.category, subCategory: source.subCategory, placement: "base", ...spot, width, depth,
             height: dim(source.height, standardHeight("base")), catalogImageUrl: source.catalogImageUrl ?? null,
-            numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: designStyleIdRef.current ?? null,
+            numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: styleIdRef.current ?? null,
           };
           const accepted = appendCollisionFreePlacements(working, [candidate], room);
           if (accepted.rejected.length === 0) { working = accepted.placed; surrounding.push(candidate); }
@@ -4965,7 +4966,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
     // Every layout has at least one three-drawer base (Tom, Oct 31): convert the best-fitting base run when the
     // planner's range split did not place one. A line with no drawer base only warns.
-    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: designStyleIdRef.current ?? null });
+    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
     working = drawerRule.placed;
     if (drawerRule.note) rangeNeighborNotes.push(drawerRule.note);
     if (drawerRule.warning) rangeNeighborNotes.push(drawerRule.warning);
@@ -4973,7 +4974,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // lowers before the wider seam helper closes anything they left behind.
     const baseRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
-      makeUid, styleId: designStyleIdRef.current ?? null,
+      makeUid, styleId: styleIdRef.current ?? null,
       // Filler is the last resort and never automatic at a run end.
       allowAutoFillers: false,
     });
@@ -4983,7 +4984,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // catalog filler before the wall boxes are matched to the finished lower runs.
     const seamResult = fillAutoDesignLowerSeams({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid,
-      styleId: designStyleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
+      styleId: styleIdRef.current ?? null, corners: upperCorners.map((entry) => entry.point),
       preserveHeavyCookLandings: heavyCook,
       maxFillerIn: AUTO_DESIGN_FILLER_MAX_IN,
     });
@@ -4998,7 +4999,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       room,
       wallCatalog: stage.wallPool,
       wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
-      styleId: designStyleIdRef.current ?? null,
+      styleId: styleIdRef.current ?? null,
       makeUid,
     });
     if (mandatoryBridge.added) working = mandatoryBridge.placed;
@@ -5013,14 +5014,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const upperResult = buildAutoDesignWallCabinets({
       placed: working, room, openings: stageOpenings, catalog: stage.wallPool,
       wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
-      styleId: designStyleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
+      styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
     });
     working = upperResult.placed;
     const finishedRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
-      makeUid, styleId: designStyleIdRef.current ?? null,
+      makeUid, styleId: styleIdRef.current ?? null,
     });
     working = finishedRules.placed;
+    // The selected door, on uppers, bases, talls, and fillers.
+    working = stampAutoDesignSingleFinish(working, styleIdRef.current ?? null);
     placedRef.current = working;
     setPlaced(working);
     const openingBase = stage.sinkWindow && !openings.some((opening) => opening.uid === stage.sinkWindow!.uid)
@@ -5133,7 +5136,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       appliancePalette,
       wallCatalog: wallCabPoolRef.current,
       wallCabinetHeightIn: wallCabHeightRef.current,
-      styleId: designStyleIdRef.current ?? null,
+      // A kitchen Auto Design already painted with one door keeps that door on
+      // the bridge and microwave. Any other plan keeps Color 1.
+      styleId: uniformCabinetStyleId(placed) ?? designStyleIdRef.current ?? null,
       makeUid,
     });
     if (!result.added) return;
