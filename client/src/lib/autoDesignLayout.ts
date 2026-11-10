@@ -39,6 +39,7 @@ import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegm
 import {
   closeSmallOpeningsWithStock,
   consolidateAutoDesignFillers,
+  FILLER_STRIP_MAX_IN,
   findFillerClusters,
   formatFillerInches,
 } from "./autoDesignFillerConsolidation";
@@ -87,7 +88,6 @@ import {
   type AutoDesignPeninsulaSummary,
 } from "./autoDesignPeninsula";import {
   COLLISION_EPSILON_IN,
-  MAX_FILLER_RUN_WIDTH_IN,
   STD,
   clampPlacedToRefrigeratorPanels,
   formatEighthInches,
@@ -563,15 +563,13 @@ function reviewFillers(
   }
 }
 
-/** Auto-Design never installs a filler board wider than 3 inches. A wider catalog filler is cut to 3 instead of being flagged over its maximum. */
-export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {  return placed.map((item) => {
-    const text = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`;
-    if (item.fillerTransitionKind === "front-miter-pair" || item.fillerTransitionKind === "angled-wedge" || item.fillerTransitionKind === "corner-provisional") return item;
-    const filler = Boolean(item.fillerPieceGroupId) || /filler|scribe|^OF\d|^FOL/i.test(text);
-    const installed = item.fillerTotalWidth ?? item.width;
-    if (!filler || installed <= autoDesignFillerMaxIn() + 0.05) return item;
-    return { ...item, width: autoDesignFillerMaxIn(), fillerTotalWidth: autoDesignFillerMaxIn() };
-  });
+/**
+ * Filler width is not shortened here. Cutting a wide board down to 3 inches
+ * would hide the rest of the gap. The filler pass either closes that gap with
+ * stock cabinets or removes the board and names the leftover.
+ */
+export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {
+  return placed;
 }
 
 /**
@@ -1433,12 +1431,13 @@ export function runAutoDesignLayout(args: {
     wallIds: runWalls,
     catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
     fillers: catalogFillers,
-    maxFillerIn: MAX_FILLER_RUN_WIDTH_IN,
+    maxFillerIn: FILLER_STRIP_MAX_IN,
     makeUid,
     styleId: args.styleId,
   });
   working = consolidated.placed;
   notes.push(...consolidated.notes);
+  reviewFindings.push(...consolidated.warnings);
   reviewFillers(runWalls, working, room, stageOpenings, reviewFindings);
   // HARD RULE (owner, Nov 5 2026): the bridge above the range is mandatory and is
   // already seated before the upper run tiled. What follows is the existing

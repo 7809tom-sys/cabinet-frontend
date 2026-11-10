@@ -176,7 +176,7 @@ describe("consolidateAutoDesignFillers", () => {
       maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
     });
     expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
-    expect(result.placed.map((item) => item.masterCode).sort()).toEqual(["B21", "B24"]);
+    expect(result.placed.map((item) => `${item.masterCode}:${item.width}`).join(" + ")).toBe("B12:12 + B33:33");
     expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBe(45);
     expect(result.changes[0]?.kind).toBe("repack");
   });
@@ -233,6 +233,23 @@ describe("consolidateAutoDesignFillers", () => {
     expect(kept.map((item) => item.width).sort()).toEqual([3, 3]);
   });
 
+  it("does not cut a filler wider than 3 inches when no cabinet sum can get that close", () => {
+    const narrow = { ...ROOM, width: 30 } as RoomData;
+    const only = [
+      catalogRow({ id: 24, masterCode: "B24", width: "24" }),
+      catalogRow({ id: 36, masterCode: "B36", width: "36" }),
+    ];
+    const run = [placedBase("B24", 24, 0, "b24"), placedFiller(6, 24, "wide", "b24")];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: narrow, openings: [], wallIds: ["top"], catalog: only, fillers: FILLERS,
+      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
+    });
+    expect(result.placed.some((item) => item.fillerPieceGroupId && item.width > 3)).toBe(false);
+    expect(result.warnings.some((warning) => warning.code === "filler-over-3-in")).toBe(true);
+    expect(result.warnings[0]?.detail).toMatch(/3 inches or less/);
+    expect(result.placed.some((item) => item.masterCode === "B24")).toBe(true);
+  });
+
   it("never resizes a run onto a single-door 24 inch cabinet", () => {
     const single = catalogRow({ id: 80, masterCode: "B24S", width: "24", numberOfDoors: 1, description: "24 inch single door base" });
     const run = [placedBase("B21", 21, 0, "b21"), placedFiller(3, 21, "f3", "b21")];
@@ -283,7 +300,7 @@ describe("consolidateAutoDesignFillers", () => {
       maxFillerIn: 3, makeUid: uidFactory(), styleId: 1,
     });
     expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
-    expect(result.placed.map((item) => item.masterCode)).toEqual(["B30", "B30"]);
+    expect(result.placed.map((item) => `${item.masterCode}:${item.width}`).join(" + ")).toBe("B27:27 + B33:33");
     expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBe(60);
   });
 

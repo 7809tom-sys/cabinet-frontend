@@ -37,7 +37,7 @@ import {
   type WallOpening,
 } from "./design";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
-import { solveCabinetSpan } from "./autoDesignGapSolver";
+import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { isSingleDoorTwentyFourRow } from "./singleDoorTwentyFour";
 
@@ -53,6 +53,11 @@ export const CONSOLIDATED_FILLER_MIN_IN = 0.125;
 export const FILLER_LAST_RESORT_MAX_IN = 1;
 /** How far a leftover search may extend a run into open wall to hit a stock sum. */
 const RUN_EXTEND_MAX_IN = 12;
+/**
+ * Hard cap. A filler strip wider than this is never placed. Tom: the kitchen
+ * should look good all the time, and a wide filler strip does not.
+ */
+export const FILLER_STRIP_MAX_IN = 3;
 
 /** One contiguous set of movable pieces along one layer of one wall. */
 type Stretch = {
@@ -100,7 +105,7 @@ function isProtectedCornerFiller(item: PlacedCabinet, placed: readonly PlacedCab
     || item.fillerTransitionKind === "angled-wedge"
     || item.fillerTransitionKind === "corner-provisional"
     || item.integratedWallBlindFiller === true
-    || fillerTouchesCornerJoin(item, room)
+    || (fillerTouchesCornerJoin(item, room) && (Number(item.width) || 0) <= FILLER_STRIP_MAX_IN + 0.05)
   ) return true;
   if (item.fillerForCabinetUid) {
     const owner = placed.find((candidate) => candidate.uid === item.fillerForCabinetUid);
@@ -411,7 +416,19 @@ export function findFillerClusters(input: {
 
 export type ClusterPlan =
   | { kind: "widen"; cabinet: PlacedCabinet; replacement: DesignCabinet; widthIn: number; starts: Array<{ uid: string; startIn: number }> }
-  | { kind: "repack"; rows: DesignCabinet[]; widths: number[]; startIn: number; rangeUid: string | null; rangeAlongIn: number | null }
+  | {
+    kind: "repack";
+    rows: DesignCabinet[];
+    widths: number[];
+    startIn: number;
+    rangeUid: string | null;
+    rangeAlongIn: number | null;
+    /** Last-resort filler, never more than 3 inches. Null when the run closes with cabinets only. */
+    fillerIn: number | null;
+    /** Set when the closest stock sum still leaves more than 3 inches, so no filler is cut. */
+    warning: DesignerReviewFinding | null;
+  }
+  | { kind: "clear"; warning: DesignerReviewFinding }
   | { kind: "consolidate"; boardWidthIn: number; starts: Array<{ uid: string; startIn: number }>; boardStartIn: number }
   | { kind: "leave"; reason: string };
 
@@ -436,33 +453,74 @@ function rowForWidth(catalog: readonly DesignCabinet[], layer: FillerLayer, widt
   return catalog.find((row) => sellableRunCabinet(row, layer) && Math.abs(soldWidth(row) - width) <= 0.05) ?? null;
 }
 
-type LengthPack = { lengthIn: number; widths: number[] };
+type LengthPack = { lengthIn: number; widths: number[]; remainderIn: number };
 
-/** Smallest change from `preferIn` that is an exact sum of stock widths. */
-function bestExactPack(input: {
+/**
+ * Stock widths for one opening. An exact sum wins. Otherwise the leftover must
+ * be 3 inches or less — one board, never a stack. If every length in the window
+ * still leaves more than 3 inches, the closest sum is returned and the caller
+ * leaves that remainder open instead of cutting an oversized filler.
+ */
+function bestRunPack(input: {
   minIn: number;
   maxIn: number;
   preferIn: number;
   widths: readonly number[];
-  layer: FillerLayer;
 }): LengthPack | null {
   const minE = Math.max(1, Math.round(input.minIn * 8));
   const maxE = Math.round(input.maxIn * 8);
-  let best: { pack: LengthPack; delta: number; pieces: number; balance: number } | null = null;
-  for (let eighths = minE; eighths <= maxE; eighths += 1) {
-    const lengthIn = eighths / 8;
-    const solved = solveCabinetSpan({ lengthIn, widthsIn: input.widths, layer: input.layer });
-    if (!solved.covered || solved.fillerCount !== 0 || solved.cabinetWidths.length === 0) continue;
-    const delta = Math.abs(lengthIn - input.preferIn);
-    const pieces = solved.cabinetWidths.length;
-    const balance = pieces <= 1 ? 0 : Math.max(...solved.cabinetWidths) - Math.min(...solved.cabinetWidths);
-    const better = best == null
-      || delta < best.delta - 1e-6
-      || (Math.abs(delta - best.delta) <= 1e-6 && pieces < best.pieces)
-      || (Math.abs(delta - best.delta) <= 1e-6 && pieces === best.pieces && balance < best.balance - 1e-6);
-    if (better) best = { pack: { lengthIn, widths: solved.cabinetWidths }, delta, pieces, balance };
+  const widthE = input.widths.map((width) => Math.round(width * 8)).filter((width) => width > 0).sort((left, right) => right - left);
+  if (!widthE.length || maxE < minE) return null;
+  const prev = new Int32Array(maxE + 1).fill(-1);
+  prev[0] = 0;
+  for (let sum = 0; sum <= maxE; sum += 1) {
+    if (sum !== 0 && prev[sum] < 0) continue;
+    for (const width of widthE) {
+      const next = sum + width;
+      if (next <= maxE && prev[next] < 0) prev[next] = width;
+    }
   }
-  return best?.pack ?? null;
+  const unpack = (sum: number): number[] => {
+    const chosen: number[] = [];
+    let cursor = sum;
+    while (cursor > 0) {
+      const width = prev[cursor] ?? 0;
+      if (width <= 0) return [];
+      chosen.push(width / 8);
+      cursor -= width;
+    }
+    return chosen.reverse();
+  };
+  let exact: { pack: LengthPack; delta: number; pieces: number } | null = null;
+  let near: { pack: LengthPack; delta: number } | null = null;
+  let closest: LengthPack | null = null;
+  for (let opening = minE; opening <= maxE; opening += 1) {
+    let bestSum = -1;
+    for (let sum = opening; sum > 0; sum -= 1) {
+      if (prev[sum] < 0) continue;
+      bestSum = sum;
+      break;
+    }
+    if (bestSum <= 0) continue;
+    const widths = unpack(bestSum);
+    if (!widths.length) continue;
+    const remainderIn = (opening - bestSum) / 8;
+    const pack: LengthPack = { lengthIn: opening / 8, widths, remainderIn };
+    if (closest == null || remainderIn < closest.remainderIn - 1e-6) closest = pack;
+    const delta = Math.abs(opening / 8 - input.preferIn);
+    if (remainderIn <= 0.001) {
+      const better = exact == null || delta < exact.delta - 1e-6 || (Math.abs(delta - exact.delta) <= 1e-6 && widths.length < exact.pieces);
+      if (better) exact = { pack, delta, pieces: widths.length };
+    } else if (remainderIn <= FILLER_STRIP_MAX_IN + 0.001) {
+      const better = near == null
+        || remainderIn < near.pack.remainderIn - 1e-6
+        || (Math.abs(remainderIn - near.pack.remainderIn) <= 1e-6 && delta < near.delta - 1e-6);
+      if (better) near = { pack, delta };
+    }
+  }
+  if (exact) return exact.pack;
+  if (near) return near.pack;
+  return closest;
 }
 
 /**
@@ -517,17 +575,20 @@ function repackCluster(input: {
   const maxIn = flushRange
     ? length0 + cap
     : length0 + Math.min(slack, RUN_EXTEND_MAX_IN);
-  const pack = bestExactPack({ minIn, maxIn, preferIn: length0, widths, layer: cluster.layer });
-  if (!pack) return null;
+  const pack = bestRunPack({ minIn, maxIn, preferIn: length0, widths });
+  if (!pack || pack.widths.length === 0) return null;
   const rows: DesignCabinet[] = [];
   for (const width of pack.widths) {
     const row = rowForWidth(input.catalog, cluster.layer, width);
     if (!row) return null;
     rows.push(row);
   }
-  const shift = Math.round((pack.lengthIn - length0) * 1000) / 1000;
+  const occupied = Math.round(pack.widths.reduce((sum, width) => sum + width, 0) * 1000) / 1000;
+  const opening = Math.round((occupied + Math.max(0, pack.remainderIn)) * 1000) / 1000;
+  const shift = Math.round((opening - length0) * 1000) / 1000;
   if (Math.abs(shift) > 0.001 && !flushRange && shift < -0.001) return null;
   if (flushRange && Math.abs(shift) > cap + 0.05) return null;
+  const oversized = pack.remainderIn > FILLER_STRIP_MAX_IN + 0.001;
   const rangeStart = flushRange ? wallRunOffset(flushRange, cluster.wallId, room) : 0;
   return {
     kind: "repack",
@@ -536,6 +597,21 @@ function repackCluster(input: {
     startIn: cluster.startIn,
     rangeUid: flushRange ? flushRange.uid : null,
     rangeAlongIn: flushRange ? Math.round((rangeStart + shift) * 1000) / 1000 : null,
+    fillerIn: oversized || pack.remainderIn <= 0.05 ? null : pack.remainderIn,
+    warning: oversized ? fillerCapWarning(cluster.wallId, pack.remainderIn) : null,
+  };
+}
+
+function fillerCapWarning(wallId: string, leftoverIn: number): DesignerReviewFinding {
+  const label = formatFillerInches(leftoverIn);
+  return {
+    ruleId: "filler-last-resort",
+    code: "filler-over-3-in",
+    severity: "warning",
+    title: `${label} left open on ${wallId}`,
+    detail: `No stock-width combination, run shift, or range move gets this leftover to ${FILLER_STRIP_MAX_IN} inches or less. The closest arrangement leaves ${label} open, so no filler strip was placed.`,
+    cabinetUid: null,
+    cabinetCode: null,
   };
 }
 
@@ -590,6 +666,12 @@ export function planFillerCluster(input: {
     openings: input.openings ?? [],
   });
   if (repacked) return repacked;
+  if (cluster.boardTotalIn > FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN) {
+    return {
+      kind: "clear",
+      warning: fillerCapWarning(cluster.wallId, cluster.boardTotalIn),
+    };
+  }
   if (cluster.boardTotalIn > input.maxFillerIn + COLLISION_EPSILON_IN) {
     return { kind: "leave", reason: `a ${formatFillerInches(cluster.boardTotalIn)} opening is wider than a ${input.maxFillerIn}″ filler and no stock-width combination closes it` };
   }
@@ -606,8 +688,8 @@ export function planFillerCluster(input: {
     return { kind: "widen", cabinet, replacement: wider.replacement, widthIn: wider.widthIn, starts: laid.starts };
   }
   const lastBoardEnd = Math.max(...cluster.fillers.map((item) => wallRunOffset(item, cluster.wallId, room) + Number(item.width || 0)));
-  if (cluster.fillers.length < 2 && Math.abs(lastBoardEnd - cluster.endIn) <= 0.02) {
-    return { kind: "leave", reason: "one board already closes the run end" };
+  if (cluster.fillers.length < 2 && cluster.boardTotalIn <= FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN && Math.abs(lastBoardEnd - cluster.endIn) <= 0.02) {
+    return { kind: "leave", reason: "one board of 3 inches or less already closes the run end" };
   }
   const laid = layCluster({ cluster, room });
   // The cabinets that may be re-laid, plus the one board, must still fill the
@@ -617,6 +699,9 @@ export function planFillerCluster(input: {
   const expectedEnd = Math.round((cluster.endIn - cluster.boardTotalIn) * 1000) / 1000;
   if (Math.abs(laid.endIn - expectedEnd) > 0.02) {
     return { kind: "leave", reason: "the run holds a mandatory cabinet that must keep its exact seat" };
+  }
+  if (cluster.boardTotalIn > FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN) {
+    return { kind: "clear", warning: fillerCapWarning(cluster.wallId, cluster.boardTotalIn) };
   }
   return {
     kind: "consolidate",
@@ -693,10 +778,12 @@ export function consolidateAutoDesignFillers(input: {
   placed: PlacedCabinet[];
   changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "repack" | "consolidate"; detail: string }>;
   notes: string[];
+  warnings: DesignerReviewFinding[];
 } {
   let working = [...input.placed];
   const changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "repack" | "consolidate"; detail: string }> = [];
   const notes: string[] = [];
+  const warnings: DesignerReviewFinding[] = [];
   for (const layer of ["base", "wall"] as const) {
     for (const wallId of input.wallIds) {
       if (!wallRunFrame(wallId, input.room)) continue;
@@ -713,6 +800,13 @@ export function consolidateAutoDesignFillers(input: {
         if (plan.kind === "leave") {
           for (const filler of cluster.fillers) skipped.add(filler.uid);
           if (cluster.fillers.length > 1) notes.push(`${wallId}: ${plan.reason}.`);
+          continue;
+        }
+        if (plan.kind === "clear") {
+          const remove = new Set(cluster.fillers.map((item) => item.uid));
+          working = working.filter((item) => !remove.has(item.uid));
+          warnings.push(plan.warning);
+          notes.push(plan.warning.detail);
           continue;
         }
         if (plan.kind === "repack") {
@@ -766,13 +860,34 @@ export function consolidateAutoDesignFillers(input: {
               }
             }
           }
+          if (!failed && plan.fillerIn != null && plan.fillerIn > 0.05) {
+            const owner = trial.filter((item) => item.placement === cluster.layer).at(-1) ?? template;
+            const board = boardFor({
+              cluster, width: plan.fillerIn, startIn: cursor, owner,
+              fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId, room: input.room,
+            });
+            if (!board) {
+              warnings.push(fillerCapWarning(wallId, plan.fillerIn));
+              notes.push(`${wallId}: a ${formatFillerInches(plan.fillerIn)} last-resort filler is not sold in this line, so the gap was left open.`);
+            } else {
+              const accepted = appendCollisionFreePlacements(trial, [board], input.room);
+              if (accepted.rejected.length > 0) failed = true;
+              else trial = accepted.placed;
+            }
+          }
           if (failed) {
             for (const filler of cluster.fillers) skipped.add(filler.uid);
             notes.push(`${wallId}: stock widths would close the filler, but the resized run did not fit.`);
             continue;
           }
           working = trial;
-          const detail = `${cluster.cabinets.map((item) => item.masterCode).join(" + ")} became ${plan.rows.map((row) => row.masterCode).join(" + ")} and the run closed with no filler.`;
+          if (plan.warning) {
+            warnings.push(plan.warning);
+            notes.push(plan.warning.detail);
+          }
+          const detail = plan.fillerIn
+            ? `${cluster.cabinets.map((item) => item.masterCode).join(" + ")} became ${plan.rows.map((row) => row.masterCode).join(" + ")} with a ${formatFillerInches(plan.fillerIn)} filler.`
+            : `${cluster.cabinets.map((item) => item.masterCode).join(" + ")} became ${plan.rows.map((row) => row.masterCode).join(" + ")} and the run closed with no filler.`;
           changes.push({ wallId, layer, kind: "repack", detail });
           notes.push(detail);
           continue;
@@ -847,5 +962,20 @@ export function consolidateAutoDesignFillers(input: {
       }
     }
   }
-  return { placed: working, changes, notes };
+  // Hard cap, after every cabinet attempt. An ordinary strip wider than 3 inches
+  // is removed and named. Blind-corner, angled, and inside-corner fillers stay.
+  const oversized = working.filter((item) => isFillerItem(item)
+    && !isProtectedCornerFiller(item, working, input.room)
+    && (Number(item.width) || 0) > FILLER_STRIP_MAX_IN + 0.05);
+  if (oversized.length) {
+    const drop = new Set(oversized.map((item) => item.uid));
+    working = working.filter((item) => !drop.has(item.uid));
+    for (const item of oversized) {
+      const wallId = cabinetWall(item, input.room) || "the run";
+      const warning = fillerCapWarning(wallId, Number(item.width) || 0);
+      warnings.push(warning);
+      notes.push(warning.detail);
+    }
+  }
+  return { placed: working, changes, notes, warnings };
 }
