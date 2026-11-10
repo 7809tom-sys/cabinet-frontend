@@ -11,7 +11,7 @@ import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { THREE_D_GPU_RESET_LIMIT_MESSAGE, ThreeDRendererHost, claimThreeDGpuRecovery, detectThreeDWebGLSupport, sizeThreeDRenderer, threeDWebGLUnavailableMessage, type ThreeDWebGLSupport } from "./threeDRendererHost";
+import { THREE_D_GPU_RESET_LIMIT_MESSAGE, ThreeDRendererHost, claimThreeDGpuRecovery, detectThreeDWebGLSupport, sizeThreeDRenderer, threeDContextLossAction, threeDWebGLUnavailableMessage, type ThreeDWebGLSupport } from "./threeDRendererHost";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
@@ -12679,6 +12679,8 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   const [webglContextGeneration, setWebglContextGeneration] = useState(0);
   const [gpuResetLimitReached, setGpuResetLimitReached] = useState(false);
   const webglAutoRetriesRef = useRef(0);
+  /** Replacements of a context the browser did not restore. Never reset to zero. */
+  const contextLossRestartsRef = useRef(0);
   const onGraphicsPausedChangeRef = useRef(onGraphicsPausedChange);
   onGraphicsPausedChangeRef.current = onGraphicsPausedChange;
   useEffect(() => {
@@ -12695,20 +12697,31 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   useEffect(() => {
     // A GPU reset loses the context. Chrome usually restores it; when it does
     // not (it blocks WebGL for a page after repeated resets), start over with a
-    // new context instead of leaving a blank canvas.
+    // new context instead of leaving a blank canvas. The replacement is capped:
+    // zeroing the retry counter here used to allocate a renderer forever.
     if (!webglContextLost) return;
     const timer = window.setTimeout(() => {
+      const action = threeDContextLossAction({
+        gpuResetLimitReached,
+        restartsAlreadyUsed: contextLossRestartsRef.current,
+      });
       setWebglContextLost(false);
+      if (action === "stop") {
+        stopAfterGpuResets();
+        return;
+      }
+      contextLossRestartsRef.current += 1;
       rendererHostRef.current?.dispose();
-      webglAutoRetriesRef.current = 0;
+      // One start attempt for this replacement. Do not clear the counter.
+      if (webglAutoRetriesRef.current >= 2) webglAutoRetriesRef.current = 1;
       setWebglUnavailable(true);
     }, 4000);
     return () => window.clearTimeout(timer);
-  }, [webglContextLost]);
+  }, [gpuResetLimitReached, webglContextLost]);
   useEffect(() => {
     // A failed start used to be permanent until a page refresh. Contexts free up a moment
     // later, so retry automatically (twice) before asking the user to press Retry.
-    if (!webglUnavailable || webglAutoRetriesRef.current >= 2) return;
+    if (!webglUnavailable || gpuResetLimitReached || webglAutoRetriesRef.current >= 2) return;
     const timer = window.setTimeout(() => {
       webglAutoRetriesRef.current += 1;
       // Drop the failed renderer so the next attempt asks the browser for a fresh context.
@@ -12716,7 +12729,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       setWebglUnavailable(false);
     }, 1200);
     return () => window.clearTimeout(timer);
-  }, [webglUnavailable]);
+  }, [gpuResetLimitReached, webglUnavailable]);
 	  const [cabinetFinish, setCabinetFinish] = useState(initialPresentation?.cabinetFinish ?? "catalog");
 	  const [cabinetPreviewFinishId, setCabinetPreviewFinishId] = useState<string | null>(null);
 	  const [countertopFinish, setCountertopFinish] = useState(() => resolvedThreeDCountertopFinish(initialPresentation, catalogCountertopColor, scene));

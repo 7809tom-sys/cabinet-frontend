@@ -39,6 +39,12 @@ describe("a shared design link opens for the person it was sent to", () => {
     expect(url.pathname).toBe(`/3d/${token}`);
   });
 
+  it("shows a readable message when the shared view throws, instead of a blank page", () => {
+    expect(appSource).toContain('message="This design couldn\'t load"');
+    expect(appSource).toContain('surface="shared-3d"');
+    expect(appSource).toContain("pageReload={false}");
+  });
+
   it("keeps an affiliate-branded copy of the same link reachable inside the store tree", () => {
     // Older links used a branded host. Vercel/Express rewrites those to
     // /store/:slug/<path>, so the shared views need routes there too.
