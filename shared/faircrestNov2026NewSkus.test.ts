@@ -137,7 +137,9 @@ describe("Faircrest November 2026 new SKU migration", () => {
       const link = links.find((statement) => statement.includes(`'${expected.code}'`));
       expect(link, expected.code).toBeDefined();
       expect(link).toMatch(/listPrice, yourCost\)/);
-      expect(link).toMatch(/, NULL, NULL /);
+      expect(link).toMatch(/, 0, 0, NULL, NULL /);
+      expect(link).not.toContain("template_sku.isAvailable");
+      expect(link).toContain("faircrest_distributor.code)) = 'CS'");
       expect(link).toMatch(/WHERE NOT EXISTS/i);
     }
   });

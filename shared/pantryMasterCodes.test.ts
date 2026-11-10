@@ -94,6 +94,8 @@ describe("pantry master 0276 SQL", () => {
     expect(priceInsert).toContain("top_sku.styleId <=> base_sku.styleId");
     expect(priceInsert).toContain("existing_sku.styleId <=> base_sku.styleId");
     expect(priceInsert).toContain("'1884', '1890', '1896'");
+    expect(priceInsert).toContain("faircrest_distributor.code)) = 'CS'");
+    expect(priceInsert).toContain("base_sku.listPrice + top_sku.listPrice IS NOT NULL");
     expect(priceInsert).not.toContain("'1876'");
     const cabinetCheck = executable.at(-1) ?? "";
     expect(cabinetCheck).toContain("style_link_count");
@@ -125,6 +127,13 @@ describe("pantry master SQL", () => {
     expect(inserted).toContain("'3DB18'");
     expect(inserted).toContain("'W184224'");
     expect(inserted).not.toContain("'UCB1854'");
+    const priceInsert = inserts.find((statement) => statement.startsWith("INSERT INTO cabinet_dealz.distributor_skus"));
+    expect(priceInsert).toBeDefined();
+    expect(priceInsert).toContain("base_sku.listPrice + top_sku.listPrice");
+    expect(priceInsert).toContain("faircrest_distributor.code)) = 'CS'");
+    expect(priceInsert).toContain("existing_sku.styleId <=> base_sku.styleId");
+    expect(executable.at(-1)).toContain("priced_link_count");
+    expect(executable.at(-1)).toContain("style_link_count");
     expect(executable.some((statement) => statement.includes("'W1830'"))).toBe(false);
     expect(executable.some((statement) => statement.includes("'1830'"))).toBe(false);
   });
