@@ -76,6 +76,7 @@ function capture(sourceUrl: string, text: string): LegalCapture {
 const USCD_TERMS = "https://www.uscabinetdepot.com/terms-and-conditions";
 const USCD_WARRANTY = "https://www.uscabinetdepot.com/warranty";
 const FAIRCREST_SHIPPING = "https://www.faircrestcabinets.com/shipping-policy/";
+const FAIRCREST_FAQ = "https://www.faircrestcabinets.com/faqs";
 const FAIRCREST_RETURNS = "https://www.faircrestcabinets.com/return-refund-policy/";
 const FAIRCREST_WARRANTY = "https://www.faircrestcabinets.com/media/catalog/Clark-Son-Catalog-2023.pdf";
 const SKYLINE_PAGE = "https://shop.skylinecabinetry.com/shipping-returns";
@@ -121,7 +122,10 @@ export const DISTRIBUTOR_LEGAL_SEEDS: readonly DistributorLegalSeed[] = [
     warrantyBadgeDetail: null,
     combinedPageNote: null,
     sections: {
-      shipping: [capture(FAIRCREST_SHIPPING, LEGAL_CAPTURE_TEXT.fair_ship)],
+      shipping: [
+        capture(FAIRCREST_SHIPPING, LEGAL_CAPTURE_TEXT.fair_ship),
+        capture(FAIRCREST_FAQ, LEGAL_CAPTURE_TEXT.fair_faq),
+      ],
       returns: [capture(FAIRCREST_RETURNS, LEGAL_CAPTURE_TEXT.fair_ret)],
       warranty: [capture(FAIRCREST_WARRANTY, LEGAL_CAPTURE_TEXT.fair_w)],
     },

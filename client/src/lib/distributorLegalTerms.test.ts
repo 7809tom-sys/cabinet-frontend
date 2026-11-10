@@ -119,6 +119,9 @@ describe("distributor legal terms", () => {
       "client/src/lib/pelicanSinkCatalogDescriptions.ts",
       "shared/pelicanComparablePackaging.ts",
     ]);
+    const faircrestShipping = capturedSectionText(DISTRIBUTOR_LEGAL_SEEDS.find((seed) => seed.key === "faircrest")!.sections.shipping);
+    expect(faircrestShipping).toContain("We can ship to virtually any address in the world.");
+    expect(faircrestShipping).toContain("Most orders will be shipped on a pallet via LTL (Less Than Truck Load) carrier.");
     const faircrest = capturedSectionText(DISTRIBUTOR_LEGAL_SEEDS.find((seed) => seed.key === "faircrest")!.sections.returns);
     expect(faircrest).toContain("Clark and Son will deny your claim");
     expect(faircrest).toContain("effective 08/01/2022");
