@@ -394,26 +394,33 @@ export function makeShowerNicheParts(
     parts.push({ mesh, part });
   };
 
-  // Open toward -X into the room, recessed along +X.
+  // Authored in the SAME frame as the rest of the shower: the room-facing opening
+  // is the face at z = 0 and the recess runs AWAY from the room into +Z, with the
+  // fixture standing on y = 0 so its bottom sits on the deck it is mounted over.
+  //
+  // It used to be recessed along +X and centred on y = 0. Every fixture group is
+  // positioned at floor level (y = 0) and rotated so its +Z face is the wall, so
+  // that older frame put half the niche below the floor and turned the recess
+  // sideways — a thin slab hanging in the shower at an odd angle (Tom's report).
   const p = new Panel();
-  const back = W / 2 - 0;
-  p.quad([v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(depth, Hp / 2, -W / 2)], v(1, 0, 0));
+  p.quad([v(-W / 2, Hp, depth), v(W / 2, Hp, depth), v(W / 2, 0, depth), v(-W / 2, 0, depth)], v(0, 0, 1));
   // Floor, ceiling and both sides of the recess.
-  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], UP);
-  p.quad([v(-shell, Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, -1, 0));
-  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(-shell, Hp / 2, -W / 2)], v(0, 0, 1));
-  p.quad([v(-shell, -Hp / 2, W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, 0, -1));
+  p.quad([v(-W / 2, 0, -shell), v(W / 2, 0, -shell), v(W / 2, 0, depth), v(-W / 2, 0, depth)], UP);
+  p.quad([v(-W / 2, Hp, -shell), v(W / 2, Hp, -shell), v(W / 2, Hp, depth), v(-W / 2, Hp, depth)], v(0, -1, 0));
+  p.quad([v(-W / 2, 0, -shell), v(-W / 2, 0, depth), v(-W / 2, Hp, depth), v(-W / 2, Hp, -shell)], v(1, 0, 0));
+  p.quad([v(W / 2, 0, -shell), v(W / 2, 0, depth), v(W / 2, Hp, depth), v(W / 2, Hp, -shell)], v(-1, 0, 0));
   push(p.geometry(), "shower-niche-body");
 
-  // Face flange, the visible 1/2" border that laps the wall finish.
+  // Face flange, the visible 1/2" border that laps the wall finish. It lives on the
+  // room-facing plane and is centred on the opening, so it reads as a frame around
+  // the recess instead of a separate sheet.
   const f = new Panel();
   const flange = 0.5 * INCH;
   const outerW = W / 2 + flange;
-  const outerH = Hp / 2 + flange;
-  f.quad([v(-shell, outerH, outerW), v(-shell, outerH, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, Hp / 2, W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -outerH, outerW), v(-shell, -outerH, -outerW), v(-shell, -Hp / 2, -W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -Hp / 2, -outerW), v(-shell, Hp / 2, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, -Hp / 2, -W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -Hp / 2, outerW), v(-shell, Hp / 2, outerW), v(-shell, Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
+  f.quad([v(-outerW, Hp + flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(-W / 2, Hp, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, -shell), v(outerW, -flange, -shell), v(W / 2, 0, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, -shell), v(-outerW, Hp + flange, -shell), v(-W / 2, Hp, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(outerW, -flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(W / 2, 0, -shell)], v(0, 0, -1));
   push(f.geometry(), "shower-niche-flange");
 
   // Shelves. Pelican sells these niches as "1 Shelf" / "2 Shelves" / "3 Shelves",
@@ -423,29 +430,28 @@ export function makeShowerNicheParts(
   if (shelfCount > 0) {
     const shelfThickness = 0.4 * INCH;
     for (let index = 1; index <= shelfCount; index += 1) {
-      const y = -Hp / 2 + (Hp * index) / (shelfCount + 1);
+      // Shelves divide the recess evenly, measured up from the niche's own floor.
+      const y = (Hp * index) / (shelfCount + 1);
       const s = new Panel();
       // A shelf spans the opening, sits inside the recess, and is thin.
       s.quad(
-        [v(-shell, y - shelfThickness / 2, -W / 2), v(depth * 0.94, y - shelfThickness / 2, -W / 2),
-          v(depth * 0.94, y - shelfThickness / 2, W / 2), v(-shell, y - shelfThickness / 2, W / 2)],
+        [v(-W / 2, y - shelfThickness / 2, -shell), v(W / 2, y - shelfThickness / 2, -shell),
+          v(W / 2, y - shelfThickness / 2, depth * 0.94), v(-W / 2, y - shelfThickness / 2, depth * 0.94)],
         v(0, -1, 0),
       );
       s.quad(
-        [v(-shell, y + shelfThickness / 2, -W / 2), v(depth * 0.94, y + shelfThickness / 2, -W / 2),
-          v(depth * 0.94, y + shelfThickness / 2, W / 2), v(-shell, y + shelfThickness / 2, W / 2)],
+        [v(-W / 2, y + shelfThickness / 2, -shell), v(W / 2, y + shelfThickness / 2, -shell),
+          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
         UP,
       );
       s.quad(
-        [v(-shell, y - shelfThickness / 2, -W / 2), v(depth * 0.94, y - shelfThickness / 2, -W / 2),
-          v(depth * 0.94, y + shelfThickness / 2, -W / 2), v(-shell, y + shelfThickness / 2, -W / 2)],
+        [v(-W / 2, y - shelfThickness / 2, depth * 0.94), v(W / 2, y - shelfThickness / 2, depth * 0.94),
+          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
         v(0, 0, 1),
       );
       push(s.geometry(), `shower-niche-shelf-${index}`);
     }
   }
-  void back;
-
   return parts;
 }
 

@@ -103,3 +103,50 @@
     display: none;
   }
 }
+
+/* ── Portalled hover description ──────────────────────────────────────────────
+   The bubble is rendered on `document.body` with `position: fixed`, so it is
+   outside the 3D stage's `overflow-hidden`, outside the column's
+   `overflow-y-auto`, and outside the stage's stacking context. That is what lets
+   it draw OVER the pricing / Current Selections panel instead of being clipped by
+   it, and it is the only reliable way to do that without a stateful popover
+   inside the render loop.
+
+   Look matches the app's Tooltip: dark navy pill, 12px medium type, soft shadow.
+   `pointer-events: none` so the bubble can never steal the hover it belongs to. */
+.three-d-floating-tooltip-portal {
+  pointer-events: none;
+  width: max-content;
+  border-radius: 0.375rem;
+  background-color: #1a2744;
+  padding: 0.4375rem 0.75rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #fff;
+  box-shadow: 0 12px 20px -6px rgb(0 0 0 / 0.35);
+  /* A hairline border keeps the pill legible over a white panel. */
+  border: 1px solid rgb(255 255 255 / 0.14);
+  /* Never narrower than the words inside it, never wider than the clamp set inline. */
+  min-width: 0;
+  white-space: normal;
+  z-index: 9999;
+}
+
+/* A touch screen can never hover, and the button already carries the action in
+   `aria-label`; there is no bubble to draw. */
+@media (hover: none) {
+  .three-d-floating-tooltip-portal {
+    display: none;
+  }
+}
+
+/* On a narrow phone the bubble may sit over the whole canvas; keep it readable
+   without covering the button itself. */
+@media (max-width: 480px) {
+  .three-d-floating-tooltip-portal {
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.75rem;
+  }
+}
