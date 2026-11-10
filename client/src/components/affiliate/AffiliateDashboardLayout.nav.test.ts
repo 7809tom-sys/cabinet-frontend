@@ -10,6 +10,8 @@ describe("affiliate portal sidebar", () => {
     expect(customerLinks).toBeGreaterThan(-1);
     expect(customerLinks).toBeLessThan(tail);
     expect(source).toContain("Preview Quote Page");
+    expect(source).not.toContain("quotePublished");
+    expect(source).not.toContain('anyPublished("quote")');
     expect(source).toContain("The quote request page your customers see");
     expect(source).toContain("Preview Storefront Designer");
     expect(source).toContain("See the 3D designer the way your customers see it. To design for a customer, use Design Workspace.");

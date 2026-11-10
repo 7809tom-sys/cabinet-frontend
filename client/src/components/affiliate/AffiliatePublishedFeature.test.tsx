@@ -45,4 +45,31 @@ describe("affiliate feature gate", () => {
     render(<AffiliatePublishedFeature feature="kitchen_designer"><p>Kitchen</p></AffiliatePublishedFeature>);
     expect(screen.getByText("Kitchen")).toBeTruthy();
   });
+
+  it("shows a real publish-list failure and does not show it for a quote request", () => {
+    publishState.status = "error";
+    publishState.errorMessage = "the publish list failed";
+    render(<AffiliatePublishedFeature feature="closet_studio"><p>Studio</p></AffiliatePublishedFeature>);
+    expect(screen.getByTestId("affiliate-feature-error").textContent).toContain("Could not check whether Closet Studio is published for affiliates");
+    expect(screen.queryByText("Studio")).toBeNull();
+  });
+
+  it("keeps the quote request page up when the list errors, is still loading, or has the switch off", () => {
+    publishState.status = "error";
+    publishState.errorMessage = "You do not have required permission (10002).";
+    const { rerender } = render(<AffiliatePublishedFeature feature="quote"><p>Quote page</p></AffiliatePublishedFeature>);
+    expect(screen.getByText("Quote page")).toBeTruthy();
+    expect(screen.queryByTestId("affiliate-feature-error")).toBeNull();
+    expect(screen.queryByTestId("affiliate-feature-blocked")).toBeNull();
+
+    publishState.status = "loading";
+    rerender(<AffiliatePublishedFeature feature="quote"><p>Quote page</p></AffiliatePublishedFeature>);
+    expect(screen.getByText("Quote page")).toBeTruthy();
+
+    publishState.status = "ready";
+    publishState.rows = [];
+    rerender(<AffiliatePublishedFeature feature="quote"><p>Quote page</p></AffiliatePublishedFeature>);
+    expect(screen.getByText("Quote page")).toBeTruthy();
+    expect(screen.queryByText("Quote requests is not published for affiliates.")).toBeNull();
+  });
 });

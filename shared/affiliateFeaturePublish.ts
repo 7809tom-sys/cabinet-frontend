@@ -17,6 +17,10 @@
  * feature row is off; otherwise off when that subject's "all" row is off;
  * otherwise that subject's own feature row decides.
  *
+ * Quote requests stay in the list so the Publish tab can record the switch.
+ * The shopping cart and quote request pages are not closed by that switch.
+ * Call affiliateFeatureAlwaysOpen before treating a missing or off row as closed.
+ *
  * Affiliate Literature is not in this list: library documents stay on
  * Settings → Affiliate Literature.
  */
@@ -65,8 +69,15 @@ export const AFFILIATE_FEATURES: readonly AffiliateFeatureDefinition[] = [
   { key: "promotions", label: "Promotions", gatedIn: "Affiliate Promotions & Banners" },
   { key: "image_cabinet", label: "Image Cabinet", gatedIn: "Affiliate Image Cabinet" },
   { key: "installation_estimates", label: "Installation estimates", gatedIn: "Affiliate Installation Estimates" },
-  { key: "quote", label: "Quote requests", gatedIn: "Affiliate customer link Preview Quote Page" },
+  { key: "quote", label: "Quote requests", gatedIn: "Recorded on the Publish tab. The shopping cart and quote request pages stay open for affiliates." },
 ];
+
+/** Publish rows do not close these. The cart and a quote request stay available. */
+export const AFFILIATE_FEATURES_ALWAYS_OPEN = ["quote"] as const;
+
+export function affiliateFeatureAlwaysOpen(featureKey: string): boolean {
+  return (AFFILIATE_FEATURES_ALWAYS_OPEN as readonly string[]).includes(featureKey);
+}
 
 export const DESIGNER_ROOM_FEATURE = {
   kitchen: "kitchen_designer",
