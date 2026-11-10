@@ -324,7 +324,7 @@ export function planMasterTracTower(
   towerId = "tower-preview",
   uid = (index: number) => `${towerId}-board-${index}`,
 ): TowerResult {
-  if (room.vertices?.length || room.customWalls?.length) return { ok: false, reason: "Connected towers currently require a rectangular room. Place individual boards on measured custom walls." };
+  if ((room.vertices?.length || room.customWalls?.length) && !room.preserveCardinalWalls) return { ok: false, reason: "Connected towers currently require a rectangular room. Place individual boards on measured custom walls." };
   if (!STRUCTURAL_FINISHES.includes(config.finish as typeof STRUCTURAL_FINISHES[number])) return { ok: false, reason: "Select one verified MasterTrac structural finish." };
   if (![87, 94].includes(config.heightIn) || ![14.5, 23.5].includes(config.depthIn)) return { ok: false, reason: "Choose an actual floor-panel height and depth from the 2022 worksheet." };
   if (config.bays.length < 2 || config.bays.length > 4) return { ok: false, reason: "Select two to four connected bays." };

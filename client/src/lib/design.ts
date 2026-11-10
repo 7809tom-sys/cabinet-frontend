@@ -18,6 +18,7 @@ import {
   isLocked45Wall,
   pointInPolygon,
   positionAlongWall,
+  roomShellVertices,
   wallAngle as polygonWallAngle,
   wallSegmentLength as polygonWallSegmentLength,
 } from "./polygonRoom";
@@ -2006,6 +2007,11 @@ export interface RoomData {
   customWalls?: import("@/lib/polygonRoom").CustomWall[];
   /** True when customWalls form an intentional connected path rather than a closed perimeter. */
   openWallPath?: boolean;
+  /**
+   * True when `customWalls` were added onto a rectangular room. The four
+   * cardinal walls stay the room shell; the custom walls are extra runs.
+   */
+  preserveCardinalWalls?: boolean;
   /** Free-standing cabinet-supported runs that leave a room wall as a peninsula. */
   peninsulaRuns?: PeninsulaRun[];
   /**
@@ -10874,6 +10880,10 @@ export function customWallCabinetSide(
 ): MeasuredWallCabinetSide {
   const vertices = room.vertices ?? [];
   const walls = room.customWalls ?? [];
+  if (_wallId) {
+    const explicit = walls.find((wall) => wall.id === _wallId)?.cabinetSide;
+    if (explicit === "left" || explicit === "right") return explicit;
+  }
   if (vertices.length < 2 || walls.length === 0) return "left";
 
   const pointFor = (vertexId: string) => vertices.find((vertex) => vertex.id === vertexId) ?? null;
@@ -11124,9 +11134,13 @@ export function wallRunFrame(side: WallSide | string | null | undefined, room: R
 
 /** Every perimeter wall run (drawn walls when present, else the four standard sides) plus peninsulas. */
 export function roomWallRunFrames(room: RoomData): WallRunFrame[] {
-  const ids: string[] = room.vertices && (room.customWalls?.length ?? 0) > 0
+  const customIds = room.vertices && (room.customWalls?.length ?? 0) > 0
     ? (room.customWalls ?? []).map((wall) => wall.id)
-    : ["top", "bottom", "left", "right"];
+    : [];
+  const cardinalIds = customIds.length === 0 || room.preserveCardinalWalls
+    ? ["top", "bottom", "left", "right"]
+    : [];
+  const ids = [...cardinalIds, ...customIds];
   for (const run of room.peninsulaRuns ?? []) ids.push(run.id);
   return ids.map((id) => wallRunFrame(id, room)).filter((frame): frame is WallRunFrame => frame != null);
 }
@@ -11594,17 +11608,37 @@ function pointInsideOrOnRoomShell(px: number, py: number, vertices: NonNullable<
   }
   return false;
 }
+function drawnRoomShell(room: RoomData) {
+  const vertices = roomShellVertices(room.vertices ?? [], room.customWalls ?? []);
+  const closedShell = !room.openWallPath
+    && !room.preserveCardinalWalls
+    && vertices.length >= 3
+    && (room.customWalls?.length ?? 0) >= vertices.length;
+  return { vertices, closedShell };
+}
+
 /** True when the whole placed envelope lies inside (or on) the drawn room shell. */
 export function placedInsideDrawnRoom(p: PlacedCabinet, room: RoomData): boolean {
-  const vertices = room.vertices ?? [];
-  const closedShell = !room.openWallPath && vertices.length >= 3 && (room.customWalls?.length ?? 0) >= vertices.length;
+  const { vertices, closedShell } = drawnRoomShell(room);
   if (!closedShell) {
     // An open wall path has no enclosed polygon; its shell is the room's
-    // bounding rectangle, exactly like a standard room.
+    // bounding rectangle, exactly like a standard room. A wall added onto a
+    // rectangle keeps that same shell.
     const { w, d } = placedFootprint(p);
-    return p.x >= -1e-6 && p.y >= -1e-6 && p.x + w <= room.width + 1e-6 && p.y + d <= room.depth + 1e-6;
+    if (p.x >= -1e-6 && p.y >= -1e-6 && p.x + w <= room.width + 1e-6 && p.y + d <= room.depth + 1e-6) return true;
+    // Cabinets seated on a wall that leaves the rectangle stay with that wall.
+    return cabinetSeatedOnDrawnWall(p, room);
   }
-  return placedEnvelopeCorners(p).every((corner) => pointInsideOrOnRoomShell(corner.x, corner.y, vertices));
+  if (placedEnvelopeCorners(p).every((corner) => pointInsideOrOnRoomShell(corner.x, corner.y, vertices))) return true;
+  return cabinetSeatedOnDrawnWall(p, room);
+}
+
+function cabinetSeatedOnDrawnWall(p: PlacedCabinet, room: RoomData): boolean {
+  if (!p.wallId || !room.customWalls?.some((wall) => wall.id === p.wallId)) return false;
+  const frame = wallRunFrame(p.wallId, room);
+  if (!frame) return false;
+  const depth = Math.max(0, Number(p.depth) || 0);
+  return wallRunDistanceToPoint(frame, placedPlanCenter(p)) <= depth / 2 + 1;
 }
 
 /**
@@ -11617,8 +11651,7 @@ export function placedInsideDrawnRoom(p: PlacedCabinet, room: RoomData): boolean
 export function countertopSurfaceInsideRoom(surface: CountertopSurface, room: RoomData): boolean {
   const polygon = countertopSurfacePlanPolygon(surface);
   if (polygon.length < 3) return false;
-  const vertices = room.vertices ?? [];
-  const closedShell = !room.openWallPath && vertices.length >= 3 && (room.customWalls?.length ?? 0) >= vertices.length;
+  const { vertices, closedShell } = drawnRoomShell(room);
   if (closedShell) {
     return polygon.every((point) => pointInsideOrOnRoomShell(point.x, point.y, vertices));
   }
@@ -11691,7 +11724,8 @@ export function containCabinetOnDrawnWalls(p: PlacedCabinet, room: RoomData): Pl
 // wall must be pulled back inside. Keeps the design valid instead of leaving
 // cabinets floating outside the room rectangle.
 export function clampCabinetToRoom(p: PlacedCabinet, room: RoomData): PlacedCabinet {
-  if (!p.islandFace && room.vertices?.length && room.customWalls?.length) {
+  const onAddedCardinalWall = Boolean(room.preserveCardinalWalls && p.wallId && room.customWalls?.some((wall) => wall.id === p.wallId));
+  if (!p.islandFace && room.vertices?.length && room.customWalls?.length && (!room.preserveCardinalWalls || onAddedCardinalWall)) {
     return containCabinetOnDrawnWalls(p, room);
   }
   // Square footprint for L-corner cabinets so a resize keeps them flush in the
