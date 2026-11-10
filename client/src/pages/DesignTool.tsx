@@ -419,7 +419,9 @@ import {
   placeShowerPanInsideOpening,
   placeShowerSurround,
   placeWallFitting,
+  placeWallFittingOnPanel,
   clampShowerHeight,
+  type ShowerPanelSide,
 } from "@/lib/showerPlacementAssembly";
 import { applyShowerMove, isShowerPart, showerGroupMembers } from "@/lib/showerGroupMove";
 import type { ShowerStepId, ShowerWall } from "@/lib/showerBuilder";
@@ -2824,13 +2826,47 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
 
     if (stepId === "heads" || stepId === "niche") {
-      const placed = placeWallFitting(part.code, wall ?? "top", room, clampShowerHeight(input.heightIn ?? 48));
-      if (!placed) return;
+      // These mount on ONE panel of the shower the shopper built, chosen
+      // explicitly in the wizard. Without that choice there is nowhere correct to
+      // put them, and the old code fell back to a room wall — which is why the
+      // valve, head and niche appeared outside the enclosure.
+      const opening = showerOpening.current;
+      if (!opening) {
+        nextWarnings.push("Choose the wall panels first — these mount on the inside face of a shower panel.");
+        setShowerWarnings((current) => ({ ...current, [stepId]: nextWarnings }));
+        return;
+      }
+      const panel = (wall ?? null) as ShowerPanelSide | null;
+      if (panel == null) {
+        nextWarnings.push("Choose which shower panel this goes on — back, left side or right side.");
+        setShowerWarnings((current) => ({ ...current, [stepId]: nextWarnings }));
+        return;
+      }
+      const placed = placeWallFittingOnPanel(
+        part.code,
+        panel,
+        opening,
+        clampShowerHeight(input.heightIn ?? (stepId === "heads" ? 48 : 44)),
+      );
+      if (!placed) {
+        nextWarnings.push("That part could not be mounted on the chosen panel.");
+        setShowerWarnings((current) => ({ ...current, [stepId]: nextWarnings }));
+        return;
+      }
       setFurniture((current) => [
         ...current.filter((item) => item.showerStepId !== stepId),
-        { ...placed, showerStepId: stepId, pelicanSellPrice: part.price, pelicanProductId: part.id },
+        {
+          ...placed,
+          showerStepId: stepId,
+          pelicanSellPrice: part.price,
+          pelicanProductId: part.id,
+          // Saved with the design so the panel choice survives a reload and Move
+          // shower can re-seat the part on the same panel.
+          showerPanelSide: panel,
+        } as typeof placed,
       ]);
       selectShowerPart(part, stepId);
+      setShowerWarnings((current) => ({ ...current, [stepId]: nextWarnings }));
       return;
     }
 

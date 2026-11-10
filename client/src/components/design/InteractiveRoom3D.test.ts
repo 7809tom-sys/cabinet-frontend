@@ -301,7 +301,13 @@ describe("source-measured Pelican bathroom fixtures", () => {
       sourceEnvelopeIn: { width: 60, depth: 0.5, height: 76 },
     });
     expect(fixture?.children.filter((child) => child.userData.pelicanBathroomFixturePart === "shower-door-glass-panel")).toHaveLength(2);
-    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-rail")).toBe(true);
+    // Tom asked for the overhead header rail to go: it read as a shop display
+    // case rather than the frameless doors Pelican sells. The floor track and the
+    // panel frames stay, and this is purely visual — the door's cart line and price
+    // never included the rail.
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-rail")).toBe(false);
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-track")).toBe(true);
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-glass-panel")).toBe(true);
   });
 
   it("ignores an unknown furniture definition left in an older saved plan", () => {

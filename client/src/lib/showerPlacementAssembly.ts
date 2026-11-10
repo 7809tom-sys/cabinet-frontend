@@ -241,6 +241,106 @@ export const DEFAULT_SHOWER_MOUNT_HEIGHTS: ShowerMountHeights = {
  * The fitting sits against the wall it belongs to, which is why each step carries its
  * own wall: a head on the left wall is mounted along that wall, not the surround's.
  */
+/**
+ * Which of the surround's three panels a wall fitting goes on.
+ *
+ * The shopper chooses this in the wizard, and it is saved with the design. "back"
+ * is the wet wall the valve normally goes on; "left" and "right" are the two side
+ * panels. The choice is the part's own — a niche can sit on a different panel from
+ * the valve.
+ */
+export type ShowerPanelSide = "back" | "left" | "right";
+
+export const SHOWER_PANEL_SIDES: readonly ShowerPanelSide[] = ["back", "left", "right"] as const;
+
+export const SHOWER_PANEL_LABELS: Record<ShowerPanelSide, string> = {
+  back: "Back panel",
+  left: "Left side panel",
+  right: "Right side panel",
+};
+
+/**
+ * Mount a wall fitting on the INSIDE face of one of the surround's panels.
+ *
+ * This is the fix for the valve, head and niche landing on the room wall OUTSIDE
+ * the enclosure. The old code did `bayForWall(room, wall)`, which seats the part
+ * against a bay of the *room*: a 60" room wall is not the shower's back panel, and
+ * for a surround standing in a corner the part ended up on the room wall beside
+ * the shower. Nothing tied the part to where the surround actually is.
+ *
+ * The panel geometry comes from the surround's own `ShowerOpening` — the bay it
+ * was seated in, its rotation and its interior width/depth — so:
+ *
+ *   - the BACK panel is the wall face the surround's back is flat against,
+ *   - the LEFT and RIGHT panels are the two end panels, and
+ *   - every mount sits `profile.depthIn / 2` inside the enclosure, on the inside
+ *     face, centred along that panel.
+ *
+ * Because the position is derived from the opening rather than from a fresh room
+ * lookup, the fitting inherits the surround's rotation exactly: moving the shower
+ * moves the surround, and re-placing the fittings from the moved opening puts them
+ * back on its panels.
+ */
+export function placeWallFittingOnPanel(
+  pelicanCode: string,
+  side: ShowerPanelSide,
+  opening: ShowerOpening,
+  heightIn: number,
+): PlacedFurniture | null {
+  const entry = definitionFor(pelicanCode);
+  if (!entry) return null;
+  const bay = opening.bay;
+  const footprint = footprintInBay(entry.definition, bay);
+
+  // Work in the BAY's frame: `tangent` runs along the back panel, `inward` points
+  // into the room from it.
+  const halfWidth = opening.insideWidthIn / 2;
+  const halfDepth = opening.insideDepthIn / 2;
+
+  // Start at the middle of the back panel, on its inside face.
+  const backCentre = {
+    x: bay.start.x + bay.tangent.x * (bay.spanIn / 2) + bay.inward.x * (footprint.across / 2),
+    y: bay.start.y + bay.tangent.y * (bay.spanIn / 2) + bay.inward.y * (footprint.across / 2),
+  };
+
+  let centre = backCentre;
+  if (side === "back") {
+    // Centred across the back panel, half the fitting's depth inside the enclosure
+    // so its face sits ON the panel's inside face.
+    centre = backCentre;
+  } else {
+    // A side panel runs along `inward` from the back panel. The fitting sits half
+    // its depth in from that end panel, and half the opening back from the front,
+    // so it is centred on the panel and inside the enclosure.
+    // "Inside the enclosure" means moving INWARD from the chosen side panel:
+    // rightwards from the left panel, leftwards from the right one. Getting this
+    // sign backwards put the fitting outside the surround, through the wall.
+    const sign = side === "left" ? 1 : -1;
+    const alongPanel = halfDepth;         // centred front-to-back on the side panel
+    const inFromSide = footprint.across / 2;
+    centre = {
+      x: bay.start.x
+        + bay.tangent.x * (bay.spanIn / 2 + sign * (halfWidth - inFromSide))
+        + bay.inward.x * alongPanel,
+      y: bay.start.y
+        + bay.tangent.y * (bay.spanIn / 2 + sign * (halfWidth - inFromSide))
+        + bay.inward.y * alongPanel,
+    };
+  }
+
+  const placed = makeFurniture(entry.definition.id, 0, 0);
+  return {
+    ...placed,
+    pelicanCode: entry.profile.pelicanCode,
+    x: centre.x - footprint.w / 2,
+    y: centre.y - footprint.d / 2,
+    // A side panel is perpendicular to the back panel, so its fitting turns a
+    // quarter turn with it.
+    rotation: side === "back" ? bay.rotation : (((bay.rotation + 90) % 360) + 360) % 360,
+    mountHeightIn: clampHeight(heightIn),
+  };
+}
+
 export function placeWallFitting(
   pelicanCode: string,
   wall: ShowerWall,

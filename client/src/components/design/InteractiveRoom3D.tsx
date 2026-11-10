@@ -11375,11 +11375,14 @@ function addPelicanBathroomFixture(
         add(bar, label);
       }
     }
-    // The top rail the panels hang from, and the floor track they run in.
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.06, 0.06), metal);
-    rail.position.y = height - 0.03;
-    rail.castShadow = true;
-    add(rail, "shower-door-rail");
+    // The floor track the panels run in.
+    //
+    // There used to be a matching overhead header rail here. Tom asked for it gone:
+    // a long horizontal bar across the top of the glass, sticking out past the
+    // surround, made the enclosure look like a shop display case rather than the
+    // frameless doors Pelican actually sells. Removing it is purely visual — it was
+    // never a cart line, a price, or a placement of its own, so the door's SKU and
+    // total are untouched.
     const track = new THREE.Mesh(new THREE.BoxGeometry(width, 0.028, 0.05), metal);
     track.position.y = 0.014;
     add(track, "shower-door-track");
