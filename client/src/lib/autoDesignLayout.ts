@@ -59,7 +59,7 @@ import {
   tallCabinetPlacement,
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
-import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { ensureMandatorySinkFaucets, type AutoDesignFaucetProduct } from "./autoDesignFaucet";
 import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
@@ -1347,11 +1347,16 @@ export function runAutoDesignLayout(args: {
   // The shared "real cabinets before filler" pass runs on EVERY wall and both
   // layers: slide within the wiggle room, widen a neighbor, or seat a real narrow
   // cabinet before any sliver is called unusable.
+  const wallHeightNominal = stage.input.wallCabinetHeightIn ?? 30;
+  const heightMatchedCatalog = catalogMatchingWallDesignHeight(
+    [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    wallHeightNominal,
+  );
   const realCabinets = applyRealCabinetsBeforeFiller({
     placed: working,
     room,
     openings: stageOpenings,
-    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    catalog: heightMatchedCatalog,
     makeUid,
     styleId: args.styleId,
     wallIds: runWalls,
@@ -1435,6 +1440,7 @@ export function runAutoDesignLayout(args: {
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
   });
   working = upperResult.placed;
+  notes.push(...upperResult.substitutions);
   // The refrigerator end panels are a hard stop for the UPPER layer too. The
   // floor layer is clamped inside `applyDesignerLayoutRules`, but the wall
   // cabinets and their fillers are tiled after that, which is how a 24" upper
@@ -1456,7 +1462,7 @@ export function runAutoDesignLayout(args: {
     room,
     openings: stageOpenings,
     wallIds: runWalls,
-    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    catalog: heightMatchedCatalog,
     maxOpeningIn: autoDesignFillerMaxIn(),
     styleId: args.styleId,
     makeUid,
@@ -1468,7 +1474,7 @@ export function runAutoDesignLayout(args: {
     room,
     openings: stageOpenings,
     wallIds: runWalls,
-    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    catalog: heightMatchedCatalog,
     fillers: catalogFillers,
     maxFillerIn: FILLER_STRIP_MAX_IN,
     makeUid,
@@ -1499,6 +1505,16 @@ export function runAutoDesignLayout(args: {
     notes.push(...overRunCompanions.notes);
   }
   reviewFindings.push(...overRunCompanions.findings);
+  // A 42" design: every ordinary upper is the line's 42" box. The cabinet above
+  // the microwave, the cabinet above the refrigerator, and a hood stay as placed.
+  const fortyTwo = enforceFortyTwoWallCabinets({
+    placed: working,
+    catalog: args.wallCatalog,
+    nominalIn: wallHeightNominal,
+    room,
+  });
+  working = fortyTwo.placed;
+  notes.push(...fortyTwo.notes);
   // Rule 6: every kitchen has at least one single-door base.
   const singleDoor = ensureSingleDoorBase({
     placed: working,
