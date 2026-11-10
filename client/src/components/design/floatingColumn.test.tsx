@@ -36,8 +36,6 @@ function StageColumn() {
         onReset={noop}
         onShare={noop}
         onPan={noop}
-        shadowStrength={100}
-        onShadowStrengthChange={noop}
         leading={
           <FloatingColumnButton data-testid="three-d-immersive-toggle" label="Fullscreen view">
             <span aria-hidden="true" />
@@ -70,7 +68,6 @@ describe("every floating button is labelled", () => {
       "three-d-floating-auto-design",
       "three-d-reset-view",
       "three-d-share-view",
-      "three-d-shadows-toggle",
       "three-d-pan-up",
       "three-d-pan-right",
       "three-d-pan-down",
@@ -103,7 +100,6 @@ describe("every floating button is labelled", () => {
       ["three-d-floating-auto-design", "Auto-Design"],
       ["three-d-reset-view", "Reset view"],
       ["three-d-share-view", "Share view"],
-      ["three-d-shadows-toggle", "Lighting"],
       ["three-d-pan-up", "Pan up"],
       ["three-d-pan-down", "Pan down"],
       ["three-d-pan-left", "Pan left"],

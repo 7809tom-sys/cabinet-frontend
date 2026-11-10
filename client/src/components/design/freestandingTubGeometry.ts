@@ -253,8 +253,8 @@ export function makeFreestandingTubParts(
   const parts: FreestandingTubPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string, material: THREE.Material = materials.shell) => {
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
     return mesh;
   };

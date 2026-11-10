@@ -74,8 +74,8 @@ function addPart(
 ): THREE.Mesh {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = `Pelican ${profile.pelicanCode} ${part}`;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
   mesh.userData.pelicanBathroomFixturePart = part;
   mesh.userData.pelicanCode = profile.pelicanCode;
   mesh.userData.pelicanFinish = normalizedFinish(profile.finish);

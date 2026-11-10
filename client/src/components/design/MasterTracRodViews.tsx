@@ -80,6 +80,7 @@ export function MasterTracRod3D({ placed, wall, onEdit }: { placed: PlacedCabine
     const scene = new THREE.Scene(); scene.background = new THREE.Color("#eae7df");
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = false;
     renderer.domElement.dataset.testid = "mastertrac-rod-3d-canvas";
     element.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 300);

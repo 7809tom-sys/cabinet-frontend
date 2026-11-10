@@ -182,7 +182,7 @@ function mount(): {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = RESTORED_DOOR_LIGHTS.exposure;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   host.appendChild(renderer.domElement);
 
@@ -203,18 +203,18 @@ function mount(): {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(roomW * 1.4, roomD * 1.4), new THREE.MeshStandardMaterial({ color: "#d9d3c7", roughness: 0.9 }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(roomW / 2, 0, roomD / 2);
-  floor.receiveShadow = true;
+  floor.receiveShadow = false;
   scene.add(floor);
 
   // The two walls of the L, drawn so the plan reads as a corner kitchen.
   const wallMat = new THREE.MeshStandardMaterial({ color: "#f6f4ef", roughness: 0.95 });
   const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, ceiling, 4 * INCH), wallMat);
   backWall.position.set(roomW / 2, ceiling / 2, -2 * INCH);
-  backWall.receiveShadow = true;
+  backWall.receiveShadow = false;
   scene.add(backWall);
   const leftWall = new THREE.Mesh(new THREE.BoxGeometry(4 * INCH, ceiling, roomD), wallMat);
   leftWall.position.set(-2 * INCH, ceiling / 2, roomD / 2);
-  leftWall.receiveShadow = true;
+  leftWall.receiveShadow = false;
   scene.add(leftWall);
 
   scene.add(new THREE.HemisphereLight(
@@ -224,7 +224,7 @@ function mount(): {
   ));
   const key = new THREE.DirectionalLight(RESTORED_DOOR_LIGHTS.key.color, RESTORED_DOOR_LIGHTS.key.intensity);
   key.position.set(roomW * 1.0, ceiling + 2, roomD * 0.8);
-  key.castShadow = true;
+  key.castShadow = false;
   key.shadow.mapSize.set(2048, 2048);
   const shadowCam = key.shadow.camera as THREE.OrthographicCamera;
   shadowCam.left = -roomW;

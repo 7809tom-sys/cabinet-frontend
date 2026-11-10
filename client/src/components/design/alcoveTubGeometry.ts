@@ -394,14 +394,14 @@ export function makeAlcoveTubParts(
 
   const parts: AlcoveTubPart[] = raw.map((entry) => {
     const mesh = new THREE.Mesh(entry.geometry, entry.material ?? materials.shell);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     return { mesh, part: entry.part };
   });
 
   const placeSmall = (mesh: THREE.Mesh) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     if (rightDrain) mesh.position.z = -mesh.position.z;
     return mesh;
   };
