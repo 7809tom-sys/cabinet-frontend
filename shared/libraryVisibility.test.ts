@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_LIBRARY_ROLE,
   DEFAULT_LIBRARY_VISIBILITY,
   LIBRARY_DOCUMENT_FILE_PREFIX,
+  REFERENCE_LIBRARY_CATEGORIES,
   affiliateLibraryToggleNote,
+  inferredReferenceReason,
   isAffiliateLibraryDocument,
+  isInferredReferenceDocument,
   isInternalLibraryDocument,
   isLibraryDocumentStorageKey,
   isLibraryVisibility,
   isPublishedForAffiliateLibrarySwitch,
+  isReferenceLibraryDocument,
+  libraryRoleForReferenceSwitch,
   libraryVisibilityDescription,
   libraryVisibilityLabel,
   normalizeLibraryVisibility,
+  referenceNameReason,
   visibilityForAffiliateLibrarySwitch,
 } from "./libraryVisibility";
 
@@ -73,6 +80,65 @@ describe("library visibility rules", () => {
     expect(isLibraryDocumentStorageKey("affiliate-resources/brochures/doc.pdf")).toBe(false);
     expect(isLibraryDocumentStorageKey("media-library/photo.png")).toBe(false);
     expect(isLibraryDocumentStorageKey(null)).toBe(false);
+  });
+
+  it("keeps reference material out of the affiliate library until the owner ticks it", () => {
+    const costSheet = {
+      title: "Kitchen Installation Cost Sheet",
+      filename: "KitchenCostSheet.pdf",
+      category: "Installation",
+      documentRole: "literature" as const,
+    };
+    const catalog = {
+      title: "SolidTrac Catalog",
+      filename: "solidtrac.pdf",
+      category: "Product Catalogs",
+    };
+    // The live categories, and the title/file-name rule, are reference even
+    // before the role column says so, and even when the role still says literature.
+    expect(isReferenceLibraryDocument(costSheet)).toBe(true);
+    expect(isReferenceLibraryDocument(catalog)).toBe(true);
+    expect(inferredReferenceReason(costSheet)).toBe("category Installation");
+    expect(referenceNameReason("Master price list", "prices.pdf")).toBe("price list");
+    expect(referenceNameReason("Door spec book", null)).toBe("spec book");
+    expect(isInferredReferenceDocument({ title: "SolidTrac Catalog", filename: "solidtrac.pdf" })).toBe(true);
+
+    // Published flags alone are not the owner's tick.
+    expect(isAffiliateLibraryDocument({ ...costSheet, visibility: "affiliate", isPublished: true })).toBe(false);
+    expect(isAffiliateLibraryDocument({ ...costSheet, visibility: "affiliate", isPublished: true, affiliateToggledAt: null })).toBe(false);
+    expect(isAffiliateLibraryDocument({ ...catalog, visibility: "internal", isPublished: true, affiliateToggledAt: "2026-11-10T00:00:00.000Z" })).toBe(false);
+
+    // The tick is the audit timestamp the checkbox writes.
+    expect(isAffiliateLibraryDocument({
+      ...costSheet,
+      visibility: "affiliate",
+      isPublished: true,
+      affiliateToggledAt: "2026-11-10T00:00:00.000Z",
+    })).toBe(true);
+
+    // A stored Reference mark covers a document the name rule would miss.
+    expect(isReferenceLibraryDocument({ title: "Field notes", filename: "notes.pdf", category: "General", documentRole: "reference" })).toBe(true);
+    expect(isAffiliateLibraryDocument({
+      title: "Field notes",
+      filename: "notes.pdf",
+      category: "General",
+      documentRole: "reference",
+      visibility: "affiliate",
+      isPublished: true,
+    })).toBe(false);
+
+    // Sales literature is unchanged: both flags, no tick required.
+    const brochure = { title: "Cabinet Dealz Affiliate Portal Sales Brochure", filename: "CabinetDealz_Affiliate_Portal_Sales_Brochure.pdf", category: "Sales & Marketing", documentRole: "literature" };
+    expect(isReferenceLibraryDocument(brochure)).toBe(false);
+    expect(isAffiliateLibraryDocument({ ...brochure, visibility: "affiliate", isPublished: true })).toBe(true);
+    // The description can mention a catalog. The rule does not read it: the row type has no description field.
+    const brochureMentioningCatalog = { ...brochure, description: "catalog curation" };
+    expect(isReferenceLibraryDocument(brochureMentioningCatalog)).toBe(false);
+
+    expect(DEFAULT_LIBRARY_ROLE).toBe("literature");
+    expect(libraryRoleForReferenceSwitch(true)).toBe("reference");
+    expect(libraryRoleForReferenceSwitch(false)).toBe("literature");
+    expect(REFERENCE_LIBRARY_CATEGORIES).toEqual(["Product Catalogs", "Installation"]);
   });
 
   it("writes the audit line from the recorded name and time", () => {
