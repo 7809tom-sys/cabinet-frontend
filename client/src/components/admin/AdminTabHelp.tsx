@@ -171,6 +171,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Manage push notification settings and review notification history sent to customers and staff.",
     zh: "管理推播通知設定並審查發送給客戶和員工的通知歷史記錄。",
   },
+  "job-board": {
+    en: "Hiring and onboarding packets. A hire opens this tab and completes only their own forms. Administrators review each document, who signed it, and when. Social Security numbers, bank numbers, and ID files stay masked and in private storage.",
+    zh: "聘用與入職文件。新進人員開啟此分頁，只能填寫自己的表格。管理員審核每份文件、簽署人與日期。社會安全號碼、銀行帳號與身分證件只顯示遮罩，並存放在私人儲存空間。",
+  },
 };
 
 interface AdminTabHelpProps {

@@ -66,6 +66,8 @@ import { AnalyticsAdmin } from "@/components/admin/AnalyticsAdmin";
 import FullDatabaseExport from "@/components/admin/FullDatabaseExport";
 import AdminGroupedTabs from "@/components/admin/AdminGroupedTabs";
 import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
+import JobBoard from "@/components/admin/JobBoard";
+import { JOB_BOARD_TAB } from "@shared/hiringPacket";
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
   if (status === "approved" || status === "won") return "default";
@@ -535,6 +537,17 @@ export default function Admin() {
         <a href={getLoginUrl()}>
           <Button className="bg-[var(--color-navy)] text-white">Sign In</Button>
         </a>
+      </div>
+    );
+  }
+
+  // The Job Board lives on this same admin tab. A hire is not an admin, and
+  // this is the only admin surface they can open: their own packet.
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  if (user.role !== "admin" && requestedTab === JOB_BOARD_TAB.value) {
+    return (
+      <div className="container py-10">
+        <JobBoard />
       </div>
     );
   }

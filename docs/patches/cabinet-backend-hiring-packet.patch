@@ -1,0 +1,1879 @@
+From 03520b0e9470d02c4724db2f267f858f911b5f72 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 10 Nov 2026 13:45:38 +0000
+Subject: [PATCH] Add hiring packet storage and procedures.
+
+New hires keep Form I-9 uploads in the private bucket, and admins review each signed form without the packet numbers appearing in logs.
+---
+ docs/sql/0274_hiring_packet.tidb.sql        |  56 ++
+ drizzle.config.ts                           |   2 +-
+ drizzle/hiringPacketSchema.ts               |  79 ++
+ server/lib/storageAccess.ts                 |   3 +-
+ server/routers.ts                           |   2 +
+ server/routers/hiringPacket.storage.test.ts |  14 +
+ server/routers/hiringPacket.ts              | 430 ++++++++++
+ server/storage.ts                           |   4 +
+ shared/hiringPacket.test.ts                 | 303 +++++++
+ shared/hiringPacket.ts                      | 871 ++++++++++++++++++++
+ 10 files changed, 1762 insertions(+), 2 deletions(-)
+ create mode 100644 docs/sql/0274_hiring_packet.tidb.sql
+ create mode 100644 drizzle/hiringPacketSchema.ts
+ create mode 100644 server/routers/hiringPacket.storage.test.ts
+ create mode 100644 server/routers/hiringPacket.ts
+ create mode 100644 shared/hiringPacket.test.ts
+ create mode 100644 shared/hiringPacket.ts
+
+diff --git a/docs/sql/0274_hiring_packet.tidb.sql b/docs/sql/0274_hiring_packet.tidb.sql
+new file mode 100644
+index 0000000..85333da
+--- /dev/null
++++ b/docs/sql/0274_hiring_packet.tidb.sql
+@@ -0,0 +1,56 @@
++-- Hiring and onboarding packets. File number 0274.
++-- Paste ONE LINE at a time in the TiDB Cloud SQL editor. Every statement is
++-- on a single line by design, and every table is cabinet_dealz.<table>.
++-- No IF-NOT-EXISTS clause, because TiDB Cloud rejects that form of CREATE TABLE in some regions.
++--
++-- Not applied by the application, and never run by CI. Tom runs it by hand.
++-- Do not run this against production from an application or a script.
++--
++-- Safe to re-run, but not silent: on a second run a CREATE TABLE answers
++-- "Table ... already exists" and a CREATE INDEX answers "Duplicate key name".
++-- THAT ERROR IS SAFE: the object already exists. Skip that line and paste the
++-- next. No statement here is a DELETE, DROP, TRUNCATE, ALTER, or UPDATE, so a
++-- re-run cannot change or destroy existing data.
++--
++-- What this adds:
++--
++--   hiring_packets              one row per hire or applicant.
++--   hiring_packet_documents     the six forms (application, I-9 Section 1,
++--                               W-4, state withholding, direct deposit, policy).
++--                               payloadJson holds the answers. The application
++--                               must not write that column to a log.
++--   hiring_packet_files         ID uploads. storageKey is always under
++--                               hiring-packets/, which stays in the private
++--                               bucket. The only way out is a short-lived
++--                               signed URL. There is no public URL column.
++--   hiring_packet_signatures    APPEND-ONLY typed-name signature evidence,
++--                               matching the columns of affiliate_legal_signatures
++--                               (SQL 0272): signer, email, content hash,
++--                               provider, optional provider submission id.
++--   hiring_settings             the state withholding code and the handbook.
++--                               stateCode is null until an admin sets it.
++--                               Nothing here inserts a person or a state.
++
++-- 1. One packet per hire.
++CREATE TABLE cabinet_dealz.hiring_packets (id INT NOT NULL AUTO_INCREMENT, userId INT NULL, applicantEmail VARCHAR(320) NOT NULL, applicantName VARCHAR(255) NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY hiring_packets_user_idx (userId), KEY hiring_packets_email_idx (applicantEmail)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- 2. The six forms. One row per packet and form.
++CREATE TABLE cabinet_dealz.hiring_packet_documents (id INT NOT NULL AUTO_INCREMENT, packetId INT NOT NULL, kind VARCHAR(40) NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'not_started', payloadJson MEDIUMTEXT NULL, signedAt TIMESTAMP NULL DEFAULT NULL, signedByUserId INT NULL, signedByName VARCHAR(255) NULL, reviewedAt TIMESTAMP NULL DEFAULT NULL, reviewedByUserId INT NULL, reviewedByName VARCHAR(255) NULL, contentSha256 VARCHAR(64) NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY hiring_packet_documents_packet_kind_uq (packetId, kind), KEY hiring_packet_documents_status_idx (status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- 3. Private ID files. storageKey is the private-bucket key, never a public URL.
++CREATE TABLE cabinet_dealz.hiring_packet_files (id INT NOT NULL AUTO_INCREMENT, packetId INT NOT NULL, documentKind VARCHAR(40) NOT NULL, slot VARCHAR(32) NOT NULL, storageKey VARCHAR(512) NOT NULL, filename VARCHAR(255) NOT NULL, mimeType VARCHAR(128) NOT NULL, sizeBytes INT NOT NULL, uploadedByUserId INT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), KEY hiring_packet_files_packet_idx (packetId, documentKind)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- 4. Append-only signature evidence. A later signature inserts another row.
++CREATE TABLE cabinet_dealz.hiring_packet_signatures (id INT NOT NULL AUTO_INCREMENT, packetId INT NOT NULL, documentId INT NOT NULL, kind VARCHAR(40) NOT NULL, signerUserId INT NULL, signerName VARCHAR(255) NOT NULL, signerEmail VARCHAR(320) NULL, contentSha256 VARCHAR(64) NOT NULL, provider VARCHAR(16) NOT NULL DEFAULT 'typed-name', providerSubmissionId VARCHAR(64) NULL, signedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY hiring_packet_signatures_document_hash_uq (documentId, contentSha256), KEY hiring_packet_signatures_packet_idx (packetId)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- 5. Which state withholding certificate the company uses, and the handbook the hire signs. No row is inserted here.
++CREATE TABLE cabinet_dealz.hiring_settings (id INT NOT NULL AUTO_INCREMENT, stateCode VARCHAR(2) NULL, handbookTitle VARCHAR(255) NULL, handbookVersion VARCHAR(64) NULL, handbookBody MEDIUMTEXT NULL, updatedByUserId INT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
++
++-- 6. VERIFY the five tables exist. Expect five rows.
++SELECT table_name AS createdTable FROM information_schema.tables WHERE table_schema = 'cabinet_dealz' AND table_name IN ('hiring_packets', 'hiring_packet_documents', 'hiring_packet_files', 'hiring_packet_signatures', 'hiring_settings') ORDER BY table_name;
++
++-- 7. VERIFY the signature row cannot be duplicated for the same document and the same bytes. Expect uniqueKey = 1.
++SELECT index_name AS indexName, non_unique AS notUnique, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columnsCovered FROM information_schema.statistics WHERE table_schema = 'cabinet_dealz' AND table_name = 'hiring_packet_signatures' AND index_name = 'hiring_packet_signatures_document_hash_uq' GROUP BY index_name, non_unique;
++
++-- 8. Read-only. Empty until a hire starts a packet. No personal data is written by this file.
++SELECT id AS packetId, userId, applicantEmail, applicantName, createdAt FROM cabinet_dealz.hiring_packets ORDER BY id;
+diff --git a/drizzle.config.ts b/drizzle.config.ts
+index f94bdf1..082b07a 100644
+--- a/drizzle.config.ts
++++ b/drizzle.config.ts
+@@ -8,7 +8,7 @@ if (!connectionString) {
+ export default defineConfig({
+   // Keep all application table definitions visible to Drizzle. Pelican's
+   // catalog lives separately because it is imported by the catalog pipeline.
+-  schema: ["./drizzle/schema.ts", "./drizzle/pelicanSchema.ts"],
++  schema: ["./drizzle/schema.ts", "./drizzle/pelicanSchema.ts", "./drizzle/hiringPacketSchema.ts"],
+   out: "./drizzle",
+   dialect: "mysql",
+   dbCredentials: {
+diff --git a/drizzle/hiringPacketSchema.ts b/drizzle/hiringPacketSchema.ts
+new file mode 100644
+index 0000000..a97589c
+--- /dev/null
++++ b/drizzle/hiringPacketSchema.ts
+@@ -0,0 +1,79 @@
++import { int, mysqlTable, text, timestamp, uniqueIndex, varchar, index } from "drizzle-orm/mysql-core";
++
++// Hiring packets. SQL 0274 creates these tables. Nothing here deletes rows.
++// payloadJson can hold an SSN or bank number. Do not log it.
++
++export const hiringPackets = mysqlTable("hiring_packets", {
++  id: int("id").autoincrement().primaryKey(),
++  userId: int("userId"),
++  applicantEmail: varchar("applicantEmail", { length: 320 }).notNull(),
++  applicantName: varchar("applicantName", { length: 255 }),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (table) => ({
++  userIdx: index("hiring_packets_user_idx").on(table.userId),
++  emailIdx: index("hiring_packets_email_idx").on(table.applicantEmail),
++}));
++
++export const hiringPacketDocuments = mysqlTable("hiring_packet_documents", {
++  id: int("id").autoincrement().primaryKey(),
++  packetId: int("packetId").notNull(),
++  kind: varchar("kind", { length: 40 }).notNull(),
++  status: varchar("status", { length: 16 }).default("not_started").notNull(),
++  payloadJson: text("payloadJson"),
++  signedAt: timestamp("signedAt"),
++  signedByUserId: int("signedByUserId"),
++  signedByName: varchar("signedByName", { length: 255 }),
++  reviewedAt: timestamp("reviewedAt"),
++  reviewedByUserId: int("reviewedByUserId"),
++  reviewedByName: varchar("reviewedByName", { length: 255 }),
++  contentSha256: varchar("contentSha256", { length: 64 }),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (table) => ({
++  packetKind: uniqueIndex("hiring_packet_documents_packet_kind_uq").on(table.packetId, table.kind),
++  statusIdx: index("hiring_packet_documents_status_idx").on(table.status),
++}));
++
++export const hiringPacketFiles = mysqlTable("hiring_packet_files", {
++  id: int("id").autoincrement().primaryKey(),
++  packetId: int("packetId").notNull(),
++  documentKind: varchar("documentKind", { length: 40 }).notNull(),
++  slot: varchar("slot", { length: 32 }).notNull(),
++  storageKey: varchar("storageKey", { length: 512 }).notNull(),
++  filename: varchar("filename", { length: 255 }).notNull(),
++  mimeType: varchar("mimeType", { length: 128 }).notNull(),
++  sizeBytes: int("sizeBytes").notNull(),
++  uploadedByUserId: int("uploadedByUserId"),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++}, (table) => ({
++  packetIdx: index("hiring_packet_files_packet_idx").on(table.packetId, table.documentKind),
++}));
++
++export const hiringPacketSignatures = mysqlTable("hiring_packet_signatures", {
++  id: int("id").autoincrement().primaryKey(),
++  packetId: int("packetId").notNull(),
++  documentId: int("documentId").notNull(),
++  kind: varchar("kind", { length: 40 }).notNull(),
++  signerUserId: int("signerUserId"),
++  signerName: varchar("signerName", { length: 255 }).notNull(),
++  signerEmail: varchar("signerEmail", { length: 320 }),
++  contentSha256: varchar("contentSha256", { length: 64 }).notNull(),
++  provider: varchar("provider", { length: 16 }).default("typed-name").notNull(),
++  providerSubmissionId: varchar("providerSubmissionId", { length: 64 }),
++  signedAt: timestamp("signedAt").defaultNow().notNull(),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++}, (table) => ({
++  documentHash: uniqueIndex("hiring_packet_signatures_document_hash_uq").on(table.documentId, table.contentSha256),
++  packetIdx: index("hiring_packet_signatures_packet_idx").on(table.packetId),
++}));
++
++export const hiringSettings = mysqlTable("hiring_settings", {
++  id: int("id").autoincrement().primaryKey(),
++  stateCode: varchar("stateCode", { length: 2 }),
++  handbookTitle: varchar("handbookTitle", { length: 255 }),
++  handbookVersion: varchar("handbookVersion", { length: 64 }),
++  handbookBody: text("handbookBody"),
++  updatedByUserId: int("updatedByUserId"),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++});
+diff --git a/server/lib/storageAccess.ts b/server/lib/storageAccess.ts
+index 3d723f9..24ebc27 100644
+--- a/server/lib/storageAccess.ts
++++ b/server/lib/storageAccess.ts
+@@ -35,7 +35,8 @@ export function privateStorageDecision(key: string, user: StorageActor | null):
+   if (
+     normalized.startsWith("affiliate-documents/") ||
+     normalized.startsWith("affiliate-legal-signatures/") ||
+-    normalized.startsWith("affiliate-legal-documents/")
++    normalized.startsWith("affiliate-legal-documents/") ||
++    normalized.startsWith("hiring-packets/")
+   ) {
+     return "affiliate-document";
+   }
+diff --git a/server/routers.ts b/server/routers.ts
+index e1e2043..ad17242 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -89,6 +89,7 @@ import { operationsProvidersRouter } from "./routers/operationsProviders";
+ import { affiliateLiteratureRouter } from "./routers/affiliateLiterature";
+ import { affiliateResourcesRouter } from "./routers/affiliateResources";
+ import { affiliateLegalRouter } from "./routers/affiliateLegal";
++import { hiringPacketRouter } from "./routers/hiringPacket";
+ import { affiliateSocialRouter } from "./routers/affiliateSocialLinks";
+ import { affiliateGeneratedImagesRouter } from "./routers/affiliateGeneratedImages";
+ import { hardwareRouter } from "./routers/hardware";
+@@ -254,6 +255,7 @@ export const appRouter = router({
+   affiliateLiterature: affiliateLiteratureRouter,
+   affiliateResources: affiliateResourcesRouter,
+   affiliateLegal: affiliateLegalRouter,
++  hiringPacket: hiringPacketRouter,
+   affiliateSocial: affiliateSocialRouter,
+   affiliateGeneratedImages: affiliateGeneratedImagesRouter,
+   hardware: hardwareRouter,
+diff --git a/server/routers/hiringPacket.storage.test.ts b/server/routers/hiringPacket.storage.test.ts
+new file mode 100644
+index 0000000..38920d8
+--- /dev/null
++++ b/server/routers/hiringPacket.storage.test.ts
+@@ -0,0 +1,14 @@
++import { describe, expect, it } from "vitest";
++import { bucketForKey, PRIVATE_BUCKET } from "../storage";
++import { privateStorageDecision } from "../lib/storageAccess";
++import { hiringObjectKey } from "@shared/hiringPacket";
++
++describe("hiring packet file storage", () => {
++  it("keeps ID uploads in the private bucket and off the public proxy, even for an admin", () => {
++    const key = hiringObjectKey(4, "i9_section1", "list_a", "passport.pdf");
++    expect(bucketForKey(key)).toBe(PRIVATE_BUCKET);
++    const admin = { id: 1, role: "admin", email: "tom@cabinetdealz.com", distributorId: null };
++    expect(privateStorageDecision(key, admin)).toBe("affiliate-document");
++    expect(privateStorageDecision(key, null)).toBe("affiliate-document");
++  });
++});
+diff --git a/server/routers/hiringPacket.ts b/server/routers/hiringPacket.ts
+new file mode 100644
+index 0000000..79865f0
+--- /dev/null
++++ b/server/routers/hiringPacket.ts
+@@ -0,0 +1,430 @@
++import { z } from "zod";
++import { and, eq } from "drizzle-orm";
++import { TRPCError } from "@trpc/server";
++import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
++import { getDb } from "../db";
++import { PRIVATE_BUCKET, storageDeleteFromBucket, storageGetSignedUrl, storagePut } from "../storage";
++import {
++  hiringPacketDocuments,
++  hiringPacketFiles,
++  hiringPacketSignatures,
++  hiringPackets,
++  hiringSettings,
++} from "../../drizzle/hiringPacketSchema";
++import {
++  EMPTY_HIRING_SETTINGS,
++  HIRING_DOCUMENT_KINDS,
++  HIRING_SIGNED_URL_SECONDS,
++  acceptIdUpload,
++  canReviewDocument,
++  canSignDocument,
++  canonicalPayload,
++  deriveStatus,
++  documentHasProgress,
++  hiringAccess,
++  hiringObjectKey,
++  isHiringStorageKey,
++  isPublicStorageUrl,
++  mergeSensitiveFields,
++  payloadForActor,
++  progressFromStatuses,
++  safeErrorMessage,
++  signatureEvidence,
++  stateProfile,
++  toPacketSummary,
++  toPublicDocument,
++  type HiringActor,
++  type HiringDocumentKind,
++  type HiringFileRef,
++  type HiringSettings,
++  type PublicFile,
++  type PublicPacket,
++} from "@shared/hiringPacket";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++type SessionUser = { id: number; role: string; email: string | null; name?: string | null };
++type DocumentRow = typeof hiringPacketDocuments.$inferSelect;
++type FileRow = typeof hiringPacketFiles.$inferSelect;
++
++const kindSchema = z.enum(HIRING_DOCUMENT_KINDS as unknown as [HiringDocumentKind, ...HiringDocumentKind[]]);
++const answerSchema = z.union([z.string().max(4000), z.number(), z.boolean(), z.null()]);
++const payloadSchema = z.record(z.string().max(80), answerSchema);
++
++function requireDb(db: Database | null): Database {
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++  return db;
++}
++
++function actorOf(user: SessionUser): HiringActor {
++  return { userId: user.id, role: user.role, email: user.email };
++}
++
++function parsePayload(raw: string | null): Record<string, unknown> {
++  if (!raw) return {};
++  try {
++    const parsed = JSON.parse(raw) as unknown;
++    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
++  } catch {
++    return {};
++  }
++}
++
++function publicFiles(rows: FileRow[]): PublicFile[] {
++  return rows.map((row) => ({
++    id: row.id,
++    documentKind: row.documentKind as HiringDocumentKind,
++    slot: row.slot,
++    filename: row.filename,
++    mimeType: row.mimeType,
++  }));
++}
++
++function presentPacket(packet: { id: number; userId: number | null; applicantName: string | null; applicantEmail: string }, documents: DocumentRow[], files: FileRow[]): PublicPacket {
++  return {
++    id: packet.id,
++    userId: packet.userId,
++    applicantName: packet.applicantName ?? "",
++    applicantEmail: packet.applicantEmail,
++    documents: documents.map((document) => toPublicDocument({
++      kind: document.kind as HiringDocumentKind,
++      payload: parsePayload(document.payloadJson),
++      signedAt: document.signedAt ? new Date(document.signedAt).toISOString() : null,
++      signedByName: document.signedByName,
++      reviewedAt: document.reviewedAt ? new Date(document.reviewedAt).toISOString() : null,
++      reviewedByName: document.reviewedByName,
++      files: publicFiles(files.filter((file) => file.documentKind === document.kind)),
++    })),
++  };
++}
++
++async function loadBundle(db: Database, packetId: number) {
++  const [packet] = await db.select().from(hiringPackets).where(eq(hiringPackets.id, packetId)).limit(1);
++  if (!packet) return null;
++  const documents = await db.select().from(hiringPacketDocuments).where(eq(hiringPacketDocuments.packetId, packetId));
++  const files = await db.select().from(hiringPacketFiles).where(eq(hiringPacketFiles.packetId, packetId));
++  return { packet, documents, files };
++}
++
++function assertView(user: SessionUser, packet: { id: number; userId: number | null; applicantEmail: string }) {
++  const access = hiringAccess(actorOf(user), packet);
++  if (!access.view) {
++    throw new TRPCError({ code: "FORBIDDEN", message: "You can only open your own hiring packet." });
++  }
++  return access;
++}
++
++async function settingsOf(db: Database): Promise<HiringSettings> {
++  const [row] = await db.select().from(hiringSettings).where(eq(hiringSettings.id, 1)).limit(1);
++  if (!row) return EMPTY_HIRING_SETTINGS;
++  return {
++    stateCode: row.stateCode,
++    handbookTitle: row.handbookTitle ?? EMPTY_HIRING_SETTINGS.handbookTitle,
++    handbookVersion: row.handbookVersion ?? "",
++    handbookBody: row.handbookBody ?? "",
++  };
++}
++
++async function documentRow(db: Database, packetId: number, kind: HiringDocumentKind): Promise<DocumentRow> {
++  const [existing] = await db.select().from(hiringPacketDocuments).where(and(eq(hiringPacketDocuments.packetId, packetId), eq(hiringPacketDocuments.kind, kind))).limit(1);
++  if (existing) return existing;
++  const inserted = await db.insert(hiringPacketDocuments).values({ packetId, kind, status: "not_started" });
++  const id = insertedId(inserted);
++  const [created] = await db.select().from(hiringPacketDocuments).where(eq(hiringPacketDocuments.id, id)).limit(1);
++  if (!created) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The form could not be saved." });
++  return created;
++}
++
++function fileRefs(files: FileRow[], kind: HiringDocumentKind): HiringFileRef[] {
++  return files.filter((file) => file.documentKind === kind).map((file) => ({ documentKind: kind, slot: file.slot }));
++}
++
++function decodeUpload(value: string): Buffer {
++  const cleaned = value.replace(/^data:[^;]+;base64,/, "").replace(/\s/g, "");
++  if (!cleaned) throw new TRPCError({ code: "BAD_REQUEST", message: "The file could not be read." });
++  return Buffer.from(cleaned, "base64");
++}
++
++function insertedId(result: unknown): number {
++  const row = Array.isArray(result) ? result[0] : result;
++  return Number((row as { insertId?: number } | undefined)?.insertId);
++}
++
++function duplicateKey(error: unknown): boolean {
++  const record = error as { errno?: number; code?: string; cause?: { errno?: number; code?: string } };
++  return record.errno === 1062 || record.code === "ER_DUP_ENTRY" || record.cause?.errno === 1062 || record.cause?.code === "ER_DUP_ENTRY";
++}
++
++async function guarded<T>(work: () => Promise<T>): Promise<T> {
++  try {
++    return await work();
++  } catch (error) {
++    if (error instanceof TRPCError) throw error;
++    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: safeErrorMessage(error) });
++  }
++}
++
++export const hiringPacketRouter = router({
++  settings: router({
++    get: protectedProcedure.query(async () => {
++      const db = requireDb(await getDb());
++      return settingsOf(db);
++    }),
++    set: adminProcedure.input(z.object({
++      stateCode: z.string().trim().max(2).nullable(),
++      handbookTitle: z.string().trim().max(255),
++      handbookVersion: z.string().trim().max(64),
++      handbookBody: z.string().max(60000),
++    })).mutation(async ({ ctx, input }) => guarded(async () => {
++      if (input.stateCode && !stateProfile(input.stateCode)) {
++        throw new TRPCError({ code: "BAD_REQUEST", message: "Choose a state from the list." });
++      }
++      const db = requireDb(await getDb());
++      const stateCode = input.stateCode ? input.stateCode.toUpperCase() : null;
++      const values = {
++        id: 1,
++        stateCode,
++        handbookTitle: input.handbookTitle,
++        handbookVersion: input.handbookVersion,
++        handbookBody: input.handbookBody,
++        updatedByUserId: ctx.user.id,
++      };
++      const [existing] = await db.select({ id: hiringSettings.id }).from(hiringSettings).where(eq(hiringSettings.id, 1)).limit(1);
++      if (existing) {
++        await db.update(hiringSettings).set(values).where(eq(hiringSettings.id, 1));
++      } else {
++        await db.insert(hiringSettings).values(values);
++      }
++      return settingsOf(db);
++    })),
++  }),
++
++  mine: protectedProcedure.query(async ({ ctx }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const email = (ctx.user.email ?? "").trim().toLowerCase();
++    if (!email) throw new TRPCError({ code: "BAD_REQUEST", message: "Sign in with an email address before opening a hiring packet." });
++    const [byUser] = await db.select().from(hiringPackets).where(eq(hiringPackets.userId, ctx.user.id)).limit(1);
++    let packet = byUser;
++    if (!packet) {
++      const [byEmail] = await db.select().from(hiringPackets).where(eq(hiringPackets.applicantEmail, email)).limit(1);
++      packet = byEmail;
++      if (packet && packet.userId == null) {
++        await db.update(hiringPackets).set({ userId: ctx.user.id }).where(eq(hiringPackets.id, packet.id));
++        packet = { ...packet, userId: ctx.user.id };
++      }
++    }
++    if (!packet) {
++      const inserted = await db.insert(hiringPackets).values({
++        userId: ctx.user.id,
++        applicantEmail: email,
++        applicantName: ctx.user.name?.trim() || email,
++      });
++      const id = insertedId(inserted);
++      const [created] = await db.select().from(hiringPackets).where(eq(hiringPackets.id, id)).limit(1);
++      if (!created) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The hiring packet could not be started." });
++      packet = created;
++    }
++    if (packet.userId != null && packet.userId !== ctx.user.id) {
++      throw new TRPCError({ code: "FORBIDDEN", message: "You can only open your own hiring packet." });
++    }
++    const bundle = await loadBundle(db, packet.id);
++    if (!bundle) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    return presentPacket(bundle.packet, bundle.documents, bundle.files);
++  })),
++
++  list: adminProcedure.query(async () => guarded(async () => {
++    const db = requireDb(await getDb());
++    const packets = await db.select({
++      id: hiringPackets.id,
++      userId: hiringPackets.userId,
++      applicantName: hiringPackets.applicantName,
++      applicantEmail: hiringPackets.applicantEmail,
++    }).from(hiringPackets);
++    const documents = await db.select({
++      packetId: hiringPacketDocuments.packetId,
++      status: hiringPacketDocuments.status,
++    }).from(hiringPacketDocuments);
++    return packets.map((packet) => toPacketSummary({
++      id: packet.id,
++      userId: packet.userId,
++      applicantName: packet.applicantName ?? "",
++      applicantEmail: packet.applicantEmail,
++      statuses: documents.filter((document) => document.packetId === packet.id).map((document) => document.status as "not_started" | "in_progress" | "signed" | "reviewed"),
++    }));
++  })),
++
++  get: protectedProcedure.input(z.object({ packetId: z.number().int().positive() })).query(async ({ ctx, input }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const bundle = await loadBundle(db, input.packetId);
++    if (!bundle) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    assertView(ctx.user, bundle.packet);
++    return presentPacket(bundle.packet, bundle.documents, bundle.files);
++  })),
++
++  save: protectedProcedure.input(z.object({
++    packetId: z.number().int().positive(),
++    kind: kindSchema,
++    payload: payloadSchema,
++  })).mutation(async ({ ctx, input }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const bundle = await loadBundle(db, input.packetId);
++    if (!bundle) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    const access = assertView(ctx.user, bundle.packet);
++    if (!access.edit) throw new TRPCError({ code: "FORBIDDEN", message: "You can only edit your own hiring packet." });
++    const current = await documentRow(db, input.packetId, input.kind);
++    const previous = parsePayload(current.payloadJson);
++    const merged = mergeSensitiveFields(previous, payloadForActor(input.kind, input.payload, actorOf(ctx.user)));
++    const changed = canonicalPayload(previous) !== canonicalPayload(merged);
++    const status = documentHasProgress(merged) ? "in_progress" : "not_started";
++    await db.update(hiringPacketDocuments).set({
++      payloadJson: JSON.stringify(merged),
++      status: changed ? status : current.status,
++      signedAt: changed ? null : current.signedAt,
++      signedByUserId: changed ? null : current.signedByUserId,
++      signedByName: changed ? null : current.signedByName,
++      reviewedAt: changed ? null : current.reviewedAt,
++      reviewedByUserId: changed ? null : current.reviewedByUserId,
++      reviewedByName: changed ? null : current.reviewedByName,
++      contentSha256: changed ? null : current.contentSha256,
++    }).where(eq(hiringPacketDocuments.id, current.id));
++    const next = await loadBundle(db, input.packetId);
++    if (!next) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    return presentPacket(next.packet, next.documents, next.files);
++  })),
++
++  sign: protectedProcedure.input(z.object({
++    packetId: z.number().int().positive(),
++    kind: kindSchema,
++    payload: payloadSchema,
++  })).mutation(async ({ ctx, input }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const bundle = await loadBundle(db, input.packetId);
++    if (!bundle) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    const access = assertView(ctx.user, bundle.packet);
++    if (!access.edit) throw new TRPCError({ code: "FORBIDDEN", message: "You can only sign your own hiring packet." });
++    const settings = await settingsOf(db);
++    const current = await documentRow(db, input.packetId, input.kind);
++    const merged = mergeSensitiveFields(parsePayload(current.payloadJson), payloadForActor(input.kind, input.payload, actorOf(ctx.user)));
++    const decision = canSignDocument(input.kind, merged, settings, fileRefs(bundle.files, input.kind));
++    if (!decision.ok) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: decision.errors[0] ?? "This form is not ready to sign." });
++    }
++    const evidence = await signatureEvidence({
++      signerName: String(merged.employeeSignature ?? ctx.user.name ?? ""),
++      signerEmail: ctx.user.email,
++      payload: merged,
++    });
++    try {
++      await db.insert(hiringPacketSignatures).values({
++        packetId: input.packetId,
++        documentId: current.id,
++        kind: input.kind,
++        signerUserId: ctx.user.id,
++        signerName: evidence.signerName,
++        signerEmail: evidence.signerEmail,
++        contentSha256: evidence.contentSha256,
++        provider: evidence.provider,
++        providerSubmissionId: evidence.providerSubmissionId,
++        signedAt: new Date(evidence.signedAt),
++      });
++    } catch (error) {
++      if (!duplicateKey(error)) throw error;
++    }
++    await db.update(hiringPacketDocuments).set({
++      payloadJson: JSON.stringify(merged),
++      status: "signed",
++      signedAt: new Date(evidence.signedAt),
++      signedByUserId: ctx.user.id,
++      signedByName: evidence.signerName,
++      reviewedAt: null,
++      reviewedByUserId: null,
++      reviewedByName: null,
++      contentSha256: evidence.contentSha256,
++    }).where(eq(hiringPacketDocuments.id, current.id));
++    const next = await loadBundle(db, input.packetId);
++    if (!next) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    return presentPacket(next.packet, next.documents, next.files);
++  })),
++
++  review: adminProcedure.input(z.object({
++    packetId: z.number().int().positive(),
++    kind: kindSchema,
++  })).mutation(async ({ ctx, input }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const bundle = await loadBundle(db, input.packetId);
++    if (!bundle) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    const current = bundle.documents.find((document) => document.kind === input.kind);
++    if (!current) throw new TRPCError({ code: "BAD_REQUEST", message: "That form has not been started." });
++    const status = deriveStatus({
++      payload: parsePayload(current.payloadJson),
++      signedAt: current.signedAt ? new Date(current.signedAt).toISOString() : null,
++      reviewedAt: current.reviewedAt ? new Date(current.reviewedAt).toISOString() : null,
++    });
++    const decision = canReviewDocument(actorOf(ctx.user), status);
++    if (!decision.ok) throw new TRPCError({ code: "BAD_REQUEST", message: decision.reason ?? "This form cannot be reviewed yet." });
++    await db.update(hiringPacketDocuments).set({
++      status: "reviewed",
++      reviewedAt: new Date(),
++      reviewedByUserId: ctx.user.id,
++      reviewedByName: ctx.user.name?.trim() || ctx.user.email || "Admin",
++    }).where(eq(hiringPacketDocuments.id, current.id));
++    const next = await loadBundle(db, input.packetId);
++    if (!next) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    return presentPacket(next.packet, next.documents, next.files);
++  })),
++
++  upload: protectedProcedure.input(z.object({
++    packetId: z.number().int().positive(),
++    kind: kindSchema,
++    slot: z.enum(["list_a", "list_b", "list_c"]),
++    filename: z.string().trim().min(1).max(255),
++    mimeType: z.string().trim().max(128),
++    fileBase64: z.string().min(1).max(14_000_000),
++  })).mutation(async ({ ctx, input }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const bundle = await loadBundle(db, input.packetId);
++    if (!bundle) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    const access = assertView(ctx.user, bundle.packet);
++    if (!access.edit) throw new TRPCError({ code: "FORBIDDEN", message: "You can only upload to your own hiring packet." });
++    if (input.kind !== "i9_section1") throw new TRPCError({ code: "BAD_REQUEST", message: "ID documents belong on Form I-9." });
++    const bytes = decodeUpload(input.fileBase64);
++    const rejected = acceptIdUpload(input.mimeType, bytes.length);
++    if (rejected) throw new TRPCError({ code: "BAD_REQUEST", message: rejected });
++    const stored = await storagePut(hiringObjectKey(input.packetId, input.kind, input.slot, input.filename), bytes, input.mimeType);
++    if (!isHiringStorageKey(stored.key)) {
++      await storageDeleteFromBucket(PRIVATE_BUCKET, stored.key).catch(() => undefined);
++      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "The file was not stored privately." });
++    }
++    try {
++      await db.insert(hiringPacketFiles).values({
++        packetId: input.packetId,
++        documentKind: input.kind,
++        slot: input.slot,
++        storageKey: stored.key,
++        filename: input.filename,
++        mimeType: input.mimeType,
++        sizeBytes: bytes.length,
++        uploadedByUserId: ctx.user.id,
++      });
++    } catch (error) {
++      await storageDeleteFromBucket(PRIVATE_BUCKET, stored.key).catch(() => undefined);
++      throw error;
++    }
++    const next = await loadBundle(db, input.packetId);
++    if (!next) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    return presentPacket(next.packet, next.documents, next.files);
++  })),
++
++  fileLink: protectedProcedure.input(z.object({ fileId: z.number().int().positive() })).mutation(async ({ ctx, input }) => guarded(async () => {
++    const db = requireDb(await getDb());
++    const [file] = await db.select().from(hiringPacketFiles).where(eq(hiringPacketFiles.id, input.fileId)).limit(1);
++    if (!file || !isHiringStorageKey(file.storageKey)) throw new TRPCError({ code: "NOT_FOUND", message: "That file does not exist." });
++    const [packet] = await db.select().from(hiringPackets).where(eq(hiringPackets.id, file.packetId)).limit(1);
++    if (!packet) throw new TRPCError({ code: "NOT_FOUND", message: "That hiring packet does not exist." });
++    assertView(ctx.user, packet);
++    const url = await storageGetSignedUrl(file.storageKey, HIRING_SIGNED_URL_SECONDS);
++    if (isPublicStorageUrl(url)) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "That file is not available from a public link." });
++    return { url, expiresInSeconds: HIRING_SIGNED_URL_SECONDS, filename: file.filename };
++  })),
++});
++
++export const hiringPacketProgress = progressFromStatuses;
+diff --git a/server/storage.ts b/server/storage.ts
+index 4057dc0..5671447 100644
+--- a/server/storage.ts
++++ b/server/storage.ts
+@@ -31,6 +31,10 @@ const PRIVATE_KEY_PREFIXES = [
+   // reseller certificate). The proxy refuses this prefix as well: the only way
+   // to bytes is a short-lived signed URL from an owner or admin procedure.
+   "affiliate-documents/",
++  // Hiring packet ID uploads (I-9 lists A/B/C). Private. The storage proxy
++  // refuses this prefix. A short-lived signed URL from hiringPacket.fileLink
++  // is the only way to the bytes.
++  "hiring-packets/",
+ ];
+ 
+ export function bucketForKey(key: string): string {
+diff --git a/shared/hiringPacket.test.ts b/shared/hiringPacket.test.ts
+new file mode 100644
+index 0000000..eaad4dc
+--- /dev/null
++++ b/shared/hiringPacket.test.ts
+@@ -0,0 +1,303 @@
++import { describe, expect, it } from "vitest";
++import {
++  EMPTY_HIRING_SETTINGS,
++  HIRING_DOCUMENT_KINDS,
++  HIRING_SIGNED_URL_SECONDS,
++  HIRING_STORAGE_PREFIX,
++  I9_CITIZENSHIP,
++  I9_LIST_A,
++  I9_LIST_B,
++  I9_LIST_C,
++  I9_SECTION1_FIELDS,
++  JOB_BOARD_TAB,
++  PRIVATE_BUCKET_NAME,
++  STATE_WITHHOLDING_PROFILES,
++  W4_EMPLOYER_FIELDS,
++  W4_FILING_STATUSES,
++  W4_OTHER_DEPENDENT_AMOUNT,
++  W4_QUALIFYING_CHILD_AMOUNT,
++  W4_YEAR,
++  canReviewDocument,
++  canSignDocument,
++  deriveStatus,
++  hiringAccess,
++  hiringObjectKey,
++  isHiringStorageKey,
++  isPublicStorageUrl,
++  maskBank,
++  maskSsn,
++  mergeSensitiveFields,
++  payloadForActor,
++  progressFromStatuses,
++  redactForLog,
++  routingNumberIsValid,
++  safeErrorMessage,
++  signedLinkRequest,
++  stateCertificateTitle,
++  stateProfile,
++  toPacketSummary,
++  toPublicPayload,
++  visiblePackets,
++  type HiringActor,
++  type HiringPacketRef,
++} from "./hiringPacket";
++
++const admin: HiringActor = { userId: 1, role: "admin", email: "tom@cabinetdealz.com" };
++const hire: HiringActor = { userId: 42, role: "user", email: "ada@example.com" };
++const other: HiringActor = { userId: 7, role: "user", email: "other@example.com" };
++const designer: HiringActor = { userId: 9, role: "designer", email: "designer@cabinetdealz.com" };
++const sales: HiringActor = { userId: 11, role: "sales_rep", email: "sales@cabinetdealz.com" };
++const anonymous: HiringActor = { userId: null, role: null, email: null };
++
++function packet(overrides: Partial<HiringPacketRef> = {}): HiringPacketRef {
++  return { id: 5, userId: 42, applicantEmail: "ada@example.com", ...overrides };
++}
++
++const packets: HiringPacketRef[] = [
++  packet(),
++  packet({ id: 6, userId: 7, applicantEmail: "other@example.com" }),
++  packet({ id: 8, userId: null, applicantEmail: "new.hire@example.com" }),
++];
++
++describe("job board tab", () => {
++  it("is the People tab on the admin route, not a separate page", () => {
++    expect(JOB_BOARD_TAB).toEqual({
++      label: "Job Board",
++      value: "job-board",
++      route: "/admin?tab=job-board",
++      component: "JobBoard",
++      group: "People",
++    });
++  });
++});
++
++describe("hiring access control", () => {
++  it("lets an admin see every packet and review", () => {
++    expect(hiringAccess(admin, packet())).toMatchObject({ view: true, review: true, listAll: true, configure: true });
++    expect(visiblePackets(admin, packets)).toHaveLength(3);
++  });
++
++  it("lets a hire see only their own packet, including one matched by email before the account is linked", () => {
++    expect(hiringAccess(hire, packet())).toMatchObject({ view: true, edit: true, review: false, listAll: false });
++    expect(hiringAccess(hire, packet({ id: 6, userId: 7, applicantEmail: "other@example.com" })).view).toBe(false);
++    const invited: HiringActor = { userId: 15, role: "user", email: "new.hire@example.com" };
++    expect(visiblePackets(invited, packets).map((row) => row.id)).toEqual([8]);
++    expect(visiblePackets(hire, packets).map((row) => row.id)).toEqual([5]);
++  });
++
++  it("hides every packet from a stranger, a designer, a sales rep, and a signed-out visitor", () => {
++    const stranger: HiringActor = { userId: 99, role: "user", email: "stranger@example.com" };
++    for (const actor of [stranger, designer, sales, anonymous]) {
++      expect(hiringAccess(actor, packet()).view).toBe(false);
++      expect(hiringAccess(actor, packet()).review).toBe(false);
++      expect(hiringAccess(actor, packet()).listAll).toBe(false);
++      expect(visiblePackets(actor, packets)).toEqual([]);
++    }
++    expect(visiblePackets(other, packets).map((row) => row.id)).toEqual([6]);
++    expect(hiringAccess(other, packet()).view).toBe(false);
++  });
++
++  it("lets a designer open only a packet that is actually theirs", () => {
++    const own = packet({ userId: designer.userId, applicantEmail: designer.email! });
++    expect(visiblePackets(designer, [...packets, own]).map((row) => row.id)).toEqual([own.id]);
++    expect(hiringAccess(designer, own).review).toBe(false);
++  });
++
++  it("allows review only by an admin, and only after the document is signed", () => {
++    expect(canReviewDocument(admin, "signed")).toEqual({ ok: true, reason: null });
++    expect(canReviewDocument(admin, "in_progress").ok).toBe(false);
++    expect(canReviewDocument(admin, "not_started").ok).toBe(false);
++    expect(canReviewDocument(hire, "signed").ok).toBe(false);
++    expect(canReviewDocument(designer, "signed").ok).toBe(false);
++    expect(canReviewDocument(anonymous, "signed").ok).toBe(false);
++  });
++});
++
++describe("official I-9 and W-4 fields", () => {
++  it("keeps Form I-9 Section 1 to the employee boxes on edition 01/20/25", () => {
++    expect(I9_SECTION1_FIELDS.map((field) => field.label)).toEqual([
++      "Last Name (Family Name)",
++      "First Name (Given Name)",
++      "Middle Initial (if any)",
++      "Other Last Names Used (if any)",
++      "Address (Street Number and Name)",
++      "Apt. Number (if any)",
++      "City or Town",
++      "State",
++      "ZIP Code",
++      "Date of Birth (mm/dd/yyyy)",
++      "U.S. Social Security Number",
++      "Employee's Email Address",
++      "Employee's Telephone Number",
++    ]);
++    expect(I9_CITIZENSHIP.map((item) => item.value)).toEqual([
++      "us_citizen",
++      "noncitizen_national",
++      "lawful_permanent_resident",
++      "noncitizen_authorized",
++    ]);
++    expect(I9_LIST_A.length).toBeGreaterThan(0);
++    expect(I9_LIST_B.length).toBeGreaterThan(0);
++    expect(I9_LIST_C.length).toBeGreaterThan(0);
++    expect(I9_SECTION1_FIELDS.some((field) => field.key === "employerSignature")).toBe(false);
++  });
++
++  it("uses the 2026 Form W-4 amounts and does not let a hire write the employer block", () => {
++    expect(W4_YEAR).toBe(2026);
++    expect(W4_QUALIFYING_CHILD_AMOUNT).toBe(2200);
++    expect(W4_OTHER_DEPENDENT_AMOUNT).toBe(500);
++    expect(W4_FILING_STATUSES.map((item) => item.value)).toEqual([
++      "single_or_married_filing_separately",
++      "married_filing_jointly",
++      "head_of_household",
++    ]);
++    expect(W4_EMPLOYER_FIELDS).toEqual(["employerNameAndAddress", "firstDateOfEmployment", "employerEin"]);
++    const stripped = payloadForActor("w4", { lastName: "Lovelace", employerEin: "123456789", employerNameAndAddress: "CabinetDealz" }, hire);
++    expect(stripped).toEqual({ lastName: "Lovelace" });
++    expect(payloadForActor("w4", { employerEin: "123456789" }, admin).employerEin).toBe("123456789");
++  });
++});
++
++describe("state withholding is configured, not hardcoded", () => {
++  it("has no selected state until an administrator sets one", () => {
++    expect(EMPTY_HIRING_SETTINGS.stateCode).toBeNull();
++    expect(stateProfile(null)).toBeNull();
++    expect(stateCertificateTitle(EMPTY_HIRING_SETTINGS)).toBeNull();
++    expect(STATE_WITHHOLDING_PROFILES.map((profile) => profile.code)).not.toContain("");
++  });
++
++  it("follows whichever state the setting names", () => {
++    expect(stateCertificateTitle({ ...EMPTY_HIRING_SETTINGS, stateCode: "ny" })).toBe("New York employee's withholding certificate");
++    expect(stateProfile("TX")?.wagesWithheld).toBe(false);
++    expect(stateCertificateTitle({ ...EMPTY_HIRING_SETTINGS, stateCode: "TX" })).toBe("Texas does not withhold income tax on wages");
++    expect(stateProfile("ZZ")).toBeNull();
++  });
++});
++
++describe("masking, redaction, and private files", () => {
++  it("shows only the last four of an SSN or bank number", () => {
++    expect(maskSsn("6789")).toBe("•••-••-6789");
++    expect(maskBank("4321")).toBe("••••4321");
++    expect(maskSsn(null)).toBe("");
++    const published = toPublicPayload({
++      firstName: "Ada",
++      ssn: "123-45-6789",
++      accountNumber: "0012345678",
++      routingNumber: "021000021",
++      employerEin: "12-3456789",
++    });
++    expect(published).toEqual({ firstName: "Ada", ssnLast4: "6789", accountLast4: "5678", routingLast4: "0021", employerEinLast4: "6789" });
++    expect(JSON.stringify(published)).not.toContain("123456789");
++    expect(JSON.stringify(published)).not.toContain("123-45-6789");
++  });
++
++  it("does not store a mask over a real number, and does not log the number", () => {
++    const merged = mergeSensitiveFields({ ssn: "123456789", accountNumber: "0012345678" }, { ssn: "•••-••-6789", accountNumber: "", city: "Austin" });
++    expect(merged.ssn).toBe("123456789");
++    expect(merged.accountNumber).toBe("0012345678");
++    expect(merged.city).toBe("Austin");
++    const replaced = mergeSensitiveFields({ ssn: "123456789" }, { ssn: "987-65-4321" });
++    expect(replaced.ssn).toBe("987654321");
++
++    const logged = JSON.stringify(redactForLog({
++      ssn: "123-45-6789",
++      accountNumber: "0012345678",
++      note: "SSN 123-45-6789 routing 021000021",
++      nested: { routingNumber: "021000021" },
++    }));
++    expect(logged).not.toContain("123-45-6789");
++    expect(logged).not.toContain("123456789");
++    expect(logged).not.toContain("0012345678");
++    expect(logged).not.toContain("021000021");
++    expect(safeErrorMessage(new Error("duplicate 123-45-6789"))).not.toContain("123-45-6789");
++  });
++
++  it("keeps ID files in the private bucket and refuses a public URL", () => {
++    const key = hiringObjectKey(5, "i9_section1", "list_a", "Passport scan.pdf");
++    expect(key.startsWith(HIRING_STORAGE_PREFIX)).toBe(true);
++    expect(isHiringStorageKey(key)).toBe(true);
++    expect(isHiringStorageKey("../hiring-packets/1/secret.pdf")).toBe(false);
++    expect(isHiringStorageKey("library-documents/handbook.pdf")).toBe(false);
++    expect(signedLinkRequest(key)).toEqual({ key, bucket: PRIVATE_BUCKET_NAME, expiresInSeconds: HIRING_SIGNED_URL_SECONDS });
++    expect(PRIVATE_BUCKET_NAME).toBe("private-files");
++    expect(isPublicStorageUrl("/manus-storage/hiring-packets/5/id.pdf")).toBe(true);
++    expect(isPublicStorageUrl("https://example.supabase.co/storage/v1/object/public/site-media/id.pdf")).toBe(true);
++    expect(() => signedLinkRequest("site-media/id.pdf")).toThrow(/not in the hiring packet/);
++  });
++
++  it("checks the routing number instead of accepting any 9 digits", () => {
++    expect(routingNumberIsValid("021000021")).toBe(true);
++    expect(routingNumberIsValid("123456789")).toBe(false);
++  });
++});
++
++describe("document status", () => {
++  it("moves from not started, to in progress, to signed, to reviewed", () => {
++    expect(deriveStatus({ payload: {}, signedAt: null, reviewedAt: null })).toBe("not_started");
++    expect(deriveStatus({ payload: { firstName: "Ada" }, signedAt: null, reviewedAt: null })).toBe("in_progress");
++    expect(deriveStatus({ payload: { firstName: "Ada" }, signedAt: "2026-11-02", reviewedAt: null })).toBe("signed");
++    expect(deriveStatus({ payload: { firstName: "Ada" }, signedAt: "2026-11-02", reviewedAt: "2026-11-03" })).toBe("reviewed");
++    expect(progressFromStatuses(["signed", "reviewed", "in_progress"])).toMatchObject({
++      total: HIRING_DOCUMENT_KINDS.length,
++      signedOrReviewed: 2,
++      byStatus: { not_started: 3, in_progress: 1, signed: 1, reviewed: 1 },
++    });
++  });
++
++  it("does not sign an I-9 until Section 1, the document choice, and the upload are present", () => {
++    const settings = { ...EMPTY_HIRING_SETTINGS, stateCode: "NY" };
++    const incomplete = canSignDocument("i9_section1", { firstName: "Ada" }, settings, []);
++    expect(incomplete.ok).toBe(false);
++    const ready = canSignDocument("i9_section1", {
++      lastName: "Lovelace",
++      firstName: "Ada",
++      address: "1 Main",
++      city: "Austin",
++      state: "TX",
++      zipCode: "78701",
++      dateOfBirth: "1990-01-02",
++      citizenshipStatus: "us_citizen",
++      documentList: "A",
++      listACode: "us_passport",
++      employeeSignature: "Ada Lovelace",
++      signatureDate: "2026-11-10",
++    }, settings, [{ documentKind: "i9_section1", slot: "list_a" }]);
++    expect(ready.ok).toBe(true);
++  });
++
++  it("refuses to sign a state form when no state is configured, and signs the configured state", () => {
++    const body = {
++      employeeName: "Ada Lovelace",
++      ssn: "123456789",
++      address: "1 Main",
++      city: "Austin",
++      residenceState: "TX",
++      postalCode: "78701",
++      filingStatus: "single",
++      allowances: 1,
++      employeeSignature: "Ada Lovelace",
++      signatureDate: "2026-11-10",
++    };
++    expect(canSignDocument("state_withholding", body, EMPTY_HIRING_SETTINGS).ok).toBe(false);
++    expect(canSignDocument("state_withholding", body, { ...EMPTY_HIRING_SETTINGS, stateCode: "NY" }).ok).toBe(true);
++    expect(canSignDocument("state_withholding", {
++      noWageWithholdingAcknowledged: true,
++      employeeSignature: "Ada Lovelace",
++      signatureDate: "2026-11-10",
++    }, { ...EMPTY_HIRING_SETTINGS, stateCode: "FL" }).ok).toBe(true);
++  });
++});
++
++describe("summaries", () => {
++  it("leaves sensitive values off the admin list", () => {
++    const summary = toPacketSummary({
++      id: 5,
++      userId: 42,
++      applicantName: "Ada Lovelace",
++      applicantEmail: "ada@example.com",
++      statuses: ["signed"],
++    });
++    expect(JSON.stringify(summary)).not.toContain("ssn");
++    expect(summary.progress.signedOrReviewed).toBe(1);
++  });
++});
+diff --git a/shared/hiringPacket.ts b/shared/hiringPacket.ts
+new file mode 100644
+index 0000000..467acb3
+--- /dev/null
++++ b/shared/hiringPacket.ts
+@@ -0,0 +1,871 @@
++/**
++ * Hiring packet for the admin Job Board tab.
++ *
++ * Form I-9 Section 1 follows the USCIS form, edition 01/20/25 (the current
++ * edition on uscis.gov/i-9 as reviewed 06/03/2026). Lists of Acceptable
++ * Documents are the lists on that form. Form W-4 follows the 2026 IRS form
++ * (created 12/08/2025): Steps 1–5, the exemption box, and the Employers Only
++ * block. Nothing here adds a line those forms do not have.
++ *
++ * The typed-name signature is the same e-sign the affiliate payout consent
++ * already uses. The stored evidence columns match affiliate_legal_signatures
++ * (docs/sql/0272 on cabinet-backend): signer, email, content hash, provider,
++ * and an optional provider submission id so a DocuSeal session can be attached
++ * later without a new table.
++ *
++ * ID files live under hiring-packets/ in the private bucket. Callers hand them
++ * out only as short-lived signed URLs. This module never builds a public URL.
++ */
++
++export const JOB_BOARD_TAB = {
++  label: "Job Board",
++  value: "job-board",
++  route: "/admin?tab=job-board",
++  component: "JobBoard",
++  group: "People",
++} as const;
++
++export const HIRING_STORAGE_PREFIX = "hiring-packets/";
++export const HIRING_SIGNED_URL_SECONDS = 900;
++export const PRIVATE_BUCKET_NAME = "private-files";
++
++export const HIRING_DOCUMENT_KINDS = [
++  "application",
++  "i9_section1",
++  "w4",
++  "state_withholding",
++  "direct_deposit",
++  "policy_acknowledgment",
++] as const;
++export type HiringDocumentKind = (typeof HIRING_DOCUMENT_KINDS)[number];
++
++export const HIRING_DOCUMENT_LABELS: Record<HiringDocumentKind, string> = {
++  application: "Job application",
++  i9_section1: "Form I-9, Section 1",
++  w4: "Form W-4 (2026)",
++  state_withholding: "State withholding",
++  direct_deposit: "Direct deposit authorization",
++  policy_acknowledgment: "Policy and handbook acknowledgment",
++};
++
++export const HIRING_DOCUMENT_STATUSES = ["not_started", "in_progress", "signed", "reviewed"] as const;
++export type HiringDocumentStatus = (typeof HIRING_DOCUMENT_STATUSES)[number];
++
++export const HIRING_STATUS_LABELS: Record<HiringDocumentStatus, string> = {
++  not_started: "Not started",
++  in_progress: "In progress",
++  signed: "Signed",
++  reviewed: "Reviewed",
++};
++
++export const I9_EDITION = "01/20/25";
++export const I9_FORM_NAME = "Form I-9, Employment Eligibility Verification";
++
++/** Section 1 boxes, in the order they appear on the employee side. */
++export const I9_SECTION1_FIELDS = [
++  { key: "lastName", label: "Last Name (Family Name)", required: true },
++  { key: "firstName", label: "First Name (Given Name)", required: true },
++  { key: "middleInitial", label: "Middle Initial (if any)", required: false },
++  { key: "otherLastNamesUsed", label: "Other Last Names Used (if any)", required: false },
++  { key: "address", label: "Address (Street Number and Name)", required: true },
++  { key: "aptNumber", label: "Apt. Number (if any)", required: false },
++  { key: "city", label: "City or Town", required: true },
++  { key: "state", label: "State", required: true },
++  { key: "zipCode", label: "ZIP Code", required: true },
++  { key: "dateOfBirth", label: "Date of Birth (mm/dd/yyyy)", required: true },
++  { key: "ssn", label: "U.S. Social Security Number", required: false },
++  { key: "email", label: "Employee's Email Address", required: false },
++  { key: "telephone", label: "Employee's Telephone Number", required: false },
++] as const;
++
++export const I9_ATTESTATION =
++  "I am aware that federal law provides for imprisonment and/or fines for false statements or use of false documents in connection with the completion of this form. I attest, under penalty of perjury, that this information, including my selection of the box attesting to my citizenship or immigration status, is true and correct.";
++
++export const I9_CITIZENSHIP = [
++  { value: "us_citizen", label: "1. A citizen of the United States" },
++  { value: "noncitizen_national", label: "2. A noncitizen national of the United States" },
++  { value: "lawful_permanent_resident", label: "3. A lawful permanent resident" },
++  { value: "noncitizen_authorized", label: "4. A noncitizen authorized to work" },
++] as const;
++export type I9Citizenship = (typeof I9_CITIZENSHIP)[number]["value"];
++
++export type I9Document = { code: string; label: string };
++
++/** List A: documents that establish both identity and employment authorization. */
++export const I9_LIST_A: readonly I9Document[] = [
++  { code: "us_passport", label: "U.S. Passport or U.S. Passport Card" },
++  { code: "i551", label: "Permanent Resident Card or Alien Registration Receipt Card (Form I-551)" },
++  { code: "foreign_passport_i551", label: "Foreign passport with a temporary I-551 stamp or temporary I-551 printed notation on a machine-readable immigrant visa" },
++  { code: "i766", label: "Employment Authorization Document that contains a photograph (Form I-766)" },
++  { code: "foreign_passport_i94", label: "Foreign passport and Form I-94 or Form I-94A endorsing employment-authorized nonimmigrant status" },
++  { code: "fsm_rmi_passport", label: "Passport from the Federated States of Micronesia (FSM) or the Republic of the Marshall Islands (RMI) with Form I-94 or Form I-94A under the Compact of Free Association" },
++];
++
++/** List B: documents that establish identity. */
++export const I9_LIST_B: readonly I9Document[] = [
++  { code: "state_drivers_license", label: "Driver's license or ID card issued by a State or outlying possession of the United States, with a photograph or identifying information" },
++  { code: "government_id", label: "ID card issued by a federal, state, or local government agency, with a photograph or identifying information" },
++  { code: "school_id", label: "School ID card with a photograph" },
++  { code: "voter_registration", label: "Voter's registration card" },
++  { code: "military_card", label: "U.S. Military card or draft record" },
++  { code: "military_dependent_id", label: "Military dependent's ID card" },
++  { code: "merchant_mariner", label: "U.S. Coast Guard Merchant Mariner Card" },
++  { code: "tribal_document_b", label: "Native American tribal document" },
++  { code: "canadian_drivers_license", label: "Driver's license issued by a Canadian government authority" },
++  { code: "school_record", label: "School record or report card (under age 18 only)" },
++  { code: "clinic_record", label: "Clinic, doctor, or hospital record (under age 18 only)" },
++  { code: "daycare_record", label: "Day-care or nursery school record (under age 18 only)" },
++];
++
++/** List C: documents that establish employment authorization. */
++export const I9_LIST_C: readonly I9Document[] = [
++  { code: "ssn_card", label: "Social Security Account Number card without an employment restriction" },
++  { code: "ds_birth", label: "Certification of report of birth issued by the Department of State (Forms DS-1350, FS-545, FS-240)" },
++  { code: "birth_certificate", label: "Original or certified copy of a birth certificate issued by a State, county, municipal authority, or territory of the United States bearing an official seal" },
++  { code: "tribal_document_c", label: "Native American tribal document" },
++  { code: "i197", label: "U.S. Citizen ID Card (Form I-197)" },
++  { code: "i179", label: "Identification Card for Use of Resident Citizen in the United States (Form I-179)" },
++  { code: "dhs_ead", label: "Employment authorization document issued by the Department of Homeland Security" },
++];
++
++export const W4_YEAR = 2026;
++export const W4_OMB = "1545-0074";
++export const W4_CREATED = "2025-12-08";
++/** Line 3(a) on Form W-4 (2026): qualifying children under 17. */
++export const W4_QUALIFYING_CHILD_AMOUNT = 2200;
++/** Line 3(b) on Form W-4 (2026): other dependents. */
++export const W4_OTHER_DEPENDENT_AMOUNT = 500;
++
++export const W4_FILING_STATUSES = [
++  { value: "single_or_married_filing_separately", label: "Single or Married filing separately" },
++  { value: "married_filing_jointly", label: "Married filing jointly or Qualifying surviving spouse" },
++  { value: "head_of_household", label: "Head of household (Check only if you're unmarried and pay more than half the costs of keeping up a home for yourself and a qualifying individual.)" },
++] as const;
++export type W4FilingStatus = (typeof W4_FILING_STATUSES)[number]["value"];
++
++export const W4_STEP5_DECLARATION =
++  "Under penalties of perjury, I declare that this certificate, to the best of my knowledge and belief, is true, correct, and complete.";
++
++/** Employers Only block. The employee does not complete these. */
++export const W4_EMPLOYER_FIELDS = ["employerNameAndAddress", "firstDateOfEmployment", "employerEin"] as const;
++
++export const W4_EXEMPT_STATEMENT =
++  "I claim exemption from withholding for 2026, and I certify that I meet both of the conditions for exemption for 2026. I understand I will need to submit a new Form W-4 for 2027.";
++
++export type StateWithholdingProfile = {
++  code: string;
++  name: string;
++  /** False when the state does not withhold income tax on wages. */
++  wagesWithheld: boolean;
++};
++
++const WAGE_TAX_FREE = new Set(["AK", "FL", "NV", "NH", "SD", "TN", "TX", "WA", "WY"]);
++
++const STATE_NAMES: readonly [string, string][] = [
++  ["AL", "Alabama"], ["AK", "Alaska"], ["AZ", "Arizona"], ["AR", "Arkansas"], ["CA", "California"],
++  ["CO", "Colorado"], ["CT", "Connecticut"], ["DE", "Delaware"], ["DC", "District of Columbia"], ["FL", "Florida"],
++  ["GA", "Georgia"], ["HI", "Hawaii"], ["ID", "Idaho"], ["IL", "Illinois"], ["IN", "Indiana"],
++  ["IA", "Iowa"], ["KS", "Kansas"], ["KY", "Kentucky"], ["LA", "Louisiana"], ["ME", "Maine"],
++  ["MD", "Maryland"], ["MA", "Massachusetts"], ["MI", "Michigan"], ["MN", "Minnesota"], ["MS", "Mississippi"],
++  ["MO", "Missouri"], ["MT", "Montana"], ["NE", "Nebraska"], ["NV", "Nevada"], ["NH", "New Hampshire"],
++  ["NJ", "New Jersey"], ["NM", "New Mexico"], ["NY", "New York"], ["NC", "North Carolina"], ["ND", "North Dakota"],
++  ["OH", "Ohio"], ["OK", "Oklahoma"], ["OR", "Oregon"], ["PA", "Pennsylvania"], ["RI", "Rhode Island"],
++  ["SC", "South Carolina"], ["SD", "South Dakota"], ["TN", "Tennessee"], ["TX", "Texas"], ["UT", "Utah"],
++  ["VT", "Vermont"], ["VA", "Virginia"], ["WA", "Washington"], ["WV", "West Virginia"], ["WI", "Wisconsin"],
++  ["WY", "Wyoming"],
++];
++
++/** Every state the admin can select. Nothing in the packet defaults to one of them. */
++export const STATE_WITHHOLDING_PROFILES: readonly StateWithholdingProfile[] = STATE_NAMES.map(([code, name]) => ({
++  code,
++  name,
++  wagesWithheld: !WAGE_TAX_FREE.has(code),
++}));
++
++export const STATE_FILING_STATUSES = [
++  { value: "single", label: "Single" },
++  { value: "married", label: "Married" },
++  { value: "married_withhold_at_single_rate", label: "Married, but withhold at the single rate" },
++  { value: "head_of_household", label: "Head of household" },
++] as const;
++
++export const TYPED_SIGNATURE_CONSENT =
++  "I understand that typing my name constitutes a legally binding electronic signature.";
++
++export const POLICY_ACKNOWLEDGMENT =
++  "I have read the policy and handbook shown here. I agree to follow them. I understand that typing my name is my electronic signature.";
++
++export type HiringSettings = {
++  stateCode: string | null;
++  handbookTitle: string;
++  handbookVersion: string;
++  handbookBody: string;
++};
++
++export const EMPTY_HIRING_SETTINGS: HiringSettings = {
++  stateCode: null,
++  handbookTitle: "Employee handbook",
++  handbookVersion: "",
++  handbookBody: "",
++};
++
++export type HiringActor = {
++  userId: number | null;
++  role: string | null;
++  email?: string | null;
++};
++
++export type HiringPacketRef = {
++  id: number;
++  userId: number | null;
++  applicantEmail: string;
++};
++
++export type HiringAccess = {
++  view: boolean;
++  edit: boolean;
++  review: boolean;
++  listAll: boolean;
++  configure: boolean;
++};
++
++export type IdFileSlot = "list_a" | "list_b" | "list_c";
++
++export type HiringFileRef = {
++  id?: number;
++  documentKind: HiringDocumentKind;
++  slot: string;
++  filename?: string;
++  mimeType?: string;
++};
++
++export type SignatureEvidence = {
++  signerName: string;
++  signerEmail: string | null;
++  contentSha256: string;
++  provider: "typed-name";
++  providerSubmissionId: string | null;
++  signedAt: string;
++};
++
++export type PublicFile = {
++  id: number;
++  documentKind: HiringDocumentKind;
++  slot: string;
++  filename: string;
++  mimeType: string;
++};
++
++export type PublicDocument = {
++  kind: HiringDocumentKind;
++  status: HiringDocumentStatus;
++  payload: Record<string, unknown>;
++  signedAt: string | null;
++  signedByName: string | null;
++  reviewedAt: string | null;
++  reviewedByName: string | null;
++  files: PublicFile[];
++};
++
++export type PublicPacket = {
++  id: number;
++  userId: number | null;
++  applicantName: string;
++  applicantEmail: string;
++  documents: PublicDocument[];
++};
++
++export type PacketSummary = {
++  id: number;
++  userId: number | null;
++  applicantName: string;
++  applicantEmail: string;
++  progress: PacketProgress;
++};
++
++export type PacketProgress = {
++  total: number;
++  signedOrReviewed: number;
++  byStatus: Record<HiringDocumentStatus, number>;
++};
++
++const SENSITIVE_KEYS = /^(ssn|socialsecuritynumber|accountnumber|routingnumber|bankaccount|employerein)$/i;
++const SSN_PATTERN = /\b\d{3}-?\d{2}-?\d{4}\b/g;
++const LONG_DIGIT_PATTERN = /\b\d{8,17}\b/g;
++
++export function stateProfile(code: string | null | undefined): StateWithholdingProfile | null {
++  if (!code) return null;
++  const normalized = code.trim().toUpperCase();
++  return STATE_WITHHOLDING_PROFILES.find((profile) => profile.code === normalized) ?? null;
++}
++
++export function stateCertificateTitle(settings: HiringSettings): string | null {
++  const profile = stateProfile(settings.stateCode);
++  if (!profile) return null;
++  return profile.wagesWithheld
++    ? `${profile.name} employee's withholding certificate`
++    : `${profile.name} does not withhold income tax on wages`;
++}
++
++export function isAdmin(actor: HiringActor): boolean {
++  return actor.role === "admin" && actor.userId != null;
++}
++
++export function ownsPacket(actor: HiringActor, packet: HiringPacketRef): boolean {
++  if (actor.userId != null && packet.userId != null && actor.userId === packet.userId) return true;
++  const email = actor.email?.trim().toLowerCase();
++  const packetEmail = packet.applicantEmail.trim().toLowerCase();
++  return Boolean(email && packetEmail && email === packetEmail);
++}
++
++/** Admin sees every packet. Anyone else sees only a packet they own. */
++export function hiringAccess(actor: HiringActor, packet: HiringPacketRef | null): HiringAccess {
++  const admin = isAdmin(actor);
++  const owner = packet != null && ownsPacket(actor, packet);
++  const signedIn = actor.userId != null;
++  return {
++    view: admin || owner,
++    edit: signedIn && (owner || (admin && packet != null)),
++    review: admin && packet != null,
++    listAll: admin,
++    configure: admin,
++  };
++}
++
++export function visiblePackets<T extends HiringPacketRef>(actor: HiringActor, packets: readonly T[]): T[] {
++  if (isAdmin(actor)) return [...packets];
++  if (actor.userId == null && !actor.email) return [];
++  return packets.filter((packet) => ownsPacket(actor, packet));
++}
++
++export function emptyProgress(): PacketProgress {
++  return {
++    total: HIRING_DOCUMENT_KINDS.length,
++    signedOrReviewed: 0,
++    byStatus: { not_started: HIRING_DOCUMENT_KINDS.length, in_progress: 0, signed: 0, reviewed: 0 },
++  };
++}
++
++export function progressFromStatuses(statuses: readonly HiringDocumentStatus[]): PacketProgress {
++  const byStatus: Record<HiringDocumentStatus, number> = { not_started: 0, in_progress: 0, signed: 0, reviewed: 0 };
++  for (const status of statuses) byStatus[status] += 1;
++  const missing = HIRING_DOCUMENT_KINDS.length - statuses.length;
++  if (missing > 0) byStatus.not_started += missing;
++  return {
++    total: HIRING_DOCUMENT_KINDS.length,
++    signedOrReviewed: byStatus.signed + byStatus.reviewed,
++    byStatus,
++  };
++}
++
++export function maskSsn(last4: string | null | undefined): string {
++  const digits = (last4 ?? "").replace(/\D/g, "").slice(-4);
++  return digits.length === 4 ? `•••-••-${digits}` : "";
++}
++
++export function maskBank(last4: string | null | undefined): string {
++  const digits = (last4 ?? "").replace(/\D/g, "").slice(-4);
++  return digits.length === 4 ? `••••${digits}` : "";
++}
++
++export function last4Digits(value: unknown): string | null {
++  if (typeof value !== "string" && typeof value !== "number") return null;
++  const digits = String(value).replace(/\D/g, "");
++  if (digits.length < 4) return null;
++  return digits.slice(-4);
++}
++
++function isMaskPlaceholder(value: unknown): boolean {
++  if (typeof value !== "string") return false;
++  return value.includes("•") || value.includes("*") || /^x+$/i.test(value.trim());
++}
++
++const SENSITIVE_PAYLOAD_KEYS = ["ssn", "accountNumber", "routingNumber", "employerEin"] as const;
++
++export function toPublicPayload(payload: Record<string, unknown> | null | undefined): Record<string, unknown> {
++  const source = payload ?? {};
++  const next: Record<string, unknown> = {};
++  for (const [key, value] of Object.entries(source)) {
++    if (key === "ssn" || key === "employerEin") {
++      const last4 = last4Digits(value);
++      if (key === "ssn" && last4) next.ssnLast4 = last4;
++      if (key === "employerEin" && last4) next.employerEinLast4 = last4;
++      continue;
++    }
++    if (key === "accountNumber") {
++      const last4 = last4Digits(value);
++      if (last4) next.accountLast4 = last4;
++      continue;
++    }
++    if (key === "routingNumber") {
++      const last4 = last4Digits(value);
++      if (last4) next.routingLast4 = last4;
++      continue;
++    }
++    next[key] = value;
++  }
++  return next;
++}
++
++/**
++ * Keep a stored SSN or bank number when the client sends a blank or a mask.
++ * A new full number replaces it. A mask is never written back.
++ */
++export function mergeSensitiveFields(
++  previous: Record<string, unknown> | null | undefined,
++  incoming: Record<string, unknown>,
++): Record<string, unknown> {
++  const merged: Record<string, unknown> = { ...(previous ?? {}) };
++  for (const [key, value] of Object.entries(incoming)) {
++    if ((SENSITIVE_PAYLOAD_KEYS as readonly string[]).includes(key)) {
++      if (value == null || value === "" || isMaskPlaceholder(value)) continue;
++      const digits = String(value).replace(/\D/g, "");
++      if (!digits) continue;
++      merged[key] = digits;
++      continue;
++    }
++    merged[key] = value;
++  }
++  return merged;
++}
++
++export function stripEmployerFields(payload: Record<string, unknown>): Record<string, unknown> {
++  const next = { ...payload };
++  for (const key of W4_EMPLOYER_FIELDS) delete next[key];
++  return next;
++}
++
++export function payloadForActor(
++  kind: HiringDocumentKind,
++  payload: Record<string, unknown>,
++  actor: HiringActor,
++): Record<string, unknown> {
++  if (kind === "w4" && !isAdmin(actor)) return stripEmployerFields(payload);
++  return payload;
++}
++
++function redactString(value: string): string {
++  return value.replace(SSN_PATTERN, "[redacted]").replace(LONG_DIGIT_PATTERN, "[redacted]");
++}
++
++/** Drop SSN, bank, and routing values before anything is written to a log. */
++export function redactForLog(value: unknown): unknown {
++  if (typeof value === "string") return redactString(value);
++  if (typeof value === "number") {
++    const digits = String(value).replace(/\D/g, "");
++    if (digits.length >= 8) return "[redacted]";
++    return value;
++  }
++  if (Array.isArray(value)) return value.map((item) => redactForLog(item));
++  if (value && typeof value === "object") {
++    const next: Record<string, unknown> = {};
++    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
++      next[key] = SENSITIVE_KEYS.test(key) ? "[redacted]" : redactForLog(item);
++    }
++    return next;
++  }
++  return value;
++}
++
++export function safeErrorMessage(error: unknown): string {
++  const raw = error instanceof Error ? error.message : "The hiring packet could not be saved.";
++  return String(redactForLog(raw));
++}
++
++export function hiringObjectKey(packetId: number, kind: HiringDocumentKind, slot: string, filename: string): string {
++  const safeSlot = slot.replace(/[^a-z0-9_]+/gi, "").slice(0, 32) || "file";
++  const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+/, "").slice(0, 80) || "document";
++  return `${HIRING_STORAGE_PREFIX}${packetId}/${kind}/${safeSlot}-${safeName}`;
++}
++
++export function isHiringStorageKey(key: string): boolean {
++  const normalized = key.replace(/^\/+/, "");
++  return normalized.startsWith(HIRING_STORAGE_PREFIX) && !normalized.includes("..");
++}
++
++/** A signed URL request. The key stays in the private bucket; there is no public path. */
++export function signedLinkRequest(storageKey: string): { key: string; bucket: typeof PRIVATE_BUCKET_NAME; expiresInSeconds: number } {
++  if (!isHiringStorageKey(storageKey)) {
++    throw new Error("That file is not in the hiring packet.");
++  }
++  return { key: storageKey.replace(/^\/+/, ""), bucket: PRIVATE_BUCKET_NAME, expiresInSeconds: HIRING_SIGNED_URL_SECONDS };
++}
++
++export function isPublicStorageUrl(url: string): boolean {
++  const value = url.trim().toLowerCase();
++  if (!value) return false;
++  if (value.includes("/manus-storage/")) return true;
++  if (value.includes("site-media")) return true;
++  if (value.includes("/object/public/")) return true;
++  if (value.startsWith("/uploads/")) return true;
++  return false;
++}
++
++const ID_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
++const MAX_ID_BYTES = 10 * 1024 * 1024;
++
++export function acceptIdUpload(mimeType: string, sizeBytes: number): string | null {
++  if (!ID_MIME_TYPES.has(mimeType)) return "Upload a JPG, PNG, WebP, or PDF file.";
++  if (sizeBytes <= 0 || sizeBytes > MAX_ID_BYTES) return "That file must be under 10 MB.";
++  return null;
++}
++
++function text(value: unknown): string {
++  return typeof value === "string" ? value.trim() : "";
++}
++
++function hasText(payload: Record<string, unknown>, key: string): boolean {
++  return text(payload[key]).length > 0;
++}
++
++function digitsOf(value: unknown): string {
++  return text(String(value ?? "")).replace(/\D/g, "");
++}
++
++export function routingNumberIsValid(value: unknown): boolean {
++  const digits = digitsOf(value);
++  if (!/^\d{9}$/.test(digits)) return false;
++  const n = digits.split("").map((digit) => Number(digit));
++  const sum = 3 * (n[0]! + n[3]! + n[6]!) + 7 * (n[1]! + n[4]! + n[7]!) + (n[2]! + n[5]! + n[8]!);
++  return sum % 10 === 0;
++}
++
++function isIsoDate(value: unknown): boolean {
++  const raw = text(value);
++  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
++  const parsed = new Date(`${raw}T00:00:00Z`);
++  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === raw;
++}
++
++function money(value: unknown): number | null {
++  if (value == null || value === "") return null;
++  const number = typeof value === "number" ? value : Number(String(value).replace(/[$,]/g, ""));
++  if (!Number.isFinite(number) || number < 0) return null;
++  return Math.round(number * 100) / 100;
++}
++
++function payloadHasAnyValue(payload: Record<string, unknown>): boolean {
++  return Object.entries(payload).some(([key, value]) => {
++    if ((SENSITIVE_PAYLOAD_KEYS as readonly string[]).includes(key)) return digitsOf(value).length > 0;
++    if (typeof value === "boolean") return value;
++    if (typeof value === "number") return Number.isFinite(value);
++    if (typeof value === "string") return value.trim().length > 0;
++    return value != null;
++  });
++}
++
++export function documentHasProgress(payload: Record<string, unknown> | null | undefined): boolean {
++  return payloadHasAnyValue(payload ?? {});
++}
++
++export function deriveStatus(input: {
++  payload: Record<string, unknown> | null | undefined;
++  signedAt: string | null;
++  reviewedAt: string | null;
++}): HiringDocumentStatus {
++  if (input.reviewedAt) return "reviewed";
++  if (input.signedAt) return "signed";
++  if (documentHasProgress(input.payload)) return "in_progress";
++  return "not_started";
++}
++
++export type FieldErrors = string[];
++
++function requireFields(payload: Record<string, unknown>, fields: readonly { key: string; label: string; required: boolean }[]): FieldErrors {
++  const errors: string[] = [];
++  for (const field of fields) {
++    if (field.required && !hasText(payload, field.key)) errors.push(`${field.label} is required.`);
++  }
++  return errors;
++}
++
++function validateSsn(payload: Record<string, unknown>, required: boolean): FieldErrors {
++  const digits = digitsOf(payload.ssn);
++  if (!digits) return required ? ["U.S. Social Security Number is required."] : [];
++  if (!/^\d{9}$/.test(digits)) return ["Enter the 9-digit Social Security number."];
++  return [];
++}
++
++function listHas(list: readonly I9Document[], code: unknown): boolean {
++  return list.some((item) => item.code === text(code));
++}
++
++function validateI9(payload: Record<string, unknown>, files: readonly HiringFileRef[]): FieldErrors {
++  const errors = requireFields(payload, I9_SECTION1_FIELDS);
++  errors.push(...validateSsn(payload, false));
++  if (hasText(payload, "dateOfBirth") && !isIsoDate(payload.dateOfBirth)) errors.push("Date of Birth must be a real date.");
++  if (hasText(payload, "middleInitial") && text(payload.middleInitial).length > 1) errors.push("Middle Initial is one letter.");
++  const status = text(payload.citizenshipStatus);
++  if (!I9_CITIZENSHIP.some((item) => item.value === status)) {
++    errors.push("Check one box for citizenship or immigration status.");
++  }
++  if (status === "lawful_permanent_resident" && !hasText(payload, "uscisANumber")) {
++    errors.push("Enter the USCIS or A-Number for a lawful permanent resident.");
++  }
++  if (status === "noncitizen_authorized") {
++    if (!hasText(payload, "workAuthorizationExpiration")) {
++      errors.push("Enter the work authorization expiration date, or N/A if it does not expire.");
++    } else if (text(payload.workAuthorizationExpiration).toUpperCase() !== "N/A" && !isIsoDate(payload.workAuthorizationExpiration)) {
++      errors.push("Work authorization expiration must be a date or N/A.");
++    }
++    const proofs = [hasText(payload, "uscisANumber"), hasText(payload, "i94AdmissionNumber"), hasText(payload, "foreignPassportNumber") && hasText(payload, "foreignPassportCountry")].filter(Boolean);
++    if (proofs.length !== 1) errors.push("Enter one of: USCIS A-Number, Form I-94 Admission Number, or foreign passport number and country of issuance.");
++  }
++  if (payload.preparerAssisted === true) {
++    for (const key of ["preparerLastName", "preparerFirstName", "preparerSignature", "preparerDate"]) {
++      if (!hasText(payload, key)) errors.push("The preparer and/or translator certification is incomplete.");
++    }
++    if (hasText(payload, "preparerDate") && !isIsoDate(payload.preparerDate)) errors.push("Preparer date must be a real date.");
++  }
++  const choice = text(payload.documentList);
++  if (choice === "A") {
++    if (!listHas(I9_LIST_A, payload.listACode)) errors.push("Select one List A document.");
++    if (!files.some((file) => file.slot === "list_a")) errors.push("Upload the List A document.");
++  } else if (choice === "BC") {
++    if (!listHas(I9_LIST_B, payload.listBCode)) errors.push("Select one List B document.");
++    if (!listHas(I9_LIST_C, payload.listCCode)) errors.push("Select one List C document.");
++    if (!files.some((file) => file.slot === "list_b")) errors.push("Upload the List B document.");
++    if (!files.some((file) => file.slot === "list_c")) errors.push("Upload the List C document.");
++  } else {
++    errors.push("Present one List A document, or one List B document and one List C document.");
++  }
++  if (!hasText(payload, "employeeSignature")) errors.push("Signature of Employee is required.");
++  if (!isIsoDate(payload.signatureDate)) errors.push("Today's Date (mm/dd/yyyy) is required.");
++  return errors;
++}
++
++function validateW4(payload: Record<string, unknown>): FieldErrors {
++  const errors: string[] = [];
++  if (!hasText(payload, "firstNameAndMiddleInitial")) errors.push("Step 1(a) first name and middle initial is required.");
++  if (!hasText(payload, "lastName")) errors.push("Step 1(a) last name is required.");
++  if (!hasText(payload, "address")) errors.push("Step 1(a) address is required.");
++  if (!hasText(payload, "cityStateZip")) errors.push("Step 1(a) city or town, state, and ZIP code is required.");
++  errors.push(...validateSsn(payload, true));
++  const filing = text(payload.filingStatus);
++  if (!W4_FILING_STATUSES.some((item) => item.value === filing)) errors.push("Step 1(c) filing status is required.");
++  const exempt = payload.exemptFromWithholding === true;
++  const laterSteps = ["step2cTwoJobs", "step3a", "step3b", "step3", "step4a", "step4b", "step4c"];
++  const laterFilled = laterSteps.some((key) => {
++    if (key === "step2cTwoJobs") return payload[key] === true;
++    return money(payload[key]) != null && money(payload[key]) !== 0;
++  });
++  if (exempt && laterFilled) errors.push("Leave Steps 2–4 blank when you claim exemption from withholding.");
++  if (!exempt) {
++    for (const key of ["step3a", "step3b", "step3", "step4a", "step4b", "step4c"] as const) {
++      if (payload[key] != null && payload[key] !== "" && money(payload[key]) == null) errors.push("Enter dollar amounts as numbers.");
++    }
++  }
++  if (!hasText(payload, "employeeSignature")) errors.push("Employee's signature is required.");
++  if (!isIsoDate(payload.signatureDate)) errors.push("Step 5 date is required.");
++  return errors;
++}
++
++function validateState(payload: Record<string, unknown>, settings: HiringSettings): FieldErrors {
++  const profile = stateProfile(settings.stateCode);
++  if (!profile) return ["An administrator has not chosen the state for this withholding certificate."];
++  const errors: string[] = [];
++  if (!hasText(payload, "employeeSignature")) errors.push("Signature is required.");
++  if (!isIsoDate(payload.signatureDate)) errors.push("Date is required.");
++  if (!profile.wagesWithheld) {
++    if (payload.noWageWithholdingAcknowledged !== true) {
++      errors.push(`Acknowledge that ${profile.name} does not withhold income tax on wages.`);
++    }
++    return errors;
++  }
++  if (!hasText(payload, "employeeName")) errors.push("Employee name is required.");
++  errors.push(...validateSsn(payload, true));
++  if (!hasText(payload, "address")) errors.push("Home address is required.");
++  if (!hasText(payload, "city")) errors.push("City is required.");
++  if (!hasText(payload, "residenceState")) errors.push("State is required.");
++  if (!hasText(payload, "postalCode")) errors.push("ZIP code is required.");
++  if (!STATE_FILING_STATUSES.some((item) => item.value === text(payload.filingStatus))) errors.push("Filing status is required.");
++  if (payload.exempt !== true) {
++    const allowances = payload.allowances;
++    if (allowances != null && allowances !== "" && (!Number.isInteger(Number(allowances)) || Number(allowances) < 0)) {
++      errors.push("Allowances must be a whole number.");
++    }
++    if (payload.additionalWithholding != null && payload.additionalWithholding !== "" && money(payload.additionalWithholding) == null) {
++      errors.push("Additional withholding must be a dollar amount.");
++    }
++  }
++  return errors;
++}
++
++function validateApplication(payload: Record<string, unknown>): FieldErrors {
++  const errors: string[] = [];
++  const required: [string, string][] = [
++    ["firstName", "First name"],
++    ["lastName", "Last name"],
++    ["email", "Email"],
++    ["phone", "Phone"],
++    ["address", "Address"],
++    ["city", "City"],
++    ["state", "State"],
++    ["postalCode", "ZIP code"],
++    ["position", "Position"],
++    ["startDate", "Start date"],
++    ["emergencyContactName", "Emergency contact name"],
++    ["emergencyContactRelationship", "Emergency contact relationship"],
++    ["emergencyContactPhone", "Emergency contact phone"],
++  ];
++  for (const [key, label] of required) {
++    if (!hasText(payload, key)) errors.push(`${label} is required.`);
++  }
++  if (hasText(payload, "email") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text(payload.email))) errors.push("Enter a valid email.");
++  if (hasText(payload, "startDate") && !isIsoDate(payload.startDate)) errors.push("Start date must be a real date.");
++  if (!hasText(payload, "employeeSignature")) errors.push("Signature is required.");
++  if (!isIsoDate(payload.signatureDate)) errors.push("Signature date is required.");
++  return errors;
++}
++
++function validateDeposit(payload: Record<string, unknown>): FieldErrors {
++  const errors: string[] = [];
++  if (!hasText(payload, "accountHolderName")) errors.push("Name on the account is required.");
++  if (!hasText(payload, "bankName")) errors.push("Bank name is required.");
++  if (text(payload.accountType) !== "checking" && text(payload.accountType) !== "savings") errors.push("Choose checking or savings.");
++  if (!routingNumberIsValid(payload.routingNumber)) errors.push("Enter a valid 9-digit routing number.");
++  const account = digitsOf(payload.accountNumber);
++  if (account.length < 4 || account.length > 17) errors.push("Enter the account number.");
++  const amountType = text(payload.depositType);
++  if (!["entire_net_pay", "fixed", "percent"].includes(amountType)) errors.push("Choose what to deposit.");
++  if (amountType === "fixed" && (money(payload.depositAmount) == null || money(payload.depositAmount) === 0)) errors.push("Enter the fixed amount.");
++  if (amountType === "percent") {
++    const percent = Number(payload.depositPercent);
++    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) errors.push("Enter a percent from 1 to 100.");
++  }
++  if (payload.authorize !== true) errors.push("Authorization is required.");
++  if (!hasText(payload, "employeeSignature")) errors.push("Signature is required.");
++  if (!isIsoDate(payload.signatureDate)) errors.push("Signature date is required.");
++  return errors;
++}
++
++function validatePolicy(payload: Record<string, unknown>, settings: HiringSettings): FieldErrors {
++  const errors: string[] = [];
++  if (!settings.handbookBody.trim() || !settings.handbookVersion.trim()) {
++    errors.push("An administrator has not published the handbook yet.");
++  }
++  if (text(payload.handbookVersion) !== settings.handbookVersion.trim()) {
++    errors.push("This acknowledgment is for a different handbook version.");
++  }
++  if (payload.agreed !== true) errors.push("Acknowledge the policy and handbook.");
++  if (text(payload.employeeSignature).length < 2) errors.push("Type your full legal name to sign.");
++  if (!isIsoDate(payload.signatureDate)) errors.push("Signature date is required.");
++  return errors;
++}
++
++export function validateDocument(
++  kind: HiringDocumentKind,
++  payload: Record<string, unknown>,
++  settings: HiringSettings,
++  files: readonly HiringFileRef[] = [],
++): FieldErrors {
++  const mine = files.filter((file) => file.documentKind === kind);
++  switch (kind) {
++    case "application":
++      return validateApplication(payload);
++    case "i9_section1":
++      return validateI9(payload, mine);
++    case "w4":
++      return validateW4(payload);
++    case "state_withholding":
++      return validateState(payload, settings);
++    case "direct_deposit":
++      return validateDeposit(payload);
++    case "policy_acknowledgment":
++      return validatePolicy(payload, settings);
++    default:
++      return ["Unknown form."];
++  }
++}
++
++export function canSignDocument(
++  kind: HiringDocumentKind,
++  payload: Record<string, unknown>,
++  settings: HiringSettings,
++  files: readonly HiringFileRef[] = [],
++): { ok: boolean; errors: FieldErrors } {
++  const errors = validateDocument(kind, payload, settings, files);
++  return { ok: errors.length === 0, errors };
++}
++
++export function canReviewDocument(actor: HiringActor, status: HiringDocumentStatus): { ok: boolean; reason: string | null } {
++  if (!isAdmin(actor)) return { ok: false, reason: "Only an administrator can review a hiring document." };
++  if (status !== "signed") return { ok: false, reason: "Review is available after the hire signs." };
++  return { ok: true, reason: null };
++}
++
++export function canonicalPayload(payload: Record<string, unknown>): string {
++  const keys = Object.keys(payload).sort();
++  const sorted: Record<string, unknown> = {};
++  for (const key of keys) sorted[key] = payload[key];
++  return JSON.stringify(sorted);
++}
++
++export async function sha256Hex(value: string): Promise<string> {
++  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
++  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
++}
++
++export async function signatureEvidence(input: {
++  signerName: string;
++  signerEmail: string | null;
++  payload: Record<string, unknown>;
++  signedAt?: string;
++}): Promise<SignatureEvidence> {
++  return {
++    signerName: input.signerName.trim(),
++    signerEmail: input.signerEmail,
++    contentSha256: await sha256Hex(canonicalPayload(input.payload)),
++    provider: "typed-name",
++    providerSubmissionId: null,
++    signedAt: input.signedAt ?? new Date().toISOString(),
++  };
++}
++
++export function emptyDocumentPayload(): Record<HiringDocumentKind, Record<string, unknown>> {
++  return {
++    application: {},
++    i9_section1: {},
++    w4: {},
++    state_withholding: {},
++    direct_deposit: {},
++    policy_acknowledgment: {},
++  };
++}
++
++export function toPublicDocument(document: {
++  kind: HiringDocumentKind;
++  payload: Record<string, unknown> | null;
++  signedAt: string | null;
++  signedByName: string | null;
++  reviewedAt: string | null;
++  reviewedByName: string | null;
++  files?: PublicFile[];
++}): PublicDocument {
++  return {
++    kind: document.kind,
++    status: deriveStatus(document),
++    payload: toPublicPayload(document.payload),
++    signedAt: document.signedAt,
++    signedByName: document.signedByName,
++    reviewedAt: document.reviewedAt,
++    reviewedByName: document.reviewedByName,
++    files: document.files ?? [],
++  };
++}
++
++export function toPacketSummary(packet: {
++  id: number;
++  userId: number | null;
++  applicantName: string;
++  applicantEmail: string;
++  statuses: readonly HiringDocumentStatus[];
++}): PacketSummary {
++  return {
++    id: packet.id,
++    userId: packet.userId,
++    applicantName: packet.applicantName,
++    applicantEmail: packet.applicantEmail,
++    progress: progressFromStatuses(packet.statuses),
++  };
++}
+-- 
+2.43.0
+

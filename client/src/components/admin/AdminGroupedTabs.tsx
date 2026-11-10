@@ -70,6 +70,7 @@ import { CATALOG_SECTIONS, canonicalAdminTab, catalogLeaves, resolveCatalogTab }
 import ApprovedVendorsAdmin from "@/components/admin/ApprovedVendorsAdmin";
 import VendorReferralsAdmin from "@/components/admin/VendorReferralsAdmin";
 import VendorSupportAdmin from "@/components/admin/VendorSupportAdmin";
+import JobBoard from "@/components/admin/JobBoard";
 import PelicanCatalogAdmin from "@/components/admin/PelicanCatalogAdmin";
 import { AnalyticsAdmin } from "@/components/admin/AnalyticsAdmin";
 import FullDatabaseExport from "@/components/admin/FullDatabaseExport";
@@ -153,6 +154,7 @@ const GROUPS = [
       { value: "approved-vendors", label: "Approved Vendors" },
       { value: "vendor-referrals", label: "Vendor Referrals" },
       { value: "vendor-support", label: "Vendor Support" },
+      { value: "job-board", label: "Job Board" },
     ],
   },
   {
@@ -624,6 +626,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="approved-vendors" className="mt-6"><AdminTabErrorBoundary tabName="Approved Vendors"><ApprovedVendorsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-referrals" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Referrals"><VendorReferralsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-support" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Support"><VendorSupportAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="job-board" className="mt-6"><AdminTabErrorBoundary tabName="Job Board"><AdminTabHelp tab="job-board" /><JobBoard /></AdminTabErrorBoundary></TabsContent>
 
         {/* Products & Catalog. Single-purpose editors stay on the top row.
             Grouped editors keep their original ?tab= value as an inner tab. */}
