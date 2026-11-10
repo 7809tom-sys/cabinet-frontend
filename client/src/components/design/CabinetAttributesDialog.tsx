@@ -463,6 +463,86 @@ export interface CabinetAttributesDialogProps {
     needsReview?: boolean;
   } | null;
   onApplyAttachedFillers?: (uid: string, choice: { leftIn: number; rightIn: number }) => void;
+  /**
+   * Exposed-side panel state for this cabinet. A panel goes only on an EXPOSED
+   * side; `checked` includes the automatic 3/4" panel a frameless line adds, so
+   * the toggle controls that same board instead of adding a second one.
+   */
+  exposedSidePanelOptions?: {
+    leftAllowed: boolean;
+    rightAllowed: boolean;
+    leftChecked: boolean;
+    rightChecked: boolean;
+    automatic: boolean;
+  } | null;
+  onToggleExposedSidePanel?: (uid: string, side: "start" | "end", enabled: boolean) => void;
+}
+
+/**
+ * Per-cabinet Left panel / Right panel options.
+ *
+ * These are PANEL options, not fillers: each toggle puts the line's real end
+ * panel on that EXPOSED side, priced as a real catalog row. On a frameless line
+ * the 3/4" panel is added automatically, so the same toggles show and control
+ * that board rather than adding a second one.
+ */
+export function CabinetExposedSidePanelControls({
+  automatic,
+  leftAllowed,
+  rightAllowed,
+  leftChecked,
+  rightChecked,
+  onToggle,
+}: {
+  automatic: boolean;
+  leftAllowed: boolean;
+  rightAllowed: boolean;
+  leftChecked: boolean;
+  rightChecked: boolean;
+  onToggle: (side: "start" | "end", enabled: boolean) => void;
+}) {
+  return (
+    <section className="space-y-2 rounded-lg border border-sky-200 bg-sky-50/50 p-3" data-testid="cabinet-exposed-side-panel-controls">
+      <div>
+        <h4 className="text-sm font-semibold text-sky-950">Exposed-side panels</h4>
+        <p className="text-[11px] text-sky-900/80">
+          A panel finishes an exposed side — one you can see. Fillers are for gaps and door clearance only, and a required panel always wins.
+        </p>
+        {automatic && (
+          <p className="mt-1 text-[11px] font-medium text-sky-900" data-testid="cabinet-exposed-panel-automatic-note">
+            This frameless line adds the 3/4″ end panel automatically on every exposed side; these switches show and control those panels.
+          </p>
+        )}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-xs font-semibold text-sky-950">
+          <input
+            type="checkbox"
+            data-testid="exposed-panel-left"
+            checked={leftChecked}
+            disabled={!leftAllowed}
+            onChange={(event) => onToggle("start", event.target.checked)}
+          />
+          Left panel
+        </label>
+        <label className="flex items-center gap-2 text-xs font-semibold text-sky-950">
+          <input
+            type="checkbox"
+            data-testid="exposed-panel-right"
+            checked={rightChecked}
+            disabled={!rightAllowed}
+            onChange={(event) => onToggle("end", event.target.checked)}
+          />
+          Right panel
+        </label>
+      </div>
+      {(!leftAllowed && !rightAllowed) && (
+        <p className="rounded border border-sky-200 bg-white/80 px-2.5 py-2 text-xs text-sky-950">
+          No side needs a panel: each one is against a wall or finished by the cabinet beside it.
+        </p>
+      )}
+    </section>
+  );
 }
 
 export function CabinetAttachedFillerControls({
@@ -564,6 +644,8 @@ export function CabinetAttributesDialog({
   onSetIslandWallBaseTreatment,
   attachedFillerOptions,
   onApplyAttachedFillers,
+  exposedSidePanelOptions,
+  onToggleExposedSidePanel,
 }: CabinetAttributesDialogProps) {
 	  const { t } = useLanguage();
   const isMobile = useIsMobile();
@@ -830,6 +912,17 @@ export function CabinetAttributesDialog({
               <CabinetAttachedFillerControls
                 value={attachedFillerOptions}
                 onApply={(choice) => onApplyAttachedFillers(uid, choice)}
+              />
+            )}
+
+            {exposedSidePanelOptions && onToggleExposedSidePanel && (
+              <CabinetExposedSidePanelControls
+                automatic={exposedSidePanelOptions.automatic}
+                leftAllowed={exposedSidePanelOptions.leftAllowed}
+                rightAllowed={exposedSidePanelOptions.rightAllowed}
+                leftChecked={exposedSidePanelOptions.leftChecked}
+                rightChecked={exposedSidePanelOptions.rightChecked}
+                onToggle={(side, enabled) => onToggleExposedSidePanel(uid, side, enabled)}
               />
             )}
 
@@ -1159,7 +1252,10 @@ export function CabinetAttributesDialog({
                     <SelectItem value="Blind Corner">Blind Corner</SelectItem>
                     <SelectItem value="Lazy Susan">Lazy Susan</SelectItem>
                     <SelectItem value="Oven Base">Oven Base</SelectItem>
-                    <SelectItem value="Range Base">Range Base</SelectItem>
+                    {/* The stored sub-category value is unchanged so saved rows and
+                        nomenclature keep working; the designer reads the product
+                        meaning — a cabinet for a range top (issue #354). */}
+                    <SelectItem value="Range Base">Range Top Base</SelectItem>
                     <SelectItem value="Microwave">Microwave</SelectItem>
                     <SelectItem value="Refrigerator">Refrigerator</SelectItem>
                     <SelectItem value="Pantry">Pantry</SelectItem>

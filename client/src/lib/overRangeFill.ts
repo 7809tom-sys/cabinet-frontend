@@ -34,9 +34,12 @@ import {
 } from "./design";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import {
+  bridgeMissingAtRangeWidthReason,
   isBridgeOverRangeCabinet,
+  lineSellsBridgeAtRangeWidth,
   overRangeBridgeFor,
   overRangeBridgePlacement,
+  singleTopLineFor,
   overRangeBridgePlanFor,
   overRangeCompanionPlacements,
   overRangeCompanionPlanFor,
@@ -217,20 +220,23 @@ function seatMandatoryBridge(input: {
     };
   }
   const ceilingIn = rangeWallCeiling(range, room);
+  const topLineIn = singleTopLineFor({ wallCatalog, wallCabinetHeightIn });
   const bridge = overRangeBridgeFor({
     rangeWidthIn: Number(range.width) || 0,
     wallCabinetHeightIn,
     wallCatalog,
     ceilingIn,
+    topLineIn,
   });
   if (!bridge) {
-    const sellsBridge = wallCatalog.some((row) => /^W\d{2}(?:12|15|18|21|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "")));
+    // Never a narrower stock width: no bridge at the range's own width is reported, not substituted.
+    const sellsBridge = lineSellsBridgeAtRangeWidth(Number(range.width) || 0, wallCatalog);
     return {
       placed,
       added: null,
       finding: bridgeBlockedFinding(range, sellsBridge
         ? `The ${range.masterCode} wall's ${ceilingIn}″ ceiling leaves no room for a 12″–24″ bridge at the 72″ datum, so no bridge could be hung above the range.`
-        : `The selected line sells no solid bridge cabinet (a 12″–24″ wall box) for a ${Number(range.width) || 0}″ range, so nothing could be placed above it.`),
+        : bridgeMissingAtRangeWidthReason(Number(range.width) || 0, null, "range")),
     };
   }
   // A frameless line's 12" bridge is a 12" tall box; other lines sell 13½" deep
@@ -245,6 +251,23 @@ function seatMandatoryBridge(input: {
       added: null,
       finding: bridgeBlockedFinding(range, `The ${bridge.masterCode} bridge needs ${Number(bridge.width) || 30}″ of clear upper wall centered above ${range.masterCode}, and that span is already occupied. Nothing was moved or removed to make room.`),
     };
+  }
+  // Issue #354 item 5: on a line with one wall top line the bridge must reach it.
+  // When the tallest box the line sells still falls short, the bridge is placed
+  // (never dropped) and the shortfall is named, so a low bridge is visible.
+  if (topLineIn != null) {
+    const bridgeTop = draft.mountBottom! + (Number(draft.height) || 0);
+    if (bridgeTop < topLineIn - 0.51) {
+      const shortfall = Math.round((topLineIn - bridgeTop) * 8) / 8;
+      return {
+        placed: accepted.placed,
+        added: draft,
+        finding: bridgeBlockedFinding(
+          range,
+          `${bridge.masterCode} is the tallest bridge the line sells at ${Math.round(Number(range.width) || 30)}″ and its top finishes at ${bridgeTop}″, ${shortfall}″ short of the ${topLineIn}″ wall-cabinet line. Choose a door line whose bridge reaches that line, or accept the lower bridge.`,
+        ),
+      };
+    }
   }
   return { placed: accepted.placed, added: draft, finding: null };
 }

@@ -130,12 +130,41 @@ export function TopNav() {
     }
   };
 
-  // Check if the current user is a linked affiliate (partner role or has affiliate record)
-  const { data: myAffiliateData } = trpc.affiliates.myReferrals.useQuery(undefined, {
-    enabled: !!user,
+  // Which affiliate console, if any, to offer in the header.
+  //
+  // `affiliates.myReferrals` answers only for a signed-in AFFILIATE. An admin is
+  // deliberately refused it — `AffiliateDashboard` disables the same query for
+  // admins and reads `adminReferrals` instead — so for an admin the request errors,
+  // `data` stays undefined, and `isAffiliate` was always false. An admin who owns or
+  // administers a store therefore lost the Affiliate button from the header while
+  // keeping Admin, My Account and Sign out, which is exactly what was reported.
+  //
+  // Admins are routed to `adminSwitcherList`, the documented admin path, so an
+  // admin with at least one store still gets the button. A partner keeps using
+  // `myReferrals`, and a plain shopper gets neither.
+  const isAdminUser = user?.role === "admin" || user?.role === "designer";
+  // The generated AppRouter in this checkout does not carry these two affiliate
+  // procedures, so they are read through a typed shim — the same approach
+  // `lib/crmFormLetterContext` already uses for `myReferrals`. Both are read-only
+  // lookups the rest of the CMS makes.
+  const headerTrpc = trpc as unknown as {
+    affiliates: {
+      myReferrals: { useQuery: (input: undefined, options: { enabled: boolean; retry: boolean }) => { data?: { affiliate?: { id: number } | null } | null } };
+      adminSwitcherList: { useQuery: (input: undefined, options: { enabled: boolean; retry: boolean; staleTime: number }) => { data?: readonly unknown[] | null } };
+    };
+  };
+  const { data: myAffiliateData } = headerTrpc.affiliates.myReferrals.useQuery(undefined, {
+    enabled: !!user && !isAdminUser,
     retry: false,
   });
-  const isAffiliate = !!myAffiliateData?.affiliate;
+  const { data: adminAffiliateStores } = headerTrpc.affiliates.adminSwitcherList.useQuery(undefined, {
+    enabled: !!user && isAdminUser,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const isAffiliate = isAdminUser
+    ? (adminAffiliateStores?.length ?? 0) > 0
+    : !!myAffiliateData?.affiliate;
 
   // Referral branding remains explicit. Store identity otherwise comes only
   // from the current URL/host, never from a previous cart's localStorage.
@@ -490,7 +519,14 @@ export function TopNav() {
             {isAffiliate && (
               <Link href="/affiliate" onClick={() => setMobileOpen(false)} className="px-3">
                 <Button variant="outline" className="w-full border-[var(--color-gold)] text-[var(--color-gold)]">
-                  Administration
+                  {/*
+                    This is the affiliate's own storefront console, and the desktop
+                    header calls it "Affiliate Portal". It was labelled
+                    "Administration" here, which is why the owner could not find an
+                    Affiliate button on a narrow window: the control existed, but
+                    nothing on screen said Affiliate.
+                  */}
+                  Affiliate Portal
                 </Button>
               </Link>
             )}

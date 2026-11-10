@@ -65,7 +65,6 @@ describe("frameless door clearance beside a refrigerator", () => {
       room,
       fillers,
       makeUid: () => "clearance-1",
-      styleId: 540005,
     });
     const added = result.added[0];
     expect(result.added).toHaveLength(1);
@@ -84,10 +83,20 @@ describe("frameless door clearance beside a refrigerator", () => {
       room,
       fillers,
       makeUid: () => "clearance-2",
-      styleId: 540005,
     });
     expect(again.added).toHaveLength(0);
     expect(again.placed).toBe(result.placed);
+  });
+
+  it("gives the filler its cabinet's finish, and leaves it inherited beside an inherited cabinet", () => {
+    const build = (styleId: number | null) => {
+      const panel = seat({ uid: "panel", masterCode: "REP2496", description: "Refrigerator end panel", placement: "tall", height: 96 }, 0, 0.75, 24);
+      const cabinet = seat({ uid: "base", masterCode: "B24", placement: "base", constructionMethod: AEF_PRINTED_GEOMETRY_MARKER, styleId }, 0.75, 24, 24);
+      return applyFramelessDoorClearanceFillers({ placed: [panel, cabinet], room, fillers, makeUid: () => "clearance" }).added[0];
+    };
+    // Inherited: the filler follows the design's Color 1, never the lit Color 2 brush.
+    expect(build(null)).toMatchObject({ masterCode: "BF3", styleId: null });
+    expect(build(390018)).toMatchObject({ masterCode: "BF3", styleId: 390018 });
   });
 
   it("places the same filler beside a refrigerator wall cabinet and a refrigerator tall cabinet", () => {
@@ -109,7 +118,7 @@ describe("frameless door clearance beside a refrigerator", () => {
       height: 30,
     }, 36, 30, 12);
     const wallResult = applyFramelessDoorClearanceFillers({
-      placed: [wallCabinet, upper], room, fillers, makeUid: () => "wall-clearance", styleId: 540005,
+      placed: [wallCabinet, upper], room, fillers, makeUid: () => "wall-clearance",
     });
     expect(wallResult.added.map((item) => item.masterCode)).toEqual(["WF3"]);
 
@@ -128,7 +137,7 @@ describe("frameless door clearance beside a refrigerator", () => {
       constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
     }, 24, 18, 24);
     const tallResult = applyFramelessDoorClearanceFillers({
-      placed: [tall, base], room, fillers, makeUid: () => "tall-clearance", styleId: 540005,
+      placed: [tall, base], room, fillers, makeUid: () => "tall-clearance",
     });
     expect(tallResult.added).toHaveLength(1);
     expect(tallResult.added[0]?.width).toBe(3);
@@ -153,7 +162,7 @@ describe("frameless door clearance beside a refrigerator", () => {
     }, 0.75, 24, 24);
     const input = [panel, framed];
     const result = applyFramelessDoorClearanceFillers({
-      placed: input, room, fillers, makeUid: () => "unused", styleId: 330011,
+      placed: input, room, fillers, makeUid: () => "unused",
     });
     expect(result.added).toEqual([]);
     expect(result.placed).toBe(input);
@@ -175,7 +184,7 @@ describe("frameless door clearance beside a refrigerator", () => {
       constructionMethod: AEF_PRINTED_GEOMETRY_MARKER,
     }, 36, 24, 24);
     const result = applyFramelessDoorClearanceFillers({
-      placed: [fridge, cabinet], room, fillers, makeUid: () => "unused", styleId: 540005,
+      placed: [fridge, cabinet], room, fillers, makeUid: () => "unused",
     });
     expect(result.added).toEqual([]);
   });

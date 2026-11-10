@@ -36,6 +36,10 @@ const PAN_CODES = [
   "PL-SMC6030C", "PL-SMC6030L", "PL-SMC6030R",
   "PL-SMC6032C", "PL-SMC6032L", "PL-SMC6032R",
   "PL-SMC6036C", "PL-SMC6036L", "PL-SMC6036R",
+  // Sizes the live catalog also sells, added so every purchasable pan can be placed.
+  "PL-013636C", "PL-013838ADA", "PL-014236C", "PL-014242C", "PL-014832C",
+  "PL-016034C", "PL-016034L", "PL-016034R", "PL-016038C",
+  "PL-016236ADA", "PL-016238ADA",
 ];
 
 describe("Shower pan geometry", () => {
@@ -45,9 +49,11 @@ describe("Shower pan geometry", () => {
       expect(profile, `${code} does not resolve to a shower pan`).toBeTruthy();
       expect(profile!.kind).toBe("shower-pan");
     }
-    // Every pan family present in the catalog list is covered.
+    // Every pan profile in the catalog list is one this test exercises, so a newly
+    // added pan cannot go untested.
     const pans = ALL_PELICAN_BATHROOM_FIXTURE_PROFILES.filter((entry) => entry.kind === "shower-pan");
-    expect(pans.length).toBe(PAN_CODES.length);
+    expect(new Set(PAN_CODES).size).toBe(PAN_CODES.length);
+    expect(pans.every((entry) => PAN_CODES.includes(entry.pelicanCode))).toBe(true);
   });
 
   it.each(PAN_CODES)("%s builds inside its published envelope", (code) => {
@@ -190,13 +196,47 @@ describe("Shower surround, system and niche geometry", () => {
     expect(profile.widthIn).toBeCloseTo(widthIn, 4);
     expect(profile.heightIn).toBeCloseTo(heightIn, 4);
     const { size, inch, box } = bounds(makeShowerNicheParts(profile, materials));
-    // The recess goes into the wall: the body plus its face flange, measured from
-    // the flange plane (x = -shell) to the back of the box (x = depth).
-    expect(inch(size.x)).toBeGreaterThan(2);
-    expect(inch(size.x)).toBeCloseTo(profile.depthIn + 0.12, 1);
+    // The recess goes into the wall along +Z: the body plus its face flange,
+    // measured from the flange plane (z = -shell) to the back of the box
+    // (z = depth). Authored this way so the fixture's own group, which sits at
+    // floor level and whose +Z face is the wall, puts the recess into the wall
+    // rather than sideways across the shower.
+    expect(inch(size.z)).toBeGreaterThan(2);
+    expect(inch(size.z)).toBeCloseTo(profile.depthIn + 0.12, 1);
     // The face flange makes the outer frame a little bigger than the opening.
-    expect(inch(size.z)).toBeGreaterThan(profile.widthIn);
-    void box;
+    expect(inch(size.x)).toBeGreaterThan(profile.widthIn);
+    // It stands on the deck: the mesh never dips below its own mounting plane, so
+    // moving the group up to the mount height puts the whole niche above the pan.
+    // The flange laps 1/2" below the opening, which is the only part under zero.
+    expect(inch(box.min.y)).toBeCloseTo(-0.5, 1);
+    expect(inch(box.max.y)).toBeCloseTo(profile.heightIn + 0.5, 1);
+    expect(inch(box.max.y)).toBeGreaterThan(profile.heightIn);
+  });
+
+  /**
+   * Regression for the stray sheet Tom saw floating in the built shower.
+   *
+   * The niche used to be authored recessed along +X and centred on y = 0, while
+   * every fixture group is placed at floor level with its +Z face against the
+   * wall. That put half the niche below the pan and turned the recess sideways,
+   * so it rendered as a thin slab hanging in mid-air across the shower floor.
+   *
+   * The niche must therefore share the frame the rest of the shower uses: standing
+   * on y = 0, opening toward -Z, recess running into the wall along +Z.
+   */
+  it("authors the niche in the same frame as the other shower parts", () => {
+    const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1627")!;
+    const { inch, box } = bounds(makeShowerNicheParts(niche, materials));
+    // Standing on the deck, not straddling zero: the body never reaches far below it.
+    expect(inch(box.min.y)).toBeGreaterThanOrEqual(-0.5 - 0.01);
+    expect(inch(box.max.y)).toBeCloseTo(niche.heightIn + 0.5, 1);
+    // The recess runs into the wall on +Z, so the depth is the Z extent...
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12, 1);
+    // ...and the opening spans the published width on X. Under the old frame the
+    // width landed on Z and the thin depth on X, which is what read as a sideways
+    // panel hanging in the shower instead of a recess in the wall.
+    expect(inch(box.max.x - box.min.x)).toBeGreaterThan(niche.widthIn);
+    expect(inch(box.max.x - box.min.x)).toBeLessThan(niche.widthIn + 2);
   });
 
   it("keeps the soap trays illustrative rather than claiming a measured fit", () => {

@@ -42,7 +42,26 @@ const UP = new THREE.Vector3(0, 1, 0);
  */
 class Panel {
   private positions: number[] = [];
+  private uvs: number[] = [];
   private indices: number[] = [];
+
+  /**
+   * Planar UVs in world units, projected onto whichever plane the face lies in.
+   *
+   * A texture map is useless without UVs: the shader samples one texel and the whole
+   * face renders as flat colour, which is exactly why the surround read as a plain
+   * white box no matter what finish was set on it. Projecting in world units also
+   * keeps grout spacing and marble veining at their real physical size, so a 60"
+   * panel and a 36" end panel show the same tile scale.
+   */
+  private static planarUv(point: THREE.Vector3, normal: THREE.Vector3): [number, number] {
+    const ax = Math.abs(normal.x);
+    const ay = Math.abs(normal.y);
+    const az = Math.abs(normal.z);
+    if (ay >= ax && ay >= az) return [point.x, point.z];
+    if (ax >= az) return [point.z, point.y];
+    return [point.x, point.y];
+  }
 
   quad(
     corners: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
@@ -52,7 +71,11 @@ class Panel {
     const normal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
     const ordered = normal.dot(facing) >= 0 ? [a, b, c, d] : [d, c, b, a];
     const base = this.positions.length / 3;
-    for (const point of ordered) this.positions.push(point.x, point.y, point.z);
+    for (const point of ordered) {
+      this.positions.push(point.x, point.y, point.z);
+      const [u, w] = Panel.planarUv(point, facing);
+      this.uvs.push(u, w);
+    }
     this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
     return this;
   }
@@ -74,6 +97,7 @@ class Panel {
   geometry(): THREE.BufferGeometry {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(this.positions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(this.uvs, 2));
     geometry.setIndex(this.indices);
     geometry.computeVertexNormals();
     return geometry;
@@ -370,28 +394,75 @@ export function makeShowerNicheParts(
     parts.push({ mesh, part });
   };
 
-  // Open toward -X into the room, recessed along +X.
+  // Authored in the SAME frame as the rest of the shower: the room-facing opening
+  // is the face at z = 0 and the recess runs AWAY from the room into +Z, with the
+  // fixture standing on y = 0 so its bottom sits on the deck it is mounted over.
+  //
+  // It used to be recessed along +X and centred on y = 0. Every fixture group is
+  // positioned at floor level (y = 0) and rotated so its +Z face is the wall, so
+  // that older frame put half the niche below the floor and turned the recess
+  // sideways — a thin slab hanging in the shower at an odd angle (Tom's report).
   const p = new Panel();
-  const back = W / 2 - 0;
-  p.quad([v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(depth, Hp / 2, -W / 2)], v(1, 0, 0));
+  p.quad([v(-W / 2, Hp, depth), v(W / 2, Hp, depth), v(W / 2, 0, depth), v(-W / 2, 0, depth)], v(0, 0, 1));
   // Floor, ceiling and both sides of the recess.
-  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], UP);
-  p.quad([v(-shell, Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, -1, 0));
-  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(-shell, Hp / 2, -W / 2)], v(0, 0, 1));
-  p.quad([v(-shell, -Hp / 2, W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, 0, -1));
+  p.quad([v(-W / 2, 0, -shell), v(W / 2, 0, -shell), v(W / 2, 0, depth), v(-W / 2, 0, depth)], UP);
+  p.quad([v(-W / 2, Hp, -shell), v(W / 2, Hp, -shell), v(W / 2, Hp, depth), v(-W / 2, Hp, depth)], v(0, -1, 0));
+  p.quad([v(-W / 2, 0, -shell), v(-W / 2, 0, depth), v(-W / 2, Hp, depth), v(-W / 2, Hp, -shell)], v(1, 0, 0));
+  p.quad([v(W / 2, 0, -shell), v(W / 2, 0, depth), v(W / 2, Hp, depth), v(W / 2, Hp, -shell)], v(-1, 0, 0));
   push(p.geometry(), "shower-niche-body");
 
-  // Face flange, the visible 1/2" border that laps the wall finish.
+  // Face flange, the visible 1/2" border that laps the wall finish. It lives on the
+  // room-facing plane and is centred on the opening, so it reads as a frame around
+  // the recess instead of a separate sheet.
   const f = new Panel();
   const flange = 0.5 * INCH;
   const outerW = W / 2 + flange;
-  const outerH = Hp / 2 + flange;
-  f.quad([v(-shell, outerH, outerW), v(-shell, outerH, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, Hp / 2, W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -outerH, outerW), v(-shell, -outerH, -outerW), v(-shell, -Hp / 2, -W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -Hp / 2, -outerW), v(-shell, Hp / 2, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, -Hp / 2, -W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -Hp / 2, outerW), v(-shell, Hp / 2, outerW), v(-shell, Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
+  f.quad([v(-outerW, Hp + flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(-W / 2, Hp, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, -shell), v(outerW, -flange, -shell), v(W / 2, 0, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, -shell), v(-outerW, Hp + flange, -shell), v(-W / 2, Hp, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(outerW, -flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(W / 2, 0, -shell)], v(0, 0, -1));
   push(f.geometry(), "shower-niche-flange");
-  void back;
 
+  // Shelves. Pelican sells these niches as "1 Shelf" / "2 Shelves" / "3 Shelves",
+  // and the reference bathrooms show a real shelf dividing the recess. Without them
+  // the niche reads as an empty hole in the wall.
+  const shelfCount = nicheShelfCount(profile.name);
+  if (shelfCount > 0) {
+    const shelfThickness = 0.4 * INCH;
+    for (let index = 1; index <= shelfCount; index += 1) {
+      // Shelves divide the recess evenly, measured up from the niche's own floor.
+      const y = (Hp * index) / (shelfCount + 1);
+      const s = new Panel();
+      // A shelf spans the opening, sits inside the recess, and is thin.
+      s.quad(
+        [v(-W / 2, y - shelfThickness / 2, -shell), v(W / 2, y - shelfThickness / 2, -shell),
+          v(W / 2, y - shelfThickness / 2, depth * 0.94), v(-W / 2, y - shelfThickness / 2, depth * 0.94)],
+        v(0, -1, 0),
+      );
+      s.quad(
+        [v(-W / 2, y + shelfThickness / 2, -shell), v(W / 2, y + shelfThickness / 2, -shell),
+          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
+        UP,
+      );
+      s.quad(
+        [v(-W / 2, y - shelfThickness / 2, depth * 0.94), v(W / 2, y - shelfThickness / 2, depth * 0.94),
+          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
+        v(0, 0, 1),
+      );
+      push(s.geometry(), `shower-niche-shelf-${index}`);
+    }
+  }
   return parts;
+}
+
+/** "PL-SN1639 Triple Shelf" -> 3. Unknown wording falls back to no shelves. */
+export function nicheShelfCount(name: string | null | undefined): number {
+  const text = (name ?? "").toLowerCase();
+  // "with 2 Shelves", "3 shelf", "1 Shelf" all describe the same thing.
+  const digit = text.match(/(\d+)\s*shel(?:f|ves)\b/);
+  if (digit) return Math.max(0, Math.min(3, Number(digit[1])));
+  if (/triple/.test(text)) return 3;
+  if (/double/.test(text)) return 2;
+  if (/single|one shelf/.test(text)) return 1;
+  return 0;
 }

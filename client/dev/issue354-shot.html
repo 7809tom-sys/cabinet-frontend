@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  Screenshot harness for issue #354: a frameless drop-in cooktop base with its
+  range top seated on it, drawn the way a sink base is drawn (countertop slab
+  over the box, cooktop set into the top, no freestanding range). Rendered by the
+  real 3D engine. Used only by e2e/issue354-before-after.spec.ts; no app route
+  points at it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Issue 354 — frameless drop-in cooktop base</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { position: relative; width: 100vw; height: 100vh; }
+      #root canvas { display: block; }
+      #caption {
+        position: absolute; left: 22px; top: 18px; max-width: calc(100% - 44px);
+        padding: 12px 16px; background: rgba(255,255,255,0.95); border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(15,23,42,0.16); color: #0f172a; font-size: 12px; line-height: 1.55;
+      }
+      #caption strong { font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div id="caption">Building the cooktop base…</div></div>
+    <script type="module" src="/src/issue354ScreenshotHarness.ts"></script>
+  </body>
+</html>

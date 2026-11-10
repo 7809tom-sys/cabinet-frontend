@@ -24,6 +24,11 @@ vi.mock("three", async () => {
     setSize() {}
     render() {}
     dispose() {}
+    forceContextLoss() {}
+    setAnimationLoop() {}
+    setRenderTarget() {}
+    renderLists = { dispose() {} };
+    getContext() { return { isContextLost: () => false }; }
   }
   return { ...actual, WebGLRenderer: StubRenderer };
 });

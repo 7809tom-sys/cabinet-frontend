@@ -27,7 +27,7 @@ describe("affiliate portal sidebar", () => {
 
   it("makes My Catalog a parent of the vendor catalogs", () => {
     expect(source).toContain("Show vendor catalogs");
-    expect(source).toContain("vendorNav.vendors.map");
+    expect(source).toContain("visibleVendors.map");
     expect(source).toContain("openCatalog(null)");
   });
 });

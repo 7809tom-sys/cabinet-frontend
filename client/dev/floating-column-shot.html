@@ -1,0 +1,28 @@
+<!doctype html>
+<!--
+  Screenshot harness for the right-edge floating buttons on the 3D canvas.
+
+  It renders the REAL `InteractiveRoom3D` viewer with a REAL WebGL room, so the
+  capture shows the actual buttons the owner sees — not a mock of them. Used by
+  e2e/floating-column-screenshot.spec.ts to prove the column is one uniform
+  stack with the PAN pad at the bottom, at desktop and tablet widths and in both
+  normal and fullscreen (immersive) mode.
+
+  Served by the Vite dev server at /dev/floating-column-shot.html; not part of
+  the app bundle, and no route points at it.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>3D canvas floating buttons</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #eef1f4; font-family: system-ui, sans-serif; }
+      #root { position: relative; width: 100vw; height: 100vh; }
+      #root canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/floatingColumnScreenshotHarness.tsx"></script>
+  </body>
+</html>

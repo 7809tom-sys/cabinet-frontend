@@ -15,13 +15,21 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ThreeDRendererHost, createThreeDWebGLRenderer, sizeThreeDRenderer } from "./threeDRendererHost";
+import {
+  ThreeDRendererHost,
+  clearParkedThreeDRenderers,
+  createOrReuseThreeDWebGLRenderer,
+  createThreeDWebGLRenderer,
+  parkedThreeDRendererCount,
+  sizeThreeDRenderer,
+} from "./threeDRendererHost";
+import { sameThreeDWallHeights } from "./InteractiveRoom3D";
 
 const roomSource = readFileSync(resolve(process.cwd(), "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
 const hostSource = readFileSync(resolve(process.cwd(), "client/src/components/design/threeDRendererHost.ts"), "utf8");
 const designToolSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
 
-function fakeRenderer() {
+function fakeRenderer(options: { contextLost?: boolean } = {}) {
   const canvas = document.createElement("canvas");
   const sizes: Array<{ width: number; height: number }> = [];
   let pixelRatio = 1;
@@ -29,6 +37,10 @@ function fakeRenderer() {
     domElement: canvas,
     dispose: vi.fn(),
     forceContextLoss: vi.fn(),
+    getContext: () => ({ isContextLost: () => options.contextLost === true }),
+    setAnimationLoop: vi.fn(),
+    setRenderTarget: vi.fn(),
+    renderLists: { dispose: vi.fn() },
     getPixelRatio: () => pixelRatio,
     setPixelRatio: vi.fn((value: number) => { pixelRatio = value; }),
     getSize: (target: { set(x: number, y: number): void; x: number; y: number }) => {
@@ -99,6 +111,68 @@ describe("ThreeDRendererHost keeps one WebGL renderer for the whole mount", () =
   });
 });
 
+describe("unmounted 3D views hand their renderer to the next view", () => {
+  afterEach(() => clearParkedThreeDRenderers());
+
+  function hostFor(renderer: ReturnType<typeof fakeRenderer>) {
+    return new ThreeDRendererHost(() => renderer as unknown as THREE.WebGLRenderer);
+  }
+
+  it("parks a healthy renderer on release without losing its context", () => {
+    const renderer = fakeRenderer();
+    const host = hostFor(renderer);
+    const mount = document.createElement("div");
+    host.ensureMounted(mount);
+    renderer.domElement.style.cursor = "pointer";
+
+    host.release();
+
+    expect(renderer.dispose).not.toHaveBeenCalled();
+    expect(renderer.forceContextLoss).not.toHaveBeenCalled();
+    expect(mount.childElementCount).toBe(0);
+    expect(renderer.domElement.style.cursor).toBe("");
+    expect(renderer.setAnimationLoop).toHaveBeenCalledWith(null);
+    expect(host.current).toBeNull();
+    expect(parkedThreeDRendererCount()).toBe(1);
+  });
+
+  it("gives the parked renderer to the next 3D view instead of creating a context", () => {
+    const renderer = fakeRenderer();
+    const first = hostFor(renderer);
+    first.ensureMounted(document.createElement("div"));
+    first.release();
+
+    const reused = createOrReuseThreeDWebGLRenderer();
+
+    expect(reused).toBe(renderer as unknown as THREE.WebGLRenderer);
+    expect(parkedThreeDRendererCount()).toBe(0);
+  });
+
+  it("destroys a renderer whose context is already lost instead of parking it", () => {
+    const renderer = fakeRenderer({ contextLost: true });
+    const host = hostFor(renderer);
+    host.ensureMounted(document.createElement("div"));
+
+    host.release();
+
+    expect(renderer.dispose).toHaveBeenCalledTimes(1);
+    expect(renderer.forceContextLoss).toHaveBeenCalledTimes(1);
+    expect(parkedThreeDRendererCount()).toBe(0);
+  });
+
+  it("caps the parked renderers and destroys the extras", () => {
+    const renderers = [fakeRenderer(), fakeRenderer(), fakeRenderer()];
+    for (const renderer of renderers) {
+      const host = hostFor(renderer);
+      host.ensureMounted(document.createElement("div"));
+      host.release();
+    }
+
+    expect(parkedThreeDRendererCount()).toBe(2);
+    expect(renderers[2].forceContextLoss).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("sizeThreeDRenderer leaves the painted frame alone", () => {
   it("skips setSize when the canvas already has the requested size and pixel ratio", () => {
     const renderer = fakeRenderer();
@@ -128,13 +202,13 @@ describe("InteractiveRoom3D renderer lifecycle wiring", () => {
   it("creates the renderer host once in a mount-only effect", () => {
     expect(roomSource).toContain("const rendererHostRef = useRef<ThreeDRendererHost | null>(null);");
     expect(roomSource).toContain("const host = new ThreeDRendererHost();\n    rendererHostRef.current = host;");
-    expect(roomSource).toContain("host.dispose();");
+    expect(roomSource).toContain("host.release();");
     expect(roomSource).toContain("rendererHostRef.current.ensureMounted(mount)");
   });
 
   it("does not create, mount, dispose, or force-lose a context inside the scene effect", () => {
     const start = roomSource.indexOf("const hostRenderer = rendererHostRef.current.ensureMounted(mount)");
-    const end = roomSource.indexOf("}, [webglUnavailable, scene, validSuggestions, placed,", start);
+    const end = roomSource.indexOf("}, [webglUnavailable, webglContextGeneration, scene, validSuggestions, placed,", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const sceneEffect = roomSource.slice(start, end);
@@ -160,6 +234,32 @@ describe("InteractiveRoom3D renderer lifecycle wiring", () => {
     expect(body).toContain("lightShadow?.map");
     expect(body).toContain("shadowMap.dispose();");
     expect(body).toContain("lightShadow.map = null;");
+  });
+});
+
+describe("re-applying work that is already done is a no-op", () => {
+  it("keeps the 3D view mounted while the catalog scene refetches in the background", () => {
+    expect(designToolSource).toContain("isFetching: interactive3dFetching");
+    expect(designToolSource).toContain("const interactive3dLoading = interactive3dFetching && !interactive3dScene;");
+    expect(designToolSource).toContain("{ enabled: canLoadCatalogInteractive3d, refetchOnWindowFocus: false }");
+  });
+
+  it("ignores a 3D presentation report that matches the stored presentation", () => {
+    const start = designToolSource.indexOf("const setInteractive3dPresentation = useCallback(");
+    expect(start).toBeGreaterThan(-1);
+    const body = designToolSource.slice(start, designToolSource.indexOf("}, []);", start));
+    expect(body).toContain("current.cabinetFinish === next.cabinetFinish && current.countertopFinish === next.countertopFinish");
+    expect(body).toContain("? current");
+  });
+
+  it("keeps the wall-height object when the synced heights did not change", () => {
+    expect(sameThreeDWallHeights({ top: 96, left: 96, right: 96, bottom: 96 }, { top: 96, left: 96, right: 96, bottom: 96 })).toBe(true);
+    expect(sameThreeDWallHeights({ top: 96, left: 96, right: 96, bottom: 96 }, { top: 96, left: 108, right: 96, bottom: 96 })).toBe(false);
+    expect(roomSource).toContain("setWallHeights((current) => sameThreeDWallHeights(current, nextHeights) ? current : nextHeights);");
+  });
+
+  it("never sets the deprecated soft shadow type that three.js resets on every frame", () => {
+    expect(roomSource).not.toContain("PCFSoftShadowMap");
   });
 });
 

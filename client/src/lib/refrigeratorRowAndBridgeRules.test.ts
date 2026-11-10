@@ -175,7 +175,7 @@ describe.each(CASES)("Tom's refrigerator rules ($style $layout ${width}in @ $cen
 
   it("rule 2 is a depth rule: the cabinet above still lines up with the other uppers", () => {
     if (!run) return;
-    const room: RoomData = { width: 144, depth: 144, ceilingHeight: 96 };
+    const room: RoomData = { width: 144, depth: 144, ceilingHeight: 108 };
     const bridge = run.placed.find((item) => item.refrigeratorAssemblyRole === "bridge")!;
     const side = cabinetWall(bridge, room);
     const bridgeTop = elevationBox(bridge, room).bottom + elevationBox(bridge, room).height;
@@ -183,7 +183,13 @@ describe.each(CASES)("Tom's refrigerator rules ($style $layout ${width}in @ $cen
       .filter((item) => item.placement === "wall" && item.refrigeratorAssemblyRole !== "bridge" && cabinetWall(item, room) === side)
       .map((item) => elevationBox(item, room).bottom + elevationBox(item, room).height);
     if (!upperTops.length) return;
-    // Line up, or be no more than the catalog's own height step away from it.
+    // The box above lands on the run's own top line. On the frameless line that
+    // line is the single 94-1/4" (Tom, Nov 9 2026, issue #354 item 5); a framed
+    // line keeps its own. The 24"-deep frameless cap is 22-5/8", so from the 72"
+    // datum its top is 94-5/8" — the closest the line sells to 94-1/4".
+    const runTop = Math.max(...upperTops);
+    expect(bridgeTop).toBeCloseTo(runTop, 0);
+    expect(Math.abs(bridgeTop - runTop)).toBeLessThanOrEqual(0.5);
     const nearest = upperTops.reduce((best, top) => Math.abs(top - bridgeTop) < Math.abs(best - bridgeTop) ? top : best, upperTops[0]!);
     expect(Math.abs(nearest - bridgeTop)).toBeLessThanOrEqual(0.5);
   });

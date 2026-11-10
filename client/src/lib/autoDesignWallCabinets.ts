@@ -9,9 +9,17 @@ import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } f
 import { cabinetDrawingType, isWallBlindCornerCabinet } from "./cabinetGraphics";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
+  deliberateUpperBays,
+  cornerLegSpanOnWall,
+  trimWallFillersOutsideRun,
+  upperCoverageGaps,
+  uppersOutsideRun,
+  type UpperAlignmentSpan,
+} from "./autoDesignUpperAlignment";
+import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall,
-  isBaseBlindCorner, isCornerCabinet, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
+  STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
@@ -149,6 +157,13 @@ export function buildAutoDesignWallCabinets(input: {
    * first may turn it back on for a genuinely unusable sliver.
    */
   allowFiller?: boolean;
+  /**
+   * Owner rule: uppers line up with the bases beneath them. Drops a wall cabinet
+   * with no floor coverage under it and closes an opening left over a run that has
+   * counter below it with real wall cabinets. Off only for callers that want the
+   * raw per-lower projection.
+   */
+  alignToBaseRuns?: boolean;
 }): {
   placed: PlacedCabinet[];
   additions: PlacedCabinet[];
@@ -160,6 +175,16 @@ export function buildAutoDesignWallCabinets(input: {
   let working = [...input.placed];
   const additions: PlacedCabinet[] = [];
   const skipped: string[] = [];
+  // Spans an aligned projection deliberately refused (a window too close, a
+  // blocked second tile, a ceiling). They stay open and reported; the last
+  // alignment pass never "fixes" them with a different packing.
+  const blockedBays = new Map<string, UpperAlignmentSpan[]>();
+  const blockBay = (wall: string, start: number, end: number) => {
+    if (!(end > start)) return;
+    const list = blockedBays.get(wall) ?? [];
+    list.push({ start, end });
+    blockedBays.set(wall, list);
+  };
   // Only when the line sells no wall cabinet of any kind near the request is the height itself missing.
   // A line with just specialty uppers (glass, wine, open shelf) still has that height; its ordinary
   // uppers are simply absent, which the per-run messages below report accurately.
@@ -193,16 +218,25 @@ export function buildAutoDesignWallCabinets(input: {
     constructionMethod: source.constructionMethod ?? null,
     styleId: input.styleId,
   });
-  const commit = (candidate: PlacedCabinet): boolean => {
+  /**
+   * Every gate a wall cabinet must pass before it may join the run: the ceiling,
+   * the opening clearance (a window keeps its 3 inches), and no collision with
+   * anything already seated. Shared with the last alignment pass, so a gap that
+   * pass closes is held to exactly the same rules as the run itself.
+   */
+  const upperFits = (candidate: PlacedCabinet, against: readonly PlacedCabinet[]): boolean => {
     const bottom = candidate.mountBottom ?? 54;
     const wall = cabinetWall(candidate, room);
-    if (bottom + height > wallCeilingMin(room, wall) + COLLISION_EPSILON_IN) return false;
+    if (bottom + (Number(candidate.height) || height) > wallCeilingMin(room, wall) + COLLISION_EPSILON_IN) return false;
     const start = wallRunOffset(candidate, wall, room);
     const span = wallRunSpan(candidate, wall, room);
-    const fits = freeSegmentsOnWall(wall, room, working, openings, span, WALL_OPENING_CLEARANCE_IN,
+    const fits = freeSegmentsOnWall(wall, room, [...against], openings, span, WALL_OPENING_CLEARANCE_IN,
       "wall", true, candidate, candidate.depth).some((segment) => start >= segment.start - COLLISION_EPSILON_IN
         && start + span <= segment.start + segment.length + COLLISION_EPSILON_IN);
-    if (!fits || cabinetPlacementCollisionDetail(candidate, working, room)) return false;
+    return fits && !cabinetPlacementCollisionDetail(candidate, [...against], room);
+  };
+  const commit = (candidate: PlacedCabinet): boolean => {
+    if (!upperFits(candidate, working)) return false;
     const result = appendCollisionFreePlacements(working, [candidate], room);
     if (result.rejected.length) return false;
     working = result.placed;
@@ -373,6 +407,7 @@ export function buildAutoDesignWallCabinets(input: {
       if (!sources.length || shortfall > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN || shortfall < -COLLISION_EPSILON_IN) {
         working = before;
         additions.splice(addedBefore);
+        for (const entry of pieces) blockBay(wall, entry.start, entry.start + entry.span);
         skipped.push(`${lower.masterCode}: no source-sized ${height}″ wall cabinet matches its ${piece.span}″ run.`);
         complete = true;
         break;
@@ -389,6 +424,7 @@ export function buildAutoDesignWallCabinets(input: {
     if (!complete) {
       working = before;
       additions.splice(addedBefore);
+      for (const entry of pieces) blockBay(wall, entry.start, entry.start + entry.span);
       skipped.push(`${lower.masterCode}: aligned upper needs review for an opening, corner, occupied bay, or ceiling clearance.`);
     }
   }
@@ -400,6 +436,20 @@ export function buildAutoDesignWallCabinets(input: {
     const seams = findAutoDesignSeams({
       layer: "wall", placed: working, room, openings, corners: (input.corners ?? []).map((entry) => entry.point), reservedZones: reserved,
     });
+    const upperBays = new Map<string, UpperAlignmentSpan[]>();
+    const baysOn = (wall: string) => {
+      const cached = upperBays.get(wall);
+      if (cached) return cached;
+      const zones = [
+        ...deliberateUpperBays(input.placed, room, wall, openings),
+        ...(input.corners ?? []).flatMap((entry) => {
+          const leg = cornerLegSpanOnWall(entry.base, wall, room);
+          return leg ? [leg] : [];
+        }),
+      ];
+      upperBays.set(wall, zones);
+      return zones;
+    };
     const fillers = input.catalogFillers ?? [];
     for (const seam of seams) {
       const cover = lowerCoverageOnWall(input.placed, room, seam.wall, input.corners ?? []);
@@ -418,11 +468,14 @@ export function buildAutoDesignWallCabinets(input: {
             guard += 1;
             const remain = region.end - along;
             const cover = coverCatalogSpan(remain, widths, autoDesignFillerMaxIn());
-            const candidates = [...new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []), ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN)])];
+            const candidates = Array.from(new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []), ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN)]));
             let seated = false;
             for (const width of candidates) {
               const source = standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
               if (!source) continue;
+              // A piece may never be seated inside a deliberate bay (the range, a
+              // sink window, the refrigerator) or over a tall box's own span.
+              if (baysOn(seam.wall).some((bay) => along < bay.end - COLLISION_EPSILON_IN && along + dim(source.width, 0) > bay.start + COLLISION_EPSILON_IN)) continue;
               const candidate = makeCandidate(source);
               const spot = wallPlacementAt(along, candidate.width, candidate.depth, seam.wall as never, room);
               if (spot && commit({ ...candidate, ...spot })) {
@@ -458,8 +511,193 @@ export function buildAutoDesignWallCabinets(input: {
       }
     }
   }
+  // Owner rule: the uppers line up with the bases beneath them. The run tiles
+  // over each lower already (an atomic projection per cabinet, a corner leg on
+  // both of the corner's walls), and this last pass is the one gate:
+  //   - a wall cabinet with no floor coverage under it is a stray and is dropped;
+  //   - an opening left in a run that has counter below it is closed with real
+  //     wall cabinets of the selected line, never filler, and never inside a
+  //     deliberate bay (the range, a sink window, the refrigerator).
+  if (input.alignToBaseRuns !== false) {
+    working = alignUpperRunsToBases({
+      placed: working,
+      additions,
+      room,
+      openings,
+      catalog: input.catalog,
+      standard,
+      height,
+      styleId: input.styleId,
+      makeUid: input.makeUid,
+      skipped,
+      upperFits,
+      blockedBays,
+    });
+  } else {
+    working = dropUppersOutsideRun({ placed: working, additions, room, skipped });
+  }
   // A wall blind corner exposes the door away from its blind side.
   working = assignBlindCornerDoorSides(working, room);
   const uids = new Set(additions.map((item) => item.uid));
   return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, heightUsedIn };
+}
+
+/**
+ * Drop the wall cabinets that hang entirely over bare wall. They are the pieces
+ * that read as an upper run that does not line up with the bases below it. The
+ * removal is reported, never silent.
+ */
+function dropUppersOutsideRun(input: {
+  placed: PlacedCabinet[];
+  additions: PlacedCabinet[];
+  room: RoomData;
+  skipped: string[];
+}): PlacedCabinet[] {
+  const walls = Array.from(new Set(input.placed
+    .filter((item) => item.placement === "wall")
+    .map((item) => cabinetWall(item, input.room))
+    .filter(Boolean)));
+  const strays = new Set<string>();
+  for (const wall of walls) {
+    for (const item of uppersOutsideRun({ placed: input.placed, room: input.room, wallId: wall })) {
+      if (/filler|scribe/i.test(`${item.masterCode} ${item.description ?? ""}`) || item.fillerPieceGroupId) continue;
+      strays.add(item.uid);
+    }
+  }
+  if (!strays.size) return input.placed;
+  for (const uid of Array.from(strays)) {
+    const item = input.placed.find((entry) => entry.uid === uid);
+    if (!item) continue;
+    input.skipped.push(`${item.masterCode}: left off because no base cabinet, corner or tall box stands under it.`);
+  }
+  for (let index = input.additions.length - 1; index >= 0; index -= 1) {
+    if (strays.has(input.additions[index]!.uid)) input.additions.splice(index, 1);
+  }
+  return input.placed.filter((item) => !strays.has(item.uid));
+}
+
+/**
+ * Close every opening the owner rule forbids, with real wall cabinets of the
+ * selected line. Returns the same list when there is nothing to close.
+ */
+function alignUpperRunsToBases(input: {
+  placed: PlacedCabinet[];
+  additions: PlacedCabinet[];
+  room: RoomData;
+  openings: readonly WallOpening[];
+  catalog: readonly DesignCabinet[];
+  standard: readonly DesignCabinet[];
+  height: number;
+  styleId: number | null;
+  makeUid: () => string;
+  skipped: string[];
+  /** The run's own gate: ceiling, opening clearance and collision. */
+  upperFits: (candidate: PlacedCabinet, against: readonly PlacedCabinet[]) => boolean;
+  /** Bays an aligned projection already refused. They are reported, never re-packed. */
+  blockedBays?: ReadonlyMap<string, readonly UpperAlignmentSpan[]>;
+}): PlacedCabinet[] {
+  let working = dropUppersOutsideRun({ placed: input.placed, additions: input.additions, room: input.room, skipped: input.skipped });
+  // Flat stock that hangs past the end of the base run reads as the same offset a
+  // stray cabinet does, so it goes too. A filler inside the run is kept.
+  const trimmed = trimWallFillersOutsideRun({ placed: working, room: input.room });
+  if (trimmed.removed.length) {
+    const removedUids = new Set(trimmed.removed.map((item) => item.uid));
+    for (let index = input.additions.length - 1; index >= 0; index -= 1) {
+      if (removedUids.has(input.additions[index]!.uid)) input.additions.splice(index, 1);
+    }
+    working = trimmed.placed;
+  }
+  const walls = Array.from(new Set(working
+    .filter((item) => item.placement === "wall" || item.placement === "base" || item.placement === "appliance" || item.placement === "tall")
+    .map((item) => cabinetWall(item, input.room))
+    .filter(Boolean)));
+  for (const wall of walls) {
+    if (!input.standard.length) break;
+    for (let guard = 0; guard < 8; guard += 1) {
+      const gaps = upperCoverageGaps({
+        placed: working,
+        room: input.room,
+        wallId: wall,
+        openings: input.openings,
+        reserved: input.blockedBays?.get(wall) ?? [],
+      });
+      const gap = gaps[0];
+      if (!gap) break;
+      const filled = fillUpperGap({
+        placed: working,
+        additions: input.additions,
+        room: input.room,
+        wallId: wall,
+        gap,
+        standard: input.standard,
+        height: input.height,
+        styleId: input.styleId,
+        makeUid: input.makeUid,
+        upperFits: input.upperFits,
+      });
+      if (!filled) {
+        input.skipped.push(`${formatInches(gap.end - gap.start)} of upper run on ${wall} has counter below it, and no wall cabinet in this line closes it.`);
+        break;
+      }
+      working = filled;
+    }
+  }
+  return working;
+}
+
+/** Seat real wall cabinets across one forbidden opening, widest first. Returns null when nothing fits. */
+function fillUpperGap(input: {
+  placed: PlacedCabinet[];
+  additions: PlacedCabinet[];
+  room: RoomData;
+  wallId: string;
+  gap: UpperAlignmentSpan;
+  standard: readonly DesignCabinet[];
+  height: number;
+  styleId: number | null;
+  makeUid: () => string;
+  upperFits: (candidate: PlacedCabinet, against: readonly PlacedCabinet[]) => boolean;
+}): PlacedCabinet[] | null {
+  let working = [...input.placed];
+  const widths = input.standard.map((row) => dim(row.width, 0)).filter((width) => width > 0);
+  let along = input.gap.start;
+  let seated = 0;
+  for (let guard = 0; guard < 12; guard += 1) {
+    const remain = input.gap.end - along;
+    if (remain < MIN_UPPER_WIDTH_IN - COLLISION_EPSILON_IN) break;
+    const cover = coverCatalogSpan(remain, widths, autoDesignFillerMaxIn());
+    const candidates = Array.from(new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []),
+      ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN).sort((a, b) => b - a)]));
+    let placedOne = false;
+    for (const width of candidates) {
+      const source = input.standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
+      if (!source) continue;
+      const spot = wallPlacementAt(along, width, footprintDepth(source), input.wallId as never, input.room);
+      if (!spot) continue;
+      const candidate: PlacedCabinet = {
+        uid: input.makeUid(), cabinetId: source.id, masterCode: source.masterCode, description: source.description,
+        category: source.category, subCategory: source.subCategory, placement: "wall",
+        ...spot,
+        width,
+        depth: footprintDepth(source),
+        height: input.height,
+        mountBottom: ordinaryWallMountBottom({ ...source, height: input.height }),
+        numberOfDoors: source.numberOfDoors,
+        numberOfDrawers: source.numberOfDrawers,
+        catalogImageUrl: source.catalogImageUrl ?? null,
+        styleId: input.styleId,
+      } as PlacedCabinet;
+      if (!input.upperFits(candidate, working)) continue;
+      const accepted = appendCollisionFreePlacements(working, [candidate], input.room);
+      if (accepted.rejected.length > 0) continue;
+      working = accepted.placed;
+      input.additions.push(candidate);
+      along += width;
+      seated += 1;
+      placedOne = true;
+      break;
+    }
+    if (!placedOne) break;
+  }
+  return seated > 0 ? working : null;
 }

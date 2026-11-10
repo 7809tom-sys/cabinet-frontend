@@ -768,7 +768,7 @@ export function ElevationView({
             />
           )}
           {!isAppliance && cabType !== "range-hood-front" && hw.id !== "none" && (() => {
-            const overlay = (faceWidthIn: number) => (
+            const overlay = (faceWidthIn: number, faceHeightIn: number = height) => (
               <HardwareOverlay
                 doors={displayCounts.doors}
                 drawers={displayCounts.drawers}
@@ -782,9 +782,9 @@ export function ElevationView({
                 faceWidthIn={faceWidthIn}
                 frameStileIn={cabFrameMetrics?.stileInches}
                 frameRailIn={cabFrameMetrics?.railInches}
-                cabinetHeightIn={height}
+                cabinetHeightIn={faceHeightIn}
                 doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
-                pantryLayout={pantryDrawerFrontLayout({ ...p, placementType: p.placement, graphicType: customProfile, numberOfDoors: displayCounts.doors, numberOfDrawers: displayCounts.drawers }, height)}
+                pantryLayout={pantryDrawerFrontLayout({ ...p, placementType: p.placement, graphicType: customProfile, numberOfDoors: displayCounts.doors, numberOfDrawers: displayCounts.drawers }, faceHeightIn)}
               />
             );
             // A blind corner has one operating door: the exposed 60% of its face. The other 40% is the
@@ -798,6 +798,26 @@ export function ElevationView({
                   style={blindLeft ? { right: 0, width: "60%" } : { left: 0, width: "60%" }}
                 >
                   {overlay(sizeAlong * 0.6)}
+                </div>
+              );
+            }
+            // A turned bridge is the upright door rotated a quarter turn
+            // counter-clockwise, as in 3D: a left hinge lands on the bottom
+            // edge, a right hinge on the top, and the pull runs horizontally.
+            if (isWall && p.turnedSideways === true && height > 0 && sizeAlong > 0) {
+              return (
+                <div
+                  data-turned-door-hinge={resolveSwing(p) === "right" ? "top" : "bottom"}
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: "50%",
+                    top: "50%",
+                    width: `${(height / sizeAlong) * 100}%`,
+                    height: `${(sizeAlong / height) * 100}%`,
+                    transform: "translate(-50%, -50%) rotate(-90deg)",
+                  }}
+                >
+                  {overlay(height, sizeAlong)}
                 </div>
               );
             }
@@ -1474,7 +1494,9 @@ export function ElevationView({
 
           // Identify range positions on this wall for the taller stretch zone.
           const rangeSpans = sorted
-            .filter((p) => isRangeOrOven(p.masterCode, p.description))
+            // Only a real range APPLIANCE owns a range span. A range base is a
+            // base cabinet that holds a range top, so it never counts here.
+            .filter((p) => p.placement === "appliance" && isRangeOrOven(p.masterCode, p.description))
             .map((p) => {
               const sizeAlong = wallRunSpan(p, side, room);
               const posAlong = wallRunOffset(p, side, room);

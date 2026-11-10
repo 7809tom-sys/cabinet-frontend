@@ -176,7 +176,7 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     expect(result.additions[0].masterCode).toBe("W361224");
     expect(result.additions[0].mountBottom! + result.additions[0].height).toBeCloseTo(84, 1);
   });
-  it("pairs a frameless 40.25-inch wall with W362324 and does not take a shallower or shorter box", () => {
+  it("pairs a frameless 40.25-inch wall with the 24-inch-deep box whose top reaches 94-1/4", () => {
     const caps = [
       source({ id: 11, masterCode: "W3623", width: "36", height: "22.625", depth: "13.5" }),
       source({ id: 12, masterCode: "W361824", width: "36", height: "17.625", depth: "24" }),
@@ -185,12 +185,32 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
     ];
     const result = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator: refrigerator(), room, caps, endPanels: [panel()], styleId: 9,
-      makeUid: () => "forty", wallCabinetHeightIn: 40.25,
+      makeUid: () => "forty", wallCabinetHeightIn: 40.25, framelessLine: true,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // Tom's decision (Nov 9 2026, issue #354 item 5): the frameless top line is
+    // 94-1/4". From the 72" appliance datum the 22-5/8" 24"-deep box tops at
+    // 94-5/8", the closest the line gets; the 18" box only reaches 90".
     expect(result.additions[0].masterCode).toBe("W362324");
     expect(result.additions[0].depth).toBe(24);
+    expect(result.additions[0].mountBottom! + Number(result.additions[0].height)).toBeCloseTo(94.63, 1);
+  });
+
+  it("never puts a framed 30-inch run's cap on the frameless 94-1/4 line", () => {
+    // A framed 30" run still tops at 84"; only an actual 40-1/4" (frameless)
+    // request switches to the single frameless line.
+    const caps = [
+      source({ id: 31, masterCode: "W361224", width: "36", height: "12", depth: "24" }),
+      source({ id: 32, masterCode: "W361824", width: "36", height: "18", depth: "24" }),
+    ];
+    const result = buildMandatoryAutoDesignRefrigeratorBay({
+      refrigerator: refrigerator(), room, caps, endPanels: [panel()], styleId: 9,
+      makeUid: () => "framed", wallCabinetHeightIn: 30,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.additions[0].mountBottom! + Number(result.additions[0].height)).toBeCloseTo(84, 1);
   });
 
   it("uses the tallest under-30 bridge when the frameless 22.625 by 24-inch cap is missing", () => {
@@ -201,7 +221,7 @@ describe("Auto-Design refrigerator cabinet above: always the 24-inch-deep refrig
         source({ id: 19, masterCode: "W363024", width: "36", height: "30", depth: "24" }),
         source({ id: 20, masterCode: "W362275", width: "36", height: "22.75", depth: "13.5" }),
       ],
-      endPanels: [panel()], styleId: 9, makeUid: () => "missing", wallCabinetHeightIn: 40,
+      endPanels: [panel()], styleId: 9, makeUid: () => "missing", wallCabinetHeightIn: 40, framelessLine: true,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

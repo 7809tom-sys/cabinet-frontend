@@ -153,7 +153,7 @@ describe("renderer and Designer are connected", () => {
     const s = read("client/src/pages/DesignTool.tsx");
     expect(s).toMatch(/if \(plan\.dlcCrop\) return plan\.drawerUrl;/);
     expect(s.match(/cabinetFaceCrops=\{threeDCabinetFaceCrops\}/g)).toHaveLength(2);
-    expect(s.match(/catalogFaceCrop=\{activeFaceCrop\}/g)).toHaveLength(2);
+    expect(s.match(/catalogFaceCrop=\{designFaceCrop\}/g)).toHaveLength(2);
   });
 });
 

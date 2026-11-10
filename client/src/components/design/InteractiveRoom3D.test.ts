@@ -23,7 +23,7 @@ import { threeDPeninsulaCountertopPhysicalDepth } from "./InteractiveRoom3D";
 import { diagonalCornerCountertopFootprintVertices } from "./InteractiveRoom3D";
 import { lCornerCountertopFootprintVertices } from "./InteractiveRoom3D";
 import { addThreeDMeasuredWallMiterCountertops, addThreeDStandardCountertops } from "./InteractiveRoom3D";
-import { threeDMiteredRoomWallGeometry, threeDMiteredRoomWallOutlines } from "./InteractiveRoom3D";
+import { threeDMiteredRoomWallGeometry, threeDMiteredRoomWallOutlines, threeDWallOpeningHoles } from "./InteractiveRoom3D";
 import { normalizedThreeDCabinetMoveIncrement, parsedThreeDCabinetMoveIncrement, THREE_D_MAX_MOVE_INCREMENT_IN, THREE_D_MIN_MOVE_INCREMENT_IN } from "./InteractiveRoom3D";
 import { addThreeDContinuousToeKicks, threeDContinuousToeKickSegments } from "./InteractiveRoom3D";
 import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, nextAvailableRoomCornerPlacement, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, wallPlacementAt } from "@/lib/design";
@@ -367,6 +367,76 @@ describe("shared mitered room walls", () => {
     expect(geometry.getAttribute("position").count).toBe(8);
     expect(geometry.boundingBox?.max.y).toBeCloseTo(8);
     expect(geometry.boundingBox?.min.y).toBeCloseTo(0);
+  });
+
+  it("cuts a window slot through both wall faces so the glass is a real opening", () => {
+    const outlines = threeDMiteredRoomWallOutlines([
+      { id: "top", start: new THREE.Vector2(0, 0), end: new THREE.Vector2(10, 0) },
+      { id: "left", start: new THREE.Vector2(0, 0), end: new THREE.Vector2(0, 8) },
+    ], false);
+    const hole = { startFraction: 0.4, endFraction: 0.6, bottomIn: 42, topIn: 78 };
+    const solid = threeDMiteredRoomWallGeometry(outlines[0]!.corners, 8);
+    const cut = threeDMiteredRoomWallGeometry(outlines[0]!.corners, 8, [hole]);
+    const positions = cut.getAttribute("position");
+    const uvs = cut.getAttribute("uv");
+    expect(uvs.count).toBe(positions.count);
+    expect(positions.count).toBeGreaterThan(solid.getAttribute("position").count);
+
+    const hits = (geometry: THREE.BufferGeometry) => {
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+      mesh.updateMatrixWorld(true);
+      // Straight through the middle of the opening, from outdoors into the room.
+      const center = new THREE.Vector3(5, 60 / 12, -1);
+      return new THREE.Raycaster(center, new THREE.Vector3(0, 0, 1)).intersectObject(mesh, false);
+    };
+    expect(hits(solid).length).toBeGreaterThan(0);
+    expect(hits(cut)).toHaveLength(0);
+
+    // The reveal surfaces span the wall thickness, so the hole has real jambs.
+    let revealTriangles = 0;
+    for (let index = 0; index < positions.count; index += 3) {
+      const zs = [0, 1, 2].map((offset) => positions.getZ(index + offset));
+      if (Math.max(...zs) - Math.min(...zs) > 0.25) revealTriangles += 1;
+    }
+    expect(revealTriangles).toBeGreaterThan(0);
+
+    // Both finished faces remain visible with outward normals.
+    const normals = cut.getAttribute("normal");
+    let roomFaceTriangles = 0;
+    let exteriorFaceTriangles = 0;
+    for (let index = 0; index < positions.count; index += 3) {
+      const z = positions.getZ(index);
+      if (Math.abs(z) < 1e-6 && normals.getZ(index) > 0.9) roomFaceTriangles += 1;
+      if (Math.abs(z + 4.5 / 12) < 1e-6 && normals.getZ(index) < -0.9) exteriorFaceTriangles += 1;
+    }
+    expect(roomFaceTriangles).toBeGreaterThan(0);
+    expect(exteriorFaceTriangles).toBeGreaterThan(0);
+  });
+
+  it("projects a saved window onto the wall face it belongs to", () => {
+    const room = { width: 144, depth: 120, ceilingHeight: 96 };
+    const openings = [
+      { uid: "front-window", kind: "window", label: "Window", side: "top", offset: 24, width: 36, height: 42, sill: 42 },
+      { uid: "side-window", kind: "window", label: "Window", side: "left", offset: 18, width: 30, height: 36, sill: 44 },
+      { uid: "front-door", kind: "door", label: "Door", side: "top", offset: 90, width: 30, height: 80, sill: 0 },
+    ] as const;
+    const topWall = threeDWallOpeningHoles(openings as never, {
+      side: "top",
+      faceStart: { x: 0, y: 0 },
+      faceEnd: { x: 144, y: 0 },
+    }, room);
+    expect(topWall).toHaveLength(1);
+    expect(topWall[0]!.startFraction).toBeCloseTo(24 / 144, 6);
+    expect(topWall[0]!.endFraction).toBeCloseTo(60 / 144, 6);
+    expect(topWall[0]).toMatchObject({ bottomIn: 42, topIn: 84 });
+
+    const leftWall = threeDWallOpeningHoles(openings as never, {
+      side: "left",
+      faceStart: { x: 0, y: 0 },
+      faceEnd: { x: 0, y: 120 },
+    }, room);
+    expect(leftWall).toHaveLength(1);
+    expect(leftWall[0]!.startFraction).toBeCloseTo(18 / 120, 6);
   });
 
   it("keeps the unconnected ends of an open wall run square", () => {
@@ -2959,10 +3029,11 @@ describe("interactive 3D room scene helpers", () => {
     expect(rendererSource).toContain('data-testid="three-d-mobile-navigation-launcher"');
     expect(rendererSource).toContain('data-testid="three-d-mobile-navigation-popup"');
     expect(rendererSource).toContain('h-[0.5in] w-[0.5in]');
-    // The right-hand controls are one column under the immersive toggle, not a
-    // separate panel pinned to the bottom corner. PAN keeps its own pad last.
+    // The right-hand controls are ONE column anchored to the bottom of the
+    // drawing surface, with the PAN pad last so it sits at the very bottom.
     expect(rendererSource).toContain("THREE_D_VIEWER_COLUMN_CLASS");
-    expect(rendererSource).toContain('className={`${THREE_D_VIEWER_COLUMN_CLASS} hidden sm:flex`}');
+    expect(rendererSource).toContain('className={`${THREE_D_VIEWER_COLUMN_CLASS} ${tabletOverlay ? "" : "hidden sm:flex"}`}');
+    expect(rendererSource).toContain("data-testid={THREE_D_FLOATING_COLUMN_TEST_ID}");
     expect(rendererSource).toContain('data-testid="three-d-pan-pad"');
     expect(rendererSource).toContain('data-testid="three-d-zoom-in"');
     expect(rendererSource).toContain('data-testid="three-d-zoom-out"');

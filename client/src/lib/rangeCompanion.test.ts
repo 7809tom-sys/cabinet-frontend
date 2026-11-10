@@ -63,7 +63,8 @@ describe("rangeCompanionProposal", () => {
   it("never uses WSC30, a spice cabinet, as the microwave bridge", () => {
     const proposal = rangeCompanionProposal(range(), DEFAULT_ROOM, [cabinet()], [microwave]);
 
-    expect(proposal).toBeNull();
+    expect(proposal?.bridge).toBeNull();
+    expect(proposal?.bridgeUnavailableReason).toMatch(/sells no 30″-wide bridge/);
   });
 
   it("uses the selected-line 30-inch × 12-inch wall cabinet for a 30-inch upper run", () => {
@@ -75,14 +76,14 @@ describe("rangeCompanionProposal", () => {
       30,
     );
 
-    expect(proposal?.bridge.masterCode).toBe("W3012");
+    expect(proposal?.bridge?.masterCode).toBe("W3012");
     expect(proposal?.microwave.masterCode).toBe("MW-30");
     expect(proposal?.microwaveSpot.x).toBe(30);
     expect(proposal?.bridgeSpot.x).toBe(30);
 	  expect(proposal?.microwaveMountBottom).toBe(56);
 	  expect(proposal?.bridgeMountBottom).toBe(OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM_IN);
 	  expect(proposal!.microwaveMountBottom + Number(proposal!.microwave.height)).toBe(72);
-	  expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBe(84);
+	  expect(proposal!.bridgeMountBottom + Number(proposal!.bridge!.height)).toBe(84);
   });
 
   it("maps the upper cabinet heights to the only approved W30 microwave bridge codes", () => {
@@ -98,10 +99,10 @@ describe("rangeCompanionProposal", () => {
 
 	  for (const [wallHeight, code, expectedTop] of expected) {
 	    const proposal = rangeCompanionProposal(range(), DEFAULT_ROOM, wallCabinets, [microwave], wallHeight);
-	    expect(proposal?.bridge.masterCode).toBe(code);
+	    expect(proposal?.bridge?.masterCode).toBe(code);
 	    expect(proposal?.microwaveMountBottom).toBe(56);
 	    expect(proposal?.bridgeMountBottom).toBe(72);
-	    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBe(expectedTop);
+	    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge!.height)).toBe(expectedTop);
 	  }
   });
 
@@ -119,7 +120,7 @@ describe("rangeCompanionProposal", () => {
       30,
     );
 
-    expect(proposal?.bridge.masterCode).toBe("W3012");
+    expect(proposal?.bridge?.masterCode).toBe("W3012");
   });
 
   /**
@@ -138,11 +139,11 @@ describe("rangeCompanionProposal", () => {
       30,
     );
 
-    expect(proposal?.bridge.masterCode).toBe("W3012");
-    expect(Number(proposal?.bridge.height)).toBe(12);
+    expect(proposal?.bridge?.masterCode).toBe("W3012");
+    expect(Number(proposal?.bridge?.height)).toBe(12);
     // Hangs on the 72" microwave datum and tops out on the 30" upper line (84").
     expect(proposal?.bridgeMountBottom).toBe(72);
-    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBe(84);
+    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge!.height)).toBe(84);
   });
 
   it("accepts the 17⅝ bridge a frameless line sells instead of offering nothing", () => {
@@ -159,9 +160,9 @@ describe("rangeCompanionProposal", () => {
     const proposal = rangeCompanionProposal(range(), DEFAULT_ROOM, frameless, [microwave], 36);
     expect(proposal).not.toBeNull();
     // 54" + 35¼" uppers finish at 89¼"; 17⅝" on the 72" datum lands nearest that line.
-    expect(proposal!.bridge.masterCode).toBe("W3018");
+    expect(proposal!.bridge!.masterCode).toBe("W3018");
     expect(proposal!.bridgeMountBottom).toBe(72);
-    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBeCloseTo(89.63, 6);
+    expect(proposal!.bridgeMountBottom + Number(proposal!.bridge!.height)).toBeCloseTo(89.63, 6);
   });
 
   it("still offers a 12 inch bridge on a frameless line's 30 inch uppers", () => {
@@ -171,8 +172,8 @@ describe("rangeCompanionProposal", () => {
       cabinet({ id: 23, masterCode: "W3018", description: '30" × 18" Wall Cabinet', subCategory: "Bridge / Stacker", height: "17.63", width: "30" }),
     ];
     const proposal = rangeCompanionProposal(range(), DEFAULT_ROOM, frameless, [microwave], 30);
-    expect(proposal!.bridge.masterCode).toBe("W3012");
-    expect(Number(proposal!.bridge.height)).toBe(12);
+    expect(proposal!.bridge!.masterCode).toBe("W3012");
+    expect(Number(proposal!.bridge!.height)).toBe(12);
   });
 
 	it("keeps the 16-inch microwave and its W3018 bridge fixed at the 72-inch datum", () => {
@@ -187,7 +188,7 @@ describe("rangeCompanionProposal", () => {
 	  expect(proposal?.microwaveMountBottom).toBe(56);
 	  expect(proposal?.bridgeMountBottom).toBe(72);
 	  expect(proposal!.bridgeMountBottom).toBe(proposal!.microwaveMountBottom + 16);
-	  expect(proposal!.bridgeMountBottom + Number(proposal!.bridge.height)).toBe(90);
+	  expect(proposal!.bridgeMountBottom + Number(proposal!.bridge!.height)).toBe(90);
   });
 
   it("does not offer a mismatched microwave width", () => {

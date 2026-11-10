@@ -1,4 +1,13 @@
 /**
+ * A 1/4" SKIN is a thin finished sheet glued onto an UNFINISHED side — the plain
+ * box side meant to sit against a wall or another cabinet. It is not a 3/4"
+ * end panel, and it never substitutes for one.
+ *
+ * Skins go only on exposed sides, never on hidden ones, and never on top of an
+ * automatic 3/4" panel. A USCD frameless line sells no 1/4" skins at all: its
+ * exposed sides are finished by the automatic 3/4" end panel, so the "skin
+ * needed for outside" checkbox is hidden/disabled for it.
+ *
  * Hard rule: only hickory frameless cabinets get skins.
  *
  * Hickory is the door-style species or a name that contains the word hickory.
@@ -12,6 +21,10 @@
 import { isFramelessDoorStyle, type DoorStyleFaceInput } from "./doorFaceRecognition";
 
 export const SKIN_NEEDED_LOCKED_TOOLTIP = "Only hickory frameless gets skins";
+/** Shown for a USCD frameless style, where exposed sides finish automatically. */
+export const SKIN_NEEDED_FRAMELESS_TOOLTIP = "Exposed sides on this frameless line are finished automatically with a 3/4 in end panel. This line sells no 1/4 in skins.";
+/** The label used wherever the checkbox is shown for a non-frameless line. */
+export const SKIN_NEEDED_LABEL = "Skin needed for outside";
 
 const HICKORY_WORD = /\bhickory\b/i;
 
@@ -131,7 +144,11 @@ export function doorStyleNeedView(input: SkinEligibilityInput): DoorStyleNeedVie
   return {
     skinNeeded: allowed && skinsAreNeeded(input),
     skinNeededDisabled: !allowed,
-    skinNeededTooltip: allowed ? null : SKIN_NEEDED_LOCKED_TOOLTIP,
+    // On a USCD frameless style the reason is the automatic 3/4" end panel, not
+    // the hickory rule; say so, so the checkbox reads correctly.
+    skinNeededTooltip: allowed
+      ? null
+      : isFramelessConstruction(input) ? SKIN_NEEDED_FRAMELESS_TOOLTIP : SKIN_NEEDED_LOCKED_TOOLTIP,
     finishedEndNeeded: finishedEndIsNeeded(input),
   };
 }
@@ -154,6 +171,7 @@ export function isSkinProduct(item: {
 
 /**
  * Drop skin products when the style is not allowed to have them.
+ * Pass a function to judge each skin by its own finish (a two-color design).
  * Returns the same array when nothing changes.
  */
 export function dropIneligibleSkins<T extends {
@@ -161,8 +179,9 @@ export function dropIneligibleSkins<T extends {
   description?: string | null;
   subCategory?: string | null;
   category?: string | null;
-}>(placed: readonly T[], input: SkinEligibilityInput): T[] {
-  if (skinsAreNeeded(input)) return placed as T[];
-  const kept = placed.filter((item) => !isSkinProduct(item));
+}>(placed: readonly T[], input: SkinEligibilityInput | ((item: T) => SkinEligibilityInput)): T[] {
+  const styleFor = typeof input === "function" ? input : () => input;
+  if (typeof input !== "function" && skinsAreNeeded(input)) return placed as T[];
+  const kept = placed.filter((item) => !isSkinProduct(item) || skinsAreNeeded(styleFor(item)));
   return kept.length === placed.length ? placed as T[] : kept;
 }

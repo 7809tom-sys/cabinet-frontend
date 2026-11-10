@@ -64,12 +64,22 @@ describe("microwave and bridge are placed during the build", () => {
     expect(standard?.masterCode).toBe("W3012");
   });
 
-  it("uses the nearest stock bridge width when the line sells no exact match", () => {
-    // 330002 sells 30", 33" and 36" bridges and no 24", so a 24" range takes the
-    // nearest one rather than failing.
-    const bridge = overRangeBridgeFor({ rangeWidthIn: 24, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") });
-    expect(bridge).not.toBeNull();
-    expect(Number(bridge!.width)).toBeCloseTo(30, 3);
+  it("never substitutes a narrower or wider bridge when the line sells none at the range width", () => {
+    // 330011 sells 30", 33" and 36" bridges, no 24" bridge, and no 24"-tall single-door
+    // upper to turn horizontal. A 24" range gets no bridge rather than a 30" one.
+    expect(overRangeBridgeFor({ rangeWidthIn: 24, wallCabinetHeightIn: 30, wallCatalog: wallRows("330011") })).toBeNull();
+    // Same rule when the microwave bridge is planned: a 30" range whose line has no
+    // W30xx and no single-door W1230–W2130 is refused, never given a W3312 or W2430.
+    const result = planOverRangeCompanions({
+      answer: "microwave-bridge",
+      placed: [range(60)],
+      room: DEFAULT_ROOM,
+      appliancePalette,
+      wallCatalog: wallRows("330011").filter((row) => !/^W(30(12|15|18|21|24)|(12|15|18|21)30)$/.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))),
+      wallCabinetHeightIn: 30,
+    });
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result.ok ? [] : result.findings)).toContain("sells no 30″-wide bridge");
   });
 
   it("picks a shorter bridge that still clears a low ceiling", () => {
@@ -126,7 +136,7 @@ describe("microwave and bridge are placed during the build", () => {
       room: DEFAULT_ROOM,
       appliancePalette,
       // A line with only full-height uppers and no short bridge family.
-      wallCatalog: wallRows("540005").filter((row) => !/^W\d{2}(?:12|15|18|21|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))),
+      wallCatalog: wallRows("540005").filter((row) => !/^W\d{2}(?:12|15|18|21|23|24)$/i.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, ""))),
       wallCabinetHeightIn: 30,
     });
     expect(result.ok).toBe(false);

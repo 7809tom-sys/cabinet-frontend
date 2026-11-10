@@ -19,21 +19,153 @@ export function createThreeDWebGLRenderer(): THREE.WebGLRenderer | null {
     try {
       return new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
     } catch {
-      // Last resort for Chrome with a restricted GPU: default options only.
+      // Hybrid-graphics laptops can refuse the discrete GPU; ask for the
+      // integrated one and accept a software-backed context.
       try {
-        return new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
-      } catch (error) {
-        console.warn("[3D] WebGL could not start", error);
-        return null;
+        return new THREE.WebGLRenderer({ preserveDrawingBuffer: true, powerPreference: "low-power", failIfMajorPerformanceCaveat: false });
+      } catch {
+        // Last resort for Chrome with a restricted GPU: default options only.
+        try {
+          return new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
+        } catch (error) {
+          console.warn("[3D] WebGL could not start", error);
+          return null;
+        }
       }
     }
   }
 }
 
+/**
+ * Why no renderer could start. three.js only renders through WebGL 2, so a
+ * browser that still offers WebGL 1 (WebGL 2 switched off) cannot be fixed by
+ * retrying, and neither can one that offers no WebGL at all (graphics
+ * acceleration off, or the GPU blocked for this page after repeated resets).
+ */
+export type ThreeDWebGLSupport = "webgl2" | "webgl1-only" | "none";
+
+export function detectThreeDWebGLSupport(createCanvas: () => HTMLCanvasElement = () => document.createElement("canvas")): ThreeDWebGLSupport {
+  const tryContext = (type: "webgl2" | "webgl"): boolean => {
+    try {
+      const context = createCanvas().getContext(type) as WebGLRenderingContext | WebGL2RenderingContext | null;
+      if (!context) return false;
+      context.getExtension("WEBGL_lose_context")?.loseContext();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (tryContext("webgl2")) return "webgl2";
+  return tryContext("webgl") ? "webgl1-only" : "none";
+}
+
+export function threeDWebGLUnavailableMessage(support: ThreeDWebGLSupport): string {
+  const keep = "Your 2D plan and elevation preview remain available.";
+  if (support === "webgl1-only") {
+    return `The 3D view needs WebGL 2, which is turned off in this browser. In Chrome, open Settings > System, make sure "Use graphics acceleration when available" is on, and relaunch Chrome. On a work computer, WebGL 2 may be blocked by your IT policy. Then press Retry. ${keep}`;
+  }
+  if (support === "none") {
+    return `This browser is not letting this page use 3D graphics (WebGL is off or blocked). In Chrome, open Settings > System, turn on "Use graphics acceleration when available", and relaunch Chrome. If it is already on, chrome://gpu shows whether WebGL is blocked. Then press Retry. ${keep}`;
+  }
+  return `The interactive 3D view could not start. Close other 3D tabs, then press Retry. ${keep}`;
+}
+
+/** Recoveries from a GPU reset (a restored context or a new one) per browser session. */
+export const MAX_THREE_D_GPU_RECOVERIES = 3;
+const GPU_RECOVERIES_KEY = "cabinetdealz.threeDGpuRecoveries";
+let gpuRecoveriesThisPage = 0;
+
+export const THREE_D_GPU_RESET_LIMIT_MESSAGE =
+  "The graphics card has reset several times, so the 3D view stopped reconnecting to it. Reload the page to try again; if it keeps happening, restart Chrome or update the graphics driver. Your 2D plan and elevation preview remain available.";
+
+function sessionStorageOrNull(): Pick<Storage, "getItem" | "setItem"> | null {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Takes one of the session's GPU-reset recoveries. Chrome blocks WebGL for a
+ * page that keeps resetting the GPU, so past the limit the 3D view stops and
+ * says so instead of reconnecting forever. Without session storage the count
+ * lasts for this page load.
+ */
+export function claimThreeDGpuRecovery(storage: Pick<Storage, "getItem" | "setItem"> | null = sessionStorageOrNull()): boolean {
+  let used = gpuRecoveriesThisPage;
+  try {
+    used = Math.max(used, Number(storage?.getItem(GPU_RECOVERIES_KEY)) || 0);
+  } catch {
+    /* storage unavailable */
+  }
+  if (used >= MAX_THREE_D_GPU_RECOVERIES) return false;
+  gpuRecoveriesThisPage = used + 1;
+  try {
+    storage?.setItem(GPU_RECOVERIES_KEY, String(used + 1));
+  } catch {
+    /* storage unavailable */
+  }
+  return true;
+}
+
+/** Test hook: a fresh page load. */
+export function resetThreeDGpuRecoveriesForTests() {
+  gpuRecoveriesThisPage = 0;
+}
+
+/**
+ * Renderers handed back by unmounted 3D views. Switching between Plan and 3D,
+ * or between the kitchen, bathroom and closet designers, unmounts one view and
+ * mounts the next; taking the parked renderer keeps the live WebGL context
+ * count flat instead of asking the browser for a new context each time.
+ */
+const MAX_PARKED_RENDERERS = 2;
+const parkedRenderers: THREE.WebGLRenderer[] = [];
+
+function threeDRendererContextLost(renderer: THREE.WebGLRenderer): boolean {
+  try {
+    return renderer.getContext().isContextLost();
+  } catch {
+    return true;
+  }
+}
+
+function destroyThreeDRenderer(renderer: THREE.WebGLRenderer): void {
+  try {
+    renderer.dispose();
+  } finally {
+    try { renderer.forceContextLoss(); } catch { /* already lost */ }
+    renderer.domElement.remove();
+  }
+}
+
+export function takeParkedThreeDRenderer(): THREE.WebGLRenderer | null {
+  while (parkedRenderers.length > 0) {
+    const renderer = parkedRenderers.pop()!;
+    if (!threeDRendererContextLost(renderer)) return renderer;
+    destroyThreeDRenderer(renderer);
+  }
+  return null;
+}
+
+export function parkedThreeDRendererCount(): number {
+  return parkedRenderers.length;
+}
+
+/** Test hook: drops every parked renderer. */
+export function clearParkedThreeDRenderers(): void {
+  while (parkedRenderers.length > 0) destroyThreeDRenderer(parkedRenderers.pop()!);
+}
+
+export function createOrReuseThreeDWebGLRenderer(): THREE.WebGLRenderer | null {
+  return takeParkedThreeDRenderer() ?? createThreeDWebGLRenderer();
+}
+
 export class ThreeDRendererHost {
   private renderer: THREE.WebGLRenderer | null = null;
 
-  constructor(private readonly createRenderer: ThreeDRendererFactory = createThreeDWebGLRenderer) {}
+  constructor(private readonly createRenderer: ThreeDRendererFactory = createOrReuseThreeDWebGLRenderer) {}
 
   get current() {
     return this.renderer;
@@ -54,19 +186,42 @@ export class ThreeDRendererHost {
     return this.renderer;
   }
 
-  /** Unmount-only teardown. forceContextLoss is required because dispose()
-   * alone leaves the browser's WebGL context alive, and Chrome caps live
-   * contexts, so repeated Designer opens eventually refuse new ones. */
+  /**
+   * Unmount teardown. A healthy renderer is parked for the next 3D view to
+   * take; a lost one, or one beyond the parking limit, is destroyed.
+   */
+  release(): void {
+    const renderer = this.renderer;
+    if (!renderer) return;
+    this.renderer = null;
+    if (threeDRendererContextLost(renderer) || parkedRenderers.length >= MAX_PARKED_RENDERERS) {
+      destroyThreeDRenderer(renderer);
+      return;
+    }
+    renderer.setAnimationLoop(null);
+    renderer.setRenderTarget(null);
+    renderer.renderLists.dispose();
+    const canvas = renderer.domElement;
+    canvas.remove();
+    // Each view labels and styles the canvas for itself; the next view must not
+    // inherit test ids, aria labels, cursors or published bounds.
+    for (const name of canvas.getAttributeNames()) {
+      if (name !== "width" && name !== "height") canvas.removeAttribute(name);
+    }
+    // A 1x1 buffer frees the old frame's memory and makes the next view's first
+    // size call apply its own size and CSS.
+    renderer.setSize(1, 1, false);
+    parkedRenderers.push(renderer);
+  }
+
+  /** Hard teardown for a failed start. forceContextLoss is required because
+   * dispose() alone leaves the browser's WebGL context alive, and Chrome caps live
+   * contexts, so the retry must not inherit this one. */
   dispose(): void {
     const renderer = this.renderer;
     if (!renderer) return;
     this.renderer = null;
-    try {
-      renderer.dispose();
-    } finally {
-      try { renderer.forceContextLoss(); } catch { /* already lost */ }
-      renderer.domElement.remove();
-    }
+    destroyThreeDRenderer(renderer);
   }
 }
 

@@ -19,6 +19,8 @@ import {
   isGlassDoorCabinet,
   isPanelItem,
   ordinaryWallMountBottom,
+  overSinkOrRangeNeighborAlignedMountBottom,
+  overRangeCookingFloorIn,
   placedHeight,
   resolveSwing,
   wallRunOffset,
@@ -57,10 +59,34 @@ export function upperHangsAtRuleHeight(item: PlacedCabinet): boolean {
 }
 
 /** Rule 11: apply the 54" / 84-90-96 datum to every ordinary upper. */
-export function normalizeUpperHeights(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
+export function normalizeUpperHeights(
+  placed: readonly PlacedCabinet[],
+  context?: { room: RoomData; openings?: readonly WallOpening[] },
+): PlacedCabinet[] {
+  const datum = upperHeightsOnDatum(placed);
+  if (!context) return datum;
+  // Tom's rule (Nov 8): an upper over the sink or range keeps its neighbour's
+  // top line rather than the height-keyed datum, read from the re-hung run.
+  return datum.map((item, index) => {
+    const original = placed[index]!;
+    if (original.mountBottomAdjusted || original.refrigeratorAssemblyRole === "bridge" || original.overRangeMicrowaveBridge === true) return item;
+    if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item) || item.stackedOnCabinetUid) return item;
+    const aligned = overSinkOrRangeNeighborAlignedMountBottom(item, datum, context.openings ?? [], context.room);
+    // An upper over the range never hangs below the cooking clearance.
+    const floor = overRangeCookingFloorIn(item, datum, context.room);
+    const bottom = aligned ?? (floor != null ? Math.max(Number(item.mountBottom) || 0, floor) : null);
+    if (bottom == null) return item;
+    if (Number(original.mountBottom) === bottom) return original;
+    return { ...original, mountBottom: bottom };
+  });
+}
+
+function upperHeightsOnDatum(placed: readonly PlacedCabinet[]): PlacedCabinet[] {
   return placed.map((item) => {
     if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item)) return item;
     if (item.stackedOnCabinetUid) return item;
+    // A customer's own vertical move is never re-hung on the datum.
+    if (item.mountBottomAdjusted) return item;
     // The cabinet above a refrigerator is height-ruled by its own bay: its top
     // lands on the running upper line and its bottom keeps the appliance
     // clearance. Re-hanging it here on the generic short-upper datum is what put

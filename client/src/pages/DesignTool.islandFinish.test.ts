@@ -7,7 +7,7 @@ const source = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.
 describe("DesignTool island finish routing", () => {
   it("routes Island setup through valid finish options and the island-only scope", () => {
     expect(source).toContain("cabinetFinishOptions={islandCabinetFinishOptions}");
-    expect(source).toContain('applyCabinetFinishScope(resized.placed, nextIsland, styleId, draft.cabinetStyleId ?? styleId, "island")');
+    expect(source).toContain('applyCabinetFinishScope(resized.placed, nextIsland, designStyleId, draft.cabinetStyleId ?? designStyleId ?? styleId, "island")');
     expect(source).toContain("if (islandForPlacement.cabinetStyleId != null) newCab.styleId = islandForPlacement.cabinetStyleId");
   });
 

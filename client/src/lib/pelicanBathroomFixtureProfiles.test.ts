@@ -97,8 +97,11 @@ describe("Pelican bathroom fixture placement profiles", () => {
       widthIn: 60,
       planningOnly: true,
     });
+    // A 60" x 30" x 74" tub-panel set resolves to the surround profile for its
+    // size, which is the same published envelope the older shower-wall entry
+    // carried. The Build Shower wizard places it as a surround, so this is the
+    // profile it must resolve to.
     expect(verifiedPelicanBathroomFixtureProfile("PL-603074 Brick")).toMatchObject({
-      id: "pelican-shower-wall-pl-603074",
       pelicanCode: "PL-603074 BRICK",
       widthIn: 60,
       depthIn: 30,

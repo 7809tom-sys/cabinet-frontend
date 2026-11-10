@@ -2,6 +2,8 @@ import { isThreeDrawerBaseCatalog } from "./kitchenUsage";
 import { STD, dim, formatEighthInches, isCornerCabinet, isFarmerSinkBase, isSinkBaseCabinet, wallRunFrame, type RoomData, type WallRunFrame } from "./design";
 import type { KitchenUsageProfile } from "./kitchenUsage";
 import { baseSubGroup, cabinetDrawingType, type CabinetLike } from "./cabinetGraphics";
+import { isRangeBaseCabinetCode } from "./designerCabinetNames";
+import { isSingleDoorTwentyFourRow } from "./singleDoorTwentyFour";
 
 export type AutoDesignSinkBaseKind = "regular" | "farmhouse";
 export type AutoDesignKind = "sink" | "stove" | "dishwasher" | "refrigerator";
@@ -482,6 +484,12 @@ export function autoBuildStraightBaseCatalog<T extends AutoBuildCatalogCandidate
     && candidate.isCornerCabinet !== true
     && !isCornerCabinet(candidate.masterCode, candidate.description ?? undefined)
     && !isSinkBaseCabinet(candidate)
+    // A drop-in cooktop base (RB2DB/RB3DB) is never a plain run base: it is
+    // only legal under a cooktop, so the auto build never picks one.
+    && !isRangeBaseCabinetCode(candidate.masterCode)
+    // At 24" the book prints a single-door row (B24S) beside the double (B24).
+    // Both stay in the catalog; an automatic pick takes the two-door version.
+    && !isSingleDoorTwentyFourRow(candidate)
     // A standard door base may have a top drawer. All-drawer, full-height,
     // pull-out, appliance, vanity and other specialty boxes require an explicit
     // design choice and are never a substitute for an ordinary base run.

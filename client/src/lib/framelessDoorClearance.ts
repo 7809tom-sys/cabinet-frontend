@@ -131,7 +131,6 @@ export function applyFramelessDoorClearanceFillers(input: {
   room: RoomData;
   fillers: readonly CatalogFillerCandidate[];
   makeUid: () => string;
-  styleId: number | null;
 }): { placed: PlacedCabinet[]; added: PlacedCabinet[] } {
   let working = input.placed;
   const added: PlacedCabinet[] = [];
@@ -181,7 +180,8 @@ export function applyFramelessDoorClearanceFillers(input: {
       numberOfDoors: 0,
       numberOfDrawers: 0,
       catalogImageUrl: fillerDef.catalogImageUrl ?? null,
-      styleId: pair.cabinet.styleId ?? input.styleId,
+      // The filler takes its cabinet's finish; beside an inherited cabinet it inherits too.
+      styleId: pair.cabinet.styleId ?? null,
       fillerPieceGroupId: `filler-group-${uid}`,
       fillerBillingRole: "primary",
       fillerTotalWidth: FRAMELESS_DOOR_CLEARANCE_FILLER_IN,

@@ -119,6 +119,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Review cabinets or SKUs flagged as conflicting — duplicate entries, mismatched data, or items needing manual resolution.",
     zh: "審查被標記為衝突的櫥櫃或SKU——重複條目、不匹配的資料或需要手動解決的項目。",
   },
+  publish: {
+    en: "Choose which distributor or vendor features affiliates can use. Each switch is Publish for affiliates. Nothing is available to affiliates until that row is on. This is separate from Affiliate Literature.",
+    zh: "選擇聯盟可以使用哪些經銷商或供應商功能。每個開關都是「發布給聯盟」。該列打開之前，聯盟無法使用。此處與聯盟文獻無關。",
+  },
   "vendor-onboarding": {
     en: "Exception-only vendor spreadsheet imports. Completed rows are public cabinet conflict reviews, not verified masters. Open a completed row in Cabinet Conflicts to approve or clear it.",
     zh: "僅例外的供應商試算表匯入。已完成的列是公開的櫥櫃衝突審查，不是已驗證的主檔。在櫥櫃衝突中開啟已完成的列以核准或清除。",
@@ -148,7 +152,7 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     zh: "管理联盟行销中心：脚本、指南、视频、私密 PDF 和社交贴文。未发布的草稿对联盟隐藏。",
   },
   "affiliate-literature": {
-    en: "Every document here is internal and admin-only until you tick Affiliate library beside it. Ticking shows it to signed-in affiliates in their portal library; unticking takes it back. Neither state makes a document public. Every tick records who changed it and when.",
+    en: "Every document here is internal and admin-only until you tick Affiliate library beside it. Reference documents (catalogs, cost sheets, price lists, spec books) stay in the Reference section and are not shown to affiliates unless you tick Affiliate library on that item. Neither state makes a document public. Every tick records who changed it and when.",
     zh: "此處每份文件預設為內部文件，僅限管理員檢視，直到您在旁邊勾選「聯盟圖書館」。勾選後，已登入的聯盟會員會在其入口網站的圖書館看到它；取消勾選則收回。兩種狀態都不會讓文件公開。每次勾選都會記錄操作者與時間。",
   },
   "designer-availability": {

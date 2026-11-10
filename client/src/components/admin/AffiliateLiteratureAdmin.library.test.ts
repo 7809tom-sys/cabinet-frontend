@@ -162,11 +162,12 @@ describe("the committed internal proposal PDF", () => {
 describe("the admin page contract", () => {
   it("puts an Affiliate library checkbox on every document, internal ones included", () => {
     expect(admin).toContain("AFFILIATE_LIBRARY_SWITCH_LABEL");
-    expect(admin).toContain("items.map((item) =>");
+    expect(admin).toContain("literature.map(renderItem)");
+    expect(admin).toContain("references.map(renderItem)");
     expect(admin).toContain('id={`library-affiliate-${item.id}`}');
     expect(admin).toContain("checked={inAffiliate}");
-    // Every row renders the checkbox, with no visibility filter in front of it.
-    expect(admin).not.toMatch(/items\.filter\([^)]*\)\.map\(\(item\) =>[\s\S]*library-affiliate/);
+    // Reference rows use the same row renderer, so the checkbox is not reserved for one section.
+    expect(admin).not.toMatch(/items\.filter\([^)]*visibility[^)]*\)\.map/);
   });
 
   it("sends one field for the toggle and never a publish flag", () => {
@@ -184,7 +185,10 @@ describe("the admin page contract", () => {
   it("opens a document through adminSignedFile, because its url is private", () => {
     // The row url is a private-bucket path; the storage proxy refuses every
     // library-documents/ key, so an <a href={item.url}> would answer 403.
-    expect(admin).toContain("signedFile.fetch({ id: item.id })");
+    // .fetch on the procedure proxy throws hooks[lastArg] is not a function.
+    // The utils proxy is the call that actually returns a signed link.
+    expect(admin).toContain("utils.affiliateResources.adminSignedFile.fetch({ id: item.id })");
+    expect(admin).not.toContain("signedFile.fetch");
     expect(admin).toContain("window.open(file.url");
     expect(admin).not.toContain("href={item.url}");
   });

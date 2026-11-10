@@ -7,6 +7,7 @@ import {
   isSkinProduct,
   skinsAreNeeded,
   SKIN_NEEDED_LOCKED_TOOLTIP,
+  SKIN_NEEDED_FRAMELESS_TOOLTIP,
 } from "./canHaveSkins";
 
 const hickoryFrameless = {
@@ -102,11 +103,19 @@ describe("door style need view", () => {
       skinNeededDisabled: false,
       finishedEndNeeded: true,
     });
-    for (const style of [hickoryFramed, mapleFrameless, { ...mapleFrameless, skinNeeded: true }]) {
+    // A FRAMED line keeps the generic "hickory only" reason.
+    expect(doorStyleNeedView(hickoryFramed)).toMatchObject({
+      skinNeeded: false,
+      skinNeededDisabled: true,
+      skinNeededTooltip: SKIN_NEEDED_LOCKED_TOOLTIP,
+    });
+    // A framed (non-hickory) FRAMELESS line says why instead: its exposed sides
+    // finish automatically with the 3/4" end panel and it sells no 1/4" skins.
+    for (const style of [mapleFrameless, { ...mapleFrameless, skinNeeded: true }]) {
       expect(doorStyleNeedView(style)).toMatchObject({
         skinNeeded: false,
         skinNeededDisabled: true,
-        skinNeededTooltip: SKIN_NEEDED_LOCKED_TOOLTIP,
+        skinNeededTooltip: SKIN_NEEDED_FRAMELESS_TOOLTIP,
       });
     }
   });
@@ -123,6 +132,18 @@ describe("dropIneligibleSkins", () => {
     expect(dropIneligibleSkins([cabinet, skin, wallSkin, endPanel], hickoryFramed)).toEqual([cabinet, endPanel]);
     expect(dropIneligibleSkins([cabinet, skin], { ...mapleFrameless, skinNeeded: true })).toEqual([cabinet]);
     expect(dropIneligibleSkins([cabinet, endPanel], mapleFrameless)).toEqual([cabinet, endPanel]);
+  });
+
+  it("judges each skin by its own finish, else Color 1, on a two-color design", () => {
+    const hickorySkin = { ...skin, styleId: 1 as number | null };
+    const inheritedSkin = { ...wallSkin, styleId: null as number | null };
+    const styles = new Map<number, typeof hickoryFrameless | typeof mapleFrameless>([[1, hickoryFrameless], [2, mapleFrameless]]);
+    const colorOneMaple = (item: { styleId: number | null }) => (item.styleId != null ? styles.get(item.styleId) ?? mapleFrameless : mapleFrameless);
+    expect(dropIneligibleSkins([cabinet, hickorySkin, inheritedSkin], colorOneMaple)).toEqual([cabinet, hickorySkin]);
+    const colorOneHickory = (item: { styleId: number | null }) => (item.styleId != null ? styles.get(item.styleId) ?? hickoryFrameless : hickoryFrameless);
+    const kept = [cabinet, hickorySkin, inheritedSkin];
+    expect(dropIneligibleSkins(kept, colorOneHickory)).toBe(kept);
+    expect(dropIneligibleSkins([cabinet, { ...skin, styleId: 2 }, inheritedSkin], colorOneHickory)).toEqual([cabinet, inheritedSkin]);
   });
 
   it("recognizes skin products without treating finished end panels as skins", () => {

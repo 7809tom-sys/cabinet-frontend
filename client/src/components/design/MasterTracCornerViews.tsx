@@ -303,6 +303,8 @@ export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCab
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
       renderer.dispose();
+      // dispose() leaves the browser's WebGL context alive; Chrome caps live contexts.
+      renderer.forceContextLoss();
       element.removeChild(renderer.domElement);
     };
   }, [group]);

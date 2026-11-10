@@ -158,7 +158,12 @@ describe("the bridge is matched to the range width", () => {
       r.uid = `range-${width}`;
       const result = fill({ placed: [r], wallCatalog: wallRows("330011") });
       expect(result.everyRangeBridged, `width ${width}`).toBe(true);
-      expect(bridges(result.placed).length, `width ${width}`).toBeGreaterThanOrEqual(1);
+      const bridge = result.placed.find((item) => item.placement === "wall" && isBridgeOverRangeCabinet(item, r, DEFAULT_ROOM));
+      expect(bridge, `width ${width}`).toBeDefined();
+      // Never narrower: 330011 has no W42xx, so the 42" range takes a single-door
+      // W1x42 turned horizontal, which is 42" wide.
+      expect(Number(bridge!.width), `width ${width}`).toBeCloseTo(width, 3);
+      expect(bridge!.turnedSideways === true, `width ${width}`).toBe(width === 42);
     }
   });
 
@@ -272,14 +277,18 @@ describe("an existing bridge is never deleted, replaced, or moved", () => {
 
 describe("a bridge that cannot seat is reported, never silently skipped", () => {
   it("names a blocking reason when the line sells no bridge", () => {
-    const noBridge = wallRows("330011").filter((row) => !BRIDGE_CODE.test((row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "")));
+    // Drop the 30"-tall single-door uppers too, or a W1830 would be turned horizontal.
+    const noBridge = wallRows("330011").filter((row) => {
+      const code = (row.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      return !BRIDGE_CODE.test(code) && !/^W(12|15|18|21)30$/.test(code);
+    });
     const result = fill({ wallCatalog: noBridge });
     expect(result.everyRangeBridged).toBe(false);
     expect(result.findings).toHaveLength(1);
     const finding = result.findings[0]!;
     expect(finding.code).toBe("range-bridge-blocked");
     expect(finding.severity).toBe("warning");
-    expect(finding.detail).toMatch(/bridge cabinet/i);
+    expect(finding.detail).toContain("sells no 30″-wide bridge (W3012–W3024) and no single-door W1230–W2130 to turn horizontal");
     expect(finding.detail.length).toBeGreaterThan(20);
   });
 
@@ -407,10 +416,12 @@ describe("the bridge is 12 inches over 30 inch uppers, not 24", () => {
     }
   });
 
-  it("keeps a frameless bridge on its 72 inch datum so it still rests on the microwave", () => {
-    // A frameless line stores the 12" bridge as 12" but its uppers as 30¼", so the
-    // run top is 84¼". The bridge must not be re-hung off the datum.
-    const room = { ...DEFAULT_ROOM, ceilingHeight: 96 } as RoomData;
+  it("keeps a frameless bridge on its 72 inch datum and reaches the 94-1/4 inch line", () => {
+    // Tom's decision (Nov 9 2026, issue #354 item 5): the frameless line has one
+    // wall top line, 94-1/4", and the bridge must reach it from the fixed 72"
+    // datum. So the pick is the frameless 22-5/8" box (W30xx23), not the old 12"
+    // W3012 that topped out at 84-1/4". Its bottom never moves off 72".
+    const room = { ...DEFAULT_ROOM, ceilingHeight: 108 } as RoomData;
     const seated = placeMandatoryOverRangeBridges({
       placed: [range(60)],
       room,
@@ -421,6 +432,8 @@ describe("the bridge is 12 inches over 30 inch uppers, not 24", () => {
     });
     const bridge = seated.placed.find((item) => item.overRangeMicrowaveBridge === true)!;
     expect(bridge.mountBottom).toBe(72);
-    expect(Number(bridge.height)).toBeLessThanOrEqual(12.75);
+    expect(Number(bridge.height)).toBeGreaterThan(20);
+    expect(72 + Number(bridge.height)).toBeCloseTo(94.63, 1);
+    expect(seated.findings).toEqual([]);
   });
 });

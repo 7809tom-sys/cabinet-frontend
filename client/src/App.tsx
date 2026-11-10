@@ -12,6 +12,8 @@ import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialI
 import { StoreCornerMenu } from "@/components/storefront/StoreCornerMenu";
 import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
 import DesignerHistoryNav from "@/components/design/DesignerHistoryNav";
+import { DesignerErrorBoundary } from "@/components/design/DesignerErrorBoundary";
+import { AffiliatePublishedFeature } from "@/components/affiliate/AffiliatePublishedFeature";
 import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
@@ -110,6 +112,7 @@ const CrmCustomerLookupPreview = lazy(() => import("@/pages/CrmCustomerLookupPre
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
+const BuildShower = lazy(() => import("@/pages/BuildShower"));
 
 function PageLoader() {
   return (
@@ -240,7 +243,9 @@ function DesignerRoute() {
   const designer = (
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
-        <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
+        <DesignerErrorBoundary surface="designer">
+          <DesignTool affiliateSlug={affiliateSlug ?? undefined} />
+        </DesignerErrorBoundary>
       </Suspense>
     </ErrorBoundary>
   );
@@ -398,7 +403,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <OrderBuilder />
+                <AffiliatePublishedFeature feature="quote">
+                  <OrderBuilder />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -409,7 +416,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <OrderBuilder />
+                <AffiliatePublishedFeature feature="quote">
+                  <OrderBuilder />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -453,7 +462,9 @@ export default function App() {
             <ErrorBoundary>
               <Suspense fallback={<PageLoader />}>
                 <AffiliateShell slug={params.slug} fullHeight hideAdminEditModeBar>
-                  <DesignTool affiliateSlug={params.slug} />
+                  <DesignerErrorBoundary surface="designer">
+                    <DesignTool affiliateSlug={params.slug} />
+                  </DesignerErrorBoundary>
                 </AffiliateShell>
               </Suspense>
             </ErrorBoundary>
@@ -524,7 +535,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <BundleDeals affiliateSlug={params.slug} />
+                <AffiliatePublishedFeature feature="kitchen_packages">
+                  <BundleDeals affiliateSlug={params.slug} />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -533,7 +546,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <SurfacesDepartment departmentSlug={params.departmentSlug} affiliateSlug={params.slug} />
+                <AffiliatePublishedFeature feature="pelican_catalog">
+                  <SurfacesDepartment departmentSlug={params.departmentSlug} affiliateSlug={params.slug} />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -542,7 +557,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <SurfacesProduct slug={params.productSlug} affiliateSlug={params.slug} />
+                <AffiliatePublishedFeature feature="pelican_catalog">
+                  <SurfacesProduct slug={params.productSlug} affiliateSlug={params.slug} />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -551,7 +568,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <SurfacesCategory slug={params.categorySlug} affiliateSlug={params.slug} />
+                <AffiliatePublishedFeature feature="pelican_catalog">
+                  <SurfacesCategory slug={params.categorySlug} affiliateSlug={params.slug} />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -560,7 +579,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <Surfaces affiliateSlug={params.slug} />
+                <AffiliatePublishedFeature feature="pelican_catalog">
+                  <Surfaces affiliateSlug={params.slug} />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -569,7 +590,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <Hardware />
+                <AffiliatePublishedFeature feature="hardware_catalog">
+                  <Hardware />
+                </AffiliatePublishedFeature>
               </AffiliateShell>
             </Suspense>
           )}
@@ -578,7 +601,11 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug} fullHeight>
-                <VendorClosetStudio affiliateSlug={params.slug} />
+                <DesignerErrorBoundary surface="closet">
+                  <AffiliatePublishedFeature feature="closet_studio">
+                    <VendorClosetStudio affiliateSlug={params.slug} />
+                  </AffiliatePublishedFeature>
+                </DesignerErrorBoundary>
               </AffiliateShell>
             </Suspense>
           )}
@@ -708,7 +735,9 @@ export default function App() {
         <Route path="/closet">
           <div className="flex h-[100dvh] flex-col overflow-hidden">
             <Suspense fallback={<PageLoader />}>
-              <VendorClosetStudio />
+              <DesignerErrorBoundary surface="closet">
+                <VendorClosetStudio />
+              </DesignerErrorBoundary>
             </Suspense>
           </div>
         </Route>
@@ -808,6 +837,13 @@ export default function App() {
             </Suspense>
           </AppLayout>
         </Route>
+        <Route path="/build-shower">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <BuildShower />
+            </Suspense>
+          </AppLayout>
+        </Route>
         <Route path="/surfaces">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
@@ -871,7 +907,9 @@ export default function App() {
         <Route path="/vendor/closet-studio">
           <div className="flex h-[100dvh] flex-col overflow-hidden">
             <Suspense fallback={<PageLoader />}>
-              <VendorClosetStudio />
+              <DesignerErrorBoundary surface="closet">
+                <VendorClosetStudio />
+              </DesignerErrorBoundary>
             </Suspense>
           </div>
         </Route>

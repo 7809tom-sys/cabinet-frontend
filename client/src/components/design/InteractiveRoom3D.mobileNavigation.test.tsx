@@ -22,10 +22,10 @@ describe("MobileThreeDViewerNavigation", () => {
     expect(launcher.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("dialog", { name: "3D view controls" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Zoom in for a closer cabinet view" }));
-    fireEvent.click(screen.getByRole("button", { name: "Pan view right" }));
-    fireEvent.click(screen.getByRole("button", { name: "Reset 3D room view" }));
-    fireEvent.click(screen.getByRole("button", { name: "Share the current 3D zoom and pan perspective" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pan right" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Share view" }));
     expect(onZoom).toHaveBeenCalledWith("in");
     expect(onPan).toHaveBeenCalledWith("right");
     expect(onReset).toHaveBeenCalledTimes(1);

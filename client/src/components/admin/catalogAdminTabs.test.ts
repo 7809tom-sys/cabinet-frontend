@@ -71,6 +71,7 @@ describe("Products & Catalog tab groups", () => {
       ["Door styles", ["featured", "door-corrections", "door-rendering-audit"]],
       ["Images", ["images", "media-library", "generated-design-images"]],
       ["Suppliers", ["distributors", "glass-policy", "catalog-importer", "pending-distributor-connections", "vendor-onboarding"]],
+      ["Publish", ["publish"]],
       ["Cabinet Config", ["cabinet-config"]],
       ["Categories", ["categories"]],
       ["📦 Package Data & Parcel", ["package-data"]],

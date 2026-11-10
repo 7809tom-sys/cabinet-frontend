@@ -566,13 +566,14 @@ export function repairMissingAngledWallFillers(
   room: RoomData,
   candidates: readonly CatalogFillerCandidate[],
   makeUid: () => string,
-  styleId: number | null,
+  styleId: number | null | ((cabinet: PlacedCabinet) => number | null),
 ): AngledWallFillerRepair {
   let next = [...placed];
   const added: PlacedCabinet[] = [];
   for (const cabinet of placed) {
 	if (cabinet.fillerPieceGroupId || !isTransitionCabinetPlacement(cabinet.placement)) continue;
-    const resolution = automaticAngledWallFiller(cabinet, room, next, candidates, makeUid, styleId);
+    const fillerStyleId = typeof styleId === "function" ? styleId(cabinet) : styleId;
+    const resolution = automaticAngledWallFiller(cabinet, room, next, candidates, makeUid, fillerStyleId);
     if (!resolution) continue;
     const appended = appendCollisionFreePlacements(next, resolution.fillers, room);
     if (!resolution.fillers.every((filler) => appended.placed.some((item) => item.uid === filler.uid))) continue;

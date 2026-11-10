@@ -46,6 +46,7 @@ import {
 import { normalizeOverApplianceWallMounts } from "./overApplianceMount";
 import { normalizeRefrigeratorBridgeDepth } from "./refrigeratorBridgeDepth";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import { removeIllegalFillers } from "./fillerPlacementRule";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
 import {
   effectiveSmallGapFillerMaxIn,
@@ -187,6 +188,18 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     name: "lower seam filler",
     phase: "auto-design-stage",
     summary: "Openings the standard filler does not close, up to 12 inches, still receive catalog seam filler.",
+  },
+  {
+    id: "range-flank-base-cabinets",
+    name: "a real base cabinet on each side of the range",
+    phase: "auto-design-stage",
+    summary: "A real base cabinet always stands on each side of the range. When a side opening is a hair off a stock width, the range is slid along its own wall by the small difference (inside the anchor cap) so both sides land on widths the line sells. Filler is used only when no stock width fits after the move.",
+  },
+  {
+    id: "range-flank-finished-ends",
+    name: "finished end on the outside of each range flank",
+    phase: "auto-design-stage",
+    summary: "The outside of the base cabinet on each side of the range gets the line's own end panel, cut from catalog stock and placed in the drawing so only real placed items are billed. A side already finished by a neighbouring cabinet or the wall is reported instead of double-stocked.",
   },
   {
     id: "nine-inch-tray-base",
@@ -1056,14 +1069,14 @@ export function applyDesignerLayoutRules(input: {
       input.room,
     ),
     input.room,
-  ), input.room);
+  ), input.room, input.openings);
   placed = applyMissingBlindCornerFillers({
     placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
   });
   const angled = repairMissingAngledWallFillers(placed, input.room, input.fillers, input.makeUid, input.styleId);
   placed = angled.placed;
   placed = applyFramelessDoorClearanceFillers({
-    placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId,
+    placed, room: input.room, fillers: input.fillers, makeUid: input.makeUid,
   }).placed;
   // Owner rule: filler is the last resort, never automatic at a run end. The
   // measured build turns this off and runs the shared real-cabinet pass instead.
@@ -1076,11 +1089,17 @@ export function applyDesignerLayoutRules(input: {
     });
   }
   placed = normalizeInstalledFillersToAdjacentCabinets(placed, input.room);
+  // Owner rule: a filler is only ever a front-face board closing a cabinet-to-
+  // cabinet, cabinet-to-wall, or cabinet-to-appliance gap. A board cut against a
+  // refrigerator end panel, on a run's open outside face, or straight through a
+  // panel is removed here, so the plan and the 3D render agree.
+  const legalFillers = removeIllegalFillers({ placed, room: input.room, openings: input.openings });
+  placed = legalFillers.placed;
   placed = applyNineInchTrayBases(placed);
   // Rule 4: one continuous floor-to-top board per filler, never a base sliver plus an upper sliver.
   placed = normalizeContinuousVerticalFillers(placed, input.room).placed;
   // Rule 11: uppers hang at 54 and top out on the 84/90/96 line.
-  placed = normalizeUpperHeights(placed);
+  placed = normalizeUpperHeights(placed, { room: input.room, openings: input.openings });
   placed = clampPlacedToRefrigeratorPanels(placed, input.room).placed;
   // Owner rule (Tom, Nov 6 2026): whenever a refrigerator panel is used, the
   // cabinet above comes forward so its face is flush with the panel. This is the

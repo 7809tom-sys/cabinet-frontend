@@ -87,6 +87,36 @@ describe("floating canvas action rail", () => {
     expect(stop).toHaveBeenCalled();
   });
 
+  it("renders the same buttons inline for the 3D viewer's floating column", () => {
+    // The 3D stage owns the right-edge column, so its quick adds must NOT position
+    // themselves: two independently anchored rails on one edge is exactly the
+    // staggered layout this change removes.
+    const onAddCabinet = vi.fn();
+    render(
+      <CanvasActionRail
+        inline
+        testIdPrefix="three-d-floating"
+        actions={["cabinet", "hardware"]}
+        onAddCabinet={onAddCabinet}
+        onAddHardware={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("designer-canvas-action-rail")).toBeNull();
+    const wrapper = screen.getByTestId("designer-canvas-action-buttons");
+    expect(wrapper.className).toBe("contents");
+    const cabinet = screen.getByTestId("three-d-floating-add-cabinet");
+    // Same button class as the column: same size, same styling, no offset.
+    expect(cabinet.className).toContain("three-d-floating-button");
+    expect(cabinet.className).toContain("h-11");
+    expect(cabinet.className).toContain("w-11");
+    expect(cabinet.getAttribute("aria-label")).toBe("Add cabinet");
+    expect(cabinet.getAttribute("title")).toContain("Add cabinet");
+    // The actions filter keeps Auto-Design out when the caller owns that slot.
+    expect(screen.queryByTestId("three-d-floating-auto-design")).toBeNull();
+    fireEvent.click(cabinet);
+    expect(onAddCabinet).toHaveBeenCalledTimes(1);
+  });
+
   it("can be hidden where a second fast path would only crowd the canvas", () => {
     const { container } = render(
       <CanvasActionRail

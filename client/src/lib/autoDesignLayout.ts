@@ -1,4 +1,5 @@
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
+import { FRAMELESS_TOP_WALL_HEIGHT_IN } from "./framelessWallTopAlignment";
 import {
   adjacentDishwasherCenterIn,
   anchorAlongStartIn,
@@ -34,12 +35,20 @@ import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
+import {
+  closeSmallOpeningsWithStock,
+  consolidateAutoDesignFillers,
+  findFillerClusters,
+  formatFillerInches,
+} from "./autoDesignFillerConsolidation";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase } from "./autoDesignSink";
+import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
+import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
 import {
   autoDesignTallProducts,
@@ -59,6 +68,16 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "./framelessWallTopAlignment";
+import {
+  applyRangeFlankEndPanels,
+  applyRangeFlankPlan,
+  describeUnfinishedFlank,
+  planRangeFlankCabinets,
+  RANGE_FLANK_PANEL_THICKNESS_IN,
+  rangeFlankPanelRequests,
+} from "./autoDesignRangeFlanks";
+import { exposedPanelTypeForCatalog } from "./exposedSidePanels";
 import { buildAnchoredRefrigeratorBay } from "./autoDesignRefrigeratorAnchor";
 import { normalizeContinuousVerticalFillers } from "./verticalFiller";
 import {
@@ -83,7 +102,8 @@ import {
   isFarmSinkBasePaletteItem,
   isRangeOrOven,
   isSinkBaseCabinet,
-  makeDefaultSinkForCabinet,
+  makeSinkForCabinet,
+  NON_APRON_SINK_FRONT_SETBACK,
   standardHeight,
   cabinetWall,
   wallPlacementAt,
@@ -161,6 +181,25 @@ export function mergeAutoDesignRefrigeratorCaps(
     merged.push(row);
   }
   return merged;
+}
+
+/**
+ * True when the selected line is the U.S. Cabinet Depot frameless line: its wall
+ * rows carry the printed geometry marker. One marker is enough, and a line with
+ * no marker at all is treated as framed so its 84" line is never disturbed.
+ */
+export function isFramelessWallCatalog(
+  wallCatalog: readonly { constructionMethod?: string | null; masterCode?: string | null; height?: string | number | null }[],
+): boolean {
+  // The geometry marker is the strongest signal, but the palette query does not
+  // always ship it. The book's frameless wall heights are 30-1/4", 35-1/4" and
+  // 40-1/4"; a framed line sells 30/36/42 instead. A 40-1/4" box is therefore
+  // frameless-only, which identifies the line from dimension data alone.
+  if (wallCatalog.some((row) => hasAefPrintedGeometry(row))) return true;
+  return wallCatalog.some((row) => {
+    const height = Number(row.height);
+    return Number.isFinite(height) && Math.abs(height - FRAMELESS_TOP_WALL_HEIGHT_IN) <= 0.3;
+  });
 }
 
 /** A 4–9 inch base opening is too wide for a 3 inch filler and too narrow for another cabinet. Grow the cabinet beside it when the line sells that wider box. */
@@ -241,6 +280,141 @@ function absorbOpenBaseGaps(
     }
   }
   return working;
+}
+
+/**
+ * Re-seat every sink fixture onto the sink base that actually holds it.
+ *
+ * The basin is built when the anchor is measured, and the base can move after
+ * that (the sink-landing rule slides it to open counter between the basin and a
+ * tall unit). Re-placing the fixture from the FINAL base is what keeps it centered
+ * on its own box at the approved 2"–2½" front setback instead of drifting with the
+ * old position.
+ */
+function reSeatSinkFixtures(
+  sinks: readonly SinkFixture[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  setbackIn: number,
+): { sinks: SinkFixture[]; changed: boolean; notes: string[] } {
+  let changed = false;
+  const notes: string[] = [];
+  const next = sinks.map((sink) => {
+    const base = placed.find((item) => item.uid === sink.cabinetUid);
+    if (!base || !isSinkBaseCabinet(base)) return sink;
+    const dimensions = {
+      width: sink.sourceWidth ?? sink.width,
+      depth: sink.sourceDepth ?? sink.depth,
+    };
+    const seated = makeSinkForCabinet(sink.type, base, room, dimensions, { frontSetbackIn: setbackIn });
+    const same = seated.x === sink.x
+      && seated.y === sink.y
+      && seated.width === sink.width
+      && seated.depth === sink.depth
+      && seated.wallSide === sink.wallSide
+      && seated.planRotation === sink.planRotation
+      && seated.frontSetbackIn === sink.frontSetbackIn;
+    if (same) return sink;
+    changed = true;
+    notes.push(`The basin on ${base.masterCode} was re-centered on its base at a ${seated.frontSetbackIn ?? setbackIn}″ front setback after the base moved.`);
+    return {
+      ...seated,
+      uid: sink.uid,
+      faucet: sink.faucet,
+      pelicanProductId: sink.pelicanProductId,
+      pelicanProductName: sink.pelicanProductName,
+      pelicanProductImage: sink.pelicanProductImage,
+      pelicanProfileId: sink.pelicanProfileId,
+      bowlWidth: sink.bowlWidth,
+      bowlDepth: sink.bowlDepth,
+      bowlHeight: sink.bowlHeight,
+      bowlCount: sink.bowlCount,
+      bowlWidths: sink.bowlWidths,
+      bowlDepths: sink.bowlDepths,
+      bowlHeights: sink.bowlHeights,
+      drainInsetRight: sink.drainInsetRight,
+      drainInsetBack: sink.drainInsetBack,
+      exteriorHeight: sink.exteriorHeight,
+      apronFront: sink.apronFront,
+      surfaceFinish: sink.surfaceFinish,
+      autoDesignFaucet: sink.autoDesignFaucet,
+      defaultFaucet: sink.defaultFaucet,
+      pelicanFaucetProductId: sink.pelicanFaucetProductId,
+      pelicanFaucetProductName: sink.pelicanFaucetProductName,
+      pelicanFaucetProductImage: sink.pelicanFaucetProductImage,
+      pelicanFaucetProfileId: sink.pelicanFaucetProfileId,
+      faucetOverallHeight: sink.faucetOverallHeight,
+      faucetSpoutLength: sink.faucetSpoutLength,
+      faucetSpoutHeight: sink.faucetSpoutHeight,
+      faucetFinish: sink.faucetFinish,
+      faucetForm: sink.faucetForm,
+    };
+  });
+  return { sinks: changed ? next : [...sinks], changed, notes };
+}
+
+/**
+ * Owner rule: a sink base keeps a real counter landing between itself and a tall
+ * cabinet or refrigerator. Called once the base runs and the tall picks are both
+ * seated, so the exact gap is known. The sink base is the only piece that moves,
+ * and only within its own anchor cap; the tall unit is never moved.
+ *
+ * A sink that cannot slide free is left where it is and reported by name, so the
+ * plan never hides a basin jammed against a pantry.
+ */
+function slideSinkForLanding(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  notes: string[];
+  reviewFindings: DesignerReviewFinding[];
+}): { placed: PlacedCabinet[] } {
+  let working = [...input.placed];
+  const landingIn = sinkTallLandingIn();
+  for (let guard = 0; guard < 4; guard += 1) {
+    const gaps = sinkLandingGaps(working, input.room, landingIn);
+    if (gaps.length === 0) break;
+    const gap = gaps[0]!;
+    const sink = working.find((item) => item.uid === gap.sinkUid);
+    if (!sink) break;
+    const slides = planSinkLandingSlides({ sink, placed: working, room: input.room, landingIn });
+    const slide = slides[0];
+    if (!slide) {
+      input.reviewFindings.push({
+        ruleId: "sink-landing-before-tall",
+        code: "sink-landing-short",
+        severity: "warning",
+        title: `${gap.sinkCode} has no counter landing before ${gap.blockerCode}`,
+        detail: `The sink base and ${gap.blockerCode} are ${Math.max(0, gap.gapIn)}″ apart on ${gap.wallId}, so the basin is jammed against the tall unit. The sink base could not slide the ${landingIn}″ needed inside its own anchor allowance. Shorten the run or move the sink base, then rebuild.`,
+        cabinetUid: sink.uid,
+        cabinetCode: sink.masterCode,
+      });
+      break;
+    }
+    const spot = wallPlacementAt(slide.startIn, sink.width, sink.depth, gap.wallId as WallSide, input.room);
+    const moved: PlacedCabinet = {
+      ...sink,
+      ...spot,
+      wallId: spot.wallId ?? sink.wallId,
+      wallOffset: spot.wallOffset ?? slide.startIn,
+    };
+    const without = working.filter((item) => item.uid !== sink.uid);
+    const accepted = appendCollisionFreePlacements(without, [moved], input.room);
+    if (accepted.rejected.length > 0) {
+      input.reviewFindings.push({
+        ruleId: "sink-landing-before-tall",
+        code: "sink-landing-short",
+        severity: "warning",
+        title: `${gap.sinkCode} has no counter landing before ${gap.blockerCode}`,
+        detail: `The sink base needs to slide ${Math.abs(slide.deltaIn)}″ to open a ${landingIn}″ landing before ${gap.blockerCode}, and that spot is already occupied. Nothing was moved. Shorten the run or move the sink base, then rebuild.`,
+        cabinetUid: sink.uid,
+        cabinetCode: sink.masterCode,
+      });
+      break;
+    }
+    working = accepted.placed;
+    input.notes.push(`${gap.sinkCode} slid ${Math.abs(slide.deltaIn)}″ to keep a ${landingIn}″ counter landing before ${gap.blockerCode}.`);
+  }
+  return { placed: working };
 }
 
 /**
@@ -357,6 +531,37 @@ function resolveLeftoverOpenings(input: {
   return { placed: working, notes };
 }
 
+/**
+ * A run that still carries two boards after consolidation is named on the
+ * review list instead of being left silently doubled. One board per run end is
+ * the rule; a second board means no stock width and no single board could close
+ * the run, so the person deciding the plan has to see it.
+ */
+function reviewFillers(
+  wallIds: readonly string[],
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  openings: readonly WallOpening[],
+  findings: DesignerReviewFinding[],
+): void {
+  for (const layer of ["base", "wall"] as const) {
+    for (const wallId of wallIds) {
+      for (const cluster of findFillerClusters({ placed, room, openings, wallId, layer })) {
+        if (cluster.fillers.length < 2) continue;
+        findings.push({
+          ruleId: "one-filler-per-run",
+          code: "extra-filler-boards",
+          severity: "warning",
+          title: `${cluster.fillers.length} filler boards on ${wallId}`,
+          detail: `This ${layer} run still carries ${cluster.fillers.map((filler) => formatFillerInches(Number(filler.width) || 0)).join(" + ")} of filler because no single stock width and no single board closes the run. Adjust the run to close it with one board.`,
+          cabinetUid: cluster.fillers[0]?.uid ?? null,
+          cabinetCode: cluster.fillers[0]?.masterCode ?? null,
+        });
+      }
+    }
+  }
+}
+
 /** Auto-Design never installs a filler board wider than 3 inches. A wider catalog filler is cut to 3 instead of being flagged over its maximum. */
 export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {  return placed.map((item) => {
     const text = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`;
@@ -389,6 +594,12 @@ export function runAutoDesignLayout(args: {
    * the sink; with no usable row here it uses the built-in default fixture.
    */
   faucetCatalog?: readonly AutoDesignFaucetProduct[];
+  /**
+   * The selected line's end/finished panel stock. The build seats the line's own
+   * panel on the outside of the base cabinet it puts on each side of the range,
+   * as a real placed catalog row so it is drawn and billed.
+   */
+  panelCatalog?: readonly DesignCabinet[];
   styleId: number | null;
   makeUid: () => string;
   stoveMasterCode?: string;
@@ -564,7 +775,9 @@ export function runAutoDesignLayout(args: {
       styleId: args.styleId,
       makeUid,
       wallCabinetHeightIn: resolveWallHeightClass(args.wallCatalog, nominal) ?? nominal,
-      framelessLine: args.wallCatalog.some((row) => hasAefPrintedGeometry(row)),
+      // Same frameless answer as a generated bay: the geometry marker, or a
+      // 40-1/4" wall box when the palette does not ship the marker.
+      framelessLine: isFramelessWallCatalog(args.wallCatalog),
     });
     working = anchoredBay.placed;
     refrigeratorReservation = anchoredBay.reservation;
@@ -579,7 +792,10 @@ export function runAutoDesignLayout(args: {
       styleId: args.styleId,
       makeUid,
       wallCabinetHeightIn: resolveWallHeightClass(args.wallCatalog, nominal) ?? nominal,
-      framelessLine: args.wallCatalog.some((row) => hasAefPrintedGeometry(row)),
+      // A frameless line is one whose wall rows carry the printed geometry
+      // marker. `wallCatalog` is the authoritative line list, so this is where
+      // the answer is decided (issue #354 item 5 needs it for the cap's line).
+      framelessLine: isFramelessWallCatalog(args.wallCatalog),
     });
     if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
     // The refrigerator must stay inside its end panels: take the clamped copy (depth/height) before fitting.
@@ -619,6 +835,7 @@ export function runAutoDesignLayout(args: {
     // A sink picked in the sink pop-up is seated in the sink base the build
     // actually placed, so the pairing decided above is what gets a basin.
     const pickedSink = pickedSinkProducts[0];
+    const setbackIn = sinkFrontSetbackIn();
     const pelicanSink = pickedSink && sinkBase
       ? buildPelicanSinkOnCabinet({
         id: pickedSink.productId,
@@ -626,14 +843,19 @@ export function runAutoDesignLayout(args: {
         name: pickedSink.name,
         imageUrl: pickedSink.imageUrl ?? null,
         size: pickedSink.size ?? null,
-      }, sinkBase, room)
+      }, sinkBase, room, { frontSetbackIn: setbackIn })
       : null;
     if (pelicanSink) {
       sinks = keepSingleAutoDesignSink([pelicanSink], sinkBase.uid);
       if (resolvedSinkBase.note) notes.push(resolvedSinkBase.note);
     } else {
       const defaultSinkType = isFarmSinkBasePaletteItem(sinkBase) ? "farmhouse" : sinkBase.width >= 33 ? "double" : "single";
-      sinks = keepSingleAutoDesignSink([makeDefaultSinkForCabinet(sinkBase, room, defaultSinkType)], sinkBase.uid);
+      // The basin is centered on its own sink base and set back into the approved
+      // 2"–2½" band from the finished countertop front. No build path seats it
+      // flush with the front edge or off-center on the base.
+      sinks = keepSingleAutoDesignSink([
+        makeSinkForCabinet(defaultSinkType, sinkBase, room, undefined, { frontSetbackIn: setbackIn }),
+      ], sinkBase.uid);
     }
   }
   let sinkWindow: WallOpening | null = null;
@@ -851,6 +1073,9 @@ export function runAutoDesignLayout(args: {
       // that another run is about to occupy.
       runWallIds: runWalls,
       allowMultiple: tallPicks.length > 1,
+      // A tall box is a run terminator; it must not leave the sink base as the
+      // last floor box at a run end with the basin jammed against it.
+      sinkLandingIn: sinkTallLandingIn(),
     });
     if (!fit.ok) {
       reviewFindings.push({
@@ -978,12 +1203,68 @@ export function runAutoDesignLayout(args: {
     }
   }
   working = absorbOpenBaseGaps(working, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
-  // Every layout has at least one three-drawer base (Tom, Oct 31). The planner already splits a wide door base beside
+  // Owner rule: a real base cabinet stands on EACH side of the range, and the
+  // range is wiggled along its own wall (by the 1/8" difference) so both sides
+  // land on a stock width. A side that is already a stock width needs no move.
+  // Filler is never the answer here; it appears only when nothing stock fits,
+  // and a finished end panel gets its own 3/4" outside an open flank first.
+  const flankPanels = args.panelCatalog ?? (args.fillers as unknown as DesignCabinet[]);
+  const panelThickness = flankPanels.some((row) => exposedPanelTypeForCatalog(row) === "base-end")
+    ? RANGE_FLANK_PANEL_THICKNESS_IN
+    : 0;
+  const flankPlans = planRangeFlankCabinets({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    catalog: pool,
+    origins: stage.anchorOrigins,
+    fillerMaxIn: autoDesignFillerMaxIn(),
+    panelThicknessIn: panelThickness,
+  });
+  const flanked = applyRangeFlankPlan({ placed: working, room, plans: flankPlans, styleId: args.styleId, makeUid });
+  working = flanked.placed;
+  notes.push(...flanked.notes);
+  if (flanked.plans.length > 0) {
+    // Finished end panels on the outside of each flank cabinet: the line's own
+    // end panel SKU, cut from stock, placed as a real row so plan, elevation and
+    // 3D draw it and the cart, quote and PO bill it and nothing else.
+    const panelPlan = rangeFlankPanelRequests({ placed: working, room, plans: flanked.plans });
+    if (panelPlan.requests.length > 0) {
+      const panels = applyRangeFlankEndPanels({
+        placed: working,
+        room,
+        catalog: flankPanels,
+        requests: panelPlan.requests,
+        styleId: args.styleId,
+        makeUid,
+      });
+      working = panels.placed;
+      notes.push(...panels.notes);
+      for (const skip of panels.skipped) {
+        reviewFindings.push({
+          ruleId: "range-flank-finished-ends",
+          code: "flank-end-panel-not-placed",
+          severity: "warning",
+          title: `${skip.cabinetCode} beside the range has no end panel`,
+          detail: `The owner rule finishes the outside of the cabinet on each side of the range, and ${skip.reason}.`,
+          cabinetUid: skip.cabinetUid,
+          cabinetCode: skip.cabinetCode,
+        });
+      }
+    }
+    // A flank whose outside already abuts a cabinet (the corner box of a U or L
+    // kitchen) is finished by that cabinet. Double-stocking it would be wrong, so
+    // the side is described on the plan instead of being given a second board.
+    for (const side of panelPlan.unspaced) notes.push(describeUnfinishedFlank(side));
+  }  // Every layout has at least one three-drawer base (Tom, Oct 31). The planner already splits a wide door base beside
   // the range; if no drawer base landed anywhere, convert the best-fitting base run. A line with no drawer base only warns.
   const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
   working = drawerRule.placed;
   if (drawerRule.note) notes.push(drawerRule.note);
   if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
+  // A run end is finished, not gapped: no filler is appended at the end of a run,
+  // and one board per run is the most Auto-Design ever places. The small-gap pass
+  // is therefore off here (the measured build fills only a genuine sliver below).
   const baseRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
     // Owner rule: filler is the last resort, never automatic. Real cabinets first
@@ -1050,6 +1331,12 @@ export function runAutoDesignLayout(args: {
   });
   working = leftover.placed;
   notes.push(...leftover.notes);
+  // Owner rule: the sink base is never the last floor box against a tall unit or
+  // refrigerator. The base runs and the tall picks are both down, so a slide that
+  // opens the landing is known exactly. The sink base slides (within its own
+  // anchor cap); nothing else moves. A sink that still has no landing is named.
+  const landingFix = slideSinkForLanding({ placed: working, room, notes, reviewFindings });
+  working = landingFix.placed;
   // HARD RULE (owner, Nov 5 2026): a real bridge wall cabinet is placed above the
   // range on EVERY build, and it goes in BEFORE the upper run tiles. Seating it
   // first makes the bridge an occupied upper, so the wall run never lays an
@@ -1083,8 +1370,41 @@ export function runAutoDesignLayout(args: {
   working = clampPlacedToRefrigeratorPanels(working, room).placed;
   const finishedRules = applyDesignerLayoutRules({
     placed: working, room, openings: stageOpenings, fillers: catalogFillers, makeUid, styleId: args.styleId,
+    // The automatic small-gap pass is off for the whole measured build: filler is
+    // the last resort, and a run closes with one board at most (below).
+    allowAutoFillers: false,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
+  // One board per run end. Before this pass a run could collect a 1¼″ beside a
+  // stock run, a 1″ beside the range and a 3″ at each window shoulder, because
+  // every stage filled its own sliver. Now a stock width closes the opening when
+  // one exists, and the boards of one run are consolidated into a single board.
+  const stockClosed = closeSmallOpeningsWithStock({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: runWalls,
+    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    maxOpeningIn: autoDesignFillerMaxIn(),
+    styleId: args.styleId,
+    makeUid,
+  });
+  working = stockClosed.placed;
+  notes.push(...stockClosed.notes);
+  const consolidated = consolidateAutoDesignFillers({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: runWalls,
+    catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
+    fillers: catalogFillers,
+    maxFillerIn: autoDesignFillerMaxIn(),
+    makeUid,
+    styleId: args.styleId,
+  });
+  working = consolidated.placed;
+  notes.push(...consolidated.notes);
+  reviewFillers(runWalls, working, room, stageOpenings, reviewFindings);
   // HARD RULE (owner, Nov 5 2026): the bridge above the range is mandatory and is
   // already seated before the upper run tiled. What follows is the existing
   // add-only logic for the MICROWAVE and HOOD on top of that bridge: the popup
@@ -1129,8 +1449,34 @@ export function runAutoDesignLayout(args: {
   const explicitHingeUids = working.filter((item) => item.swing === "left" || item.swing === "right").map((item) => item.uid);
   working = pairAdjacentSingleDoorHandles({ placed: working, room, explicitHingeUids }).placed;
   // Rule 11: the 54 / 84-90-96 upper datum, and rule 4's one continuous board per filler.
-  working = normalizeUpperHeights(working);
+  working = normalizeUpperHeights(working, { room, openings: stageOpenings });
+  // Issue #354 item 7 (Tom): on the U.S. Cabinet Depot frameless line every wall
+  // cabinet top meets the top of a 40-1/4" wall cabinet, including the box over a
+  // microwave. The pass only raises a bottom, so the 72" microwave bridge datum,
+  // the over-range cooking floor and the over-sink window clearance are all left
+  // satisfied, and other lines are untouched because none of their cabinets
+  // carry the frameless geometry marker.
+  const framelessTops = alignFramelessWallCabinetTops({ placed: working, room });
+  working = framelessTops.placed;
+  for (const entry of framelessTops.aligned) {
+    notes.push(`${entry.masterCode} was raised to meet the frameless ${framelessWallTopDatumIn()}″ wall-cabinet top line.`);
+  }
+  for (const warning of framelessTops.warnings) {
+    reviewFindings.push({
+      ruleId: "frameless-wall-top-line",
+      code: "frameless-upper-off-the-top-line",
+      severity: "warning",
+      title: "A wall cabinet could not join the frameless top line",
+      detail: warning,
+    });
+  }
   working = normalizeContinuousVerticalFillers(working, room).placed;
+  // Owner rule: the uppers line up with the bases beneath them. A shared pass
+  // later in the pipeline can still mirror a run-end base filler up into the wall
+  // layer, so the last word is here: flat stock that hangs past the end of the
+  // base run is removed. Filler inside the run (and beside a window or corner) stays.
+  const endTrim = trimWallFillersOutsideRun({ placed: working, room });
+  working = endTrim.placed;
   // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
   const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls });
   reviewFindings.push(...exposedPanelFindings(panelRequirements, new Set()));
@@ -1233,6 +1579,33 @@ export function runAutoDesignLayout(args: {
       ];
       notes.push(...raisedForFaucet.notes.map((note) => note.text));
     }
+  }
+  // Owner rule: the basin is centered on the sink base that actually holds it and
+  // set back 2"–2½" from the finished countertop front. The base can slide after
+  // the fixture is first built (the sink-landing rule moves it), so the fixtures
+  // are re-seated onto the FINAL bases here, before the faucet is attached.
+  const reseatedSinks = reSeatSinkFixtures(sinks, working, room, sinkFrontSetbackIn());
+  if (reseatedSinks.changed) {
+    sinks = reseatedSinks.sinks;
+    notes.push(...reseatedSinks.notes);
+  }
+  // A basin the geometry cannot seat the owner's way (a Pelican sink deeper than
+  // the finished top allows at a 2" setback, say) is named on the review list
+  // rather than left as an unexplained offset.
+  for (const sink of sinks) {
+    const base = working.find((item) => item.uid === sink.cabinetUid);
+    if (!base) continue;
+    const seat = sinkSeatCheck(sink, base, room);
+    if (seat.ok) continue;
+    reviewFindings.push({
+      ruleId: "sink-seat-on-base",
+      code: "sink-not-centered-or-setback",
+      severity: "warning",
+      title: `${sink.pelicanProductName ?? sink.type} does not sit the way the sink rule asks`,
+      detail: seat.reason ?? `${sink.uid} is not seated centered on ${base.masterCode} at a ${NON_APRON_SINK_FRONT_SETBACK.minimumIn}″–${NON_APRON_SINK_FRONT_SETBACK.maximumIn}″ front setback.`,
+      cabinetUid: base.uid,
+      cabinetCode: base.masterCode,
+    });
   }
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
