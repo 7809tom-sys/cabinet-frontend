@@ -194,6 +194,25 @@ function soldWidth(candidate: DesignCabinet): number {
   return dim(candidate.width, 0);
 }
 
+function heightOf(row: { height?: string | number | null }): number {
+  return dim(row.height, 0);
+}
+
+/** Among rows of one width, a 42" design must take the 42" SKU, not the 30" row listed first. */
+function rowAtWidth(
+  catalog: readonly DesignCabinet[],
+  layer: FillerLayer,
+  width: number,
+  preferHeightIn: number | null,
+): DesignCabinet | null {
+  const matches = catalog.filter((row) => sellableRunCabinet(row, layer) && Math.abs(soldWidth(row) - width) <= 0.05);
+  if (preferHeightIn != null) {
+    const atHeight = matches.find((row) => Math.abs(heightOf(row) - preferHeightIn) <= 0.05);
+    if (atHeight) return atHeight;
+  }
+  return matches[0] ?? null;
+}
+
 function sellableRunCabinet(candidate: DesignCabinet, layer: FillerLayer): boolean {
   if (candidate.placement !== layer) return false;
   if (isFillerItem(candidate) || isPanelItem(candidate)) return false;
@@ -215,15 +234,21 @@ export function widerSkuClosing(input: {
   extraIn: number;
   layer: FillerLayer;
   catalog: readonly DesignCabinet[];
+  /** When set, the wider box must be this tall. A 42" run must not grow into W2430. */
+  preferHeightIn?: number | null;
 }): { replacement: DesignCabinet; widthIn: number } | null {
   if (input.extraIn <= COLLISION_EPSILON_IN) return null;
   const current = Number(input.cabinet.width) || 0;
   const wanted = Math.round((current + input.extraIn) * 1000) / 1000;
   const family = cabinetFamilyToken(input.cabinet.masterCode);
   if (!family) return null;
-  const replacement = input.catalog.find((row) => sellableRunCabinet(row, input.layer)
-    && cabinetFamilyToken(row.masterCode) === family
-    && Math.abs(soldWidth(row) - wanted) <= 0.05);
+  const prefer = input.preferHeightIn ?? (input.layer === "wall" ? Number(input.cabinet.height) || null : null);
+  const replacement = rowAtWidth(
+    input.catalog.filter((row) => cabinetFamilyToken(row.masterCode) === family),
+    input.layer,
+    wanted,
+    prefer,
+  );
   return replacement ? { replacement, widthIn: wanted } : null;
 }
 
@@ -263,6 +288,8 @@ export function closeSmallOpeningsWithStock(input: {
   maxOpeningIn: number;
   styleId: number | null;
   makeUid: () => string;
+  /** Wall rows picked for a 42" design must be this tall, not the 30" SKU listed first. */
+  wallHeightIn?: number | null;
 }): { placed: PlacedCabinet[]; closes: StockClose[]; notes: string[] } {
   let working = [...input.placed];
   const closes: StockClose[] = [];
@@ -285,7 +312,10 @@ export function closeSmallOpeningsWithStock(input: {
         let applied = false;
         for (const neighbor of touching) {
           const onLeft = Math.abs(wallRunOffset(neighbor, wallId, input.room) + wallRunSpan(neighbor, wallId, input.room) - gap.startIn) <= 0.02;
-          const wider = widerSkuClosing({ cabinet: neighbor, extraIn: gap.widthIn, layer, catalog: input.catalog });
+          const wider = widerSkuClosing({
+            cabinet: neighbor, extraIn: gap.widthIn, layer, catalog: input.catalog,
+            preferHeightIn: layer === "wall" ? input.wallHeightIn : null,
+          });
           if (!wider) continue;
           const start = onLeft
             ? wallRunOffset(neighbor, wallId, input.room)
@@ -436,11 +466,12 @@ function isDrawerRunCabinet(item: PlacedCabinet): boolean {
   return (item.numberOfDrawers ?? 0) >= 3 || /^(?:3DB|DB)\d/i.test(item.masterCode ?? "");
 }
 
-function stockWidths(catalog: readonly DesignCabinet[], layer: FillerLayer): number[] {
+function stockWidths(catalog: readonly DesignCabinet[], layer: FillerLayer, preferHeightIn: number | null): number[] {
   const seen = new Set<number>();
   const widths: number[] = [];
   for (const row of catalog) {
     if (!sellableRunCabinet(row, layer)) continue;
+    if (preferHeightIn != null && Math.abs(heightOf(row) - preferHeightIn) > 0.05) continue;
     const width = Math.round(soldWidth(row) * 8) / 8;
     if (width <= 0 || seen.has(width)) continue;
     seen.add(width);
@@ -449,8 +480,13 @@ function stockWidths(catalog: readonly DesignCabinet[], layer: FillerLayer): num
   return widths.sort((left, right) => right - left);
 }
 
-function rowForWidth(catalog: readonly DesignCabinet[], layer: FillerLayer, width: number): DesignCabinet | null {
-  return catalog.find((row) => sellableRunCabinet(row, layer) && Math.abs(soldWidth(row) - width) <= 0.05) ?? null;
+function rowForWidth(
+  catalog: readonly DesignCabinet[],
+  layer: FillerLayer,
+  width: number,
+  preferHeightIn: number | null,
+): DesignCabinet | null {
+  return rowAtWidth(catalog, layer, width, preferHeightIn);
 }
 
 type LengthPack = { lengthIn: number; widths: number[]; remainderIn: number };
@@ -535,11 +571,13 @@ function repackCluster(input: {
   room: RoomData;
   placed: readonly PlacedCabinet[];
   openings: readonly WallOpening[];
+  preferHeightIn?: number | null;
 }): Extract<ClusterPlan, { kind: "repack" }> | null {
   const { cluster, room, placed } = input;
   if (cluster.cabinets.length === 0) return null;
   if (cluster.cabinets.some(isDrawerRunCabinet)) return null;
-  const widths = stockWidths(input.catalog, cluster.layer);
+  const preferHeight = cluster.layer === "wall" ? input.preferHeightIn ?? null : null;
+  const widths = stockWidths(input.catalog, cluster.layer, preferHeight);
   if (!widths.length) return null;
   const frame = wallRunFrame(cluster.wallId, room);
   if (!frame) return null;
@@ -579,7 +617,7 @@ function repackCluster(input: {
   if (!pack || pack.widths.length === 0) return null;
   const rows: DesignCabinet[] = [];
   for (const width of pack.widths) {
-    const row = rowForWidth(input.catalog, cluster.layer, width);
+    const row = rowForWidth(input.catalog, cluster.layer, width, preferHeight);
     if (!row) return null;
     rows.push(row);
   }
@@ -653,6 +691,7 @@ export function planFillerCluster(input: {
   room: RoomData;
   placed?: readonly PlacedCabinet[];
   openings?: readonly WallOpening[];
+  wallHeightIn?: number | null;
 }): ClusterPlan {
   const { cluster, room } = input;
   if (cluster.fillers.length > 0 && cluster.fillers.every((item) => (Number(item.width) || 0) <= FILLER_LAST_RESORT_MAX_IN + 0.001)) {
@@ -664,6 +703,7 @@ export function planFillerCluster(input: {
     room,
     placed: input.placed ?? [],
     openings: input.openings ?? [],
+    preferHeightIn: input.wallHeightIn,
   });
   if (repacked) return repacked;
   if (cluster.boardTotalIn > FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN) {
@@ -681,7 +721,10 @@ export function planFillerCluster(input: {
   // the run's start where it is, which is where the corner and the countertop
   // expect it.
   for (const cabinet of [...ordered].reverse()) {
-    const wider = widerSkuClosing({ cabinet, extraIn: cluster.boardTotalIn, layer: cluster.layer, catalog: input.catalog });
+    const wider = widerSkuClosing({
+      cabinet, extraIn: cluster.boardTotalIn, layer: cluster.layer, catalog: input.catalog,
+      preferHeightIn: cluster.layer === "wall" ? input.wallHeightIn : null,
+    });
     if (!wider) continue;
     const laid = layCluster({ cluster, room, growUid: cabinet.uid, growWidthIn: wider.widthIn });
     if (Math.abs(laid.endIn - cluster.endIn) > 0.02) continue;
@@ -774,6 +817,7 @@ export function consolidateAutoDesignFillers(input: {
   maxFillerIn: number;
   makeUid: () => string;
   styleId: number | null;
+  wallHeightIn?: number | null;
 }): {
   placed: PlacedCabinet[];
   changes: Array<{ wallId: string; layer: FillerLayer; kind: "widen" | "repack" | "consolidate"; detail: string }>;
@@ -795,7 +839,7 @@ export function consolidateAutoDesignFillers(input: {
         if (!cluster) break;
         const plan = planFillerCluster({
           cluster, catalog: input.catalog, maxFillerIn: input.maxFillerIn, room: input.room,
-          placed: working, openings: input.openings,
+          placed: working, openings: input.openings, wallHeightIn: input.wallHeightIn,
         });
         if (plan.kind === "leave") {
           for (const filler of cluster.fillers) skipped.add(filler.uid);

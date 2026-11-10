@@ -6,6 +6,8 @@
 import { describe, expect, it } from "vitest";
 import matrixCatalog from "@/lib/__fixtures__/autoDesignMatrixCatalog.json";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/autoDesignLayout";
+import { widerSkuClosing } from "@/lib/autoDesignFillerConsolidation";
+import { planRealCabinetFixes } from "@/lib/autoDesignRealCabinets";
 import { buildAutoDesignWallCabinets, enforceFortyTwoWallCabinets } from "@/lib/autoDesignWallCabinets";
 import type { AutoDesignInputs } from "@/lib/autoDesignAutoBuild";
 import { wallPlacementAt, type DesignCabinet, type PlacedCabinet, type RoomData } from "@/lib/design";
@@ -39,6 +41,46 @@ function baseAt(code: string, width: number, along: number): PlacedCabinet {
 }
 
 describe("42 inch wall cabinets", () => {
+  it("does not take the 30 inch W2130 and W2430 just because they are listed first", () => {
+    const catalog = [
+      wall(1, "W2130", 21, 30, 1),
+      wall(2, "W2142", 21, 42, 1),
+      wall(3, "W2430", 24, 30, 2),
+      wall(4, "W2430S", 24, 30, 1),
+      wall(5, "W2442", 24, 42, 2),
+    ];
+    const gap = planRealCabinetFixes({
+      gapIn: 21,
+      catalog,
+      neighbors: [],
+      room: ROOM,
+      wallId: "top",
+      layer: "wall",
+      preferHeightIn: 42,
+    });
+    expect(gap[0]).toMatchObject({ kind: "seat", cabinet: expect.objectContaining({ masterCode: "W2142" }) });
+
+    const twentyOne = {
+      ...baseAt("W2142", 21, 0),
+      placement: "wall" as const,
+      depth: 12,
+      height: 42,
+      mountBottom: 54,
+      numberOfDoors: 1,
+    };
+    const grown = widerSkuClosing({
+      cabinet: twentyOne,
+      extraIn: 3,
+      layer: "wall",
+      catalog,
+      preferHeightIn: 42,
+    });
+    expect(grown?.replacement.masterCode).toBe("W2442");
+    expect(grown?.replacement.numberOfDoors).toBe(2);
+    expect(grown?.replacement.masterCode).not.toBe("W2430");
+    expect(grown?.replacement.masterCode).not.toBe("W2430S");
+  });
+
   it("uses a 42 inch SKU at the same width, and the closest 42 inch width within 3 inches when that width is not sold", () => {
     const base = baseAt("B33", 33, 0);
     const catalog = [
@@ -99,6 +141,31 @@ describe("42 inch wall cabinets", () => {
     });
     expect(result.additions.some((item) => item.masterCode === "DCW2442")).toBe(true);
     expect(result.additions.some((item) => item.masterCode === "DCW2430" || item.masterCode === "W1230")).toBe(false);
+  });
+
+  it("places W2142 and two-door W2442 over a 21 inch base, a 24 inch base, and the dishwasher beside a window", () => {
+    const result = buildAutoDesignWallCabinets({
+      placed: [
+        baseAt("B21", 21, 0),
+        baseAt("B24", 24, 21),
+        { ...baseAt("DW-24", 24, 45), placement: "appliance", description: "Dishwasher" },
+      ],
+      room: ROOM,
+      openings: [{ uid: "win", kind: "window", label: "Window", side: "top", offset: 70, width: 30, height: 36, sill: 42 }],
+      catalog: pack.wall,
+      wallCabinetHeightIn: 42,
+      styleId: 7,
+      makeUid: (() => { let n = 0; return () => `win-${++n}`; })(),
+      closeSeams: true,
+    });
+    const codes = result.additions.map((item) => item.masterCode);
+    expect(codes).toContain("W2142");
+    expect(codes).toContain("W2442");
+    expect(codes).not.toContain("W2130");
+    expect(codes).not.toContain("W2430");
+    const twoDoor = result.additions.find((item) => item.masterCode === "W2442");
+    expect(twoDoor?.numberOfDoors).toBe(2);
+    expect(twoDoor?.height).toBe(42);
   });
 
   it("makes the cabinet above the microwave 42 inches and leaves the refrigerator cap", () => {

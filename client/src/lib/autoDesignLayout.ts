@@ -1348,6 +1348,9 @@ export function runAutoDesignLayout(args: {
   // layers: slide within the wiggle room, widen a neighbor, or seat a real narrow
   // cabinet before any sliver is called unusable.
   const wallHeightNominal = stage.input.wallCabinetHeightIn ?? 30;
+  const wallDesignHeight = Math.abs(wallHeightNominal - 42) < 0.05
+    ? resolveWallHeightClass(stage.wallPool, 42) ?? 42
+    : null;
   const heightMatchedCatalog = catalogMatchingWallDesignHeight(
     [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
     wallHeightNominal,
@@ -1366,6 +1369,7 @@ export function runAutoDesignLayout(args: {
       || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
       ? kitchenRuleNumber("anchor_wiggle_cap_in")
       : kitchenRuleNumber("jog_max_in")),
+    wallHeightIn: wallDesignHeight,
   });
   working = realCabinets.placed;
   notes.push(...realCabinets.notes);
@@ -1466,6 +1470,7 @@ export function runAutoDesignLayout(args: {
     maxOpeningIn: autoDesignFillerMaxIn(),
     styleId: args.styleId,
     makeUid,
+    wallHeightIn: wallDesignHeight,
   });
   working = stockClosed.placed;
   notes.push(...stockClosed.notes);
@@ -1479,6 +1484,7 @@ export function runAutoDesignLayout(args: {
     maxFillerIn: FILLER_STRIP_MAX_IN,
     makeUid,
     styleId: args.styleId,
+    wallHeightIn: wallDesignHeight,
   });
   working = consolidated.placed;
   notes.push(...consolidated.notes);
