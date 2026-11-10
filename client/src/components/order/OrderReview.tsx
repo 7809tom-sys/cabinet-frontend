@@ -36,7 +36,7 @@ import { resolveCheckoutAlias } from "@/lib/affiliateCheckoutAlias";
 import { installationEstimateDocumentPath } from "@shared/installationEstimateLink";
 import { isHardwareCheckoutLine, isSurfaceCheckoutLine } from "@/lib/cartCheckoutPrefill";
 import { checkoutUnitPriceForLine, isCabinetFreightLine } from "@/lib/orderLinePricing";
-import { checkoutTotalWithLiveShipping, liveShippingQuotePanel } from "@/lib/liveShippingQuoteDisplay";
+import { affiliateLiveRateFailureMessage, checkoutTotalWithLiveShipping, freightQuoteIsLiveCarrier, liveShippingQuotePanel } from "@/lib/liveShippingQuoteDisplay";
 import { getSiteSignInUrl } from "@/const";
 import { isTemporaryOneDollarFreeShippingOrder, isTemporaryOneDollarCheckoutTestItem } from "@shared/temporaryCheckoutTest";
 import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
@@ -566,6 +566,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         liftgate: liftgateRequired,
       },
       carrierPreference,
+      affiliateSlug: affiliateSlug ?? undefined,
       items: pricedLines
         .filter((line) => (isCabinetFreightLine(line) || isSurfaceCheckoutLine(line)) && !isHardwareCheckoutLine(line))
         .filter((line) => !isTemporaryOneDollarCheckoutTestItem(line))
@@ -584,7 +585,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
           pelicanProductId: isSurfaceCheckoutLine(line) ? line.cartPelicanProductId ?? null : null,
         })),
     }),
-    [zipDebounced, addressLine1, addressLine2, city, taxState, total, deliveryLocationType, liftgateRequired, carrierPreference, pricedLines, selectedStyle?.styleId, kitchenDesignId, freeShippingCabinetIds],
+    [zipDebounced, addressLine1, addressLine2, city, taxState, total, deliveryLocationType, liftgateRequired, carrierPreference, affiliateSlug, pricedLines, selectedStyle?.styleId, kitchenDesignId, freeShippingCabinetIds],
   );
   const hasOnlyCatalogFreeShippingItems = useMemo(() => {
     const candidates = pricedLines.filter((line) => (
@@ -602,7 +603,12 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     enabled: deliveryMethod === "ship" && zipDebounced.length >= 5 && city.trim().length > 0 && taxState.length === 2 && addressLine1.trim().length > 0 && freightInput.items.length > 0,
     retry: false,
   });
-  const freightCents = freightEstimate.data?.available ? freightEstimate.data.totalCents : 0;
+  // Affiliate checkout shows a carrier rate only. A flat fee, a weight-table
+  // estimate, or a free-freight threshold is not a rate on this store.
+  const cabinetFreightShown = affiliateSlug
+    ? freightQuoteIsLiveCarrier(freightEstimate.data)
+    : Boolean(freightEstimate.data?.available);
+  const freightCents = cabinetFreightShown ? freightEstimate.data!.totalCents : 0;
   const hardwareQuoteInput = useMemo(() => ({
     items: pricedLines
       .filter((line) => isHardwareCheckoutLine(line))
@@ -720,7 +726,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     hasItems: freightInput.items.length > 0 || hasHardwareLines,
     addressReady: shippingAddressReady,
     fetching: freightEstimate.isFetching || hardwareFreightQuote.isFetching,
-    available: Boolean(freightEstimate.data?.available) || hardwareFreightCents > 0,
+    available: cabinetFreightShown || hardwareFreightCents > 0,
   });
 
   function handleSubmit() {
@@ -758,6 +764,10 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
       return;
     }
     const requiresCabinetOrSurfaceQuote = freightInput.items.length > 0 && !hasOnlyTemporaryFreeShippingItems;
+    if (deliveryMethod === "ship" && requiresCabinetOrSurfaceQuote && affiliateSlug && !cabinetFreightShown) {
+      toast.error(affiliateLiveRateFailureMessage(freightEstimate.error?.message ?? freightEstimate.data?.reason));
+      return;
+    }
     if (deliveryMethod === "ship" && requiresCabinetOrSurfaceQuote && !freightEstimate.data?.quoteToken) {
       toast.error("A current shipping quote is required before submitting this order.");
       return;
@@ -1135,7 +1145,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
             {total > 0 ? `$${total.toFixed(2)}` : "—"}
           </p>
         </div>
-        {deliveryMethod === "ship" && (freightEstimate.data?.available || hardwareFreightCents > 0) && (
+        {deliveryMethod === "ship" && (cabinetFreightShown || hardwareFreightCents > 0) && (
           <div className="flex items-center justify-between text-sm" data-testid="live-shipping-total">
             <span className="text-muted-foreground">Shipping</span>
             <span className="font-medium tabular-nums">${((freightCents + hardwareFreightCents) / 100).toFixed(2)}</span>
@@ -1451,7 +1461,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
               <p role="status" className="text-xs text-amber-800">Complete the street address, city, state, and ZIP above to calculate the shipping quote. Your name, email, and phone are required before the order can be submitted.</p>
             ) : liveShippingPanel === "calculating" ? (
               <FreightCalculatingStatus upsRequested={carrierPreference === "ups"} />
-            ) : liveShippingPanel === "quote" && freightEstimate.data?.available ? (
+            ) : liveShippingPanel === "quote" && cabinetFreightShown ? (
               <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
                 <div className="flex items-center justify-between gap-3 text-sm font-semibold">
                   <span>Verified shipping total</span>
@@ -1492,8 +1502,10 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
               </div>
             ) : (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                {freightEstimate.error?.message ?? freightEstimate.data?.reason ?? "Shipping is not available for this order yet."}
-                {freightEstimate.data?.partial && (freightEstimate.data.rateGroups ?? []).length > 0 && (
+                {affiliateSlug && freightInput.items.length > 0
+                  ? affiliateLiveRateFailureMessage(freightEstimate.error?.message ?? freightEstimate.data?.reason)
+                  : (freightEstimate.error?.message ?? freightEstimate.data?.reason ?? "Shipping is not available for this order yet.")}
+                {!affiliateSlug && freightEstimate.data?.partial && (freightEstimate.data.rateGroups ?? []).length > 0 && (
                   <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-950">
                     <div className="font-semibold">Shipping included so far: ${(freightEstimate.data.totalCents / 100).toFixed(2)}</div>
                     {(freightEstimate.data.rateGroups ?? []).map((rate) => <div key={rate.key}>{rate.vendorName ?? "Fulfillment vendor"}: {rate.label} · ${(rate.baseAmountCents / 100).toFixed(2)}</div>)}

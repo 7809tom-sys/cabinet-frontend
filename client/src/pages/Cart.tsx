@@ -497,11 +497,15 @@ export default function Cart() {
               )}
             </div>
           )}
-          {shippingQuoteRequest.requests.length > 0 && (
+          {currentAffiliateSlug ? (
+            <p className="mb-4 text-xs text-muted-foreground" data-testid="affiliate-live-rate-only">
+              Checkout requests a live carrier rate after the delivery address is complete. This store does not offer flat-rate or weight-based shipping.
+            </p>
+          ) : shippingQuoteRequest.requests.length > 0 ? (
             <div className="mb-4">
               <ShippingQuoteBox items={shippingQuoteRequest.requests} onQuoted={setSectionQuotes} />
             </div>
-          )}
+          ) : null}
           <p className="mb-2 text-center text-xs text-muted-foreground">
             Review delivery and the final Stripe payment total before placing your order.
           </p>
