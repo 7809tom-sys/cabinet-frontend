@@ -2706,6 +2706,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [showerWarnings, setShowerWarnings] = useState<Partial<Record<ShowerStepId, string[]>>>({});
   /** The surround's opening, which the pan, fittings and door are all built inside. */
   const showerOpening = useRef<ReturnType<typeof openingForSurround>>(null);
+  /**
+   * The clear width of each alcove the room can hold a shower in, keyed by the
+   * wizard's own wall name. The surround step marks which sizes span the wall the
+   * shopper picked, so the fit note talks about that wall rather than the widest one
+   * in the room.
+   */
+  const showerAlcoveWidths = useMemo(() => {
+    const widths: Partial<Record<ShowerWall, number>> = {};
+    for (const wall of ["top", "left", "right"] as const) {
+      const bay = bayForWall(room, wall);
+      if (bay) widths[wall] = bay.spanIn;
+    }
+    return widths;
+  }, [room]);
 
 
   /**
@@ -22876,7 +22890,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           It places each part into the plan as it is chosen, so the drawing and the
           cart stay in step. */}
       <Dialog open={showerWizardOpen} onOpenChange={setShowerWizardOpen}>
-        <DialogContent className="max-h-[92dvh] w-[min(1120px,96vw)] max-w-none overflow-y-auto" data-testid="shower-wizard-dialog">
+        <DialogContent className="max-h-[92dvh] w-[min(1120px,96vw)] max-w-none overflow-y-auto sm:max-w-none" data-testid="shower-wizard-dialog">
           <DialogHeader>
             <DialogTitle>Build Shower</DialogTitle>
           </DialogHeader>
@@ -22884,6 +22898,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
             onPlacePart={placeShowerPart}
             onRemovePart={removeShowerPart}
             warningsByStep={showerWarnings}
+            alcoveWidthsByWall={showerAlcoveWidths}
             onDone={() => setShowerWizardOpen(false)}
             onClose={() => setShowerWizardOpen(false)}
           />
