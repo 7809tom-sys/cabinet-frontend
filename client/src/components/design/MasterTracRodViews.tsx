@@ -5,6 +5,9 @@ import { masterTracFinishColor, masterTracProduct } from "@/lib/closet";
 import type { PlacedCabinet, WallSide } from "@/lib/design";
 import { isMasterTracCornerBoard } from "@/lib/masterTracTower";
 import { addIllustrativeTowerMixedStorage, addIllustrativeTowerRods, addStraightBoard } from "./MasterTracCornerViews";
+import { ThreeDRendererHost } from "./threeDRendererHost";
+import { ThreeDStartNotice } from "./ThreeDStartNotice";
+import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 
 const IN = 1 / 12;
 
@@ -74,15 +77,22 @@ export function MasterTracRodElevation({ placed, wall, onEdit }: { placed: Place
 export function MasterTracRod3D({ placed, wall, onEdit }: { placed: PlacedCabinet[]; wall: WallSide; onEdit: () => void }) {
   const group = useMemo(() => rodGroup(placed), [placed]);
   const mount = useRef<HTMLDivElement>(null);
+  const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
+  const start = useThreeDRendererRecovery(rendererHostRef, { surface: "mastertrac-rod" });
+  const running = start.status === "running";
   useEffect(() => {
     const element = mount.current;
-    if (!element || !group) return;
+    if (!element || !group || !running) return;
+    rendererHostRef.current ??= new ThreeDRendererHost();
+    const renderer = rendererHostRef.current.ensureMounted(element);
+    if (!renderer) { start.startFailed(); return; }
+    start.started();
+    const detachContextRecovery = start.attach(renderer);
     const scene = new THREE.Scene(); scene.background = new THREE.Color("#eae7df");
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = false;
+    // The renderer may come from another 3D view, which sets its own shadows and tone mapping.
+    renderer.shadowMap.enabled = false; renderer.toneMapping = THREE.NoToneMapping; renderer.toneMappingExposure = 1; renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.dataset.testid = "mastertrac-rod-3d-canvas";
-    element.appendChild(renderer.domElement);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 300);
     const span = group.width * IN;
     camera.position.set(span * 0.77, 11.8, Math.max(10, span * 1.65));
@@ -96,8 +106,10 @@ export function MasterTracRod3D({ placed, wall, onEdit }: { placed: PlacedCabine
     const observer = new ResizeObserver(resize); observer.observe(element); resize();
     let active = true, frame = 0;
     const tick = () => { if (!active) return; controls.update(); renderer.render(scene, camera); frame = requestAnimationFrame(tick); }; tick();
-    return () => { active = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); assembly?.traverse((object) => { if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) { object.geometry.dispose(); const mats = Array.isArray(object.material) ? object.material : [object.material]; mats.forEach((material) => material.dispose()); } }); renderer.dispose(); renderer.forceContextLoss(); element.removeChild(renderer.domElement); };
-  }, [group]);
+    return () => { active = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); assembly?.traverse((object) => { if (object instanceof THREE.Mesh || object instanceof THREE.LineSegments) { object.geometry.dispose(); const mats = Array.isArray(object.material) ? object.material : [object.material]; mats.forEach((material) => material.dispose()); } }); detachContextRecovery(); renderer.renderLists.dispose(); };
+  }, [group, running, start.generation]);
+  // Declared after the scene effect so, on unmount, the scene tears down before the renderer is parked.
+  useEffect(() => () => { rendererHostRef.current?.release(); rendererHostRef.current = null; }, []);
   if (!group) return null;
-  return <div className="flex h-full flex-col bg-[#eeeae0]" data-testid="mastertrac-rod-3d"><Header width={group.width} wall={wall} view="3D mixed storage" /><div ref={mount} className="min-h-[320px] flex-1 overflow-hidden" aria-label="Rotateable MasterTrac connected tower with sourced parts and illustrative mixed storage" /><div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2 text-[11px] text-stone-700"><span>Source-backed List part quantities; drawer fronts, shoe tilt, rod/cup profiles and hardware fit are <strong>illustrative</strong>. Rotate to inspect, not an installation drawing.{placed.length > group.boards.length && ` Focused view: ${placed.length - group.boards.length} other placed items not shown.`}</span><button type="button" onClick={onEdit} className="rounded border border-stone-400 px-2 py-1 font-semibold">Edit connected towers</button></div></div>;
+  return <div className="flex h-full flex-col bg-[#eeeae0]" data-testid="mastertrac-rod-3d"><Header width={group.width} wall={wall} view="3D mixed storage" /><div className="relative min-h-[320px] flex-1 overflow-hidden"><div ref={mount} className="absolute inset-0" aria-label="Rotateable MasterTrac connected tower with sourced parts and illustrative mixed storage" /><ThreeDStartNotice recovery={start} testIdPrefix="mastertrac-rod" className="bg-[#eeeae0] text-stone-700" /></div><div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2 text-[11px] text-stone-700"><span>Source-backed List part quantities; drawer fronts, shoe tilt, rod/cup profiles and hardware fit are <strong>illustrative</strong>. Rotate to inspect, not an installation drawing.{placed.length > group.boards.length && ` Focused view: ${placed.length - group.boards.length} other placed items not shown.`}</span><button type="button" onClick={onEdit} className="rounded border border-stone-400 px-2 py-1 font-semibold">Edit connected towers</button></div></div>;
 }

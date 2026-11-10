@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ThreeDRendererHost } from "@/components/design/threeDRendererHost";
+import { ThreeDStartNotice } from "@/components/design/ThreeDStartNotice";
+import { useThreeDRendererRecovery } from "@/components/design/useThreeDRendererRecovery";
 import type { StudioDesign, StudioKind, StudioWall } from "@/lib/vendorClosetStudio";
 import { STUDIO_BASKET_FRAME_HEX, STUDIO_BASKET_LINER_PLACEHOLDER_HEX, STUDIO_CORNER_SHELF_THICKNESS_IN, STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, studioBasketPlacementsForWall, studioBasketSurface, studioBayCut, studioBays, studioCanonicalCornerShelf, studioCanonicalTowerFootprint, studioCanonicalTowerOffset, studioCompanionTowerTransform, studioCornerShelvesForWall, studioFixedBottom, studioFixedTop, studioPanelHeight, studioSnapShelfHeight, studioWidth } from "@/lib/vendorClosetStudio";
 import { CLOSET_FRAME_PADDING, closetCabinetCorners, closetFitDistance, frameClosetStudioCamera, projectClosetPoint, type ClosetAabb, type ClosetCameraFrame, type ClosetCameraView } from "./closetStudioCamera";
@@ -94,9 +96,11 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
   const readoutRef = useRef<HTMLDivElement>(null);
   /** One renderer for the life of the closet view; design edits rebuild only the scene. */
   const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
+  const closetStart = useThreeDRendererRecovery(rendererHostRef, { surface: "closet" });
+  const startRunning = closetStart.status === "running";
   useEffect(() => {
     const host = mount.current;
-    if (!host) return;
+    if (!host || !startRunning) return;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#e9e5db");
     const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 130);
@@ -107,7 +111,12 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const roomDepth = hasCornerPlanning ? design.roomDepthIn * IN : Math.max(4, 14.5 * IN + 3);
     rendererHostRef.current ??= new ThreeDRendererHost();
     const renderer = rendererHostRef.current.ensureMounted(host);
-    if (!renderer) return;
+    if (!renderer) {
+      closetStart.startFailed();
+      return;
+    }
+    closetStart.started();
+    const detachContextRecovery = closetStart.attach(renderer);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = false;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -644,6 +653,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     };
     tick();
     return () => {
+      detachContextRecovery();
       running = false; cancelAnimationFrame(frame); observer.disconnect(); controls.dispose();
       renderer.domElement.removeEventListener("click", onClick);
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -668,7 +678,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       }
       texture.dispose(); renderer.renderLists.dispose();
     };
-  }, [design, selectedBay, selectedCornerId]);
+  }, [design, selectedBay, selectedCornerId, startRunning, closetStart.generation]);
   // Declared after the scene effect so, on unmount, the scene tears down before
   // the renderer is parked for the next 3D view.
   useEffect(() => () => {
@@ -683,6 +693,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
   useEffect(() => { reframeRef.current(); }, [cameraView, fitToken]);
   return <div className="relative h-full min-h-0 w-full touch-none">
     <div ref={mount} className="h-full min-h-0 w-full touch-none" role="group" aria-label="Vendor closet 3D design canvas" data-testid="vendor-closet-3d" />
+    <ThreeDStartNotice recovery={closetStart} testIdPrefix="vendor-closet" className="bg-[#e9e5db]/90 text-stone-700" />
     {/* Live inch readout while a shelf is dragged; the value it reports is the exact height that will be applied. */}
     <div ref={readoutRef} data-testid="vendor-shelf-drag-readout" aria-live="polite" className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-full rounded-md bg-[#244338] px-2 py-1 text-[11px] font-bold tabular-nums text-white opacity-0 shadow-md transition-opacity">0 in</div>
   </div>;
