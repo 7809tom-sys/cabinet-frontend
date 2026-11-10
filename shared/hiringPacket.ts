@@ -5,7 +5,8 @@
  * edition on uscis.gov/i-9 as reviewed 06/03/2026). Lists of Acceptable
  * Documents are the lists on that form. Form W-4 follows the 2026 IRS form
  * (created 12/08/2025): Steps 1–5, the exemption box, and the Employers Only
- * block. Nothing here adds a line those forms do not have.
+ * block. Form W-9 is Rev. March 2024. Wisconsin employees use Form WT-4
+ * (W-204, R. 8-23). Nothing here adds a line those forms do not have.
  *
  * The typed-name signature is the same e-sign the affiliate payout consent
  * already uses. The stored evidence columns match affiliate_legal_signatures
@@ -31,6 +32,7 @@ export const PRIVATE_BUCKET_NAME = "private-files";
 
 export const HIRING_DOCUMENT_KINDS = [
   "application",
+  "w9",
   "i9_section1",
   "w4",
   "state_withholding",
@@ -41,12 +43,74 @@ export type HiringDocumentKind = (typeof HIRING_DOCUMENT_KINDS)[number];
 
 export const HIRING_DOCUMENT_LABELS: Record<HiringDocumentKind, string> = {
   application: "Job application",
+  w9: "Form W-9",
   i9_section1: "Form I-9, Section 1",
   w4: "Form W-4 (2026)",
   state_withholding: "State withholding",
   direct_deposit: "Direct deposit authorization",
   policy_acknowledgment: "Policy and handbook acknowledgment",
 };
+
+export const WORKER_TYPES = [
+  { value: "contractor_1099", label: "1099 Contractor" },
+  { value: "w2_employee", label: "Employee (W-2)" },
+] as const;
+export type WorkerType = (typeof WORKER_TYPES)[number]["value"];
+export const DEFAULT_WORKER_TYPE: WorkerType = "contractor_1099";
+
+export const WORK_STATES = [
+  { code: "FL", name: "Florida" },
+  { code: "WI", name: "Wisconsin" },
+] as const;
+export type WorkStateCode = (typeof WORK_STATES)[number]["code"];
+
+/** Forms a 1099 contractor completes. I-9, W-4, and state withholding stay in the code for employees. */
+export const CONTRACTOR_1099_FORMS = ["application", "w9", "direct_deposit", "policy_acknowledgment"] as const satisfies readonly HiringDocumentKind[];
+/** Forms a W-2 employee completes. */
+export const W2_EMPLOYEE_FORMS = ["application", "i9_section1", "w4", "state_withholding", "direct_deposit", "policy_acknowledgment"] as const satisfies readonly HiringDocumentKind[];
+
+export const EMPLOYEE_ONLY_FORMS_NOTE =
+  "Form I-9, Form W-4, and state withholding are not in this packet. Those forms apply to employees. A 1099 contractor does not complete them.";
+
+export const W9_REVISION = "March 2024";
+export const WT4_REVISION = "W-204 (R. 8-23)";
+
+export const W9_CLASSIFICATIONS = [
+  { value: "individual", label: "Individual/sole proprietor" },
+  { value: "c_corporation", label: "C corporation" },
+  { value: "s_corporation", label: "S corporation" },
+  { value: "partnership", label: "Partnership" },
+  { value: "trust_estate", label: "Trust/estate" },
+  { value: "llc", label: "Limited liability company" },
+  { value: "other", label: "Other" },
+] as const;
+
+export const WT4_FILING_STATUSES = [
+  { value: "single", label: "Single" },
+  { value: "married", label: "Married" },
+  { value: "married_higher_single", label: "Married, but withhold at higher Single rate" },
+] as const;
+
+export function formsForWorker(workerType: WorkerType): readonly HiringDocumentKind[] {
+  return workerType === "w2_employee" ? W2_EMPLOYEE_FORMS : CONTRACTOR_1099_FORMS;
+}
+
+export function normalizeWorkerType(value: string | null | undefined): WorkerType {
+  return value === "w2_employee" ? "w2_employee" : DEFAULT_WORKER_TYPE;
+}
+
+export function normalizeWorkState(value: string | null | undefined): WorkStateCode | null {
+  const code = value?.trim().toUpperCase();
+  if (code === "FL" || code === "WI") return code;
+  return null;
+}
+
+export function documentLabel(kind: HiringDocumentKind, workState: WorkStateCode | null): string {
+  if (kind === "w9") return `Form W-9 (Rev. ${W9_REVISION})`;
+  if (kind === "state_withholding" && workState === "WI") return "Wisconsin Form WT-4";
+  if (kind === "state_withholding" && workState === "FL") return "Florida withholding acknowledgment";
+  return HIRING_DOCUMENT_LABELS[kind];
+}
 
 export const HIRING_DOCUMENT_STATUSES = ["not_started", "in_progress", "signed", "reviewed"] as const;
 export type HiringDocumentStatus = (typeof HIRING_DOCUMENT_STATUSES)[number];
@@ -272,6 +336,8 @@ export type PublicPacket = {
   userId: number | null;
   applicantName: string;
   applicantEmail: string;
+  workerType: WorkerType;
+  workState: WorkStateCode | null;
   documents: PublicDocument[];
 };
 
@@ -280,6 +346,8 @@ export type PacketSummary = {
   userId: number | null;
   applicantName: string;
   applicantEmail: string;
+  workerType: WorkerType;
+  workState: WorkStateCode | null;
   progress: PacketProgress;
 };
 
@@ -289,7 +357,7 @@ export type PacketProgress = {
   byStatus: Record<HiringDocumentStatus, number>;
 };
 
-const SENSITIVE_KEYS = /^(ssn|socialsecuritynumber|accountnumber|routingnumber|bankaccount|employerein)$/i;
+const SENSITIVE_KEYS = /^(ssn|tin|ein|socialsecuritynumber|accountnumber|routingnumber|bankaccount|employerein)$/i;
 const SSN_PATTERN = /\b\d{3}-?\d{2}-?\d{4}\b/g;
 const LONG_DIGIT_PATTERN = /\b\d{8,17}\b/g;
 
@@ -346,16 +414,26 @@ export function emptyProgress(): PacketProgress {
   };
 }
 
-export function progressFromStatuses(statuses: readonly HiringDocumentStatus[]): PacketProgress {
+export function progressFromStatuses(statuses: readonly HiringDocumentStatus[], total = HIRING_DOCUMENT_KINDS.length): PacketProgress {
   const byStatus: Record<HiringDocumentStatus, number> = { not_started: 0, in_progress: 0, signed: 0, reviewed: 0 };
   for (const status of statuses) byStatus[status] += 1;
-  const missing = HIRING_DOCUMENT_KINDS.length - statuses.length;
+  const missing = total - statuses.length;
   if (missing > 0) byStatus.not_started += missing;
   return {
-    total: HIRING_DOCUMENT_KINDS.length,
+    total,
     signedOrReviewed: byStatus.signed + byStatus.reviewed,
     byStatus,
   };
+}
+
+/** Progress counts only the forms that belong to this worker type. */
+export function progressForWorker(
+  workerType: WorkerType,
+  documents: readonly { kind: HiringDocumentKind; status: HiringDocumentStatus }[],
+): PacketProgress {
+  const applicable = formsForWorker(workerType);
+  const byKind = new Map(documents.map((document) => [document.kind, document.status]));
+  return progressFromStatuses(applicable.map((kind) => byKind.get(kind) ?? "not_started"), applicable.length);
 }
 
 export function maskSsn(last4: string | null | undefined): string {
@@ -380,16 +458,22 @@ function isMaskPlaceholder(value: unknown): boolean {
   return value.includes("•") || value.includes("*") || /^x+$/i.test(value.trim());
 }
 
-const SENSITIVE_PAYLOAD_KEYS = ["ssn", "accountNumber", "routingNumber", "employerEin"] as const;
+const SENSITIVE_PAYLOAD_KEYS = ["ssn", "tin", "ein", "accountNumber", "routingNumber", "employerEin"] as const;
+
+const TIN_LAST4: Record<string, string> = {
+  ssn: "ssnLast4",
+  tin: "tinLast4",
+  ein: "einLast4",
+  employerEin: "employerEinLast4",
+};
 
 export function toPublicPayload(payload: Record<string, unknown> | null | undefined): Record<string, unknown> {
   const source = payload ?? {};
   const next: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(source)) {
-    if (key === "ssn" || key === "employerEin") {
+    if (key in TIN_LAST4) {
       const last4 = last4Digits(value);
-      if (key === "ssn" && last4) next.ssnLast4 = last4;
-      if (key === "employerEin" && last4) next.employerEinLast4 = last4;
+      if (last4) next[TIN_LAST4[key]!] = last4;
       continue;
     }
     if (key === "accountNumber") {
@@ -660,8 +744,42 @@ function validateW4(payload: Record<string, unknown>): FieldErrors {
   return errors;
 }
 
-function validateState(payload: Record<string, unknown>, settings: HiringSettings): FieldErrors {
-  const profile = stateProfile(settings.stateCode);
+function validateWt4(payload: Record<string, unknown>): FieldErrors {
+  const errors: string[] = [];
+  if (!hasText(payload, "legalName")) errors.push("Employee's legal name is required.");
+  errors.push(...validateSsn(payload, true));
+  if (!hasText(payload, "address")) errors.push("Employee's address is required.");
+  if (!hasText(payload, "city")) errors.push("City is required.");
+  if (!hasText(payload, "residenceState")) errors.push("State is required.");
+  if (!hasText(payload, "postalCode")) errors.push("ZIP code is required.");
+  if (hasText(payload, "dateOfBirth") && !isIsoDate(payload.dateOfBirth)) errors.push("Date of birth must be a real date.");
+  if (!hasText(payload, "dateOfBirth")) errors.push("Date of birth is required.");
+  if (!WT4_FILING_STATUSES.some((item) => item.value === text(payload.filingStatus))) {
+    errors.push("Check Single, Married, or Married but withhold at the higher Single rate.");
+  }
+  const exempt = text(payload.line3).toLowerCase() === "exempt";
+  if (!exempt) {
+    for (const [key, label, max] of [["line1a", "Line 1(a)", 1], ["line1b", "Line 1(b)", 1], ["line1c", "Line 1(c)", 99]] as const) {
+      const raw = payload[key];
+      const count = raw === "" || raw == null ? null : Number(raw);
+      if (count == null || !Number.isInteger(count) || count < 0 || count > max) errors.push(`${label} must be a whole number.`);
+    }
+    const total = Number(payload.line1a ?? 0) + Number(payload.line1b ?? 0) + Number(payload.line1c ?? 0);
+    if (payload.line1d != null && payload.line1d !== "" && Number(payload.line1d) !== total) {
+      errors.push("Line 1(d) is the total of lines 1(a) through 1(c).");
+    }
+    if (payload.line2 != null && payload.line2 !== "" && money(payload.line2) == null) errors.push("Line 2 must be a dollar amount.");
+  }
+  if (payload.wt4Certified !== true) errors.push("Certify the number of Wisconsin withholding exemptions.");
+  if (!hasText(payload, "employeeSignature")) errors.push("Signature is required.");
+  if (!isIsoDate(payload.signatureDate)) errors.push("Date signed is required.");
+  return errors;
+}
+
+function validateState(payload: Record<string, unknown>, settings: HiringSettings, workState: string | null = null): FieldErrors {
+  const code = (workState ?? settings.stateCode ?? "").trim().toUpperCase();
+  if (code === "WI") return validateWt4(payload);
+  const profile = stateProfile(code);
   if (!profile) return ["An administrator has not chosen the state for this withholding certificate."];
   const errors: string[] = [];
   if (!hasText(payload, "employeeSignature")) errors.push("Signature is required.");
@@ -739,6 +857,27 @@ function validateDeposit(payload: Record<string, unknown>): FieldErrors {
   return errors;
 }
 
+function validateW9(payload: Record<string, unknown>): FieldErrors {
+  const errors: string[] = [];
+  if (!hasText(payload, "name")) errors.push("Line 1, name of entity/individual, is required.");
+  const classification = text(payload.taxClassification);
+  if (!W9_CLASSIFICATIONS.some((item) => item.value === classification)) errors.push("Line 3a federal tax classification is required.");
+  if (classification === "llc" && !["C", "S", "P"].includes(text(payload.llcClassification).toUpperCase())) {
+    errors.push("Enter the LLC tax classification (C, S, or P).");
+  }
+  if (classification === "other" && !hasText(payload, "otherClassification")) errors.push("Describe the other federal tax classification.");
+  if (!hasText(payload, "address")) errors.push("Line 5 address is required.");
+  if (!hasText(payload, "cityStateZip")) errors.push("Line 6 city, state, and ZIP code is required.");
+  const ssn = digitsOf(payload.ssn);
+  const ein = digitsOf(payload.ein);
+  if (Boolean(ssn) === Boolean(ein)) errors.push("Enter either a Social Security number or an employer identification number.");
+  if (ssn && !/^\d{9}$/.test(ssn)) errors.push("Enter the 9-digit Social Security number.");
+  if (ein && !/^\d{9}$/.test(ein)) errors.push("Enter the 9-digit employer identification number.");
+  if (!hasText(payload, "employeeSignature")) errors.push("Signature of U.S. person is required.");
+  if (!isIsoDate(payload.signatureDate)) errors.push("Date is required.");
+  return errors;
+}
+
 function validatePolicy(payload: Record<string, unknown>, settings: HiringSettings): FieldErrors {
   const errors: string[] = [];
   if (!settings.handbookBody.trim() || !settings.handbookVersion.trim()) {
@@ -758,17 +897,20 @@ export function validateDocument(
   payload: Record<string, unknown>,
   settings: HiringSettings,
   files: readonly HiringFileRef[] = [],
+  workState: string | null = null,
 ): FieldErrors {
   const mine = files.filter((file) => file.documentKind === kind);
   switch (kind) {
     case "application":
       return validateApplication(payload);
+    case "w9":
+      return validateW9(payload);
     case "i9_section1":
       return validateI9(payload, mine);
     case "w4":
       return validateW4(payload);
     case "state_withholding":
-      return validateState(payload, settings);
+      return validateState(payload, settings, workState);
     case "direct_deposit":
       return validateDeposit(payload);
     case "policy_acknowledgment":
@@ -783,8 +925,9 @@ export function canSignDocument(
   payload: Record<string, unknown>,
   settings: HiringSettings,
   files: readonly HiringFileRef[] = [],
+  workState: string | null = null,
 ): { ok: boolean; errors: FieldErrors } {
-  const errors = validateDocument(kind, payload, settings, files);
+  const errors = validateDocument(kind, payload, settings, files, workState);
   return { ok: errors.length === 0, errors };
 }
 
@@ -825,6 +968,7 @@ export async function signatureEvidence(input: {
 export function emptyDocumentPayload(): Record<HiringDocumentKind, Record<string, unknown>> {
   return {
     application: {},
+    w9: {},
     i9_section1: {},
     w4: {},
     state_withholding: {},
@@ -859,13 +1003,18 @@ export function toPacketSummary(packet: {
   userId: number | null;
   applicantName: string;
   applicantEmail: string;
+  workerType?: WorkerType;
+  workState?: WorkStateCode | null;
   statuses: readonly HiringDocumentStatus[];
 }): PacketSummary {
+  const workerType = normalizeWorkerType(packet.workerType);
   return {
     id: packet.id,
     userId: packet.userId,
     applicantName: packet.applicantName,
     applicantEmail: packet.applicantEmail,
+    workerType,
+    workState: normalizeWorkState(packet.workState),
     progress: progressFromStatuses(packet.statuses),
   };
 }

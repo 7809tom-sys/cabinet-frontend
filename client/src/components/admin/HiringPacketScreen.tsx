@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import {
-  HIRING_DOCUMENT_KINDS,
-  HIRING_DOCUMENT_LABELS,
+  DEFAULT_WORKER_TYPE,
+  EMPLOYEE_ONLY_FORMS_NOTE,
   HIRING_STATUS_LABELS,
   I9_ATTESTATION,
   I9_CITIZENSHIP,
@@ -19,6 +19,12 @@ import {
   STATE_FILING_STATUSES,
   STATE_WITHHOLDING_PROFILES,
   TYPED_SIGNATURE_CONSENT,
+  W9_CLASSIFICATIONS,
+  W9_REVISION,
+  WORK_STATES,
+  WORKER_TYPES,
+  WT4_FILING_STATUSES,
+  WT4_REVISION,
   W4_EXEMPT_STATEMENT,
   W4_FILING_STATUSES,
   W4_OTHER_DEPENDENT_AMOUNT,
@@ -26,9 +32,11 @@ import {
   W4_STEP5_DECLARATION,
   W4_YEAR,
   canReviewDocument,
+  documentLabel,
+  formsForWorker,
   maskBank,
   maskSsn,
-  progressFromStatuses,
+  progressForWorker,
   stateCertificateTitle,
   visiblePackets,
   type HiringActor,
@@ -37,6 +45,8 @@ import {
   type PacketSummary,
   type PublicDocument,
   type PublicPacket,
+  type WorkStateCode,
+  type WorkerType,
 } from "@shared/hiringPacket";
 
 export type HiringViewer = { userId: number; role: string; name: string | null; email: string | null };
@@ -53,6 +63,8 @@ export type HiringPacketScreenProps = {
   onUpload: (kind: HiringDocumentKind, slot: string, file: File) => void;
   onOpenFile: (fileId: number) => void;
   onConfigure: (settings: HiringSettings) => void;
+  onWorkerType: (workerType: WorkerType) => void;
+  onWorkState: (workState: WorkStateCode | null) => void;
   notice?: string | null;
 };
 
@@ -139,12 +151,13 @@ export function HiringPacketScreen(props: HiringPacketScreenProps) {
       {admin && props.packet ? (
         <AdminReview
           actor={actor}
-          settings={props.settings}
           packet={props.packet}
           onBack={() => props.onSelectPacket(null)}
           onReview={props.onReview}
           onOpenFile={props.onOpenFile}
           onSaveEmployer={(payload) => props.onSave("w4", payload)}
+          onWorkerType={props.onWorkerType}
+          onWorkState={props.onWorkState}
         />
       ) : null}
       {!admin && props.packet ? (
@@ -180,22 +193,8 @@ function AdminList({ settings, summaries, onSelectPacket, onConfigure }: {
           onConfigure(draft);
         }}
       >
-        <h3 className="font-semibold">Packet settings</h3>
-        <div className="space-y-1">
-          <Label htmlFor="withholding-state">State withholding certificate</Label>
-          <select
-            id="withholding-state"
-            data-testid="withholding-state"
-            className="flex h-9 w-full max-w-sm rounded-md border border-input bg-transparent px-3 text-sm"
-            value={draft.stateCode ?? ""}
-            onChange={(event) => setDraft({ ...draft, stateCode: event.target.value || null })}
-          >
-            <option value="">Choose a state</option>
-            {STATE_WITHHOLDING_PROFILES.map((profile) => (
-              <option key={profile.code} value={profile.code}>{profile.name}</option>
-            ))}
-          </select>
-        </div>
+        <h3 className="font-semibold">Handbook</h3>
+        <p className="text-sm text-muted-foreground">Work state is chosen on each hire. Florida and Wisconsin are the only choices, and nothing is preselected.</p>
         <Field id="handbook-title" label="Handbook title" value={draft.handbookTitle} onChange={(handbookTitle) => setDraft({ ...draft, handbookTitle })} />
         <Field id="handbook-version" label="Handbook version" value={draft.handbookVersion} onChange={(handbookVersion) => setDraft({ ...draft, handbookVersion })} />
         <div className="space-y-1">
@@ -225,17 +224,70 @@ function AdminList({ settings, summaries, onSelectPacket, onConfigure }: {
   );
 }
 
-function AdminReview({ actor, settings, packet, onBack, onReview, onOpenFile, onSaveEmployer }: {
+function WorkerTypeBar({ workerType, workState, canEdit, onWorkerType, onWorkState }: {
+  workerType: WorkerType;
+  workState: WorkStateCode | null;
+  canEdit: boolean;
+  onWorkerType: (workerType: WorkerType) => void;
+  onWorkState: (workState: WorkStateCode | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border border-border p-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Worker type</p>
+        <div role="tablist" aria-label="Worker type" data-testid="worker-type" className="inline-flex rounded-lg border border-border p-1">
+          {WORKER_TYPES.map((option) => {
+            const selected = workerType === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                disabled={!canEdit}
+                data-testid={`worker-type-${option.value}`}
+                className={`rounded-md px-4 py-2 text-sm font-medium ${selected ? "bg-[var(--color-navy)] text-white" : "text-foreground"} disabled:opacity-100`}
+                onClick={() => onWorkerType(option.value)}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        {!canEdit ? <p className="text-xs text-muted-foreground">Only an administrator can change this.</p> : null}
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="work-state">Work state</Label>
+        <select
+          id="work-state"
+          data-testid="work-state"
+          disabled={!canEdit}
+          className="flex h-9 w-56 rounded-md border border-input bg-transparent px-3 text-sm disabled:opacity-100"
+          value={workState ?? ""}
+          onChange={(event) => onWorkState(event.target.value === "FL" || event.target.value === "WI" ? event.target.value : null)}
+        >
+          <option value="">Choose Florida or Wisconsin</option>
+          {WORK_STATES.map((state) => <option key={state.code} value={state.code}>{state.name}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function AdminReview({ actor, packet, onBack, onReview, onOpenFile, onSaveEmployer, onWorkerType, onWorkState }: {
   actor: HiringActor;
-  settings: HiringSettings;
   packet: PublicPacket;
   onBack: () => void;
   onReview: (kind: HiringDocumentKind) => void;
   onOpenFile: (fileId: number) => void;
   onSaveEmployer: (payload: Record<string, unknown>) => void;
+  onWorkerType: (workerType: WorkerType) => void;
+  onWorkState: (workState: WorkStateCode | null) => void;
 }) {
-  const progress = progressFromStatuses(packet.documents.map((document) => document.status));
-  const title = stateCertificateTitle(settings);
+  const workerType = packet.workerType ?? DEFAULT_WORKER_TYPE;
+  const forms = formsForWorker(workerType);
+  const visibleDocuments = packet.documents.filter((document) => forms.includes(document.kind));
+  const progress = progressForWorker(workerType, packet.documents);
   return (
     <div className="space-y-4" data-testid="hiring-review">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -245,14 +297,16 @@ function AdminReview({ actor, settings, packet, onBack, onReview, onOpenFile, on
         </div>
         <Button type="button" variant="outline" onClick={onBack}>All hires</Button>
       </div>
+      <WorkerTypeBar workerType={workerType} workState={packet.workState} canEdit onWorkerType={onWorkerType} onWorkState={onWorkState} />
+      {workerType === "contractor_1099" ? <p className="text-sm text-muted-foreground" data-testid="employee-forms-note">{EMPLOYEE_ONLY_FORMS_NOTE}</p> : null}
       <Progress value={(progress.signedOrReviewed / progress.total) * 100} />
       <p data-testid="packet-progress">{progress.signedOrReviewed} of {progress.total} signed</p>
-      {packet.documents.map((document) => {
+      {visibleDocuments.map((document) => {
         const review = canReviewDocument(actor, document.status);
         return (
           <article key={document.kind} className="rounded-lg border border-border p-4 space-y-2" data-testid={`review-${document.kind}`}>
             <div className="flex flex-wrap items-center gap-2">
-              <h4 className="font-medium">{document.kind === "state_withholding" && title ? title : HIRING_DOCUMENT_LABELS[document.kind]}</h4>
+              <h4 className="font-medium">{documentLabel(document.kind, packet.workState)}</h4>
               <Badge variant={statusVariant(document.status)} data-testid={`status-${document.kind}`}>{HIRING_STATUS_LABELS[document.status]}</Badge>
             </div>
             <p className="text-sm" data-testid={`signed-${document.kind}`}>
@@ -278,12 +332,14 @@ function AdminReview({ actor, settings, packet, onBack, onReview, onOpenFile, on
 
 function ReviewFacts({ document }: { document: PublicDocument }) {
   const payload = document.payload;
-  const ssn = maskSsn(typeof payload.ssnLast4 === "string" ? payload.ssnLast4 : null);
+  const ssn = maskSsn(typeof payload.ssnLast4 === "string" ? payload.ssnLast4 : typeof payload.tinLast4 === "string" ? payload.tinLast4 : null);
+  const ein = maskSsn(typeof payload.einLast4 === "string" ? payload.einLast4 : null);
   const account = maskBank(typeof payload.accountLast4 === "string" ? payload.accountLast4 : null);
   const routing = maskBank(typeof payload.routingLast4 === "string" ? payload.routingLast4 : null);
   return (
     <div className="text-sm text-muted-foreground space-y-1">
-      {ssn ? <p data-testid={`ssn-${document.kind}`}>SSN {ssn}</p> : null}
+      {ssn ? <p data-testid={`ssn-${document.kind}`}>{document.kind === "w9" ? "TIN" : "SSN"} {ssn}</p> : null}
+      {ein ? <p data-testid={`ein-${document.kind}`}>EIN {ein}</p> : null}
       {account ? <p data-testid={`account-${document.kind}`}>Account {account}</p> : null}
       {routing ? <p data-testid={`routing-${document.kind}`}>Routing {routing}</p> : null}
       {typeof payload.position === "string" ? <p>Position {payload.position}</p> : null}
@@ -324,20 +380,24 @@ function HirePacket({ settings, packet, kind, onKind, onSave, onSign, onUpload, 
   onUpload: (kind: HiringDocumentKind, slot: string, file: File) => void;
   onOpenFile: (fileId: number) => void;
 }) {
-  const progress = progressFromStatuses(packet.documents.map((document) => document.status));
-  const current = packet.documents.find((document) => document.kind === kind) ?? packet.documents[0];
+  const workerType = packet.workerType ?? DEFAULT_WORKER_TYPE;
+  const forms = formsForWorker(workerType);
+  const activeKind = forms.includes(kind) ? kind : forms[0]!;
+  const progress = progressForWorker(workerType, packet.documents);
+  const current = packet.documents.find((document) => document.kind === activeKind);
   return (
     <div className="space-y-4" data-testid="hiring-packet">
+      <WorkerTypeBar workerType={workerType} workState={packet.workState} canEdit={false} onWorkerType={() => undefined} onWorkState={() => undefined} />
       <div>
         <Progress value={(progress.signedOrReviewed / progress.total) * 100} />
         <p className="text-sm mt-2" data-testid="packet-progress">{progress.signedOrReviewed} of {progress.total} signed</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {HIRING_DOCUMENT_KINDS.map((item) => {
+        {forms.map((item) => {
           const document = packet.documents.find((row) => row.kind === item);
           return (
-            <Button key={item} type="button" variant={item === kind ? "default" : "outline"} onClick={() => onKind(item)}>
-              {HIRING_DOCUMENT_LABELS[item]}
+            <Button key={item} type="button" variant={item === activeKind ? "default" : "outline"} onClick={() => onKind(item)}>
+              {documentLabel(item, packet.workState)}
               <Badge variant="secondary" className="ml-2" data-testid={`status-${item}`}>{HIRING_STATUS_LABELS[document?.status ?? "not_started"]}</Badge>
             </Button>
           );
@@ -347,6 +407,7 @@ function HirePacket({ settings, packet, kind, onKind, onSave, onSign, onUpload, 
         <DocumentForm
           key={`${packet.id}-${current.kind}`}
           settings={settings}
+          workState={packet.workState}
           document={current}
           onSave={(payload) => onSave(current.kind, payload)}
           onSign={(payload) => onSign(current.kind, payload)}
@@ -358,8 +419,9 @@ function HirePacket({ settings, packet, kind, onKind, onSave, onSign, onUpload, 
   );
 }
 
-function DocumentForm({ settings, document, onSave, onSign, onUpload, onOpenFile }: {
+function DocumentForm({ settings, workState, document, onSave, onSign, onUpload, onOpenFile }: {
   settings: HiringSettings;
+  workState: WorkStateCode | null;
   document: PublicDocument;
   onSave: (payload: Record<string, unknown>) => void;
   onSign: (payload: Record<string, unknown>) => void;
@@ -387,15 +449,17 @@ function DocumentForm({ settings, document, onSave, onSign, onUpload, onOpenFile
       }}
     >
       <div className="flex items-center gap-2">
-        <h3 className="font-semibold">{document.kind === "state_withholding" ? (stateCertificateTitle(settings) ?? HIRING_DOCUMENT_LABELS[document.kind]) : HIRING_DOCUMENT_LABELS[document.kind]}</h3>
+        <h3 className="font-semibold">{document.kind === "state_withholding" && workState !== "WI" ? (stateCertificateTitle(workState ? { ...settings, stateCode: workState } : settings) ?? documentLabel(document.kind, workState)) : documentLabel(document.kind, workState)}</h3>
         <Badge data-testid={`form-status-${document.kind}`}>{HIRING_STATUS_LABELS[document.status]}</Badge>
       </div>
       {document.kind === "i9_section1" ? <p className="text-xs text-muted-foreground">Form I-9, Section 1, edition {I9_EDITION}. Employee side only.</p> : null}
       {document.kind === "w4" ? <p className="text-xs text-muted-foreground">Form W-4 ({W4_YEAR}), Employee's Withholding Certificate. OMB No. 1545-0074.</p> : null}
+      {document.kind === "w9" ? <p className="text-xs text-muted-foreground">Form W-9 (Rev. {W9_REVISION}), Request for Taxpayer Identification Number and Certification.</p> : null}
       {document.kind === "application" ? <ApplicationFields draft={draft} set={set} textOf={textOf} /> : null}
+      {document.kind === "w9" ? <W9Fields draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} /> : null}
       {document.kind === "i9_section1" ? <I9Fields draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} onUpload={onUpload} /> : null}
       {document.kind === "w4" ? <W4Fields draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} /> : null}
-      {document.kind === "state_withholding" ? <StateFields settings={settings} draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} /> : null}
+      {document.kind === "state_withholding" ? <StateFields settings={settings} workState={workState} draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} /> : null}
       {document.kind === "direct_deposit" ? <DepositFields draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} /> : null}
       {document.kind === "policy_acknowledgment" ? <PolicyFields settings={settings} draft={draft} set={set} textOf={textOf} /> : null}
       {document.files.map((file) => (
@@ -581,10 +645,97 @@ function W4Fields({ draft, set, textOf, secrets, setSecrets }: FieldBind & { sec
   );
 }
 
-function StateFields({ settings, draft, set, textOf, secrets, setSecrets }: FieldBind & { settings: HiringSettings; secrets: Record<string, string>; setSecrets: (next: Record<string, string>) => void }) {
-  const title = stateCertificateTitle(settings);
+function W9Fields({ draft, set, textOf, secrets, setSecrets }: FieldBind & { secrets: Record<string, string>; setSecrets: (next: Record<string, string>) => void }) {
+  const tinIsEin = draft.tinType === "ein";
+  return (
+    <div className="space-y-4">
+      <Field id="w9-name" label="1 Name of entity/individual. An entry is required." value={textOf("name")} onChange={(value) => set("name", value)} />
+      <Field id="w9-business" label="2 Business name/disregarded entity name, if different from above" value={textOf("businessName")} onChange={(value) => set("businessName", value)} />
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">3a Federal tax classification. Check only one of the following seven boxes.</legend>
+        {W9_CLASSIFICATIONS.map((item) => (
+          <Choice key={item.value} name="w9-class" label={item.label} checked={draft.taxClassification === item.value} onChange={() => set("taxClassification", item.value)} />
+        ))}
+      </fieldset>
+      {draft.taxClassification === "llc" ? <Field id="w9-llc" label="LLC tax classification (C, S, or P)" value={textOf("llcClassification")} onChange={(value) => set("llcClassification", value.toUpperCase())} /> : null}
+      {draft.taxClassification === "other" ? <Field id="w9-other" label="Other (see instructions)" value={textOf("otherClassification")} onChange={(value) => set("otherClassification", value)} /> : null}
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={draft.foreignOwners === true} onChange={(event) => set("foreignOwners", event.target.checked)} />
+        <span>3b If you checked Partnership, Trust/estate, or LLC classified as P, check here if you have any foreign partners, owners, or beneficiaries.</span>
+      </label>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field id="w9-exempt" label="4 Exempt payee code (if any)" value={textOf("exemptPayeeCode")} onChange={(value) => set("exemptPayeeCode", value)} />
+        <Field id="w9-fatca" label="Exemption from FATCA reporting code (if any)" value={textOf("fatcaCode")} onChange={(value) => set("fatcaCode", value)} />
+        <Field id="w9-address" label="5 Address (number, street, and apt. or suite no.)" value={textOf("address")} onChange={(value) => set("address", value)} />
+        <Field id="w9-city" label="6 City, state, and ZIP code" value={textOf("cityStateZip")} onChange={(value) => set("cityStateZip", value)} />
+        <Field id="w9-requester" label="Requester's name and address (optional)" value={textOf("requesterNameAddress")} onChange={(value) => set("requesterNameAddress", value)} />
+        <Field id="w9-accounts" label="7 List account number(s) here (optional)" value={textOf("accountNumbers")} onChange={(value) => set("accountNumbers", value)} />
+      </div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Part I Taxpayer Identification Number (TIN)</legend>
+        <Choice name="w9-tin" label="Social security number" checked={!tinIsEin} onChange={() => set("tinType", "ssn")} />
+        <Choice name="w9-tin" label="Employer identification number" checked={tinIsEin} onChange={() => set("tinType", "ein")} />
+        {tinIsEin ? (
+          <SecretNumber id="w9-ein" label="Employer identification number" last4={typeof draft.einLast4 === "string" ? draft.einLast4 : null} mask={maskSsn} onValue={(ein) => setSecrets({ ...secrets, ein })} />
+        ) : (
+          <SecretNumber id="w9-ssn" label="Social security number" last4={typeof draft.ssnLast4 === "string" ? draft.ssnLast4 : typeof draft.tinLast4 === "string" ? draft.tinLast4 : null} mask={maskSsn} onValue={(ssn) => setSecrets({ ...secrets, ssn })} />
+        )}
+      </fieldset>
+      <p className="text-xs text-muted-foreground">Under penalties of perjury, I certify that the number shown is my correct taxpayer identification number, that I am not subject to backup withholding unless I say so below, that I am a U.S. citizen or other U.S. person, and that the FATCA code entered on this form (if any) is correct.</p>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={draft.backupWithholding === true} onChange={(event) => set("backupWithholding", event.target.checked)} />
+        <span>Cross out certification item 2. The IRS has notified me that I am currently subject to backup withholding.</span>
+      </label>
+      <Field id="w9-signature" label="Signature of U.S. person" value={textOf("employeeSignature")} onChange={(value) => set("employeeSignature", value)} />
+      <Field id="w9-date" label="Date" value={textOf("signatureDate")} onChange={(value) => set("signatureDate", value)} type="date" />
+    </div>
+  );
+}
+
+function Wt4Fields({ draft, set, textOf, secrets, setSecrets }: FieldBind & { secrets: Record<string, string>; setSecrets: (next: Record<string, string>) => void }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">Employee's Wisconsin Withholding Exemption Certificate, Form WT-4, {WT4_REVISION}.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field id="wt4-name" label="Employee's legal name (first name, middle initial, last name)" value={textOf("legalName")} onChange={(value) => set("legalName", value)} />
+        <SecretNumber id="wt4-ssn" label="Social security number" last4={typeof draft.ssnLast4 === "string" ? draft.ssnLast4 : null} mask={maskSsn} onValue={(ssn) => setSecrets({ ...secrets, ssn })} />
+        <Field id="wt4-address" label="Employee's address (number and street)" value={textOf("address")} onChange={(value) => set("address", value)} />
+        <Field id="wt4-city" label="City" value={textOf("city")} onChange={(value) => set("city", value)} />
+        <Field id="wt4-state" label="State" value={textOf("residenceState")} onChange={(value) => set("residenceState", value)} />
+        <Field id="wt4-zip" label="ZIP code" value={textOf("postalCode")} onChange={(value) => set("postalCode", value)} />
+        <Field id="wt4-dob" label="Date of birth" value={textOf("dateOfBirth")} onChange={(value) => set("dateOfBirth", value)} type="date" />
+        <Field id="wt4-hire" label="Date of hire" value={textOf("dateOfHire")} onChange={(value) => set("dateOfHire", value)} type="date" />
+      </div>
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">Filing status</legend>
+        {WT4_FILING_STATUSES.map((item) => (
+          <Choice key={item.value} name="wt4-filing" label={item.label} checked={draft.filingStatus === item.value} onChange={() => set("filingStatus", item.value)} />
+        ))}
+      </fieldset>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field id="wt4-1a" label="1(a) Exemption for yourself — enter 1" value={textOf("line1a")} onChange={(value) => set("line1a", value)} />
+        <Field id="wt4-1b" label="1(b) Exemption for your spouse — enter 1" value={textOf("line1b")} onChange={(value) => set("line1b", value)} />
+        <Field id="wt4-1c" label="1(c) Exemption(s) for dependent(s)" value={textOf("line1c")} onChange={(value) => set("line1c", value)} />
+        <Field id="wt4-1d" label="1(d) Total — add lines (a) through (c)" value={textOf("line1d")} onChange={(value) => set("line1d", value)} />
+        <Field id="wt4-2" label="2 Additional amount per pay period you want deducted" value={textOf("line2")} onChange={(value) => set("line2", value)} />
+        <Field id="wt4-3" label="3 I claim complete exemption from withholding. Enter Exempt" value={textOf("line3")} onChange={(value) => set("line3", value)} />
+      </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" checked={draft.wt4Certified === true} onChange={(event) => set("wt4Certified", event.target.checked)} />
+        <span>I certify that the number of withholding exemptions claimed on this certificate does not exceed the number to which I am entitled. If claiming complete exemption, I certify that I incurred no Wisconsin income tax liability last year and that I anticipate none this year.</span>
+      </label>
+      <Field id="wt4-signature" label="Signature" value={textOf("employeeSignature")} onChange={(value) => set("employeeSignature", value)} />
+      <Field id="wt4-date" label="Date signed" value={textOf("signatureDate")} onChange={(value) => set("signatureDate", value)} type="date" />
+    </div>
+  );
+}
+
+function StateFields({ settings, workState, draft, set, textOf, secrets, setSecrets }: FieldBind & { settings: HiringSettings; workState: WorkStateCode | null; secrets: Record<string, string>; setSecrets: (next: Record<string, string>) => void }) {
+  if (workState === "WI") return <Wt4Fields draft={draft} set={set} textOf={textOf} secrets={secrets} setSecrets={setSecrets} />;
+  const effective = workState ? { ...settings, stateCode: workState } : settings;
+  const title = stateCertificateTitle(effective);
   if (!title) return <p data-testid="state-unset">An administrator has not chosen the state withholding certificate yet.</p>;
-  const profile = STATE_WITHHOLDING_PROFILES.find((item) => item.code === settings.stateCode);
+  const profile = STATE_WITHHOLDING_PROFILES.find((item) => item.code === effective.stateCode);
   if (profile && !profile.wagesWithheld) {
     return (
       <div className="space-y-3">

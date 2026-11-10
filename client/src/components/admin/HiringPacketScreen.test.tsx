@@ -46,6 +46,8 @@ function packet(overrides: Partial<PublicPacket> = {}): PublicPacket {
     userId: 42,
     applicantName: "Ada Lovelace",
     applicantEmail: "ada@example.com",
+    workerType: "w2_employee",
+    workState: null,
     documents: [application, ...rest, deposit],
     ...overrides,
   };
@@ -76,6 +78,8 @@ describe("job board hire view", () => {
         onUpload={vi.fn()}
         onOpenFile={vi.fn()}
         onConfigure={vi.fn()}
+        onWorkerType={vi.fn()}
+        onWorkState={vi.fn()}
       />,
     );
     expect(screen.getByTestId("hiring-packet")).toBeTruthy();
@@ -113,6 +117,8 @@ describe("job board hire view", () => {
         onUpload={vi.fn()}
         onOpenFile={vi.fn()}
         onConfigure={vi.fn()}
+        onWorkerType={vi.fn()}
+        onWorkState={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /State withholding/ }));
@@ -125,6 +131,78 @@ describe("job board hire view", () => {
     expect(screen.getByText("Last Name (Family Name)")).toBeTruthy();
     fireEvent.click(screen.getByLabelText(/List A — one document/));
     expect(screen.getByText("U.S. Passport or U.S. Passport Card")).toBeTruthy();
+  });
+
+  it("shows a 1099 contractor in Wisconsin the W-9 packet and keeps the employee forms hidden", () => {
+    const onWorkerType = vi.fn();
+    const contractor = packet();
+    contractor.workerType = "contractor_1099";
+    contractor.workState = "WI";
+    contractor.documents = [
+      ...contractor.documents,
+      toPublicDocument({
+        kind: "w9",
+        payload: toPublicPayload({ name: "Ada Lovelace", tin: "123-45-6789" }),
+        signedAt: "2026-11-04T12:00:00.000Z",
+        signedByName: "Ada Lovelace",
+        reviewedAt: null,
+        reviewedByName: null,
+      }),
+    ];
+    const { rerender } = render(
+      <HiringPacketScreen
+        viewer={hire}
+        settings={EMPTY_HIRING_SETTINGS}
+        summaries={[]}
+        packet={contractor}
+        onSelectPacket={vi.fn()}
+        onSave={vi.fn()}
+        onSign={vi.fn()}
+        onReview={vi.fn()}
+        onUpload={vi.fn()}
+        onOpenFile={vi.fn()}
+        onConfigure={vi.fn()}
+        onWorkerType={onWorkerType}
+        onWorkState={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("worker-type-contractor_1099").getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByTestId("worker-type-w2_employee").hasAttribute("disabled")).toBe(true);
+    expect(screen.getByTestId("work-state")).toHaveProperty("value", "WI");
+    expect(screen.getByRole("button", { name: /Form W-9/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Form I-9/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Form W-4/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /State withholding|Wisconsin Form WT-4|Florida withholding/ })).toBeNull();
+    expect(screen.getByTestId("packet-progress").textContent).toBe("3 of 4 signed");
+    fireEvent.click(screen.getByRole("button", { name: /Form W-9/ }));
+    expect(screen.getByTestId("w9-ssn-mask").textContent).toBe("•••-••-6789");
+    expect(document.body.textContent).not.toContain("123-45-6789");
+    expect(document.body.textContent).not.toContain("123456789");
+
+    rerender(
+      <HiringPacketScreen
+        viewer={admin}
+        settings={EMPTY_HIRING_SETTINGS}
+        summaries={[]}
+        packet={contractor}
+        onSelectPacket={vi.fn()}
+        onSave={vi.fn()}
+        onSign={vi.fn()}
+        onReview={vi.fn()}
+        onUpload={vi.fn()}
+        onOpenFile={vi.fn()}
+        onConfigure={vi.fn()}
+        onWorkerType={onWorkerType}
+        onWorkState={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("employee-forms-note").textContent).toMatch(/1099 contractor does not complete them/);
+    expect(screen.getByTestId("ssn-w9").textContent).toBe("TIN •••-••-6789");
+    expect(screen.queryByTestId("review-i9_section1")).toBeNull();
+    expect(screen.queryByTestId("review-w4")).toBeNull();
+    expect(screen.queryByTestId("review-state_withholding")).toBeNull();
+    fireEvent.click(screen.getByTestId("worker-type-w2_employee"));
+    expect(onWorkerType).toHaveBeenCalledWith("w2_employee");
   });
 });
 
@@ -152,10 +230,12 @@ describe("job board admin review", () => {
         onUpload={vi.fn()}
         onOpenFile={onOpenFile}
         onConfigure={vi.fn()}
+        onWorkerType={vi.fn()}
+        onWorkState={vi.fn()}
       />,
     );
     expect(screen.getByText("Other Person")).toBeTruthy();
-    expect(screen.getByTestId("withholding-state")).toBeTruthy();
+    expect(screen.getByLabelText("Handbook title")).toBeTruthy();
   });
 
   it("reviews one hire without a public file link", () => {
@@ -185,6 +265,8 @@ describe("job board admin review", () => {
         onUpload={vi.fn()}
         onOpenFile={onOpenFile}
         onConfigure={vi.fn()}
+        onWorkerType={vi.fn()}
+        onWorkState={vi.fn()}
       />,
     );
     expect(screen.getByTestId("hiring-review")).toBeTruthy();

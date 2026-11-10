@@ -4,6 +4,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useHiringPacketApi } from "@/lib/hiringPacketApi";
 import { HiringPacketScreen } from "@/components/admin/HiringPacketScreen";
 import {
+  DEFAULT_WORKER_TYPE,
   EMPTY_HIRING_SETTINGS,
   HIRING_DOCUMENT_KINDS,
   isPublicStorageUrl,
@@ -18,6 +19,8 @@ function completePacket(packet: PublicPacket): PublicPacket {
   const byKind = new Map(packet.documents.map((document) => [document.kind, document]));
   return {
     ...packet,
+    workerType: packet.workerType ?? DEFAULT_WORKER_TYPE,
+    workState: packet.workState ?? null,
     documents: HIRING_DOCUMENT_KINDS.map((kind) => byKind.get(kind) ?? toPublicDocument({
       kind,
       payload: {},
@@ -69,6 +72,7 @@ export default function JobBoard() {
   const save = api.hiringPacket.save.useMutation(onPacket);
   const sign = api.hiringPacket.sign.useMutation(onPacket);
   const review = api.hiringPacket.review.useMutation(onPacket);
+  const setProfile = api.hiringPacket.setProfile.useMutation(onPacket);
   const upload = api.hiringPacket.upload.useMutation(onPacket);
   const configure = api.hiringPacket.settings.set.useMutation(onPacket);
   const fileLink = api.hiringPacket.fileLink.useMutation({
@@ -120,6 +124,14 @@ export default function JobBoard() {
       }}
       onOpenFile={(fileId) => fileLink.mutate({ fileId })}
       onConfigure={(next) => configure.mutate(next)}
+      onWorkerType={(workerType) => {
+        if (!packetId) return;
+        setProfile.mutate({ packetId, workerType, workState: packet?.workState ?? null });
+      }}
+      onWorkState={(workState) => {
+        if (!packetId) return;
+        setProfile.mutate({ packetId, workerType: packet?.workerType ?? DEFAULT_WORKER_TYPE, workState });
+      }}
     />
   );
 }

@@ -1,7 +1,7 @@
 // hiringPacket is added on the cabinet-backend hiring branch and is not on
 // this repo's AppRouter yet. Cast the client the same way vendor onboarding does.
 import { trpc } from "@/lib/trpc";
-import type { HiringDocumentKind, HiringSettings, PacketSummary, PublicPacket } from "@shared/hiringPacket";
+import type { HiringDocumentKind, HiringSettings, PacketSummary, PublicPacket, WorkStateCode, WorkerType } from "@shared/hiringPacket";
 
 export type HiringTrpcError = { message: string };
 
@@ -37,6 +37,7 @@ export type HiringPacketApi = {
     save: { useMutation: (options?: { onSuccess?: (packet: PublicPacket) => void; onError?: (error: HiringTrpcError) => void }) => Mutation<{ packetId: number; kind: HiringDocumentKind; payload: Record<string, unknown> }> };
     sign: { useMutation: (options?: { onSuccess?: (packet: PublicPacket) => void; onError?: (error: HiringTrpcError) => void }) => Mutation<{ packetId: number; kind: HiringDocumentKind; payload: Record<string, unknown> }> };
     review: { useMutation: (options?: { onSuccess?: (packet: PublicPacket) => void; onError?: (error: HiringTrpcError) => void }) => Mutation<{ packetId: number; kind: HiringDocumentKind }> };
+    setProfile: { useMutation: (options?: { onSuccess?: (packet: PublicPacket) => void; onError?: (error: HiringTrpcError) => void }) => Mutation<{ packetId: number; workerType: WorkerType; workState: WorkStateCode | null }> };
     upload: { useMutation: (options?: { onSuccess?: (packet: PublicPacket) => void; onError?: (error: HiringTrpcError) => void }) => Mutation<{ packetId: number; kind: HiringDocumentKind; slot: string; filename: string; mimeType: string; fileBase64: string }> };
     fileLink: { useMutation: (options?: { onSuccess?: (result: { url: string; expiresInSeconds: number }) => void; onError?: (error: HiringTrpcError) => void }) => Mutation<{ fileId: number }> };
   };

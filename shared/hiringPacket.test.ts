@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_WORKER_TYPE,
   EMPTY_HIRING_SETTINGS,
   HIRING_DOCUMENT_KINDS,
   HIRING_SIGNED_URL_SECONDS,
@@ -19,6 +20,9 @@ import {
   W4_YEAR,
   canReviewDocument,
   canSignDocument,
+  formsForWorker,
+  normalizeWorkState,
+  progressForWorker,
   deriveStatus,
   hiringAccess,
   hiringObjectKey,
@@ -240,7 +244,7 @@ describe("document status", () => {
     expect(progressFromStatuses(["signed", "reviewed", "in_progress"])).toMatchObject({
       total: HIRING_DOCUMENT_KINDS.length,
       signedOrReviewed: 2,
-      byStatus: { not_started: 3, in_progress: 1, signed: 1, reviewed: 1 },
+      byStatus: { not_started: HIRING_DOCUMENT_KINDS.length - 3, in_progress: 1, signed: 1, reviewed: 1 },
     });
   });
 
@@ -285,6 +289,73 @@ describe("document status", () => {
       employeeSignature: "Ada Lovelace",
       signatureDate: "2026-11-10",
     }, { ...EMPTY_HIRING_SETTINGS, stateCode: "FL" }).ok).toBe(true);
+  });
+});
+
+describe("worker type gating", () => {
+  it("defaults to a 1099 contractor and hides the employee forms", () => {
+    expect(DEFAULT_WORKER_TYPE).toBe("contractor_1099");
+    expect(formsForWorker("contractor_1099")).toEqual(["application", "w9", "direct_deposit", "policy_acknowledgment"]);
+    expect(formsForWorker("contractor_1099")).not.toContain("i9_section1");
+    expect(formsForWorker("contractor_1099")).not.toContain("w4");
+    expect(formsForWorker("contractor_1099")).not.toContain("state_withholding");
+    expect(formsForWorker("w2_employee")).toEqual(["application", "i9_section1", "w4", "state_withholding", "direct_deposit", "policy_acknowledgment"]);
+    expect(formsForWorker("w2_employee")).not.toContain("w9");
+    expect(normalizeWorkState(null)).toBeNull();
+    expect(normalizeWorkState("wi")).toBe("WI");
+    expect(normalizeWorkState("NY")).toBeNull();
+  });
+
+  it("masks a W-9 TIN to the last four, the same way it masks an SSN", () => {
+    const published = toPublicPayload({ name: "Ada Lovelace", tin: "123-45-6789", ein: "12-3456789" });
+    expect(published).toEqual({ name: "Ada Lovelace", tinLast4: "6789", einLast4: "6789" });
+    expect(JSON.stringify(published)).not.toContain("123456789");
+    const logged = JSON.stringify(redactForLog({ tin: "123-45-6789", ein: "987654321" }));
+    expect(logged).not.toContain("123-45-6789");
+    expect(logged).not.toContain("987654321");
+  });
+
+  it("signs a W-9 and a Wisconsin WT-4, and keeps Florida as an acknowledgment", () => {
+    const settings = EMPTY_HIRING_SETTINGS;
+    expect(canSignDocument("w9", {
+      name: "Ada Lovelace",
+      taxClassification: "individual",
+      address: "1 Main",
+      cityStateZip: "Milwaukee, WI 53202",
+      ssn: "123456789",
+      employeeSignature: "Ada Lovelace",
+      signatureDate: "2026-11-10",
+    }, settings).ok).toBe(true);
+    expect(canSignDocument("w9", { name: "Ada Lovelace", taxClassification: "individual", ssn: "123456789", ein: "123456789" }, settings).ok).toBe(false);
+    expect(canSignDocument("state_withholding", {
+      legalName: "Ada Lovelace",
+      ssn: "123456789",
+      address: "1 Main",
+      city: "Milwaukee",
+      residenceState: "WI",
+      postalCode: "53202",
+      dateOfBirth: "1990-01-02",
+      filingStatus: "single",
+      line1a: 1,
+      line1b: 0,
+      line1c: 0,
+      line1d: 1,
+      wt4Certified: true,
+      employeeSignature: "Ada Lovelace",
+      signatureDate: "2026-11-10",
+    }, settings, [], "WI").ok).toBe(true);
+    expect(canSignDocument("state_withholding", {
+      noWageWithholdingAcknowledged: true,
+      employeeSignature: "Ada Lovelace",
+      signatureDate: "2026-11-10",
+    }, settings, [], "FL").ok).toBe(true);
+    const progress = progressForWorker("contractor_1099", [
+      { kind: "application", status: "signed" },
+      { kind: "w9", status: "in_progress" },
+      { kind: "i9_section1", status: "signed" },
+    ]);
+    expect(progress.total).toBe(4);
+    expect(progress.signedOrReviewed).toBe(1);
   });
 });
 
