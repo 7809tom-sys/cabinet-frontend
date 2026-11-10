@@ -14,7 +14,7 @@ vi.mock("three", async (importOriginal) => {
   };
 });
 
-const { MAX_THREE_D_GPU_RECOVERIES, THREE_D_GPU_RESET_LIMIT_MESSAGE, claimThreeDGpuRecovery, createThreeDWebGLRenderer, detectThreeDWebGLSupport, resetThreeDGpuRecoveriesForTests, threeDWebGLUnavailableMessage } = await import("./threeDRendererHost");
+const { MAX_THREE_D_CONTEXT_LOSS_RESTARTS, MAX_THREE_D_GPU_RECOVERIES, THREE_D_GPU_RESET_LIMIT_MESSAGE, THREE_D_MAX_PIXEL_RATIO, claimThreeDGpuRecovery, createThreeDWebGLRenderer, detectThreeDWebGLSupport, resetThreeDGpuRecoveriesForTests, sizeThreeDRenderer, threeDContextLossAction, threeDWebGLUnavailableMessage } = await import("./threeDRendererHost");
 
 afterEach(() => {
   attempts.length = 0;
@@ -61,6 +61,31 @@ describe("why WebGL could not start", () => {
     for (const support of ["webgl2", "webgl1-only", "none"] as const) {
       expect(threeDWebGLUnavailableMessage(support)).toContain("2D plan and elevation preview remain available");
     }
+  });
+});
+
+describe("context-loss restarts stay bounded", () => {
+  it("allows two replacements, then stops when the budget or the GPU limit is spent", () => {
+    expect(MAX_THREE_D_CONTEXT_LOSS_RESTARTS).toBe(2);
+    expect(threeDContextLossAction({ gpuResetLimitReached: false, restartsAlreadyUsed: 0 })).toBe("restart");
+    expect(threeDContextLossAction({ gpuResetLimitReached: false, restartsAlreadyUsed: 1 })).toBe("restart");
+    expect(threeDContextLossAction({ gpuResetLimitReached: false, restartsAlreadyUsed: 2 })).toBe("stop");
+    expect(threeDContextLossAction({ gpuResetLimitReached: true, restartsAlreadyUsed: 0 })).toBe("stop");
+  });
+
+  it("never draws above the pixel-ratio ceiling, even on a 3x display", () => {
+    expect(THREE_D_MAX_PIXEL_RATIO).toBe(1.75);
+    const renderer = {
+      ratio: 1,
+      size: { x: 0, y: 0 },
+      getPixelRatio: () => renderer.ratio,
+      setPixelRatio(value: number) { renderer.ratio = value; },
+      getSize(target: { set: (x: number, y: number) => void }) { target.set(renderer.size.x, renderer.size.y); },
+      setSize(width: number, height: number) { renderer.size = { x: width, y: height }; },
+    };
+    expect(sizeThreeDRenderer(renderer as unknown as import("three").WebGLRenderer, 800, 600, 3)).toBe(true);
+    expect(renderer.ratio).toBe(1.75);
+    expect(sizeThreeDRenderer(renderer as unknown as import("three").WebGLRenderer, 800, 600, 3)).toBe(false);
   });
 });
 

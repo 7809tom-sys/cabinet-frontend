@@ -634,7 +634,9 @@ export default function App() {
           {(params) => (
             <AppLayout>
               <Suspense fallback={<PageLoader />}>
-                <SharedRoom3D token={params.token} />
+                <DesignerErrorBoundary surface="shared-3d" pageReload={false} message="This design couldn't load">
+                  <SharedRoom3D token={params.token} />
+                </DesignerErrorBoundary>
               </Suspense>
             </AppLayout>
           )}
@@ -720,7 +722,9 @@ export default function App() {
           {(params) => (
             <AffiliateShell slug={params.slug}>
               <Suspense fallback={<PageLoader />}>
-                <SharedRoom3D token={params.token} />
+                <DesignerErrorBoundary surface="shared-3d" pageReload={false} message="This design couldn't load">
+                  <SharedRoom3D token={params.token} />
+                </DesignerErrorBoundary>
               </Suspense>
             </AffiliateShell>
           )}

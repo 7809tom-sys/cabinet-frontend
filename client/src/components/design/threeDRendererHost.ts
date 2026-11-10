@@ -70,8 +70,32 @@ export function threeDWebGLUnavailableMessage(support: ThreeDWebGLSupport): stri
   return `The interactive 3D view could not start. Close other 3D tabs, then press Retry. ${keep}`;
 }
 
+/**
+ * Hard ceiling for the drawing buffer. A 3x display otherwise allocates a
+ * framebuffer several times the CSS size, on top of a shadow map up to 2048,
+ * which is enough to reset the GPU. The quality profile already stays at or
+ * under this; sizeThreeDRenderer enforces it for every caller.
+ */
+export const THREE_D_MAX_PIXEL_RATIO = 1.75;
+
 /** Recoveries from a GPU reset (a restored context or a new one) per browser session. */
 export const MAX_THREE_D_GPU_RECOVERIES = 3;
+
+/**
+ * Times a lost context that the browser did not restore may be replaced with a
+ * new one. Past this the 3D view stays on its fallback instead of allocating
+ * another renderer.
+ */
+export const MAX_THREE_D_CONTEXT_LOSS_RESTARTS = 2;
+
+/** Whether a context that is still lost may allocate another renderer. */
+export function threeDContextLossAction(input: {
+  gpuResetLimitReached: boolean;
+  restartsAlreadyUsed: number;
+}): "restart" | "stop" {
+  if (input.gpuResetLimitReached || input.restartsAlreadyUsed >= MAX_THREE_D_CONTEXT_LOSS_RESTARTS) return "stop";
+  return "restart";
+}
 const GPU_RECOVERIES_KEY = "cabinetdealz.threeDGpuRecoveries";
 let gpuRecoveriesThisPage = 0;
 
@@ -236,10 +260,11 @@ export function sizeThreeDRenderer(
   height: number,
   pixelRatio: number,
 ): boolean {
+  const cappedRatio = Math.min(Math.max(1, pixelRatio || 1), THREE_D_MAX_PIXEL_RATIO);
   const current = new THREE.Vector2();
   renderer.getSize(current);
-  if (renderer.getPixelRatio() === pixelRatio && current.x === width && current.y === height) return false;
-  renderer.setPixelRatio(pixelRatio);
+  if (renderer.getPixelRatio() === cappedRatio && current.x === width && current.y === height) return false;
+  renderer.setPixelRatio(cappedRatio);
   renderer.setSize(width, height);
   return true;
 }
