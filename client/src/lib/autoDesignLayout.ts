@@ -78,6 +78,7 @@ import {
   rangeFlankPanelRequests,
 } from "./autoDesignRangeFlanks";
 import { exposedPanelTypeForCatalog } from "./exposedSidePanels";
+import { buildAnchoredRefrigeratorBay } from "./autoDesignRefrigeratorAnchor";
 import { normalizeContinuousVerticalFillers } from "./verticalFiller";
 import {
   autoDesignPeninsulaAttachment,
@@ -609,6 +610,14 @@ export function runAutoDesignLayout(args: {
    * cabinet on top of them, but their presence must not stop the build.
    */
   preExistingPlacements?: readonly PlacedCabinet[];
+  /**
+   * A refrigerator already on the plan that this build adopts as a FIXED
+   * ANCHOR. The appliance keeps its exact plan position and floor space; the
+   * bay, base runs, corners, talls and uppers are designed around it. When the
+   * anchor cannot be described in the measured layout, the build falls back to
+   * the appliance's own floor span and names it.
+   */
+  anchoredRefrigerator?: PlacedCabinet | null;
 }): AutoDesignLayoutResult {
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
@@ -658,8 +667,14 @@ export function runAutoDesignLayout(args: {
   }
   const baseSource = straightBaseCatalog.find((item) => Math.abs(dim(item.width, 0) - 24) < 0.1) ?? straightBaseCatalog[0];
   if (!baseSource) return fail("No source-priced standard base cabinet is available for the selected line. Choose a compatible door style, then try again.");
+  // A refrigerator already on the plan is a fixed anchor: it is never moved and
+  // never re-sized, so it never needs the measured refrigerator width or the
+  // measured appliance palette row.
+  const anchoredRefrigerator = args.anchoredRefrigerator && isRefrigerator(args.anchoredRefrigerator)
+    ? args.anchoredRefrigerator
+    : null;
   const refrigeratorRequested = plan.plan.anchors.some((anchor) => anchor.kind === "refrigerator");
-  if (refrigeratorRequested && (!args.refrigeratorCaps.length || !args.refrigeratorEndPanels.length)) {
+  if (refrigeratorRequested && !anchoredRefrigerator && (!args.refrigeratorCaps.length || !args.refrigeratorEndPanels.length)) {
     return fail("The selected line’s source-priced 36-inch refrigerator cabinet and two end panels are still loading or unavailable. The measured build was not changed.");
   }
 
@@ -667,13 +682,34 @@ export function runAutoDesignLayout(args: {
   // The measured build owns the sink base — it seats the source-priced base of
   // the requested width and then asks which basin goes in it — so a sink base
   // already on the plan is dropped rather than treated as an obstacle. Anything
-  // else that is pre-existing stays a real obstacle.
+  // else that is pre-existing stays a real obstacle, and a refrigerator on the
+  // plan stays exactly where it is as this build's fixed anchor.
   const preExisting = [...(args.preExistingPlacements ?? [])].filter((item) => !isSinkBaseCabinet(item));
 
+  const notes: string[] = [];
   let working: PlacedCabinet[] = [...preExisting];
   const anchorsByKind = new Map<string, PlacedCabinet>();  const anchorOrigins: AutoDesignAnchorOrigin[] = [];
   const selectedWalls: WallSide[] = [];
+  // A refrigerator already on the plan is a fixed anchor no matter what the
+  // setup dialog said: it is seated first, from the plan itself, so the build
+  // always works around its real position and floor space. It is never
+  // re-created, re-measured, moved, or treated as an obstacle.
+  if (anchoredRefrigerator) {
+    const anchorWall = cabinetWall(anchoredRefrigerator, room);
+    if (!working.some((item) => item.uid === anchoredRefrigerator.uid)) working = [...working, anchoredRefrigerator];
+    anchorsByKind.set("refrigerator", anchoredRefrigerator);
+    anchorOrigins.push({
+      uid: anchoredRefrigerator.uid,
+      kind: "refrigerator",
+      wallId: anchorWall,
+      originalStart: wallRunOffset(anchoredRefrigerator, anchorWall, room),
+    });
+    if (anchorWall && !selectedWalls.includes(anchorWall)) selectedWalls.push(anchorWall);
+    notes.push("The refrigerator already on the plan is a fixed anchor: it keeps its position, and the cabinets are designed around it.");
+  }
   for (const anchor of plan.plan.anchors) {
+    // Already seated from the plan above.
+    if (anchor.kind === "refrigerator" && anchoredRefrigerator) continue;
     const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
     const width = anchor.kind === "sink" ? sinkBaseWidth : anchor.kind === "refrigerator" ? refrigeratorWidth : dim(source.width, 24);
     const depth = dim(source.depth, 24);
@@ -720,13 +756,33 @@ export function runAutoDesignLayout(args: {
     if (!selectedWalls.includes(wall.engineWallId as WallSide)) selectedWalls.push(wall.engineWallId as WallSide);
   }
 
-  const notes: string[] = [];
   const refrigeratorBayWarnings: string[] = [];
   const drawerRuleWarnings: string[] = [];
   const reviewFindings: DesignerReviewFinding[] = [];
   const refrigerator = anchorsByKind.get("refrigerator");
   let refrigeratorReservation: { wall: string; start: number; end: number } | null = null;
-  if (refrigerator) {
+  if (refrigerator && anchoredRefrigerator) {
+    // A refrigerator the person already placed never moves: build its bay around
+    // it. Anything that cannot fit is omitted and named, and the appliance keeps
+    // its measured depth, height, and floor span.
+    const nominal = input.wallCabinetHeightIn ?? 30;
+    const anchoredBay = buildAnchoredRefrigeratorBay({
+      placed: working,
+      refrigerator,
+      room,
+      caps: args.refrigeratorCaps,
+      endPanels: args.refrigeratorEndPanels,
+      styleId: args.styleId,
+      makeUid,
+      wallCabinetHeightIn: resolveWallHeightClass(args.wallCatalog, nominal) ?? nominal,
+      // Same frameless answer as a generated bay: the geometry marker, or a
+      // 40-1/4" wall box when the palette does not ship the marker.
+      framelessLine: isFramelessWallCatalog(args.wallCatalog),
+    });
+    working = anchoredBay.placed;
+    refrigeratorReservation = anchoredBay.reservation;
+    notes.push(...anchoredBay.notes);
+  } else if (refrigerator) {
     const nominal = input.wallCabinetHeightIn ?? 30;
     const refrigeratorBay = buildMandatoryAutoDesignRefrigeratorBay({
       refrigerator,
@@ -860,6 +916,7 @@ export function runAutoDesignLayout(args: {
   const upperCorners: AutoDesignUpperCorner[] = [];
   const applianceMoves: AutoDesignLayoutSuccess["applianceMoves"] = [];
   const seatedCorners: AutoDesignSeatedCorner[] = [];
+  const anchoredUids = anchoredRefrigerator ? [anchoredRefrigerator.uid] : [];
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
   for (const slot of stage.slots) {
@@ -918,6 +975,7 @@ export function runAutoDesignLayout(args: {
       room,
       openings: stageOpenings,
       measuredApplianceUids: stage.anchorOrigins.filter((entry) => entry.kind === "refrigerator").map((entry) => entry.uid),
+      immovableApplianceUids: anchoredUids,
       blindPullIn: plannedBlind && cornerPlan ? Math.round(cornerPlan.pullIn * 8) / 8 : undefined,
       catalogFillers,
       makeUid,
@@ -963,9 +1021,15 @@ export function runAutoDesignLayout(args: {
     catalog: stage.straightBaseCatalog,
     origins: stage.anchorOrigins,
     lockedUids: [],
+    fixedUids: anchoredUids,
   });
   working = wiggle.placed;
-  const separated = separateRangeAndRefrigerator({ placed: working, room, origins: stage.anchorOrigins });
+  const separated = separateRangeAndRefrigerator({
+    placed: working,
+    room,
+    origins: stage.anchorOrigins,
+    fixedRefrigeratorUids: anchoredUids,
+  });
   working = separated.placed;
   let reservation = stage.refrigeratorReservation;
   const refrigeratorShift = wiggle.moves.find((move) => move.kind === "refrigerator");
@@ -1547,7 +1611,9 @@ export function runAutoDesignLayout(args: {
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {
     ok: true,
-    placed: working.filter((item) => !preExisting.some((kept) => kept.uid === item.uid)),
+    // The plan the build returns is the whole plan, including any fixed anchor
+    // it was handed; only the other pre-existing obstacles are reported apart.
+    placed: working.filter((item) => !preExisting.some((kept) => kept.uid === item.uid) || item.uid === anchoredRefrigerator?.uid),
     sinks,
     sinkWindow,
     openings: workingOpenings,

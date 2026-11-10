@@ -34,7 +34,11 @@ describe("Auto-Design in the More sheet (tablet and phone)", () => {
     // The row prints the one shared disabled reason instead of its own copy, so
     // the sheet, the desktop toolbar, and the phone top actions cannot drift.
     expect(row).toContain("autoDesignBlockedNote");
+    // And it prints the shared refrigerator-anchor hint: a placed refrigerator is
+    // a fixed anchor, never a reason the control is off.
+    expect(row).toContain("autoDesignAnchorNote");
     expect(availabilitySource).toContain('AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan"');
+    expect(availabilitySource).toContain("AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE");
     expect(row).toContain("Auto-Design");
   });
 

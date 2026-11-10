@@ -280,6 +280,12 @@ export function separateRangeAndRefrigerator(input: {
   placed: PlacedCabinet[];
   room: RoomData;
   origins?: readonly { uid: string; originalStart: number }[];
+  /**
+   * Refrigerators that are fixed anchors already on the plan. They are never
+   * shifted; the range takes the whole jog instead, and a gap that still cannot
+   * reach 15 inches is flagged rather than moving the refrigerator.
+   */
+  fixedRefrigeratorUids?: readonly string[];
 }): { placed: PlacedCabinet[]; moves: RangeFridgeMove[]; flags: string[] } {
   let placed = [...input.placed];
   const moves: RangeFridgeMove[] = [];
@@ -341,8 +347,12 @@ export function separateRangeAndRefrigerator(input: {
         const gap = right.start - left.end;
         if (gap >= kitchenRuleNumber("range_fridge_min_cabinet_in") - 0.05) continue;
         let shortfall = kitchenRuleNumber("range_fridge_min_cabinet_in") - gap;
-        const leftBudget = remaining(left.item.uid, left.start);
-        const rightBudget = remaining(right.item.uid, right.start);
+        const fixedFridge = new Set(input.fixedRefrigeratorUids ?? []);
+        const movable = (span: Span) => !fixedFridge.has(span.item.uid);
+        // A fixed refrigerator is never shifted, so its whole budget is zero and
+        // the range takes the rest of the jog on its own.
+        const leftBudget = movable(left) ? remaining(left.item.uid, left.start) : 0;
+        const rightBudget = movable(right) ? remaining(right.item.uid, right.start) : 0;
         const leftMove = Math.min(leftBudget, shortfall);
         shortfall -= leftMove;
         const rightMove = Math.min(rightBudget, shortfall);

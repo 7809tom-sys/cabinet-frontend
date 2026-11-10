@@ -202,8 +202,34 @@ describe("auto-design wiggle room", () => {
     expect(result.moves).toEqual([]);
   });
 
-  it("measures the 2 inch anchor cap from the original placement after a corner nudge", () => {
-    const { room, item } = rangeOnBottom(120, 46);
+  it("never moves a refrigerator the person placed, even when a shift would fit better", () => {
+    const { room, item } = rangeOnBottom(77, 15);
+    const fridge = { ...item, uid: "fridge-1", masterCode: "FRIDGE-36" };
+    const result = applyAutoDesignWiggleRoom({
+      placed: [fridge],
+      room,
+      openings: [],
+      catalog: catalog([36]),
+      origins: [originFor(fridge, "refrigerator", 15)],
+      fixedUids: [fridge.uid],
+    });
+    const stayed = result.placed.find((candidate) => candidate.uid === fridge.uid)!;
+    expect(wallRunOffset(stayed, "bottom", room)).toBeCloseTo(15, 5);
+    expect(stayed.x).toBe(fridge.x);
+    expect(stayed.y).toBe(fridge.y);
+    expect(result.moves).toEqual([]);
+    // A fixed range would still be free to jog, so this pins the refrigerator only.
+    const other = applyAutoDesignWiggleRoom({
+      placed: [fridge],
+      room,
+      openings: [],
+      catalog: catalog([36]),
+      origins: [originFor(fridge, "refrigerator", 15)],
+    });
+    expect(other.moves).toHaveLength(1);
+  });
+
+  it("measures the 2 inch anchor cap from the original placement after a corner nudge", () => {    const { room, item } = rangeOnBottom(120, 46);
     const result = applyAutoDesignWiggleRoom({
       placed: [item],
       room,
@@ -545,7 +571,9 @@ describe("auto-design completion wiring", () => {
     expect(secondRules).toBeGreaterThan(walls);
     expect(commit).toBeGreaterThan(secondRules);
     expect(pageSource).toContain("anchorOrigins");
-    expect(pageSource).toContain("Auto-Design will not move it.");
+    // A measured refrigerator bay that cannot fit still refuses to move the
+    // appliance; that rule now lives in the layout build itself.
+    expect(readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignLayout.ts"), "utf8")).toContain("Auto-Design will not move it.");
     expect(completion).toContain("closeSeams: true");
   });
 });
