@@ -148,17 +148,48 @@ export function bathroomFixtureFinishFilter(item: Pick<SelectedSurface, "name" |
   return "other";
 }
 
-export function bathroomFixtureWidthIn(item: Pick<SelectedSurface, "size" | "pelicanCode">): number | null {
+export function bathroomFixtureWidthIn(
+  item: Pick<SelectedSurface, "size" | "pelicanCode"> & { name?: string | null; description?: string | null },
+): number | null {
   const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode);
   if (profile) return profile.widthIn;
-  const raw = item.size ?? "";
-  const match = raw.match(/(\d+(?:\.\d+)?)(?:\s*[- ]\s*(\d+)\s*\/\s*(\d+))?/);
+
+  // The catalog leaves `size` null on many doors, so the width comes from
+  // whichever field actually states it, in order of reliability:
+  //
+  //   1. the structured `size` field, when present,
+  //   2. the SKU's own width token (PL-03A11S48 -> 48, PL-03A42S60 -> 60),
+  //   3. the product's own name or description ("46-48 in. Single Sliding ...").
+  //
+  // A range takes its larger value, because that is the opening the door is sold
+  // to fill, and a door that under-measures its opening leaves a gap.
+  const skuWidth = sizeTokenFromDoorSku(item.pelicanCode);
+  const raw = item.size?.trim() || item.name || item.description || "";
+  const match = raw.match(/(\d+(?:\.\d+)?)(?:\s*[- ]\s*(\d+(?:\.\d+)?))?/);
+  // The SKU token is authoritative when the row carries no stated size.
+  if (!match) return skuWidth;
+  const parsedWidth = (() => {
+    const whole = Number(match[1]);
+    if (match[2] != null && Number(match[2]) > whole) return Number(match[2]);
+    return Number(whole);
+  })();
+  if (Number.isFinite(parsedWidth) && parsedWidth > 0) return parsedWidth;
+  return skuWidth;
+}
+
+/**
+ * The width encoded in a Pelican door SKU.
+ *
+ * Pelican writes the opening into the code itself: the trailing `S48` / `S60` is
+ * the single-slider width, and `T60` is the tub-door width. This is the fallback
+ * when the catalog row has no `size`.
+ */
+export function sizeTokenFromDoorSku(code: string | null | undefined): number | null {
+  const normalized = (code ?? "").trim().toUpperCase();
+  const match = /(?:S|T)(\d{2})(?:\s|$)/.exec(normalized);
   if (!match) return null;
-  const whole = Number(match[1]);
-  const numerator = Number(match[2] ?? 0);
-  const denominator = Number(match[3] ?? 1);
-  const parsed = whole + (denominator > 0 ? numerator / denominator : 0);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  const width = Number(match[1]);
+  return Number.isFinite(width) && width > 0 ? width : null;
 }
 
 export function filterBathroomFixtureItems(
