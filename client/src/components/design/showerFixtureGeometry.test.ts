@@ -253,7 +253,7 @@ describe("Shower surround, system and niche geometry", () => {
    */
   it("keeps the pipe inside the wall, leaving the trim and arm to read as one fixture", () => {
     const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
-    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96 });
+    const parts = makeShowerSystemParts(profile, materials);
     const byName = (name: string) => parts.find((entry) => entry.part === name)!.mesh;
 
     // No pipe geometry at all: a riser drawn on the room side of the panel was the
@@ -278,7 +278,7 @@ describe("Shower surround, system and niche geometry", () => {
 
   it("seats the riser escutcheon at the valve, plumbed into the wall", () => {
     const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
-    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80 });
+    const parts = makeShowerSystemParts(profile, materials);
     const escutcheon = parts.find((entry) => entry.part === "shower-riser-escutcheon");
     expect(escutcheon).toBeTruthy();
     const valve = parts.find((entry) => entry.part === "shower-valve-trim")!.mesh;
@@ -357,47 +357,37 @@ describe("a shower system stays inside its surround", () => {
     return part.mesh.geometry.boundingBox!.max.y + part.mesh.position.y;
   };
 
-  it("clamps the arm and head below the top of the surround panel", () => {
-    // A shopper asking for an 80" head under a 74" tub surround.
-    const parts = makeShowerSystemParts(profile, materials, {
-      valveHeightIn: 48,
-      headHeightIn: 80,
-      panelHeightIn: 74,
-    });
-    const headTop = partTop(parts, "shower-head")!;
-    const armTop = partTop(parts, "shower-head-arm")!;
+  it("puts the valve centre at 48 inches above the finished floor", () => {
+    const parts = makeShowerSystemParts(profile, materials);
     const IN = 1 / 12;
-    // Nothing pokes above the panel.
-    expect(headTop / IN).toBeLessThan(74);
-    expect(armTop / IN).toBeLessThan(74);
-    // And it keeps a real clearance, not a hairline.
-    expect(74 - headTop / IN).toBeGreaterThanOrEqual(2.5);
+    // The trim's centre is the valve height.
+    expect(byName(parts, "shower-valve-trim")!.mesh.position.y / IN).toBeCloseTo(48, 2);
   });
 
-  it("still uses the requested height when it already fits", () => {
-    const parts = makeShowerSystemParts(profile, materials, {
-      valveHeightIn: 48,
-      headHeightIn: 80,
-      panelHeightIn: 96,
-    });
-    // 80" head in a 96" panel is well clear, so the number is honoured.
-    const arm = byName(parts, "shower-head-arm")!;
-    expect(arm.mesh.position.y / (1 / 12)).toBeCloseTo(80, 1);
+  it("puts the shower head centre at 80 inches above the finished floor", () => {
+    const parts = makeShowerSystemParts(profile, materials);
+    const IN = 1 / 12;
+    // Tom's 80" is the CENTRE of the head, and that is exactly where it sits.
+    const head = byName(parts, "shower-head")!;
+    expect(head.mesh.position.y / IN).toBeCloseTo(80, 2);
+    // The arm comes straight out of the wall at the same height.
+    expect(byName(parts, "shower-head-arm")!.mesh.position.y / IN).toBeCloseTo(80, 1);
   });
 
-  it("never puts the head below the valve, however short the panel is", () => {
-    const parts = makeShowerSystemParts(profile, materials, {
-      valveHeightIn: 60,
-      headHeightIn: 80,
-      panelHeightIn: 62,
-    });
-    const arm = byName(parts, "shower-head-arm")!;
-    const valve = byName(parts, "shower-valve-trim")!;
-    expect(arm.mesh.position.y).toBeGreaterThan(valve.mesh.position.y);
+  it("keeps those two heights whatever the surround panel measures", () => {
+    // The heights are set out from the FLOOR, so no panel size moves them. The
+    // builder no longer even accepts a panel height.
+    const parts = makeShowerSystemParts(profile, materials);
+    const IN = 1 / 12;
+    expect(byName(parts, "shower-valve-trim")!.mesh.position.y / IN).toBeCloseTo(48, 2);
+    expect(byName(parts, "shower-head")!.mesh.position.y / IN).toBeCloseTo(80, 2);
+    // And the head is always above the valve.
+    expect(byName(parts, "shower-head")!.mesh.position.y)
+      .toBeGreaterThan(byName(parts, "shower-valve-trim")!.mesh.position.y);
   });
 
   it("draws no visible riser pipe", () => {
-    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96 });
+    const parts = makeShowerSystemParts(profile, materials);
     // The pipe is buried in the wall; only the trim and the arm come through.
     expect(byName(parts, "shower-riser")).toBeUndefined();
     // The visible parts that SHOULD be there still are.
@@ -409,14 +399,14 @@ describe("a shower system stays inside its surround", () => {
 
   it("shows no tub spout on a shower-only build", () => {
     const showerOnly = makeShowerSystemParts(profile, materials, {
-      valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96, hasTubSpout: false,
+      hasTubSpout: false,
     });
     expect(byName(showerOnly, "shower-spout")).toBeUndefined();
   });
 
   it("still shows the spout on a tub/shower combo", () => {
     const combo = makeShowerSystemParts(profile, materials, {
-      valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96, hasTubSpout: true,
+      hasTubSpout: true,
     });
     expect(byName(combo, "shower-spout")).toBeDefined();
   });

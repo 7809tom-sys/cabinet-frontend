@@ -31,6 +31,17 @@ export type ShowerPart = {
 
 const INCH = 1 / 12;
 
+/**
+ * The fixed centre heights of a shower's valve and head, in inches above the
+ * finished floor.
+ *
+ * Tom's rule, and deliberately not configurable: a plumber sets these out from the
+ * floor, so they stay put whatever surround is fitted. The head is the CENTRE of
+ * the head, not the top of its disk.
+ */
+export const SHOWER_VALVE_HEIGHT_IN = 48;
+export const SHOWER_HEAD_HEIGHT_IN = 80;
+
 const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -302,17 +313,13 @@ export function makeShowerSystemParts(
   options: {
     deckHeightIn?: number;
     wallDepthIn?: number;
-    valveHeightIn?: number;
-    headHeightIn?: number;
-    /**
-     * The top of the surround panel this system is mounted on, inches above the
-     * deck. The arm and head are clamped below it: nothing may poke above or
-     * outside the panels.
-     */
-    panelHeightIn?: number;
     /**
      * Whether this set has a tub spout. Only the "...T/S" tub/shower combo does;
      * a shower-only set must never draw one.
+     *
+     * The valve and head heights are deliberately NOT options: they are fixed at
+     * `SHOWER_VALVE_HEIGHT_IN` and `SHOWER_HEAD_HEIGHT_IN` above the finished
+     * floor, because that is how a shower trim is set out.
      */
     hasTubSpout?: boolean;
   } = {},
@@ -324,36 +331,21 @@ export function makeShowerSystemParts(
   // +Z and the head reaches back toward the room.
   const wallZ = ((profile.depthIn || 8) / 2) * INCH;
 
-  // Heights above the deck. These used to be the constants 42 and 72 with no
-  // deck offset at all, so on a shower whose pan sits on the floor the riser ran
-  // from y = 0 and the valve was wherever 42" landed — never where the shopper
-  // put it. Now the caller passes the real mounted heights and the riser spans
-  // exactly valve-to-arm.
-  const valveHeightIn = Number.isFinite(options.valveHeightIn) && (options.valveHeightIn ?? 0) > 0
-    ? options.valveHeightIn!
-    : 42;
-  // Keep a clearance below the panel top so the arm and head never break the
-  // silhouette of the surround. Without this the head was placed at the shopper's
-  // chosen height whatever the panel did, so an 80" head on a 74" tub surround —
-  // or a 96" panel asked for a 110" head — left the arm and head hanging in the
-  // air above the walls.
-  const HEAD_CLEARANCE_IN = 3;
-  const panelHeightIn = Number.isFinite(options.panelHeightIn) && (options.panelHeightIn ?? 0) > 0
-    ? options.panelHeightIn!
-    : null;
-  const requestedHeadIn = Number.isFinite(options.headHeightIn) && (options.headHeightIn ?? 0) > 0
-    ? Math.max(options.headHeightIn!, valveHeightIn + 1)
-    : Math.max(72, valveHeightIn + 30);
-  // The head's DISK reaches 0.4" above the arm's centreline, so the arm has to sit
-  // a little lower than the clearance alone would allow. Without this the arm is
-  // inside the panel while the head's rim still breaks the top edge.
-  const HEAD_DISK_ABOVE_ARM_IN = 0.4;
-  const headHeightIn = panelHeightIn == null
-    ? requestedHeadIn
-    : Math.min(
-      requestedHeadIn,
-      Math.max(valveHeightIn + 6, panelHeightIn - HEAD_CLEARANCE_IN - HEAD_DISK_ABOVE_ARM_IN),
-    );
+  // FIXED plumbing heights, measured from the finished floor. Tom's rule:
+  //
+  //   valve trim / handle centre  = 48"
+  //   shower head centre          = 80"
+  //
+  // These are not the shopper's to choose and they are not clamped against the
+  // panel. A shower trim is set out from the floor by the plumber, so the height is
+  // the same whatever size surround is fitted — which is also why a taller panel
+  // does not move the head and a shorter one does not drag it down.
+  //
+  // The earlier "keep the head 3 inches below the panel top" rule is gone: it made
+  // the head height depend on the panel, so two showers with the same trim sat at
+  // different heights depending on which surround they used.
+  const valveHeightIn = SHOWER_VALVE_HEIGHT_IN;
+  const headHeightIn = SHOWER_HEAD_HEIGHT_IN;
 
   const parts: ShowerPart[] = [];
   const push = (mesh: THREE.Mesh, part: string) => {
@@ -415,7 +407,10 @@ export function makeShowerSystemParts(
     new THREE.CylinderGeometry(2.6 * INCH, 2.2 * INCH, 0.8 * INCH, 28),
     materials.metal,
   );
-  head.position.set(0, headY - 0.4 * INCH, wallZ - reach);
+  // Tom's 80" is the CENTRE of the head, so the head sits exactly on `headY`. It
+  // used to hang 0.4" below the arm's centreline, which put the visible head 0.4"
+  // under the specified height.
+  head.position.set(0, headY, wallZ - reach);
   push(head, "shower-head");
 
   // ---- Tub spout ------------------------------------------------------------
