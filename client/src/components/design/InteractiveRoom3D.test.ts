@@ -301,7 +301,13 @@ describe("source-measured Pelican bathroom fixtures", () => {
       sourceEnvelopeIn: { width: 60, depth: 0.5, height: 76 },
     });
     expect(fixture?.children.filter((child) => child.userData.pelicanBathroomFixturePart === "shower-door-glass-panel")).toHaveLength(2);
-    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-rail")).toBe(true);
+    // Tom asked for the overhead header rail to go: it read as a shop display
+    // case rather than the frameless doors Pelican sells. The floor track and the
+    // panel frames stay, and this is purely visual — the door's cart line and price
+    // never included the rail.
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-rail")).toBe(false);
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-track")).toBe(true);
+    expect(fixture?.children.some((child) => child.userData.pelicanBathroomFixturePart === "shower-door-glass-panel")).toBe(true);
   });
 
   it("ignores an unknown furniture definition left in an older saved plan", () => {
@@ -9913,3 +9919,73 @@ describe("Forest Rust photo face tone mapping", () => {
   });
 });
 
+
+/**
+ * Regression: Tom could not delete the shower niche.
+ *
+ * A niche is a shallow open box — a 3-17/32" recess with 0.12" shells — so in a
+ * perspective view a click usually lands INSIDE the opening and the ray reaches the
+ * wall panel behind it. With no hit there is no selection, and with no selection
+ * the delete path never runs.
+ *
+ * The fixture builder therefore adds an invisible, raycastable box over the niche's
+ * whole envelope, carrying the same `furnitureUid` the visible parts do. This test
+ * proves both halves: the box exists where a click can reach it, and a raycast
+ * through it resolves the niche's own placement.
+ */
+describe("shower niche is pickable so it can be selected and deleted", () => {
+  const room = { width: 96, depth: 120, ceilingHeight: 96 };
+  const nicheFurniture = (overrides: Partial<PlacedFurniture> = {}): PlacedFurniture => ({
+    uid: "niche-1",
+    defId: "pelican-shower-niche-pl-sn1639",
+    pelicanCode: "PL-SN1639",
+    x: 30,
+    y: 0,
+    rotation: 0,
+    showerStepId: "niche",
+    mountHeightIn: 44,
+    ...overrides,
+  } as PlacedFurniture);
+
+  it("adds an invisible pick box that raycasts to the niche's placement", () => {
+    const root = new THREE.Group();
+    addFurniture(root, nicheFurniture());
+
+    // The box exists and is invisible — but `visible = false` still raycasts.
+    const pickBox = root.getObjectByName("shower-niche-pick-box") as THREE.Mesh | null;
+    expect(pickBox).not.toBeNull();
+    expect(pickBox!.visible).toBe(false);
+    expect((pickBox!.material as THREE.Material).visible).toBe(false);
+
+    // It covers the niche's full envelope, not a sliver.
+    pickBox!.geometry.computeBoundingBox();
+    const box = pickBox!.geometry.boundingBox!;
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const inches = (v: number) => v * 12;
+    expect(inches(size.x)).toBeCloseTo(16 + 1 / 64, 0);   // published width
+    expect(inches(size.y)).toBeCloseTo(39 + 1 / 32, 0);   // published height
+    expect(inches(size.z)).toBeCloseTo(3 + 17 / 32, 0);   // published recess depth
+
+    // A ray straight at the niche's centre hits the pick box and resolves the
+    // niche's own uid, which is what makes the delete path work.
+    root.updateMatrixWorld(true);
+    const worldCentre = new THREE.Vector3();
+    pickBox!.getWorldPosition(worldCentre);
+    const raycaster = new THREE.Raycaster(
+      new THREE.Vector3(worldCentre.x, worldCentre.y, worldCentre.z - 50),
+      new THREE.Vector3(0, 0, 1),
+    );
+    const hits = raycaster.intersectObjects(root.children, true);
+    const hit = threeDFurnitureHitFromIntersections(hits);
+    expect(hit?.uid).toBe("niche-1");
+    expect(hit?.fixtureKind).toBe("shower-niche");
+  });
+
+  it("mounts the niche at its saved height, not at floor level", () => {
+    const root = new THREE.Group();
+    addFurniture(root, nicheFurniture({ mountHeightIn: 44 }));
+    const group = root.children.find((child) => child.userData.pelicanBathroomFixture) as THREE.Group;
+    expect(group.position.y).toBeCloseTo(44 / 12, 3);
+  });
+});

@@ -16472,6 +16472,14 @@ export interface PlacedFurniture {
    * deleted part leaves the cart with it.
    */
   showerStepId?: "surround" | "pan" | "heads" | "niche" | "door";
+  /**
+   * Which panel of the shower a wall fitting was mounted on.
+   *
+   * Saved with the design so the shopper's choice survives a reload, so Move
+   * shower can re-seat the part on the SAME panel, and so the wizard can show the
+   * current choice when the part is selected again.
+   */
+  showerPanelSide?: "back" | "left" | "right" | null;
 }
 
 export function makeFurniture(defId: string, x: number, y: number): PlacedFurniture {

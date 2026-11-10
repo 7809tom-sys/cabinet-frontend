@@ -297,7 +297,11 @@ const SHOWER_SYSTEM_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_S
  */
 const SHOWER_NICHE_SOURCES = [
   ["PL-SN1614", 16, 14, "Single Shelf"],
-  ["PL-SN1627", 27 + 1 / 16, 16 + 1 / 64, "Double Shelf"],
+  // SKU naming is width x height: SN1614 is 16 W x 14 H and SN1639 is 16 W x 39 H.
+  // PL-SN1627 was entered the other way round, which made a 16" wide niche 27" wide
+  // and only 16" tall — it stood sideways on the wall and its top could not be
+  // clamped against the panel height correctly.
+  ["PL-SN1627", 16 + 1 / 64, 27 + 1 / 16, "Double Shelf"],
   ["PL-SN1639", 16 + 1 / 64, 39 + 1 / 32, "Triple Shelf"],
 ] as const;
 

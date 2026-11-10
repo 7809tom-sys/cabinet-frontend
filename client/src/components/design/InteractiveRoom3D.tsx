@@ -11375,11 +11375,14 @@ function addPelicanBathroomFixture(
         add(bar, label);
       }
     }
-    // The top rail the panels hang from, and the floor track they run in.
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.06, 0.06), metal);
-    rail.position.y = height - 0.03;
-    rail.castShadow = true;
-    add(rail, "shower-door-rail");
+    // The floor track the panels run in.
+    //
+    // There used to be a matching overhead header rail here. Tom asked for it gone:
+    // a long horizontal bar across the top of the glass, sticking out past the
+    // surround, made the enclosure look like a shop display case rather than the
+    // frameless doors Pelican actually sells. Removing it is purely visual — it was
+    // never a cart line, a price, or a placement of its own, so the door's SKU and
+    // total are untouched.
     const track = new THREE.Mesh(new THREE.BoxGeometry(width, 0.028, 0.05), metal);
     track.position.y = 0.014;
     add(track, "shower-door-track");
@@ -11445,12 +11448,18 @@ function addPelicanBathroomFixture(
     // Valve, lever, riser, head and spout on the wet wall.
     // The system is authored flat on a wall at local x = 0 reaching into +X, so
     // it needs no extra offset: the fixture group is already on its wall.
+    // The heights the shopper actually set (valve 48", head 80" by default, both
+    // editable in the wizard). `mountHeightIn` is where this system was mounted,
+    // which IS the valve height; the arm sits above it. Passing these through is
+    // what makes the riser span valve-to-arm instead of starting at the floor.
+    const valveHeightIn = Math.max(0, furniture.mountHeightIn ?? 48);
+    const headHeightIn = Math.max(valveHeightIn + 12, valveHeightIn + 32);
     for (const { mesh, part } of makeShowerSystemParts(profile, {
       shell,
       // Solid metal in the finish the SKU is sold in, so a matte black system is
       // not drawn as a grey plastic rod.
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
-    })) {
+    }, { valveHeightIn, headHeightIn })) {
       add(mesh, part);
     }
   } else if (profile.kind === "shower-niche" || profile.kind === "soap-tray") {
@@ -11469,6 +11478,37 @@ function addPelicanBathroomFixture(
     })) {
       add(mesh, part);
     }
+    // An invisible pick box over the niche's whole envelope.
+    //
+    // A niche is a shallow open box: its recess is 3-17/32" deep and the shells
+    // are only 0.12" thick, so in a perspective view a click almost always falls
+    // INSIDE the opening and the ray reaches the wall panel behind it instead of
+    // any niche surface. With no hit there is no selection, and with no selection
+    // Tom cannot delete it.
+    //
+    // This box covers width x height x recess depth, sits exactly on the niche, and
+    // is `visible = false` so it never draws — but `visible === false` still
+    // raycasts, unlike `layers` or `raycast = () => {}`. It carries the same
+    // `furnitureUid` the other parts get, so `inspectFurnitureAtPoint` resolves the
+    // niche from it.
+    const nichePickBox = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        profile.widthIn * INCH,
+        Math.max(profile.heightIn * INCH, 0.12),
+        Math.max(profile.depthIn * INCH, 0.06),
+      ),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    // The niche body is authored standing on y = 0 with its recess running into
+    // +Z from the wall face, so the box is centred half its height up and half its
+    // depth forward.
+    nichePickBox.position.set(0, Math.max(profile.heightIn * INCH, 0.12) / 2, Math.max(profile.depthIn * INCH, 0.06) / 2);
+    nichePickBox.name = "shower-niche-pick-box";
+    add(nichePickBox, "shower-niche-pick-box");
+    // `add` sets cast/receiveShadow; keep the pick box out of the render entirely.
+    // `visible = false` still raycasts (unlike turning off `layers`), which is what
+    // makes the niche selectable where its thin shells are not.
+    nichePickBox.visible = false;
   } else if (profile.kind === "shower-wall") {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, Math.max(depth, 0.02)), new THREE.MeshStandardMaterial({ color: "#e7e2dc", roughness: 0.72 }));
     panel.position.y = height / 2;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 import type { RoomData } from "./design";
 import { choosePart, showerPlacementIssues, skipStep, type ShowerCatalogPart } from "./showerBuilder";
 import {
@@ -11,6 +12,9 @@ import {
   placeWallFitting,
   SHOWER_HEIGHTS,
   type ShowerOpening,
+  placeWallFittingOnPanel,
+  openingForSurround,
+  clampWallFittingMountHeight,
 } from "./showerPlacementAssembly";
 import { SKIPPABLE_STEPS } from "@/components/shower/ShowerBuilderWizard";
 
@@ -25,6 +29,34 @@ const ROOM: RoomData = { width: 120, depth: 96, ceilingHeight: 96 } as RoomData;
 
 const SURROUND_60x36 = "PL-603696 Marble";
 const PAN_60x36 = "PL-016036C";
+
+/**
+ * Plan-space box of one placed surround, from the bay it was seated in.
+ * A kit is centred in the alcove, so its plan extent is the BAY span by its own
+ * depth — using the catalog width would misplace the box in a wider room.
+ */
+function surroundBoxOf(room: any, wall: "top" | "left" | "right" = "top") {
+  const bay = bayForWall(room, wall)!;
+  const placed = placeShowerSurround("PL-603096 Brick", bay)!;
+  const profile = verifiedPelicanBathroomFixtureProfile("PL-603096 Brick")!;
+  const quarter = ((placed.rotation % 360) + 360) % 360;
+  const swapped = quarter === 90 || quarter === 270;
+  const bw = swapped ? profile.depthIn : bay.spanIn;
+  const bd = swapped ? bay.spanIn : profile.depthIn;
+  return { minX: placed.x, minY: placed.y, maxX: placed.x + bw, maxY: placed.y + bd };
+}
+
+/** Plan-space box of one placed fitting, from its real Pelican envelope. */
+function planBox(item: any) {
+  const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? "");
+  const w = Number(profile?.widthIn ?? 1);
+  const d = Number(profile?.depthIn ?? 1);
+  const quarter = ((item.rotation % 360) + 360) % 360;
+  const swapped = quarter === 90 || quarter === 270;
+  const bw = swapped ? d : w;
+  const bd = swapped ? w : d;
+  return { minX: item.x, minY: item.y, maxX: item.x + bw, maxY: item.y + bd };
+}
 
 describe("step 1 — the surround goes long side against the chosen wall", () => {
   it("finds a bay for the back wall", () => {
@@ -193,3 +225,110 @@ describe("every placed part is a real catalog product", () => {
 export function assertPriced(parts: readonly ShowerCatalogPart[]): void {
   for (const part of parts) expect(part.price).toBeGreaterThan(0);
 }
+
+/**
+ * The valve/head and the niche must mount on the INSIDE face of a panel of the
+ * shower the shopper actually built.
+ *
+ * They used to go through `placeWallFitting(code, wall, room, height)`, which calls
+ * `bayForWall(room, wall)`: that seats the part against a bay of the ROOM. A 60"
+ * room wall is not the shower's back panel, so in a real drawing the valve, head
+ * and niche landed on the room wall outside the enclosure.
+ */
+describe("wall fittings mount on a chosen shower panel", () => {
+  const room = { width: 96, depth: 120, ceilingHeight: 96 } as any;
+  const bay = bayForWall(room, "top")!;
+  const surround = placeShowerSurround("PL-603096 Brick", bay)!;
+  const opening = openingForSurround(surround, room)!;
+
+  const PANEL_COORDS: Array<{ side: "back" | "left" | "right"; label: string }> = [
+    { side: "back", label: "back panel" },
+    { side: "left", label: "left side panel" },
+    { side: "right", label: "right side panel" },
+  ];
+
+  for (const { side, label } of PANEL_COORDS) {
+    it(`mounts the valve inside the enclosure on the ${label}`, () => {
+      const placed = placeWallFittingOnPanel("PL-86S22S BN", side, opening, 48)!;
+      expect(placed).not.toBeNull();
+
+      // The mount has to sit INSIDE the footprint the surround occupies, which is
+      // the check that would have caught the room-wall placement.
+      const surroundBox = surroundBoxOf(room);
+      const valveBox = planBox(placed);
+      expect(valveBox.minX).toBeGreaterThanOrEqual(surroundBox.minX - 0.5);
+      expect(valveBox.maxX).toBeLessThanOrEqual(surroundBox.maxX + 0.5);
+      expect(valveBox.minY).toBeGreaterThanOrEqual(surroundBox.minY - 0.5);
+      expect(valveBox.maxY).toBeLessThanOrEqual(surroundBox.maxY + 0.5);
+
+      // And it keeps the height the shopper set.
+      expect(placed.mountHeightIn).toBe(48);
+    });
+  }
+
+  it("puts back, left and right on three different spots", () => {
+    const back = placeWallFittingOnPanel("PL-86S22S BN", "back", opening, 48)!;
+    const left = placeWallFittingOnPanel("PL-86S22S BN", "left", opening, 48)!;
+    const right = placeWallFittingOnPanel("PL-86S22S BN", "right", opening, 48)!;
+    expect(back.x).not.toBe(left.x);
+    expect(left.x).not.toBe(right.x);
+    expect(back.y).not.toBe(left.y);
+    // The two side panels are mirror images, so they sit on opposite sides of the
+    // back panel's centreline.
+    expect(Math.min(left.x, right.x)).toBeLessThan(back.x);
+  });
+
+  it("holds the niche on its panel too, and it can differ from the valve's", () => {
+    const valve = placeWallFittingOnPanel("PL-86S22S BN", "back", opening, 48)!;
+    const niche = placeWallFittingOnPanel("PL-SN1614", "left", opening, 44)!;
+    const surroundBox = surroundBoxOf(room);
+    for (const placed of [valve, niche]) {
+      const box = planBox(placed);
+      expect(box.minX).toBeGreaterThanOrEqual(surroundBox.minX - 0.5);
+      expect(box.maxX).toBeLessThanOrEqual(surroundBox.maxX + 0.5);
+    }
+    expect(niche.x).not.toBe(valve.x);
+  });
+
+  it("turns a side-panel fitting with the panel it sits on", () => {
+    const back = placeWallFittingOnPanel("PL-86S22S BN", "back", opening, 48)!;
+    const left = placeWallFittingOnPanel("PL-86S22S BN", "left", opening, 48)!;
+    expect(left.rotation).not.toBe(back.rotation);
+  });
+});
+
+/**
+ * A niche must never stick up above the shower walls.
+ *
+ * Its top is `mountHeightIn + height`, which may not pass the surround panel's
+ * published height. Tom saw a niche poking out of the top of the enclosure.
+ */
+describe("wall fittings stay inside their panel height", () => {
+  it("caps the mount so the part's top never passes the panel top", () => {
+    // A 27-1/16" niche in a 74" tub surround: anything above 46-15/16" pokes out.
+    const mounted = clampWallFittingMountHeight(60, 27 + 1 / 16, 74);
+    expect(mounted).toBeCloseTo(74 - (27 + 1 / 16), 3);
+    expect(mounted + (27 + 1 / 16)).toBeCloseTo(74, 3);
+  });
+
+  it("leaves a mount that already fits exactly where it was asked", () => {
+    expect(clampWallFittingMountHeight(44, 16, 96)).toBe(44);
+  });
+
+  it("keeps the bottom at pan level when the part is taller than the panel", () => {
+    // A 39" niche in a 30"-tall panel cannot fit; the only legal place is the pan.
+    const mounted = clampWallFittingMountHeight(20, 39 + 1 / 32, 30);
+    expect(mounted).toBeGreaterThanOrEqual(0);
+    expect(mounted).toBe(Math.max(0, 30 - (39 + 1 / 32)));
+  });
+
+  it("applies the clamp through real niche placement", () => {
+    const room = { width: 96, depth: 120, ceilingHeight: 96 } as any;
+    const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+    const niche = placeWallFittingOnPanel("PL-SN1639", "back", opening, 200)!;
+    expect(niche).not.toBeNull();
+    expect(niche.mountHeightIn).toBeLessThanOrEqual(opening.panelHeightIn);
+    // Top of the niche never passes the panel's top edge.
+    expect(niche.mountHeightIn + (39 + 1 / 32)).toBeLessThanOrEqual(opening.panelHeightIn + 0.01);
+  });
+});
