@@ -135,8 +135,8 @@ export function makeShowerPanParts(
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string, material: THREE.Material = materials.shell) => {
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
@@ -203,7 +203,7 @@ export function makeShowerPanParts(
     materials.metal,
   );
   drain.position.set(drainX, basinY + 0.008, 0);
-  drain.receiveShadow = true;
+  drain.receiveShadow = false;
   parts.push({ mesh: drain, part: "shower-pan-drain" });
 
   return parts;
@@ -235,8 +235,8 @@ export function makeShowerSurroundParts(
   const material = materials.panel ?? materials.shell;
   const push = (geometry: THREE.BufferGeometry, part: string) => {
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
@@ -357,8 +357,8 @@ export function makeShowerSystemParts(
 
   const parts: ShowerPart[] = [];
   const push = (mesh: THREE.Mesh, part: string) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
@@ -452,8 +452,8 @@ export function makeShowerNicheParts(
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string) => {
     const mesh = new THREE.Mesh(geometry, materials.shell);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 

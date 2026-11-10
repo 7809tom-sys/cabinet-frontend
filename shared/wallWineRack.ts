@@ -133,6 +133,27 @@ function rowKey(row: WallWineRackFields): string {
 }
 
 /**
+ * Wall-picker sections for racks the selected line actually returned.
+ * The label is the catalog subcategory (or category) already on the row.
+ * Racks stay out of the ordinary height groups so a 15" or 18" rack is not
+ * hidden inside a collapsed wall-height accordion.
+ */
+export function designerWallWineRackSections<T extends WallWineRackFields>(
+  items: readonly T[],
+): { label: string; items: T[] }[] {
+  const groups = new Map<string, { label: string; items: T[] }>();
+  for (const item of items) {
+    if (!isWallWineRackCabinet(item)) continue;
+    const label = (item.subCategory ?? "").trim() || (item.category ?? "").trim() || "Wine Rack";
+    const key = label.toLowerCase();
+    const existing = groups.get(key);
+    if (existing) existing.items.push(item);
+    else groups.set(key, { label, items: [item] });
+  }
+  return Array.from(groups.values());
+}
+
+/**
  * Keep every wall-placement row, and add wine racks that a category filter
  * sent to Base or Accessories. Added rows are placed as wall cabinets.
  */

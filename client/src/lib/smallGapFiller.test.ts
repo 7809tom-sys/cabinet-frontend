@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildDesignCabinetCartLines, buildDesignPreviewPricingLines } from "@/lib/designCartLines";
-import { DEFAULT_ROOM, adjacentCabinetForFiller, cabinetPlacementCollisionDetail, cabinetWallDragPreview, elevationBox, hasCollision, matchInstalledFillerToCabinet, nextAvailableRoomCornerPlacement, normalizeInstalledFillersToAdjacentCabinets, wallCabinetFitMeasure, wallLength, wallPlacementAt, type IslandFace, type IslandZone, type PlacedCabinet, type RoomData, type WallOpening } from "@/lib/design";
+import { DEFAULT_ROOM, adjacentCabinetForFiller, cabinetPlacementCollisionDetail, cabinetWallDragPreview, conflictingUids, elevationBox, hasCollision, matchInstalledFillerToCabinet, nextAvailableRoomCornerPlacement, normalizeInstalledFillersToAdjacentCabinets, wallCabinetFitMeasure, wallLength, wallPlacementAt, type IslandFace, type IslandZone, type PlacedCabinet, type RoomData, type WallOpening } from "@/lib/design";
 import { islandFacePlacement } from "@/lib/islandScene";
 import {
 	appendSmallGapFillerPlacement,
@@ -16,6 +16,7 @@ import {
 	removePlacedCabinetGroup,
   smallGapFillerOpportunityFromDragPreview,
   shouldAutoPlaceLeftoverFiller,
+  repairMissingAdjoiningFillers,
   smallGapFillerLayout,
   wallBlindCornerPreferredFillerMode,
 } from "@/lib/smallGapFiller";
@@ -1137,5 +1138,91 @@ const cabinet: PlacedCabinet = {
     const common = { placed, styleId: 7, distributorId: 2, tier: "homeowner" as const, styleNameById: new Map([[7, "Selected style"]]), unitPriceFor: () => 42 };
     expect(buildDesignCabinetCartLines(common)).toMatchObject([{ masterCode: "BF3", qty: 1, unitPrice: 42 }]);
     expect(buildDesignPreviewPricingLines(common)).toMatchObject([{ masterCode: "BF3", qty: 1, unitPrice: 42, placementUids: ["fill-left"] }]);
+  });
+});
+
+describe("adjoining cabinet fillers", () => {
+  const room: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
+  const filler3 = {
+    id: 88, masterCode: "F342", description: '3" filler', category: "Filler", subCategory: "Filler",
+    width: "3", height: "42", depth: "0.75", catalogImageUrl: null,
+  };
+  const filler6 = { ...filler3, id: 89, masterCode: "F642", description: '6" filler', width: "6" };
+  const box = (uid: string, placement: "base" | "wall", x: number, width: number, y = 0): PlacedCabinet => ({
+    uid, cabinetId: 1, masterCode: placement === "wall" ? "W3024" : "B24",
+    description: placement === "wall" ? "Wall" : "Base", placement,
+    x, y, width, depth: placement === "wall" ? 12 : 24,
+    height: placement === "wall" ? 30 : 34.5,
+    rotation: 0, wallId: "top", wallOffset: x,
+    mountBottom: placement === "wall" ? 54 : 0,
+    numberOfDoors: 2, numberOfDrawers: placement === "wall" ? 0 : 1,
+  });
+
+  it("fills a cabinet-to-cabinet gap on both the base and the upper with the line filler, and does not hang a filler off an open end", () => {
+    let n = 0;
+    const repaired = repairMissingAdjoiningFillers(
+      [box("b1", "base", 12, 24), box("b2", "base", 40, 24), box("w1", "wall", 12, 24), box("w2", "wall", 40, 30)],
+      room,
+      [],
+      [filler3, filler6],
+      () => `fill-${++n}`,
+      7,
+    );
+    const fillers = repaired.added;
+    expect(fillers.map((item) => item.placement).sort()).toEqual(["base", "wall"]);
+    expect(fillers.every((item) => item.masterCode === "F642" && item.fillerBillingRole === "primary")).toBe(true);
+    expect(fillers.every((item) => item.width === 4)).toBe(true);
+    const again = repairMissingAdjoiningFillers(repaired.placed, room, [], [filler3, filler6], () => `again-${++n}`, 7);
+    expect(again.added).toEqual([]);
+    const openEnd = repairMissingAdjoiningFillers([box("solo", "base", 12, 24)], room, [], [filler3, filler6], () => "nope", 7);
+    expect(openEnd.added).toEqual([]);
+  });
+
+  it("puts a filler on both layers at a 90° inside corner when each run is a filler width off the corner", () => {
+    const left = (uid: string, placement: "base" | "wall", y: number): PlacedCabinet => {
+      const depth = placement === "wall" ? 12 : 24;
+      const spot = wallPlacementAt(y, 24, depth, "left", room);
+      return {
+        ...box(uid, placement, spot.x, 24, spot.y),
+        ...spot,
+        depth,
+        wallId: "left",
+        wallOffset: y,
+      };
+    };
+    let n = 0;
+    const repaired = repairMissingAdjoiningFillers(
+      [box("top-base", "base", 3, 30), box("top-wall", "wall", 2, 30), left("left-base", "base", 30), left("left-wall", "wall", 18)],
+      room,
+      [],
+      [filler3, filler6],
+      () => `corner-${++n}`,
+      7,
+    );
+    const layers = new Set(repaired.added.map((item) => item.placement));
+    expect(layers.has("base")).toBe(true);
+    expect(layers.has("wall")).toBe(true);
+  });
+
+  it("allows a cooktop to sit on a sink base without a range hood", () => {
+    const sinkBase: PlacedCabinet = {
+      ...box("sink", "base", 36, 36),
+      masterCode: "SB36",
+      description: "36 inch sink base",
+    };
+    const cooktop: PlacedCabinet = {
+      ...box("cooktop", "base", 36, 36),
+      uid: "sink:cooktop",
+      cabinetId: 0,
+      masterCode: "CT36",
+      description: "36 inch cooktop",
+      placement: "appliance",
+      applianceRole: "countertop-opening",
+      height: 1.5,
+      mountBottom: 34.5,
+    };
+    expect(cabinetPlacementCollisionDetail(cooktop, [sinkBase], room)).toBeNull();
+    expect(conflictingUids([sinkBase, cooktop], room).size).toBe(0);
+    expect([sinkBase, cooktop].some((item) => /hood/i.test(item.masterCode))).toBe(false);
   });
 });

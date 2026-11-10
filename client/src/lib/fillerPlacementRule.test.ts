@@ -167,6 +167,17 @@ describe("fillerRuleViolation", () => {
     expect(["through-a-panel", "against-refrigerator-panel"]).toContain(violation?.code);
   });
 
+  it("keeps the angled-corner miter pair and a board in the inside-corner hold", () => {
+    const cabinet = seat({ uid: "end", masterCode: "B24", width: 24 }, 12);
+    const miter = filler({
+      uid: "miter", width: 1, fillerTransitionKind: "front-miter-pair", fillerMiterAngle: 22.5,
+    }, 11, "end");
+    expect(fillerRuleViolation({ filler: miter, placed: [cabinet, miter], room: ROOM, openings: [] })).toBeNull();
+    // A plain board in the open middle of the run is still illegal.
+    const side = filler({ uid: "side", width: 3 }, 43, "end");
+    expect(fillerRuleViolation({ filler: side, placed: [cabinet, side], room: ROOM, openings: [] })?.code).toBe("on-open-side-face");
+  });
+
   it("rejects a board on a run's open outside face", () => {
     // A lone cabinet mid-wall: neither side is wall, opening or another piece.
     const cabinet = seat({ uid: "alone", masterCode: "B24", width: 24 }, 40);

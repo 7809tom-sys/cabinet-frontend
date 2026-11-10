@@ -4,6 +4,9 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { masterTracFinishColor, masterTracProduct } from "@/lib/closet";
 import type { PlacedCabinet, WallSide } from "@/lib/design";
 import { CORNER_FOOTPRINT_IN, isMasterTracCornerBoard, type MasterTracCornerBoard } from "@/lib/masterTracTower";
+import { ThreeDRendererHost } from "./threeDRendererHost";
+import { ThreeDStartNotice } from "./ThreeDStartNotice";
+import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 
 const IN = 1 / 12;
 /** Owner-described straight mating edges. The source SKU still supplies the 29.5-inch bounding size. */
@@ -51,9 +54,7 @@ export function addIllustrativeMasterTracCorner(parent: THREE.Group, board: Mast
   const finish = masterTracProduct(board.masterCode)?.finish ?? "Glacier White";
   const material = new THREE.MeshStandardMaterial({ color: masterTracFinishColor(finish), roughness: 0.82, side: THREE.DoubleSide });
   const shelf = new THREE.Mesh(illustrativeMasterTracCornerGeometry(), material);
-  shelf.castShadow = true;
-  // Extruded curved polygons can self-shadow in the closet preview; only the
-  // measured straight boards and room floor receive cast shadows.
+  shelf.castShadow = false;
   shelf.receiveShadow = false;
   shelf.userData = { sku: board.masterCode, masterTracCornerSurface: true, illustrative: true };
   group.add(shelf);
@@ -71,8 +72,8 @@ export function addStraightBoard(parent: THREE.Group, board: PlacedCabinet, loca
     new THREE.MeshStandardMaterial({ color, roughness: 0.82 }),
   );
   mesh.position.set((localXIn + board.width / 2) * IN, ((board.mountBottom ?? 0) + (board.height ?? 0.75) / 2) * IN, board.depth / 2 * IN);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
   mesh.userData = { sku: board.masterCode, masterTracStraightBoard: true };
   parent.add(mesh);
   const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x756f65, transparent: true, opacity: 0.45 }));
@@ -87,8 +88,8 @@ export function addCornerReturnUpright(parent: THREE.Group, board: PlacedCabinet
     new THREE.MeshStandardMaterial({ color, roughness: 0.82 }));
   mesh.position.set((side === "start" ? board.depth / 2 : spanIn - board.depth / 2) * IN,
     (board.height ?? 87) / 2 * IN, (CORNER_FOOTPRINT_IN + board.width / 2) * IN);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
   mesh.userData = { sku: board.masterCode, masterTracCornerReturn: true, sourcedDimensions: true, camLockGeometry: false };
   parent.add(mesh);
   const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x756f65, transparent: true, opacity: 0.48 }));
@@ -237,15 +238,29 @@ export function MasterTracCornerElevation({ placed, wall, onEdit }: { placed: Pl
 export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCabinet[]; wall: WallSide; onEdit: () => void }) {
   const group = useMemo(() => groupBoards(placed), [placed]);
   const mount = useRef<HTMLDivElement>(null);
+  const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
+  const start = useThreeDRendererRecovery(rendererHostRef, { surface: "mastertrac-corner" });
+  const running = start.status === "running";
   useEffect(() => {
     const element = mount.current;
-    if (!element || !group) return;
+    if (!element || !group || !running) return;
+    rendererHostRef.current ??= new ThreeDRendererHost();
+    const renderer = rendererHostRef.current.ensureMounted(element);
+    if (!renderer) {
+      start.startFailed();
+      return;
+    }
+    start.started();
+    const detachContextRecovery = start.attach(renderer);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#eae7df");
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
-    element.appendChild(renderer.domElement);
+    // The renderer may come from another 3D view, which sets its own tone mapping.
+    // Shadows stay off: the shared host must not turn them back on.
+    renderer.shadowMap.enabled = false;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.dataset.testid = "mastertrac-corner-3d-canvas";
     const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 300);
     const span = group.width * IN;
@@ -260,12 +275,12 @@ export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCab
     scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const key = new THREE.DirectionalLight(0xffffff, 2.15);
     key.position.set(span / 2 - 1, 14, 7);
-    key.castShadow = true;
+    key.castShadow = false;
     scene.add(key);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(16, span + 7), 11), new THREE.MeshStandardMaterial({ color: 0xddd8cb, roughness: 1 }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(span / 2, -0.04, 1);
-    floor.receiveShadow = true;
+    floor.receiveShadow = false;
     scene.add(floor);
     const assembly = masterTracCornerAssembly(group.boards);
     if (assembly) scene.add(assembly);
@@ -302,16 +317,22 @@ export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCab
       });
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
-      renderer.dispose();
-      // dispose() leaves the browser's WebGL context alive; Chrome caps live contexts.
-      renderer.forceContextLoss();
-      element.removeChild(renderer.domElement);
+      detachContextRecovery();
+      renderer.renderLists.dispose();
     };
-  }, [group]);
+  }, [group, running, start.generation]);
+  // Declared after the scene effect so, on unmount, the scene tears down before the renderer is parked.
+  useEffect(() => () => {
+    rendererHostRef.current?.release();
+    rendererHostRef.current = null;
+  }, []);
   if (!group) return null;
   return <div className="flex h-full flex-col bg-[#eeeae0]" data-testid="mastertrac-corner-3d">
     <Heading placed={placed} wall={wall} view="3D closet assembly" />
-    <div ref={mount} className="min-h-[320px] flex-1 overflow-hidden" aria-label="Rotateable MasterTrac curved-corner shelf and connected tower visualization" />
+    <div className="relative min-h-[320px] flex-1 overflow-hidden">
+      <div ref={mount} className="absolute inset-0" aria-label="Rotateable MasterTrac curved-corner shelf and connected tower visualization" />
+      <ThreeDStartNotice recovery={start} testIdPrefix="mastertrac-corner" className="bg-[#eeeae0] text-stone-700" />
+    </div>
     <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2 text-[11px] text-stone-700"><span>Illustrative curve in the real 29.5″ SKU footprint · two 14.5″ mating edges meet actual sourced uprights on perpendicular walls. No complete return bay or cam-lock hole/fastener geometry is modeled. March 2022 List reference only; not an installation drawing.{placed.length > group.boards.length && ` Focused view: ${placed.length - group.boards.length} other placed items not shown.`}</span><button type="button" onClick={onEdit} className="rounded border border-stone-400 px-2 py-1 font-semibold">Edit connected towers</button></div>
   </div>;
 }

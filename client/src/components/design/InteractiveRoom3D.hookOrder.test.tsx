@@ -134,7 +134,7 @@ describe("InteractiveRoom3D hook order", () => {
     const crash = queryByTestId("crashed");
     expect(crash?.textContent ?? "").not.toMatch(HOOK_ORDER_MESSAGE);
     expect(crash).toBeNull();
-    expect(container.querySelector('[data-testid="webgl-unavailable"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="webgl-starting"], [data-testid="webgl-unavailable"]')).not.toBeNull();
   });
 
   it("can go from the empty-room early return to a full render", async () => {

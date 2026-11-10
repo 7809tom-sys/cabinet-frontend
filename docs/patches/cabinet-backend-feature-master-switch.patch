@@ -1,0 +1,368 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 10 Nov 2026 15:30:00 +0000
+Subject: [PATCH] Honor Off everywhere and per-distributor shutoff on affiliate reads.
+
+No new table and no schema change. The rows live in
+cabinet_dealz.affiliate_feature_publish (docs/sql/0269 in cabinet-frontend).
+subjectKind is already VARCHAR(16), so "global" fits. featureKey is already
+VARCHAR(64), so "all" fits. subjectId 0 is a valid bigint. Do not run new SQL.
+
+  server/lib/affiliateFeaturePublish.ts
+      affiliateFeatureAllowed is the read check. Order: role admin is always
+      allowed; otherwise a global row (subjectKind global, subjectId 0,
+      that featureKey, published 0) turns the feature off for every subject;
+      otherwise a featureKey "all" row with published 0 turns every feature
+      off for that subject; otherwise that subject's own feature row decides,
+      and a missing row stays unpublished.
+      affiliateFeaturePublishWrite is the admin upsert. It accepts subjectKind
+      global with subjectId 0, and featureKey all for a distributor or vendor.
+      It returns the one row to write. It does not delete or rewrite other rows.
+      published 1 turns that override back off.
+
+Wire-in, admin only:
+  distributorAdmin.listAffiliateFeaturePublish returns every row, including
+  global and all. distributorAdmin.setAffiliateFeaturePublish calls
+  affiliateFeaturePublishWrite, then upserts that one row and sets
+  updatedByUserId, updatedByName, and updatedAt from the signed-in admin.
+
+Every affiliate or distributor read of a gated feature calls
+affiliateFeatureAllowed before it returns data. Pass the distributor or
+vendor when the read is for one subject. Pass subject null when the read
+means "any subject has it on". Do not apply the block to role admin.
+
+Apply from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-feature-master-switch.patch
+
+No SQL file. Nothing in this patch deletes a row.
+
+---
+diff --git a/server/lib/affiliateFeaturePublish.test.ts b/server/lib/affiliateFeaturePublish.test.ts
+new file mode 100644
+index 0000000..9bd1dd9
+--- /dev/null
++++ b/server/lib/affiliateFeaturePublish.test.ts
+@@ -0,0 +1,153 @@
++import { describe, expect, it } from "vitest";
++import {
++  affiliateFeatureAllowed,
++  affiliateFeaturePublishWrite,
++  type AffiliateFeaturePublishRow,
++} from "./affiliateFeaturePublish";
++
++const row = (patch: AffiliateFeaturePublishRow): AffiliateFeaturePublishRow => patch;
++
++describe("affiliate feature master switches", () => {
++  const published = row({ subjectKind: "distributor", subjectId: 4, featureKey: "bathroom_builder", published: 1 });
++
++  it("keeps today's answer when there is no global row and no kill row", () => {
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows: [published],
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(true);
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows: [],
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(false);
++  });
++
++  it("turns the feature off everywhere when the global row is published 0, and restores the subject row when that flag is 1", () => {
++    const off = row({ subjectKind: "global", subjectId: 0, featureKey: "bathroom_builder", published: 0 });
++    const rows = [published, off];
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows,
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(false);
++    expect(affiliateFeatureAllowed({
++      role: "distributor",
++      rows,
++      subject: null,
++      featureKey: "bathroom_builder",
++    })).toBe(false);
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows: [published, { ...off, published: 1 }],
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(true);
++    expect(published.published).toBe(1);
++  });
++
++  it("shuts one subject off when featureKey all is published 0, and leaves other subjects alone", () => {
++    const other = row({ subjectKind: "vendor", subjectId: 8, featureKey: "bathroom_builder", published: 1 });
++    const kill = row({ subjectKind: "distributor", subjectId: 4, featureKey: "all", published: 0 });
++    const rows = [published, other, kill];
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows,
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(false);
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows,
++      subject: { kind: "vendor", id: 8 },
++      featureKey: "bathroom_builder",
++    })).toBe(true);
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows: rows.map((item) => item.featureKey === "all" ? { ...item, published: 1 } : item),
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(true);
++    expect(rows.find((item) => item.featureKey === "bathroom_builder" && item.subjectId === 4)?.published).toBe(1);
++  });
++
++  it("lets an admin through before Off everywhere and before the kill switch", () => {
++    const rows = [
++      row({ subjectKind: "global", subjectId: 0, featureKey: "bathroom_builder", published: 0 }),
++      row({ subjectKind: "distributor", subjectId: 4, featureKey: "all", published: 0 }),
++      published,
++    ];
++    expect(affiliateFeatureAllowed({
++      role: "admin",
++      rows,
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(true);
++    expect(affiliateFeatureAllowed({
++      role: "admin",
++      rows,
++      subject: null,
++      featureKey: "bathroom_builder",
++    })).toBe(true);
++    expect(affiliateFeatureAllowed({
++      role: "distributor",
++      rows,
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(false);
++    expect(affiliateFeatureAllowed({
++      role: "affiliate",
++      rows,
++      subject: { kind: "distributor", id: 4 },
++      featureKey: "bathroom_builder",
++    })).toBe(false);
++  });
++
++  it("accepts a global feature row and a per-subject all row from an admin, and does not delete", () => {
++    expect(affiliateFeaturePublishWrite({
++      role: "admin",
++      subjectKind: "global",
++      subjectId: 0,
++      featureKey: "bathroom_builder",
++      published: false,
++    })).toEqual({ ok: true, subjectKind: "global", subjectId: 0, featureKey: "bathroom_builder", published: 0 });
++    expect(affiliateFeaturePublishWrite({
++      role: "admin",
++      subjectKind: "global",
++      subjectId: 0,
++      featureKey: "bathroom_builder",
++      published: true,
++    })).toMatchObject({ ok: true, published: 1 });
++    expect(affiliateFeaturePublishWrite({
++      role: "admin",
++      subjectKind: "distributor",
++      subjectId: 4,
++      featureKey: "all",
++      published: 0,
++    })).toEqual({ ok: true, subjectKind: "distributor", subjectId: 4, featureKey: "all", published: 0 });
++    expect(affiliateFeaturePublishWrite({
++      role: "admin",
++      subjectKind: "distributor",
++      subjectId: 4,
++      featureKey: "all",
++      published: 1,
++    })).toMatchObject({ ok: true, published: 1 });
++    expect(affiliateFeaturePublishWrite({
++      role: "affiliate",
++      subjectKind: "global",
++      subjectId: 0,
++      featureKey: "bathroom_builder",
++      published: 0,
++    })).toMatchObject({ ok: false });
++    expect(affiliateFeaturePublishWrite({
++      role: "admin",
++      subjectKind: "global",
++      subjectId: 4,
++      featureKey: "bathroom_builder",
++      published: 0,
++    })).toMatchObject({ ok: false });
++  });
++});
+diff --git a/server/lib/affiliateFeaturePublish.ts b/server/lib/affiliateFeaturePublish.ts
+new file mode 100644
+index 0000000..7c93562
+--- /dev/null
++++ b/server/lib/affiliateFeaturePublish.ts
+@@ -0,0 +1,164 @@
++/**
++ * Affiliate feature publish guard. Apply this file in cabinet-backend.
++ * No new table and no schema change. Rows stay in
++ * cabinet_dealz.affiliate_feature_publish from docs/sql/0269.
++ *
++ * distributorAdmin.listAffiliateFeaturePublish
++ *   Admin only. Return every row, including subjectKind "global" and
++ *   featureKey "all". Do not filter those out and do not delete anything.
++ *
++ * distributorAdmin.setAffiliateFeaturePublish
++ *   Admin only. Call affiliateFeaturePublishWrite. Upsert that one row on
++ *   (subjectKind, subjectId, featureKey). Never DELETE.
++ *   Set updatedByUserId, updatedByName, and updatedAt from the signed-in admin.
++ *   published 0 on subjectKind "global", subjectId 0, means that feature is
++ *   off for every subject. published 0 on featureKey "all" means that subject
++ *   is shut off. published 1 turns that override back off.
++ *
++ * Affiliate and distributor reads
++ *   Call affiliateFeatureAllowed before returning the feature.
++ *   Pass the distributor or vendor when the read is for one subject.
++ *   Pass subject null when the read is "any subject has it on".
++ *   role "admin" is always allowed. Affiliates and distributors are not.
++ */
++
++export const AFFILIATE_FEATURE_KEYS = [
++  "kitchen_designer",
++  "bathroom_builder",
++  "laundry_builder",
++  "closet_builder",
++  "closet_studio",
++  "other_room_designer",
++  "cabinet_catalog",
++  "pelican_catalog",
++  "hardware_catalog",
++  "closet_catalog",
++  "kitchen_packages",
++  "samples",
++  "promotions",
++  "image_cabinet",
++  "installation_estimates",
++  "quote",
++] as const;
++
++export const GLOBAL_SUBJECT_KIND = "global" as const;
++export const GLOBAL_SUBJECT_ID = 0;
++export const SUBJECT_KILL_FEATURE_KEY = "all";
++
++export type PublishSubjectKind = "distributor" | "vendor" | "global";
++
++export type AffiliateFeaturePublishRow = {
++  subjectKind: PublishSubjectKind;
++  subjectId: number;
++  featureKey: string;
++  published: boolean | number;
++};
++
++export type PublishWrite =
++  | {
++    ok: true;
++    subjectKind: "distributor" | "vendor" | "global";
++    subjectId: number;
++    featureKey: string;
++    published: 0 | 1;
++  }
++  | { ok: false; message: string };
++
++function flagOn(value: unknown): boolean {
++  return value === true || value === 1;
++}
++
++function flagOff(value: unknown): boolean {
++  return value === false || value === 0;
++}
++
++export function isOffEverywhere(rows: readonly AffiliateFeaturePublishRow[], featureKey: string): boolean {
++  const row = rows.find((item) =>
++    item.subjectKind === GLOBAL_SUBJECT_KIND
++    && item.subjectId === GLOBAL_SUBJECT_ID
++    && item.featureKey === featureKey,
++  );
++  return row != null && flagOff(row.published);
++}
++
++export function isSubjectShutOff(
++  rows: readonly AffiliateFeaturePublishRow[],
++  subject: { kind: string; id: number },
++): boolean {
++  const row = rows.find((item) =>
++    item.subjectKind === subject.kind
++    && item.subjectId === subject.id
++    && item.featureKey === SUBJECT_KILL_FEATURE_KEY,
++  );
++  return row != null && flagOff(row.published);
++}
++
++/**
++ * Admin always. Then Off everywhere. Then the subject's kill switch.
++ * Then that subject's own feature row. A missing row is not published.
++ * subject null asks whether any subject that is not shut off has it on.
++ */
++export function affiliateFeatureAllowed(input: {
++  role?: string | null;
++  rows: readonly AffiliateFeaturePublishRow[];
++  subject: { kind: "distributor" | "vendor"; id: number } | null;
++  featureKey: string;
++}): boolean {
++  if (input.role === "admin") return true;
++  if (isOffEverywhere(input.rows, input.featureKey)) return false;
++  if (input.subject && isSubjectShutOff(input.rows, input.subject)) return false;
++  if (!input.subject) {
++    return input.rows.some((row) =>
++      flagOn(row.published)
++      && row.featureKey === input.featureKey
++      && (row.subjectKind === "distributor" || row.subjectKind === "vendor")
++      && !isSubjectShutOff(input.rows, { kind: row.subjectKind, id: row.subjectId }),
++    );
++  }
++  return input.rows.some((row) =>
++    flagOn(row.published)
++    && row.featureKey === input.featureKey
++    && row.subjectKind === input.subject.kind
++    && row.subjectId === input.subject.id,
++  );
++}
++
++/** The one row to upsert. Never deletes, and never rewrites any other row. */
++export function affiliateFeaturePublishWrite(input: {
++  role?: string | null;
++  subjectKind: string;
++  subjectId: number;
++  featureKey: string;
++  published: boolean | number;
++}): PublishWrite {
++  if (input.role !== "admin") {
++    return { ok: false, message: "Publish is limited to platform administrators." };
++  }
++  const published: 0 | 1 = flagOn(input.published) ? 1 : 0;
++  if (input.subjectKind === GLOBAL_SUBJECT_KIND) {
++    if (input.subjectId !== GLOBAL_SUBJECT_ID) return { ok: false, message: "A global row uses subjectId 0." };
++    if (input.featureKey === SUBJECT_KILL_FEATURE_KEY) {
++      return { ok: false, message: "Off everywhere is one row per feature, not featureKey all." };
++    }
++    if (!(AFFILIATE_FEATURE_KEYS as readonly string[]).includes(input.featureKey)) {
++      return { ok: false, message: "Unknown feature." };
++    }
++    return { ok: true, subjectKind: "global", subjectId: 0, featureKey: input.featureKey, published };
++  }
++  if (input.subjectKind !== "distributor" && input.subjectKind !== "vendor") {
++    return { ok: false, message: "Unknown subject." };
++  }
++  if (!Number.isInteger(input.subjectId) || input.subjectId <= 0) {
++    return { ok: false, message: "subjectId must be the distributor or vendor id." };
++  }
++  const known = input.featureKey === SUBJECT_KILL_FEATURE_KEY
++    || (AFFILIATE_FEATURE_KEYS as readonly string[]).includes(input.featureKey);
++  if (!known) return { ok: false, message: "Unknown feature." };
++  return {
++    ok: true,
++    subjectKind: input.subjectKind,
++    subjectId: input.subjectId,
++    featureKey: input.featureKey,
++    published,
++  };
++}

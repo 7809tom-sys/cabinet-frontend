@@ -24,6 +24,8 @@ describe("Cart address-first checkout", () => {
     expect(cartSource).toContain("Shipping is calculated after your delivery address is complete");
     expect(cartSource).toContain("street address, city, state, and ZIP");
     expect(cartSource).toContain("ShippingQuoteBox");
+    expect(cartSource).toContain('data-testid="affiliate-live-rate-only"');
+    expect(cartSource).toContain("does not offer flat-rate or weight-based shipping");
     expect(cartSource).not.toContain("trpc.freight.estimate.useQuery");
     expect(cartSource).not.toContain("trpc.location.availability.useQuery");
     expect(cartSource).not.toContain("Prefer a UPS package quote");
@@ -60,6 +62,8 @@ describe("Cart address-first checkout", () => {
     expect(reviewSource).toContain("trpc.freight.estimate.useQuery(freightInput");
     expect(reviewSource).toContain("trpc.hardware.quote.useQuery(hardwareQuoteInput");
     expect(reviewSource).toContain("customerInfoComplete");
+    expect(reviewSource).toContain("liveShippingQuotePanel");
+    expect(reviewSource).not.toContain("{!customerInfoComplete ? (");
   });
 
   it("retains separate address-stage carrier controls and accessible live-rate feedback", () => {

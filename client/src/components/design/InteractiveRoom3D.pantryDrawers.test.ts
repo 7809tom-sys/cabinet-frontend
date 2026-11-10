@@ -37,7 +37,9 @@ describe("regular Designer pantry drawers below tall doors", () => {
   ])("places $masterCode's entire drawer bank below every tall door", fixture => {
     const { drawers, doors } = renderFronts(fixture);
     expect(drawers).toHaveLength(fixture.numberOfDrawers);
-    expect(doors).toHaveLength(fixture.numberOfDoors);
+    // A 24" cabinet stored as one door is drawn as two doors.
+    const expectedDoors = fixture.width >= 24 && fixture.numberOfDoors === 1 ? 2 : fixture.numberOfDoors;
+    expect(doors).toHaveLength(expectedDoors);
     expect(Math.max(...drawers.map(drawer => bounds(drawer).max.y))).toBeLessThanOrEqual(Math.min(...doors.map(door => bounds(door).min.y)) + 0.001);
   });
 

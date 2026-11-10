@@ -39,6 +39,7 @@ import { MediaPicker } from "@/components/admin/MediaPicker";
 import { DrawerLayoutEditor, LayoutSpecBuilder, defaultLayoutSpec } from "@/components/admin/CabinetConfigAdmin";
 import { CUSTOM_CABINET_PROFILES } from "@/lib/customCabinetProfiles";
 import { cabinetTypeLabel, resolveDoorDrawerCounts, cabinetDrawingType } from "@/lib/cabinetGraphics";
+import { designerCabinetName } from "@/lib/designerCabinetNames";
 import { standardBaseDoorSaveError } from "@/lib/genericCabinetDrawerReference";
 import { DoorStyleSwatch } from "@/components/DoorStyleSwatch";
 import { doorFamilyPhoto } from "@/lib/doorFamilyPhotos";
@@ -506,7 +507,15 @@ export default function CabinetDetail({ masterCode }: Props) {
   // A line may share the master code with another construction (for example,
   // Frameless B24S). Use the selected line's product description without ever
   // changing the shared master description.
-  const displayedDescription = selectedRow?.supplierDescription?.trim() || masterCabinet?.description || canonicalMasterCode;
+  const displayedDescription = designerCabinetName({
+    masterCode: canonicalMasterCode,
+    description: selectedRow?.supplierDescription?.trim() || masterCabinet?.description || canonicalMasterCode,
+    width: masterCabinet?.width,
+    graphicType: masterCabinet?.graphicType,
+    category: masterCabinet?.category,
+    subCategory: masterCabinet?.subCategory,
+    cornerType: masterCabinet?.cornerType,
+  });
   // Supplier/master descriptions are retained as source records. Derive a
   // source-free, compact public title and dimension-aware SEO description only
   // for customer presentation; do not write either result back to the editor.

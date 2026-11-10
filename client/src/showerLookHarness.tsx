@@ -45,7 +45,7 @@ const H = 950;
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(2);
 renderer.setSize(W, H, false);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = false;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = Number(params.get("exp") ?? 1.0);
@@ -66,8 +66,8 @@ scene.add(root);
 /** Collect every part the builders return, exactly as the designer adds them. */
 function addParts(parts: { mesh: THREE.Mesh; part: string }[], group: THREE.Group) {
   for (const { mesh, part } of parts) {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     mesh.userData.part = part;
     group.add(mesh);
   }
@@ -236,7 +236,7 @@ const floor = new THREE.Mesh(
   new THREE.MeshPhysicalMaterial({ color: "#cfc8bd", roughness: 0.4, clearcoat: 0.2 }),
 );
 floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
+floor.receiveShadow = false;
 scene.add(floor);
 
 // The surround's own back panel sits at +Z and the camera looks from +Z, so the
@@ -248,7 +248,7 @@ const backWall = new THREE.Mesh(
 );
 backWall.position.set(0, 5, (surroundProfile.depthIn / 2) * INCH + 1.2);
 backWall.rotation.y = Math.PI;
-backWall.receiveShadow = true;
+backWall.receiveShadow = false;
 scene.add(backWall);
 
 // ── Lights: soft key from the room side, plus a rim ─────────────────────────
@@ -267,7 +267,7 @@ scene.add(rim);
 
 const sun = new THREE.DirectionalLight("#fff6ea", 2.1);
 sun.position.set(-5, 10, 6);
-sun.castShadow = true;
+sun.castShadow = false;
 sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.left = -9;
 sun.shadow.camera.right = 9;

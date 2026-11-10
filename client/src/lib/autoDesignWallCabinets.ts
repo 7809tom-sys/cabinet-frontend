@@ -7,6 +7,7 @@ import {
 } from "./autoDesignSeamFillers";
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
 import { cabinetDrawingType, isWallBlindCornerCabinet } from "./cabinetGraphics";
+import { isSingleDoorTwentyFourRow } from "./singleDoorTwentyFour";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
   deliberateUpperBays,
@@ -18,8 +19,8 @@ import {
 } from "./autoDesignUpperAlignment";
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
-  cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatInches, freeSegmentsOnWall,
-  STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
+  cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall,
+  STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
@@ -67,6 +68,124 @@ export function resolveWallHeightClass(catalog: readonly DesignCabinet[], nomina
     .filter((height) => height > 0 && Math.abs(height - nominalIn) <= WALL_HEIGHT_MATCH_TOLERANCE_IN + 1e-9);
   if (!heights.length) return null;
   return heights.sort((a, b) => Math.abs(a - nominalIn) - Math.abs(b - nominalIn) || a - b)[0]!;
+}
+
+/**
+ * A 42" design keeps only that line's 42" wall rows (42, or 40.25 on a frameless
+ * line). Base rows stay. Shorter wall rows are what turned W1842 into W1830
+ * when a later pass took the first catalog match for a width.
+ */
+export function catalogMatchingWallDesignHeight(
+  catalog: readonly DesignCabinet[],
+  nominalIn: number,
+): DesignCabinet[] {
+  if (Math.abs(nominalIn - 42) > 0.05) return [...catalog];
+  const height = resolveWallHeightClass(catalog, nominalIn);
+  if (height == null) return [...catalog];
+  return catalog.filter((row) => row.placement !== "wall" || Math.abs(dim(row.height, 0) - height) <= SAME_HEIGHT_IN);
+}
+
+/** Range, microwave, refrigerator, and hood own the cabinet above them. A dishwasher does not. */
+function applianceOwnsUpper(item: PlacedCabinet): boolean {
+  if (isRangeOrOven(item.masterCode, item.description)) return true;
+  if (isRefrigerator(item)) return true;
+  if (/^MW-/i.test(item.masterCode ?? "")) return true;
+  if (isRangeHoodPlacement(item)) return true;
+  return /hood/i.test(`${item.masterCode ?? ""} ${item.description ?? ""}`);
+}
+
+/**
+ * Cabinets above an appliance keep that appliance's height rule. Everything
+ * else in a 42" design is brought up to 42". The microwave bridge is 24" with
+ * its bottom at 72"; the refrigerator cap and the range/hood bridge stay as placed.
+ */
+export function keepsOwnWallHeight(
+  item: PlacedCabinet,
+  placed: readonly PlacedCabinet[] = [],
+  room?: RoomData,
+): boolean {
+  if (item.overRangeMicrowaveBridge === true) return true;
+  if (item.refrigeratorAssemblyRole === "bridge") return true;
+  if (item.refrigeratorAssemblyId) return true;
+  if (/hood/i.test(`${item.masterCode ?? ""} ${item.description ?? ""}`)) return true;
+  if (!room) return false;
+  const wall = cabinetWall(item, room);
+  const start = wallRunOffset(item, wall, room);
+  const end = start + wallRunSpan(item, wall, room);
+  return placed.some((other) => {
+    if (other.uid === item.uid || !applianceOwnsUpper(other)) return false;
+    if (cabinetWall(other, room) !== wall) return false;
+    const otherStart = wallRunOffset(other, wall, room);
+    const otherEnd = otherStart + wallRunSpan(other, wall, room);
+    return Math.min(end, otherEnd) - Math.max(start, otherStart) > 0.5;
+  });
+}
+
+function rejectsSingleDoorTwentyFour(row: DesignCabinet): boolean {
+  if (isSingleDoorTwentyFourRow(row)) return true;
+  return Math.abs(dim(row.width, 0) - 24) <= 0.05 && (row.numberOfDoors ?? 0) === 1;
+}
+
+/**
+ * When the design is 42" uppers, an ordinary wall cabinet that is not that
+ * tall is replaced by the same-width 42" SKU. If that width is not sold at
+ * 42", the closest 42" width within the 3" filler cap is used and named.
+ */
+export function enforceFortyTwoWallCabinets(input: {
+  placed: PlacedCabinet[];
+  catalog: readonly DesignCabinet[];
+  nominalIn: number;
+  room: RoomData;
+}): { placed: PlacedCabinet[]; notes: string[] } {
+  if (Math.abs(input.nominalIn - 42) > 0.05) return { placed: input.placed, notes: [] };
+  const height = resolveWallHeightClass(input.catalog, input.nominalIn);
+  if (height == null) return { placed: input.placed, notes: [] };
+  const stock = input.catalog.filter((row) => row.id > 0 && row.placement === "wall"
+    && Math.abs(dim(row.height, 0) - height) <= SAME_HEIGHT_IN
+    && dim(row.width, 0) > 0
+    && !rejectsSingleDoorTwentyFour(row));
+  const notes: string[] = [];
+  let working = [...input.placed];
+  for (const item of input.placed) {
+    if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item) || keepsOwnWallHeight(item, input.placed, input.room)) continue;
+    if (Math.abs(Number(item.height) - height) <= SAME_HEIGHT_IN) continue;
+    const wanted = Number(item.width) || 0;
+    const exact = stock.find((row) => Math.abs(dim(row.width, 0) - wanted) <= COLLISION_EPSILON_IN);
+    const nearest = exact ?? stock
+      .map((row) => ({ row, width: dim(row.width, 0) }))
+      .filter((entry) => Math.abs(entry.width - wanted) <= autoDesignFillerMaxIn() + 0.05 && entry.width <= wanted + COLLISION_EPSILON_IN)
+      .sort((a, b) => Math.abs(a.width - wanted) - Math.abs(b.width - wanted) || b.width - a.width)[0]?.row;
+    if (!nearest) {
+      notes.push(`${item.masterCode} stays ${formatEighthInches(Number(item.height))} tall: no ${formatEighthInches(height)} wall cabinet is within ${formatEighthInches(autoDesignFillerMaxIn())} of its ${formatEighthInches(wanted)} width.`);
+      continue;
+    }
+    const width = dim(nearest.width, wanted);
+    const replacement: PlacedCabinet = {
+      ...item,
+      cabinetId: nearest.id,
+      masterCode: nearest.masterCode,
+      description: nearest.description,
+      category: nearest.category,
+      subCategory: nearest.subCategory,
+      width,
+      height,
+      numberOfDoors: nearest.numberOfDoors,
+      numberOfDrawers: nearest.numberOfDrawers,
+      catalogImageUrl: nearest.catalogImageUrl ?? item.catalogImageUrl,
+      mountBottom: ordinaryWallMountBottom({ ...nearest, height }),
+    };
+    const without = working.filter((entry) => entry.uid !== item.uid);
+    const accepted = appendCollisionFreePlacements(without, [replacement], input.room);
+    if (accepted.rejected.length > 0) {
+      notes.push(`${item.masterCode} stays ${formatEighthInches(Number(item.height))} tall: ${nearest.masterCode} does not fit in its place.`);
+      continue;
+    }
+    working = accepted.placed;
+    if (Math.abs(width - wanted) > 0.05) {
+      notes.push(`No ${formatEighthInches(wanted)} × ${formatEighthInches(height)} wall cabinet; ${nearest.masterCode} (${formatEighthInches(width)} × ${formatEighthInches(height)}) replaced ${item.masterCode}.`);
+    }
+  }
+  return { placed: working, notes };
 }
 
 
@@ -168,6 +287,8 @@ export function buildAutoDesignWallCabinets(input: {
   placed: PlacedCabinet[];
   additions: PlacedCabinet[];
   skipped: string[];
+  /** Widths that had no stock box at the design height, and the 42" SKU used instead. */
+  substitutions: string[];
   /** The real catalog height used (for example 30.25 for a requested 30). Null when the line has none. */
   heightUsedIn: number | null;
 } {
@@ -175,6 +296,7 @@ export function buildAutoDesignWallCabinets(input: {
   let working = [...input.placed];
   const additions: PlacedCabinet[] = [];
   const skipped: string[] = [];
+  const substitutions: string[] = [];
   // Spans an aligned projection deliberately refused (a window too close, a
   // blocked second tile, a ceiling). They stay open and reported; the last
   // alignment pass never "fixes" them with a different packing.
@@ -195,13 +317,13 @@ export function buildAutoDesignWallCabinets(input: {
     ?? (sellsWallCabinetNearHeight ? input.wallCabinetHeightIn : null);
   if (heightUsedIn == null) {
     skipped.push(`No source-priced ${input.wallCabinetHeightIn}″ wall cabinet exists in this cabinet line (nearest sold height is more than ${WALL_HEIGHT_MATCH_TOLERANCE_IN}″ away), so no wall cabinets were added.`);
-    return { placed: working, additions, skipped, heightUsedIn };
+    return { placed: working, additions, skipped, substitutions, heightUsedIn };
   }
   const height = heightUsedIn;
   const eligible = input.catalog.filter((source) => source.id > 0
     && source.placement === "wall" && Math.abs(dim(source.height, 0) - height) <= SAME_HEIGHT_IN
     && dim(source.width, 0) > 0 && dim(source.depth, 0) > 0);
-  const standard = eligible.filter(isStraightStandardUpper);
+  const standard = eligible.filter((source) => isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source));
   const corners = eligible.filter((source) => ["diagonal-corner", "l-corner", "triangle-corner"].includes(cabinetDrawingType(source)))
     .sort((a, b) => dim(b.width, 0) - dim(a.width, 0));
   const wallBlinds = eligible.filter((source) => isWallBlindCornerCabinet(source))
@@ -306,6 +428,9 @@ export function buildAutoDesignWallCabinets(input: {
           const spot = wallRunCornerPlacement(candidate, frame, at, room);
           if (spot && commit({ ...candidate, ...spot })) {
             placed = true;
+            if (input.wallCabinetHeightIn === 42 && Math.abs(dim(source.width, 0) - base.width) > 0.05) {
+              substitutions.push(`No ${formatEighthInches(base.width)} × ${formatEighthInches(height)} corner upper; ${source.masterCode} (${formatEighthInches(dim(source.width, 0))} × ${formatEighthInches(height)}) was used.`);
+            }
             // Rule: a 12-inch wall cabinet goes on each side of a diagonal (or L) corner upper,
             // filling the rest of the corner base's span on both of its walls.
             const seatedCorner = additions[additions.length - 1]!;
@@ -412,6 +537,12 @@ export function buildAutoDesignWallCabinets(input: {
         complete = true;
         break;
       }
+      const exactWidth = standard.some((row) => Math.abs(dim(row.width, 0) - piece.span) <= COLLISION_EPSILON_IN);
+      if (input.wallCabinetHeightIn === 42 && !exactWidth) {
+        const used = sources.map((row) => `${row.masterCode} (${formatEighthInches(dim(row.width, 0))} × ${formatEighthInches(height)})`).join(" + ");
+        const leftover = shortfall > 0.05 ? `, leaving ${formatEighthInches(shortfall)}` : "";
+        substitutions.push(`No ${formatEighthInches(piece.span)} × ${formatEighthInches(height)} wall cabinet; ${used} was used${leftover}.`);
+      }
       let along = piece.start;
       for (const source of sources) {
         const candidate = makeCandidate(source);
@@ -485,8 +616,25 @@ export function buildAutoDesignWallCabinets(input: {
                 break;
               }
             }
-            // A corner or hood blocks this spot. Step ahead instead of ending the run.
-            if (!seated) along += Math.min(3, Math.max(0, remain));
+            // A corner or hood blocks this spot. Jump to the next inch a real
+            // upper fits. Stepping 3" at a time left a filler in every step.
+            if (!seated) {
+              let next: number | null = null;
+              const limit = region.end - MIN_UPPER_WIDTH_IN;
+              for (let cursor = along + 1; cursor <= limit + COLLISION_EPSILON_IN && next == null; cursor += 1) {
+                for (const width of widths) {
+                  if (width > region.end - cursor + COLLISION_EPSILON_IN) continue;
+                  if (baysOn(seam.wall).some((bay) => cursor < bay.end - COLLISION_EPSILON_IN && cursor + width > bay.start + COLLISION_EPSILON_IN)) continue;
+                  const source = standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
+                  if (!source) continue;
+                  const candidate = makeCandidate(source);
+                  const spot = wallPlacementAt(cursor, candidate.width, candidate.depth, seam.wall as never, room);
+                  if (spot && upperFits({ ...candidate, ...spot }, working)) { next = cursor; break; }
+                }
+              }
+              if (next == null || next <= along + COLLISION_EPSILON_IN) break;
+              along = next;
+            }
           }
           remainder = Math.max(0, region.end - along);
         }
@@ -539,7 +687,7 @@ export function buildAutoDesignWallCabinets(input: {
   // A wall blind corner exposes the door away from its blind side.
   working = assignBlindCornerDoorSides(working, room);
   const uids = new Set(additions.map((item) => item.uid));
-  return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, heightUsedIn };
+  return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, substitutions, heightUsedIn };
 }
 
 /**

@@ -1,0 +1,257 @@
+diff --git a/server/routers/freight.affiliateCheckout.test.ts b/server/routers/freight.affiliateCheckout.test.ts
+new file mode 100644
+index 0000000..7cb7615
+--- /dev/null
++++ b/server/routers/freight.affiliateCheckout.test.ts
+@@ -0,0 +1,27 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++
++const source = readFileSync(new URL("./freight.ts", import.meta.url), "utf8");
++
++describe("affiliate checkout live freight", () => {
++  it("accepts the affiliate store slug and detects a pinned affiliate host", () => {
++    expect(source).toContain("affiliateSlug: z.string().trim().min(1).max(64).optional()");
++    expect(source).toContain("const affiliateCheckout = await affiliateCheckoutFreight(ctx.req, input.affiliateSlug)");
++    expect(source).toContain("if (hostScope.pinned)");
++    expect(source).not.toContain("guardAffiliateFeature");
++  });
++
++  it("reuses the live carrier call and does not apply posted flat or weight rules", () => {
++    expect(source).toContain("ignorePostedFreightRules: affiliateCheckout");
++    expect(source).toContain("const distributorRule = input.ignorePostedFreightRules || !matchedStyle");
++    expect(source).toContain("flatFreightFeeCents: input.ignorePostedFreightRules ? null : matchedStyle?.flatFreightFeeCents ?? null");
++    expect(source).toContain("if (!settings.enabled && !affiliateCheckout)");
++    expect(source).toContain("if (affiliateCheckout) {\n            return affiliateLiveRateUnavailable(totalBillableWeightLbs, shipmentGroups);");
++    expect(source).toContain("if (affiliateCheckout) {\n        return affiliateLiveRateUnavailable(totalPackagedLoad(packages).weightLbs);");
++    expect(source).toContain("const allDistributorRulesFree = !affiliateCheckout && styleGroups.length > 0");
++  });
++
++  it("tells the shopper to retry or request a quote instead of substituting a flat rate", () => {
++    expect(source).toContain("Live shipping rate is unavailable for this address. Retry the quote, or request a quote from the store.");
++  });
++});
+diff --git a/server/routers/freight.ts b/server/routers/freight.ts
+index 1157188..16052f6 100644
+--- a/server/routers/freight.ts
++++ b/server/routers/freight.ts
+@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, like, or } from "drizzle-orm";
+ import { TRPCError } from "@trpc/server";
+ import { publicProcedure, adminProcedure, router } from "../_core/trpc";
+ import { getDb } from "../db";
+-import { resolveRequestStoreScope, type RequestStoreScope } from "../lib/affiliateHostScope";
++import { assertClientStoreScope, normalizeStoreSlug, resolveRequestStoreScope, type RequestStoreScope } from "../lib/affiliateHostScope";
+ import {
+   shippingSettings,
+   freightZones,
+@@ -891,6 +891,12 @@ async function resolveStyleFreightGroups(input: {
+   fallbackOriginZip: string;
+   /** Operations-only test escape hatch; customer quotes still require a style ZIP. */
+   allowMissingStyleOriginFallback?: boolean;
++  /**
++   * Affiliate checkout never prices from a distributor flat fee, a free-freight
++   * threshold, a ZIP table, or a style Plan B amount. Those rules stay in
++   * force for the main store.
++   */
++  ignorePostedFreightRules?: boolean;
+ }): Promise<StyleFreightGroup[]> {
+   const db = await getDb();
+   const pelicanProfileByProductId = new Map<number, {
+@@ -1116,27 +1122,27 @@ async function resolveStyleFreightGroups(input: {
+       // Keep a configured legacy Plan B fee available if the first line in a
+       // consolidated distributor shipment did not have one. Live carrier and
+       // distributor fixed/threshold rules remain shipment-level behavior.
+-      if (existing.flatFreightFeeCents == null && matchedStyle?.flatFreightFeeCents != null) {
++      if (!input.ignorePostedFreightRules && existing.flatFreightFeeCents == null && matchedStyle?.flatFreightFeeCents != null) {
+         existing.flatFreightFeeCents = matchedStyle.flatFreightFeeCents;
+       }
+       continue;
+     }
+     const distributorLabel = matchedStyle?.distributorName || "Configured supply line";
+-    const distributorRule = matchedStyle
+-      ? resolveDistributorShippingRule({
++    const distributorRule = input.ignorePostedFreightRules || !matchedStyle
++      ? { fixedFeeCents: null, label: null, matchedZipPrefix: null }
++      : resolveDistributorShippingRule({
+           mode: matchedStyle.shippingRuleMode,
+           flatFeeCents: matchedStyle.shippingFlatFreightFeeCents,
+           freeThresholdCents: matchedStyle.shippingFreeFreightThresholdCents,
+           zipRates: matchedStyle.shippingZipRates ?? [],
+           exceptions: matchedStyle.shippingExceptions,
+-        }, input.destinationZip, input.merchandiseSubtotalCents)
+-      : { fixedFeeCents: null, label: null, matchedZipPrefix: null };
++        }, input.destinationZip, input.merchandiseSubtotalCents);
+     groups.set(key, {
+       key,
+       label: `${distributorLabel} · ${usedOperationsOriginFallback ? "Operations test origin" : "origin"} ${originZip}`,
+       vendorName: distributorLabel,
+       originZip,
+-      flatFreightFeeCents: matchedStyle?.flatFreightFeeCents ?? null,
++      flatFreightFeeCents: input.ignorePostedFreightRules ? null : matchedStyle?.flatFreightFeeCents ?? null,
+       distributorRuleFeeCents: distributorRule.fixedFeeCents,
+       distributorRuleLabel: distributorRule.label,
+       usedOperationsOriginFallback,
+@@ -1706,6 +1712,53 @@ async function savedDesignFreightInput(designId: number, hostScope?: RequestStor
+   };
+ }
+ 
++/** Customer copy when an affiliate checkout cannot show a live carrier rate. */
++const AFFILIATE_LIVE_RATE_UNAVAILABLE =
++  "Live shipping rate is unavailable for this address. Retry the quote, or request a quote from the store.";
++
++/**
++ * Affiliate store checkout is live-carrier only. A pinned affiliate host counts
++ * even when the client omits the slug. On the platform host, the slug has to
++ * match an affiliate row. Publish switches are not consulted: the cart and the
++ * quote stay open. A missing row keeps the main store's posted-rate behavior.
++ */
++async function affiliateCheckoutFreight(
++  req: Parameters<typeof resolveRequestStoreScope>[0],
++  affiliateSlug: string | undefined,
++): Promise<boolean> {
++  const hostScope = await resolveRequestStoreScope(req);
++  const requested = normalizeStoreSlug(affiliateSlug);
++  if (hostScope.pinned) {
++    assertClientStoreScope(hostScope, requested);
++    return true;
++  }
++  if (!requested) return false;
++  const db = await getDb();
++  if (!db) return false;
++  const [row] = await db
++    .select({ id: affiliates.id })
++    .from(affiliates)
++    .where(eq(affiliates.slug, requested))
++    .limit(1);
++  return row != null;
++}
++
++function affiliateLiveRateUnavailable(billableWeightLbs: number, shipmentGroups?: FreightShipmentGroup[]): FreightQuote {
++  return {
++    available: false,
++    zoneName: null,
++    billableWeightLbs: Math.max(0, Math.round(billableWeightLbs)),
++    lines: [],
++    freightBeforeMarkupCents: 0,
++    markupCents: 0,
++    damageFeeCents: 0,
++    totalCents: 0,
++    freeFreightApplied: false,
++    shipmentGroups,
++    reason: AFFILIATE_LIVE_RATE_UNAVAILABLE,
++  };
++}
++
+ export const freightRouter = router({
+   // ─── Public: estimate/quote freight for a cart ──────────────────────────────
+   estimate: publicProcedure
+@@ -1727,6 +1780,12 @@ export const freightRouter = router({
+         // Optional saved plan for an internal quote-history link. It is never
+         // trusted until the request user is authorized against that saved plan.
+         kitchenDesignId: z.number().int().positive().optional(),
++        /**
++         * Set by affiliate store checkout. A real affiliate row forces the same
++         * live carrier path the main store uses and refuses flat, threshold,
++         * and weight-table fallbacks. Omitted on the main store.
++         */
++        affiliateSlug: z.string().trim().min(1).max(64).optional(),
+       })
+     )
+     .query(async ({ input, ctx }): Promise<FreightQuote> => {
+@@ -1798,10 +1857,13 @@ export const freightRouter = router({
+         }
+       }
+ 
+-      // A disabled Operations configuration is a hard stop. Do this before
+-      // package resolution or carrier selection so a public cart can never
+-      // trigger a live provider request while shipping is intentionally off.
+-      if (!settings.enabled) {
++      // Affiliate checkout is identified from the store slug or a pinned host.
++      // Publish switches and the Operations on/off switch do not hide its rate.
++      const affiliateCheckout = await affiliateCheckoutFreight(ctx.req, input.affiliateSlug);
++      // A disabled Operations configuration is a hard stop for the main store.
++      // Do this before package resolution or carrier selection so a public cart
++      // can never trigger a live provider request while shipping is intentionally off.
++      if (!settings.enabled && !affiliateCheckout) {
+         return {
+           available: false,
+           zoneName: null,
+@@ -1847,21 +1909,42 @@ export const freightRouter = router({
+       }
+ 
+       // ── QUOTE: one shipment per authoritative style/distributor origin ─────
+-      // A configured distributor fixed/threshold rule is authoritative and takes
+-      // precedence over a carrier call. Unconfigured lines remain live-only.
+-      const styleGroups = settingsRow
+-        ? await resolveStyleFreightGroups({
++      // On the main store, a configured distributor fixed/threshold rule is
++      // authoritative and takes precedence over a carrier call. Unconfigured
++      // lines remain live-only. Affiliate checkout ignores those posted rules
++      // and uses this same live carrier call.
++      let styleGroups: StyleFreightGroup[] = [];
++      if (settingsRow) {
++        try {
++          styleGroups = await resolveStyleFreightGroups({
+             destinationZip: quoteInput.destinationZip,
+             items: quoteInput.items,
+             merchandiseSubtotalCents: quoteInput.merchandiseSubtotalCents,
+             explicitDistributorId: quoteInput.distributorId,
+             fallbackOriginZip: settings.originZip,
+-          })
+-        : [];
+-      if (settingsRow && (surfaceItems.length > 0 || liveProvider !== "estimator" || quoteInput.carrierPreference === "ups" || styleGroups.some((group) => group.distributorRuleFeeCents != null))) {
++            ignorePostedFreightRules: affiliateCheckout,
++          });
++        } catch (error) {
++          // A missing origin or unmatched style must not fall through to a flat
++          // or weight-table price on an affiliate checkout.
++          if (affiliateCheckout && error instanceof TRPCError) {
++            return {
++              ...affiliateLiveRateUnavailable(0),
++              reason: `${AFFILIATE_LIVE_RATE_UNAVAILABLE} ${error.message}`,
++            };
++          }
++          throw error;
++        }
++      }
++      if (affiliateCheckout && !settingsRow) {
++        return affiliateLiveRateUnavailable(0);
++      }
++      const postedRuleWouldReplaceCarrier = styleGroups.some((group) => group.distributorRuleFeeCents != null);
++      if (settingsRow && (surfaceItems.length > 0 || liveProvider !== "estimator" || quoteInput.carrierPreference === "ups" || (!affiliateCheckout && postedRuleWouldReplaceCarrier))) {
+         const caps = rowToPalletCaps(settingsRow);
+         const load = totalPackagedLoad(packages);
+         if (load.units === 0 && surfaceItems.length === 0) {
++          if (affiliateCheckout) return affiliateLiveRateUnavailable(0);
+           return {
+             available: false,
+             zoneName: null,
+@@ -2242,6 +2325,9 @@ export const freightRouter = router({
+         }
+ 
+         if (failedGroups.length > 0) {
++          if (affiliateCheckout) {
++            return affiliateLiveRateUnavailable(totalBillableWeightLbs, shipmentGroups);
++          }
+           if (upsOnlyRequested || surfaceItems.length > 0) {
+             const partial = combineStyleFreightGroups({
+               groups: rateGroups,
+@@ -2296,7 +2382,7 @@ export const freightRouter = router({
+           merchandiseSubtotalCents: quoteInput.merchandiseSubtotalCents,
+           billableWeightLbs: totalBillableWeightLbs,
+         });
+-        const allDistributorRulesFree = styleGroups.length > 0 && styleGroups.every((group) => group.distributorRuleFeeCents === 0);
++        const allDistributorRulesFree = !affiliateCheckout && styleGroups.length > 0 && styleGroups.every((group) => group.distributorRuleFeeCents === 0);
+         const quote = allDistributorRulesFree
+           ? {
+               ...quoted,
+@@ -2343,6 +2429,9 @@ export const freightRouter = router({
+           reason: unavailableSurfaceReason,
+         };
+       }
++      if (affiliateCheckout) {
++        return affiliateLiveRateUnavailable(totalPackagedLoad(packages).weightLbs);
++      }
+       const load = totalPackagedLoad(packages);
+       const fallback = await configuredFreightEstimate({
+         destinationZip: quoteInput.destinationZip,

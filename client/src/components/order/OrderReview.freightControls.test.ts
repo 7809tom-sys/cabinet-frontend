@@ -8,10 +8,14 @@ const source = readFileSync(
 );
 
 describe("OrderReview freight accessorial controls", () => {
-  it("requires complete contact and delivery details before enabling a quote", () => {
+  it("requests the quote from the delivery address and shows it before contact fields are filled", () => {
     expect(source).toContain("const customerInfoComplete = Boolean(");
     expect(source).toContain("name.trim() && emailValid && phone.trim() && addressLine1.trim() && city.trim() && taxState.length === 2");
-    expect(source).toContain("Complete the required name, phone, street address, city, state, and ZIP above to calculate the shipping quote.");
+    expect(source).toContain("if (!customerInfoComplete)");
+    expect(source).toContain("Complete the street address, city, state, and ZIP above to calculate the shipping quote.");
+    expect(source).toContain("liveShippingQuotePanel");
+    expect(source).not.toContain("{!customerInfoComplete ? (");
+    expect(source).toContain('data-testid="live-shipping-total"');
     expect(source).toContain("enabled: deliveryMethod === \"ship\" && zipDebounced.length >= 5 && city.trim().length > 0 && taxState.length === 2 && addressLine1.trim().length > 0");
     expect(source).toContain("shippingAddressLine1: addressLine1.trim()");
     expect(source).toContain("shippingCity: city.trim()");
@@ -41,6 +45,9 @@ describe("OrderReview freight accessorial controls", () => {
     expect(source).toContain('residential: deliveryLocationType === "residential"');
     expect(source).toContain("liftgate: liftgateRequired");
     expect(source).toContain("distributorId: optionalPositiveFreightId(line.cartDistributorId)");
+    expect(source).toContain("affiliateSlug: affiliateSlug ?? undefined");
+    expect(source).toContain("freightQuoteIsLiveCarrier(freightEstimate.data)");
+    expect(source).toContain("affiliateLiveRateFailureMessage");
     expect(source).toContain("isCabinetFreightLine(line)");
     expect(source).toContain("optionalPositiveFreightId(line.cartDistributorId) != null");
     expect(source).toContain("final pallet dimensions and loaded weight");

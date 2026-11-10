@@ -1,6 +1,6 @@
 import { AUTO_DESIGN_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type AutoDesignLayoutType, type AutoDesignOriginCorner, type AutoDesignRunDirection, type WallLabel } from "./autoDesignAutoBuild";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
-import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, isPlainBaseCode, type RoomData } from "./design";
+import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, isPlainBaseCode, wallRunFrame, wallRunJoinAt, type RoomData } from "./design";
 
 /** A real room vertex that the admin may explicitly populate after all anchors are seated. */
 export type AutoDesignCornerSlot = {
@@ -64,7 +64,7 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
   // seated a blind corner between Wall 1 and Wall 2 on a galley.
   if (layoutType === "galley" || layoutType === "single-wall") return slots;
   if (layoutType === "l-shape") {
-    if (!measured || wallsShareVertex("Wall 1", "Wall 2", measured)) add("Wall 1", "Wall 2");
+    if (measuredPairIsTrueCorner("Wall 1", "Wall 2", measured)) add("Wall 1", "Wall 2");
     return slots;
   }
   if (layoutType === "u-shape") {
@@ -83,10 +83,82 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
   });
   for (let first = 0; first < occupied.length; first++) {
     for (let second = first + 1; second < occupied.length; second++) {
-      if (wallsShareVertex(occupied[first]!, occupied[second]!, measured)) add(occupied[first]!, occupied[second]!);
+      if (measuredPairIsTrueCorner(occupied[first]!, occupied[second]!, measured)) add(occupied[first]!, occupied[second]!);
     }
   }
   return slots;
+}
+
+/**
+ * Interior turn between two labeled walls, in degrees. 90 is a true corner.
+ * 45 is the smaller angle of a 45° or 135° angled join. Null when the walls
+ * do not meet or the room has not been measured.
+ */
+export function autoDesignWallJoinTurnDeg(
+  firstWall: WallLabel,
+  secondWall: WallLabel,
+  measured: AutoDesignCornerMeasurement,
+): number | null {
+  const first = wallLabelToEngineWallId(firstWall, measured.room, measured.originCorner, measured.runDirection);
+  const second = wallLabelToEngineWallId(secondWall, measured.room, measured.originCorner, measured.runDirection);
+  if (!first || !second) return null;
+  for (const at of ["start", "end"] as const) {
+    const join = wallRunJoinAt(first.frame, at, measured.room);
+    if (join && join.frame.id === second.engineWallId) return join.turnDeg;
+  }
+  for (const at of ["start", "end"] as const) {
+    const join = wallRunJoinAt(second.frame, at, measured.room);
+    if (join && join.frame.id === first.engineWallId) return join.turnDeg;
+  }
+  return null;
+}
+
+/**
+ * A corner cabinet belongs only at a true 90° inside corner. With no measured
+ * room the layout's declared corners stay (an L still names Wall 1 / Wall 2).
+ * A measured 45° or 135° join is an angled run, not a corner cabinet.
+ */
+function measuredPairIsTrueCorner(
+  firstWall: WallLabel,
+  secondWall: WallLabel,
+  measured: AutoDesignCornerMeasurement | undefined,
+): boolean {
+  if (!measured) return true;
+  if (!wallsShareVertex(firstWall, secondWall, measured)) return false;
+  const turn = autoDesignWallJoinTurnDeg(firstWall, secondWall, measured);
+  if (turn == null) return true;
+  return Math.abs(turn - 90) <= 0.5;
+}
+
+/**
+ * Wall runs that meet an already-cabineted run at 45° (or 135°, which reports
+ * as 45). They are real runs: straight cabinets along the wall, and an angled
+ * filler at the join. They are not corner-cabinet slots.
+ */
+export function autoDesignAngledNeighborWallIds(
+  wallIds: readonly string[],
+  room: RoomData,
+  excludedWallIds: readonly string[] = [],
+): string[] {
+  const excluded = new Set(excludedWallIds);
+  const seen = new Set(wallIds);
+  const added: string[] = [];
+  const queue = [...wallIds];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    const frame = wallRunFrame(id, room);
+    if (!frame) continue;
+    for (const at of ["start", "end"] as const) {
+      const join = wallRunJoinAt(frame, at, room);
+      if (!join || Math.abs(join.turnDeg - 45) > 0.5) continue;
+      const neighbor = join.frame.id;
+      if (excluded.has(neighbor) || seen.has(neighbor)) continue;
+      seen.add(neighbor);
+      added.push(neighbor);
+      queue.push(neighbor);
+    }
+  }
+  return added;
 }
 
 /** The message shown when a real L or U corner was left without a corner cabinet. */
@@ -199,7 +271,7 @@ function uShapeCornerPairs(measured: AutoDesignCornerMeasurement): Array<[WallLa
   const pairs: Array<[WallLabel, WallLabel]> = [];
   for (let first = 0; first < walls.length; first++) {
     for (let second = first + 1; second < walls.length; second++) {
-      if (wallsShareVertex(walls[first]!, walls[second]!, measured)) pairs.push([walls[first]!, walls[second]!]);
+      if (measuredPairIsTrueCorner(walls[first]!, walls[second]!, measured)) pairs.push([walls[first]!, walls[second]!]);
     }
   }
   return pairs;

@@ -119,9 +119,10 @@ test.describe("3D canvas floating buttons", () => {
     expectOneUniformColumn(data!);
     // Every action the owner listed is present, in the one column.
     const labels = data!.buttons.filter((button) => !button.isPan).map((button) => button.label);
-    for (const name of ["Fullscreen view", "Canvas controls", "Zoom in", "Zoom out", "Add cabinet", "Add hardware", "Reset view", "Share view", "Lighting", "Auto-Design"]) {
+    for (const name of ["Fullscreen view", "Canvas controls", "Zoom in", "Zoom out", "Add cabinet", "Add hardware", "Reset view", "Share view", "Auto-Design"]) {
       expect(labels, name).toContain(name);
     }
+    expect(labels, "Lighting").not.toContain("Lighting");
     const everyLabel = data!.buttons.map((button) => button.label);
     for (const name of ["Pan up", "Pan down", "Pan left", "Pan right"]) {
       expect(everyLabel, name).toContain(name);

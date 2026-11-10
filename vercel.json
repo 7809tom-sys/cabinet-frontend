@@ -6,6 +6,11 @@
   "outputDirectory": "dist/public",
   "redirects": [
     {
+      "source": "/api/shared-3d-view/:token",
+      "destination": "/3d/:token",
+      "permanent": false
+    },
+    {
       "source": "/",
       "has": [{ "type": "host", "value": "(?<slug>(?!(?:www|api)\\.)[a-z0-9-]+)\\.cabinetdealz\\.com" }],
       "destination": "/store/:slug",

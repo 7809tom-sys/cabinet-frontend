@@ -174,6 +174,8 @@ export function ensureSingleDoorBase(input: {
     .filter((item) => (item.numberOfDoors ?? 0) >= 2)
     .sort((left, right) => (Number(left.width) || 0) - (Number(right.width) || 0));
   for (const target of candidates) {
+    // A 24 inch cabinet is never a single door. B24 stays two doors; B24S is not an automatic pick.
+    if ((Number(target.width) || 0) >= 24 - 0.05) continue;
     const match = singleDoors.find((entry) => Math.abs(entry.width - (Number(target.width) || 0)) <= 0.05);
     if (!match) continue;
     const replacement: PlacedCabinet = {

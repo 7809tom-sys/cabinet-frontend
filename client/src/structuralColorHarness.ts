@@ -66,7 +66,7 @@ function render(pane: HTMLElement, variant: Variant): { front: string; side: str
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = false;
   pane.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -78,18 +78,18 @@ function render(pane: HTMLElement, variant: Variant): { front: string; side: str
 
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: "#d9d3c7", roughness: 0.9 }));
   floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
+  floor.receiveShadow = false;
   scene.add(floor);
 
   const wall = new THREE.Mesh(new THREE.BoxGeometry(roomW * 1.8, 6, 4 * INCH), new THREE.MeshStandardMaterial({ color: "#f6f4ef", roughness: 0.95 }));
   wall.position.set(roomW / 2, 3, -2 * INCH);
-  wall.receiveShadow = true;
+  wall.receiveShadow = false;
   scene.add(wall);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.05));
   const key = new THREE.DirectionalLight(0xffffff, 1.6);
   key.position.set(4.5, 8, 5);
-  key.castShadow = true;
+  key.castShadow = false;
   key.shadow.mapSize.set(1024, 1024);
   scene.add(key);
   const fill = new THREE.DirectionalLight(0xffffff, 0.45);

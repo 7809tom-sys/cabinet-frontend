@@ -403,22 +403,18 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <AffiliatePublishedFeature feature="quote">
-                  <OrderBuilder />
-                </AffiliatePublishedFeature>
+                <OrderBuilder />
               </AffiliateShell>
             </Suspense>
           )}
         </Route>
-        {/* Older referral messages used /order/new. Keep that published path
-            working so it remains inside the affiliate shell and cart scope. */}
+        {/* Older referral messages used /order/new. Keep that path working so
+            it remains inside the affiliate shell and cart scope. */}
         <Route path="/store/:slug/order/new">
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <AffiliatePublishedFeature feature="quote">
-                  <OrderBuilder />
-                </AffiliatePublishedFeature>
+                <OrderBuilder />
               </AffiliateShell>
             </Suspense>
           )}
@@ -634,7 +630,9 @@ export default function App() {
           {(params) => (
             <AppLayout>
               <Suspense fallback={<PageLoader />}>
-                <SharedRoom3D token={params.token} />
+                <DesignerErrorBoundary surface="shared-3d" pageReload={false} message="This design couldn't load">
+                  <SharedRoom3D token={params.token} />
+                </DesignerErrorBoundary>
               </Suspense>
             </AppLayout>
           )}
@@ -720,7 +718,9 @@ export default function App() {
           {(params) => (
             <AffiliateShell slug={params.slug}>
               <Suspense fallback={<PageLoader />}>
-                <SharedRoom3D token={params.token} />
+                <DesignerErrorBoundary surface="shared-3d" pageReload={false} message="This design couldn't load">
+                  <SharedRoom3D token={params.token} />
+                </DesignerErrorBoundary>
               </Suspense>
             </AffiliateShell>
           )}

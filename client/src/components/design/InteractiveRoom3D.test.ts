@@ -1539,11 +1539,11 @@ describe("angled sink fixture parity", () => {
 describe("interactive 3D room scene helpers", () => {
 	  it("uses performance-aware mobile and desktop quality tiers without carrying any geometry or camera fields", () => {
 	    expect(threeDRenderQualityProfile({ canvasWidth: 390, canvasHeight: 844, devicePixelRatio: 3, coarsePointer: true, hardwareConcurrency: 8, deviceMemoryGb: 8 })).toEqual({
-	      tier: "mobile", pixelRatioCap: 1.25, shadowMapSize: 1024, maxAnisotropy: 4, environmentEnabled: true,
+	      tier: "mobile", pixelRatioCap: 1.25, maxAnisotropy: 4, environmentEnabled: true,
 	    });
 	    expect(threeDRenderQualityProfile({ canvasWidth: 900, canvasHeight: 700, devicePixelRatio: 2, coarsePointer: false, hardwareConcurrency: 8, deviceMemoryGb: 8 }).tier).toBe("balanced");
 	    expect(threeDRenderQualityProfile({ canvasWidth: 1440, canvasHeight: 900, devicePixelRatio: 2, coarsePointer: false, hardwareConcurrency: 8, deviceMemoryGb: 8 })).toEqual({
-	      tier: "high", pixelRatioCap: 1.75, shadowMapSize: 2048, maxAnisotropy: 8, environmentEnabled: true,
+	      tier: "high", pixelRatioCap: 1.75, maxAnisotropy: 8, environmentEnabled: true,
 	    });
 	  });
 

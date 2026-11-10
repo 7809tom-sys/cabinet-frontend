@@ -234,11 +234,10 @@ function SidebarInner({
       : null,
   );
   const visibleVendors = publishReady
-    ? vendorNav.vendors.filter((vendor) => catalogVendorPublished(affiliatePublish.rows, vendor))
+    ? vendorNav.vendors.filter((vendor) => catalogVendorPublished(affiliatePublish.rows, vendor, { role: user?.role ?? null }))
     : vendorNav.vendors;
   const designerPublished = !publishReady || Object.values(DESIGNER_ROOM_FEATURE).some((feature) => affiliatePublish.anyPublished(feature));
   const closetPublished = !publishReady || affiliatePublish.anyPublished("closet_studio");
-  const quotePublished = !publishReady || affiliatePublish.anyPublished("quote");
   const openCatalog = (vendorKey: string | null) => {
     onOpenCatalog?.(vendorKey);
     onSection("catalog");
@@ -356,7 +355,7 @@ function SidebarInner({
                         {linkAccess.closet && closetPublished && (
                           <CustomerLink label="Open Closet Studio" href={`/store/${storeSlug}/closet`} icon={Layers} tooltip="Open Closet Studio" />
                         )}
-                        {linkAccess.quote && quotePublished && (
+                        {linkAccess.quote && (
                           <CustomerLink label="Preview Quote Page" href={quoteUrl} icon={FileText} tooltip="The quote request page your customers see" />
                         )}
                         {linkAccess.storefront && (

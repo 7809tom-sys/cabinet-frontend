@@ -207,18 +207,25 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(inferColorOneStyleId(kitchen.map((cabinet) => ({ ...cabinet, styleId: null })), AERO_OBSIDIAN.id, AERO_SAGE.id)).toBe(AERO_SAGE.id);
   });
 
-  it("Auto Design run with Color 2 lit still builds a one-color Color 1 kitchen", () => {
-    // The Designer hands Auto Design the design's Color 1, not the lit swatch.
+  it("Auto Design stamps the door the designer has selected, including when Color 2 is that door", () => {
+    // The layout uses the style it is given. DesignTool gives it the selected
+    // door (`styleIdRef`), not Color 1 (`designStyleIdRef`).
     const slots: Slots = { styleId: AERO_OBSIDIAN.id, styleA: AERO_BLANC.id, styleB: AERO_OBSIDIAN.id, activeSlot: "B" };
     const built = autoDesignL();
-    expect(fronts(built).every((cabinet) => cabinet.styleId == null || cabinet.styleId === AERO_BLANC.id)).toBe(true);
+    expect(fronts(built).every((cabinet) => cabinet.styleId === AERO_BLANC.id)).toBe(true);
     expectOneFinish(surfaces(fronts(built), slots), AERO_BLANC.id);
-    const autoDesign = designToolSource.slice(
+    const build = designToolSource.slice(
       designToolSource.indexOf("const buildAutoDesignLayout = useCallback("),
-      designToolSource.indexOf("const closetGroups = useMemo("),
+      designToolSource.indexOf("const completeAutoDesignLayout = useCallback("),
     );
-    expect(autoDesign.match(/designStyleIdRef\.current \?\? null/g)?.length ?? 0).toBeGreaterThanOrEqual(10);
-    expect(autoDesign).not.toMatch(/(?<!design)styleIdRef\.current/);
+    const completion = designToolSource.slice(
+      designToolSource.indexOf("const completeAutoDesignLayout = useCallback("),
+      designToolSource.indexOf("finishAutoDesignLayoutRef.current = completeAutoDesignLayout"),
+    );
+    expect(build).toContain("styleId: styleIdRef.current ?? null");
+    expect(build).not.toContain("designStyleIdRef.current");
+    expect(completion).toContain("stampAutoDesignSingleFinish(working, styleIdRef.current ?? null)");
+    expect(completion).not.toContain("designStyleIdRef.current");
     expect(designToolSource).toContain("useEffect(() => { designStyleIdRef.current = designStyleId; }, [designStyleId]);");
   });
 
@@ -317,7 +324,8 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     // The palette and the Corner tab still list what the next placed cabinet (the brush) can be.
     expect(designToolSource).toMatch(/Narrow to the chosen line \+ style so only purchasable cabinets show\.\s+styleId: styleId \?\? undefined,/);
     // A repaired angled filler pair takes its own cabinet's finish.
-    expect(designToolSource).toContain("(cabinet) => cabinet.styleId ?? null,");
+    expect(designToolSource).toContain("const styleFor = (cabinet: PlacedCabinet) => cabinet.styleId ?? null;");
+    expect(designToolSource).toContain("repairMissingAngledWallFillers(");
   });
 
   it("inventory and sink-base hooks re-run when Color 1 changes", () => {

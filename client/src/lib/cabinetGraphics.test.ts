@@ -682,6 +682,33 @@ describe("door-count agreement: label + drawing follow the description, not a wr
     expect(doors).toBe(1);
     expect(cabinetTypeLabel(cab)).toBe("Single Door Wall");
   });
+
+  it("draws a 24 inch single-door catalog row, including W2430S, as two doors", () => {
+    const wall: CabinetLike = {
+      masterCode: "W2430S",
+      description: '24" × 30" Wall Cabinet — 2 Doors, 2 Adjustable Shelves',
+      category: "Wall",
+      width: "24",
+      numberOfDoors: 1,
+      numberOfDrawers: 0,
+      graphicType: "wall_1door",
+    };
+    expect(resolveDoorDrawerCounts(wall)).toEqual({ doors: 2, drawers: 0 });
+    expect(cabinetTypeLabel(wall)).toBe("Double Door Wall");
+    const base: CabinetLike = {
+      masterCode: "B24SFH",
+      description: '24" Full Height Single Door Base',
+      category: "Base",
+      width: "24",
+      numberOfDoors: 1,
+      numberOfDrawers: 0,
+      graphicType: "base_1door",
+    };
+    expect(resolveDoorDrawerCounts(base).doors).toBe(2);
+    expect(cabinetTypeLabel(base)).toBe("Double Door Base");
+    expect(wall.masterCode).toBe("W2430S");
+    expect(base.masterCode).toBe("B24SFH");
+  });
 });
 
 describe("baseSubGroup (designer Base tab ordering)", () => {

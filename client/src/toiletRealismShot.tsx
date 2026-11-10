@@ -36,7 +36,7 @@ renderer.setPixelRatio(2);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = Number(new URLSearchParams(location.search).get("exp") ?? 0.52);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = false;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // ---- Image-based lighting, same as the designer --------------------------
@@ -80,7 +80,7 @@ const wallMaterial = new THREE.MeshStandardMaterial({
 });
 const backWall = new THREE.Mesh(new THREE.PlaneGeometry(26, 10), wallMaterial);
 backWall.position.set(0, 5, -3.2);
-backWall.receiveShadow = true;
+backWall.receiveShadow = false;
 scene.add(backWall);
 
 const floorMaterial = new THREE.MeshPhysicalMaterial({
@@ -92,7 +92,7 @@ const floorMaterial = new THREE.MeshPhysicalMaterial({
 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 26), floorMaterial);
 floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
+floor.receiveShadow = false;
 scene.add(floor);
 
 // A soft window softbox so the ceramic gets a broad highlight and a real
@@ -151,7 +151,7 @@ scene.add(rimLight);
 // fixture with a contact shadow under the base.
 const shadowCaster = new THREE.DirectionalLight("#fff8f0", 0.55);
 shadowCaster.position.set(-4, 10, 6);
-shadowCaster.castShadow = true;
+shadowCaster.castShadow = false;
 shadowCaster.shadow.mapSize.set(2048, 2048);
 shadowCaster.shadow.camera.left = -14;
 shadowCaster.shadow.camera.right = 14;
@@ -181,8 +181,8 @@ codes.forEach((code, index) => {
   root.position.set(x, 0, z);
   root.traverse((node) => {
     if (node instanceof THREE.Mesh) {
-      node.castShadow = true;
-      node.receiveShadow = true;
+      node.castShadow = false;
+      node.receiveShadow = false;
     }
   });
   scene.add(root);

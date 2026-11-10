@@ -2,6 +2,7 @@
 // image slug, and descriptive alt text. Kept framework-free so it is unit-testable.
 import { parseCatalogNomenclature } from "@shared/catalogNomenclature";
 import { parsedDrawerLayoutRows, standardBaseFaceReference } from "@shared/genericCabinetDrawerReference";
+import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { isBaseAngleEndCabinet } from "./baseAngleEndLayout";
 import { isPlainBaseCode } from "./plainBaseCode";
 import { isWallAngleEndCabinet } from "./wallAngleEndLayout";
@@ -217,7 +218,7 @@ const WORD_NUM: Record<string, number> = {
  * source". It is optional because a placed cabinet that merely carries the
  * numbers is authoritative on its own.
  */
-export function resolveDoorDrawerCounts(cab: CabinetLike & { cabinetConfigAuthored?: boolean | null }): {
+function resolveDoorDrawerCountsUncorrected(cab: CabinetLike & { cabinetConfigAuthored?: boolean | null }): {
   doors: number;
   drawers: number;
 } {
@@ -354,6 +355,18 @@ export function resolveDoorDrawerCounts(cab: CabinetLike & { cabinetConfigAuthor
   }
 
   return { doors, drawers };
+}
+
+/**
+ * Door and drawer counts the designer and the catalog drawing actually use.
+ * A 24" cabinet stored as one door is a data error (Tom, Nov 9 2026: there is
+ * no single-door 24" cabinet) and is drawn as two doors. The SKU is unchanged.
+ */
+export function resolveDoorDrawerCounts(cab: CabinetLike & { cabinetConfigAuthored?: boolean | null; turnedSideways?: boolean | null }): {
+  doors: number;
+  drawers: number;
+} {
+  return correctTwentyFourSingleDoor(cab, resolveDoorDrawerCountsUncorrected(cab));
 }
 
 /**

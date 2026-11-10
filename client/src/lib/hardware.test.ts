@@ -12,6 +12,9 @@ import {
   doorConstruction,
   doorHardwareCenterFromLeftIn,
   doorHardwareOffsetFromFaceCenterIn,
+  doorPullCenterOffsetFromFaceCenterIn,
+  DOOR_PULL_EDGE_CLEARANCE_IN,
+  TALL_DOOR_PULL_FLOOR_HEIGHT_IN,
   normalizeDoorHardwareFramePosition,
   hardwarePlacementSpec,
   hardwarePlacementNote,
@@ -123,6 +126,14 @@ describe("door / drawer counting", () => {
     expect(doorCountForCabinet(cab({ numberOfDoors: 2 }))).toBe(2);
   });
 
+  it("draws a 24 inch single-door SKU as two doors and leaves the code alone", () => {
+    const single = cab({ masterCode: "W2430S", description: "Single Door Wall", placement: "wall", width: 24, numberOfDoors: 1 });
+    expect(doorCountForCabinet(single)).toBe(2);
+    expect(single.masterCode).toBe("W2430S");
+    expect(doorCountForCabinet(cab({ masterCode: "W2130", description: "Single Door Wall", placement: "wall", width: 21, numberOfDoors: 1 }))).toBe(1);
+    expect(doorCountForCabinet(cab({ masterCode: "DCW2430", description: "Diagonal Corner", placement: "wall", width: 24, numberOfDoors: 1, cornerType: "diagonal" }))).toBe(1);
+  });
+
   it("keeps B21 and under at one door even when the stored count says two", () => {
     for (const masterCode of ["B12", "B-15", "B18", "B-21", "B21-R"]) {
       expect(doorCountForCabinet(cab({ masterCode, numberOfDoors: 2, width: 36 }))).toBe(1);
@@ -217,7 +228,7 @@ describe("hardware per cabinet", () => {
   });
 
   it("cup-pull style mixes cup pulls on drawers + knobs on doors", () => {
-    const c = hardwareForCabinet(cab({ masterCode: "B-30-2D", numberOfDoors: 1, numberOfDrawers: 2 }), "cup-pull");
+    const c = hardwareForCabinet(cab({ masterCode: "B-18", width: 18, numberOfDoors: 1, numberOfDrawers: 2 }), "cup-pull");
     expect(c.knobs).toBe(1);
     expect(c.cupPulls).toBe(2);
     expect(c.barPulls).toBe(0);
@@ -309,10 +320,37 @@ describe("hardware placement spec", () => {
     const spec = hardwarePlacementSpec("Shaker");
     expect(spec.construction).toBe("framed");
     expect(spec.doorRule).toMatch(/stile/i);
-    expect(spec.doorRule).toMatch(/2\.5–3"/);
-    expect(spec.doorRule).toMatch(/bottom rail/i);
+    expect(spec.doorRule).toMatch(/2\.75"/);
     expect(spec.doorRule).toMatch(/top rail/i);
+    expect(spec.doorRule).toMatch(/bottom rail/i);
+    expect(spec.doorRule).toMatch(/base-to-wall transition/i);
     expect(spec.drawerRule).toMatch(/centered/i);
+  });
+
+  it("places base pulls just under the top edge and wall pulls just above the bottom edge", () => {
+    const base = doorPullCenterOffsetFromFaceCenterIn({ faceHeightIn: 24, pullLengthIn: 6, anchor: "top" });
+    // Top of a 6" pull is 2.75" below the top of a 24" door, so the center is 5.75" below the top.
+    expect(12 - base).toBeCloseTo(DOOR_PULL_EDGE_CLEARANCE_IN + 3, 8);
+    const wall = doorPullCenterOffsetFromFaceCenterIn({ faceHeightIn: 24, pullLengthIn: 6, anchor: "bottom" });
+    expect(wall).toBeCloseTo(-base, 8);
+    expect(12 + wall).toBeCloseTo(DOOR_PULL_EDGE_CLEARANCE_IN + 3, 8);
+  });
+
+  it("keeps a full-height tall pull at a 42-inch reach and on the door", () => {
+    const offset = doorPullCenterOffsetFromFaceCenterIn({
+      faceHeightIn: 84,
+      pullLengthIn: 10,
+      anchor: "reach",
+      doorCenterFloorIn: 45,
+    });
+    expect(45 + offset).toBeCloseTo(TALL_DOOR_PULL_FLOOR_HEIGHT_IN, 8);
+    const clamped = doorPullCenterOffsetFromFaceCenterIn({
+      faceHeightIn: 20,
+      pullLengthIn: 6,
+      anchor: "reach",
+      doorCenterFloorIn: 10,
+    });
+    expect(Math.abs(clamped)).toBeLessThanOrEqual(7);
   });
 
   it("slab spec insets from the edges", () => {
