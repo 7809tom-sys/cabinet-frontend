@@ -41,6 +41,7 @@ import {
   type AffiliateFamilyOverlay,
 } from "@/lib/affiliateBrowse";
 import { catalogGlobalSearchTerm, catalogSearchRequest } from "@/lib/catalogSearchQuery";
+import { withWallWineRacks } from "@shared/wallWineRack";
 
 // ─── Category presentation config ──────────────────────────────────────────────
 // Maps DB category values to a room-scene image + short description. Categories
@@ -598,6 +599,26 @@ function CategoryView({
   );
 
   const items = data?.items ?? [];
+  // Wall lists are sorted by SKU, so WRC / WXR land after the first page.
+  // Pull the racks the selected line already sells onto the page being viewed.
+  // Their dimensions and any price fields stay on the catalog row.
+  const showLineWineRacks = searchRequest.kind === "style"
+    && !debouncedSearch
+    && (category == null || category.trim().toLowerCase() === "wall");
+  const { data: lineWineRackCatalog } = trpc.cabinets.listForStyle.useQuery(
+    {
+      styleId: styleId ?? 0,
+      limit: 1000,
+      offset: 0,
+      sort: browseFilters.sort,
+      affiliateSlug,
+    },
+    { enabled: showLineWineRacks },
+  );
+  const shownItems = useMemo(
+    () => showLineWineRacks ? withWallWineRacks(items, lineWineRackCatalog?.items ?? []) : items,
+    [items, lineWineRackCatalog?.items, showLineWineRacks],
+  );
   const quickViewCatalogItems = (quickViewCatalog?.items ?? []) as CabinetItem[];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / LIMIT);
@@ -763,7 +784,7 @@ function CategoryView({
             </div>
           ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : shownItems.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Package className="h-12 w-12 mx-auto mb-3 opacity-30" />
           <p className="font-medium">{t("cat_none_title")}</p>
@@ -771,7 +792,7 @@ function CategoryView({
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {items.map((cabinet) => (
+          {shownItems.map((cabinet) => (
             <CabinetCard
               key={cabinet.id}
               cabinet={cabinet as CabinetItem}
