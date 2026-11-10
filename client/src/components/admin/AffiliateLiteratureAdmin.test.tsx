@@ -358,6 +358,67 @@ describe("admin literature page: Affiliate library checkbox", () => {
     expect(screen.getByTestId("pptx-uploaded").textContent).toBe("Uploaded Nov 10, 2026");
     expect(openSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Download/ })).toBeNull();
+    openSpy.mockRestore();
+  });
+
+  it("views a Word note and a PDF in the page and shows each upload date", async () => {
+    state.rows = [
+      {
+        id: 21,
+        title: "Pitch notes",
+        category: "Sales",
+        filename: "pitch-notes.docx",
+        url: "/manus-storage/library-documents/pitch-notes.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        sizeBytes: 1516,
+        isPublished: true,
+        sortOrder: 1,
+        visibility: "affiliate",
+        documentRole: "literature",
+        createdAt: "2026-11-09T18:00:00.000Z",
+      },
+      {
+        id: 22,
+        title: "Field brochure",
+        category: "Sales",
+        filename: "field-brochure.pdf",
+        url: "/manus-storage/library-documents/field-brochure.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 2400,
+        isPublished: false,
+        sortOrder: 2,
+        visibility: "internal",
+        documentRole: "literature",
+        createdAt: "2026-11-08T18:00:00.000Z",
+      },
+    ];
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(<AffiliateLiteratureAdmin />);
+    expect(screen.getByTestId("library-uploaded-21").textContent).toBe("Uploaded Nov 9, 2026");
+    expect(screen.getByTestId("library-uploaded-22").textContent).toBe("Uploaded Nov 8, 2026");
+    expect(screen.queryByRole("link")).toBeNull();
+
+    state.signedFile = {
+      url: "https://signed.example/object",
+      filename: "pitch-notes.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    };
+    fireEvent.click(screen.getByRole("button", { name: "View Pitch notes" }));
+    await waitFor(() => expect(screen.getByTestId("pptx-deck-viewer")).toBeTruthy());
+    expect(screen.getByTestId("pptx-uploaded").textContent).toBe("Uploaded Nov 9, 2026");
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    state.signedFile = {
+      url: "https://signed.example/object",
+      filename: "field-brochure.pdf",
+      mimeType: "application/pdf",
+    };
+    fireEvent.click(screen.getByRole("button", { name: "View Field brochure" }));
+    await waitFor(() => expect(screen.getByTestId("pptx-uploaded").textContent).toBe("Uploaded Nov 8, 2026"));
+    expect(state.signedFileInputs).toEqual([{ id: 21 }, { id: 22 }]);
+    expect(openSpy).not.toHaveBeenCalled();
     openSpy.mockRestore();
   });
 });

@@ -1,8 +1,38 @@
+diff --git a/server/affiliateResources.auth.test.ts b/server/affiliateResources.auth.test.ts
+index 7f75d845..1b6e78ad 100644
+--- a/server/affiliateResources.auth.test.ts
++++ b/server/affiliateResources.auth.test.ts
+@@ -75,6 +75,7 @@ describe("affiliate resource access", () => {
+     await expect(caller.published()).rejects.toThrow(/Affiliate access required/);
+     await expect(caller.publishedLiterature()).rejects.toThrow(/Affiliate access required/);
+     await expect(caller.signedFile({ id: 5, kind: "file" })).rejects.toThrow(/Affiliate access required/);
++    await expect(caller.literatureSignedFile({ id: 5 })).rejects.toThrow(/Affiliate access required/);
+     expect(signedMock).not.toHaveBeenCalled();
+   });
+ 
 diff --git a/server/affiliateResources.libraryFallback.test.ts b/server/affiliateResources.libraryFallback.test.ts
-index cd04079..721bbf6 100644
+index cd040799..47307305 100644
 --- a/server/affiliateResources.libraryFallback.test.ts
 +++ b/server/affiliateResources.libraryFallback.test.ts
-@@ -192,6 +192,55 @@ describe("affiliateResources.adminSignedFile without the visibility column", ()
+@@ -123,7 +123,16 @@ describe("affiliateResources.publishedLiterature without the visibility column",
+     const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
+ 
+     const rows = await caller.publishedLiterature();
+-    expect(rows.map((row) => row.title)).toEqual(["Brochure"]);
++    expect(rows).toEqual([{
++      id: affiliateRow.id,
++      title: "Brochure",
++      description: affiliateRow.description,
++      category: affiliateRow.category,
++      url: affiliateRow.url,
++      mimeType: affiliateRow.mimeType,
++      filename: affiliateRow.filename,
++      createdAt: affiliateRow.createdAt,
++    }]);
+     // The internal guide is still absent, as it was before this change.
+     expect(rows.map((row) => row.id)).not.toContain(internalRow.id);
+   });
+@@ -192,6 +201,89 @@ describe("affiliateResources.adminSignedFile without the visibility column", ()
    });
  });
  
@@ -45,6 +75,31 @@ index cd04079..721bbf6 100644
 +    expect(signedMock).not.toHaveBeenCalled();
 +  });
 +
++  it("does not sign a document unless visibility and isPublished both say affiliate library", async () => {
++    accessMock.mockResolvedValue(affiliateAccess);
++    const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
++
++    for (const row of [
++      { ...deck, isPublished: true, visibility: "internal" },
++      { ...deck, isPublished: false, visibility: "affiliate" },
++    ]) {
++      signedMock.mockClear();
++      getDbMock.mockResolvedValue(dbReturning([row]));
++      await expect(caller.literatureSignedFile({ id: row.id })).rejects.toThrow(/not available/);
++      expect(signedMock).not.toHaveBeenCalled();
++    }
++  });
++
++  it("does not sign when the visibility column is missing, because that row reads as internal", async () => {
++    getDbMock.mockResolvedValue(dbWithoutVisibilityColumns([deck]));
++    accessMock.mockResolvedValue(affiliateAccess);
++    vi.spyOn(console, "warn").mockImplementation(() => {});
++    const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
++
++    await expect(caller.literatureSignedFile({ id: deck.id })).rejects.toThrow(/not available/);
++    expect(signedMock).not.toHaveBeenCalled();
++  });
++
 +  it("lets an admin open an internal deck", async () => {
 +    getDbMock.mockResolvedValue(dbReturning([internalRow]));
 +    const caller = affiliateResourcesRouter.createCaller({ user: admin } as never);
@@ -53,13 +108,22 @@ index cd04079..721bbf6 100644
 +    expect(file.url).toBe(`https://signed.example/${internalRow.fileKey}`);
 +    expect(file.createdAt).toEqual(internalRow.createdAt);
 +  });
++
++  it("answers NOT_FOUND for a missing document and does not sign", async () => {
++    getDbMock.mockResolvedValue(dbReturning([]));
++    accessMock.mockResolvedValue(affiliateAccess);
++    const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
++
++    await expect(caller.literatureSignedFile({ id: 4242 })).rejects.toThrow(/not available/);
++    expect(signedMock).not.toHaveBeenCalled();
++  });
 +});
 +
  describe("every library read goes through the fallback", () => {
    it("leaves no bare select() on affiliate_literature in the server", () => {
      // select() names every column, including the four added by hand, which is
 diff --git a/server/routers/affiliateResources.ts b/server/routers/affiliateResources.ts
-index 1553756..29d16ac 100644
+index 1553756a..fc9b4523 100644
 --- a/server/routers/affiliateResources.ts
 +++ b/server/routers/affiliateResources.ts
 @@ -242,9 +242,36 @@ export const affiliateResourcesRouter = router({
@@ -72,10 +136,10 @@ index 1553756..29d16ac 100644
  
 +  /**
 +   * Signed-in affiliate open for one library document. The stored `/manus-storage`
-+   * path is refused by the storage proxy, so the portal asks here for a short
-+   * lived signed URL and renders a PowerPoint in the browser. Internal rows stay
-+   * hidden: a non-admin who guesses an id gets the same not-found as a missing row.
-+   * Admins may open any row, matching adminSignedFile.
++   * path is refused by the storage proxy, so the portal asks here for a short-lived
++   * signed URL and renders a PowerPoint, Word file, or PDF in the browser.
++   * Internal rows stay hidden: a non-admin who guesses an id gets the same
++   * not-found as a missing row. Admins may open any row, matching adminSignedFile.
 +   */
 +  literatureSignedFile: protectedProcedure
 +    .input(z.object({ id: z.number().int().positive() }))

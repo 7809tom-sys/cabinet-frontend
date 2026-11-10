@@ -240,6 +240,7 @@ export default function AffiliateResourcesAdmin() {
                     setDeck({
                       title: item.title,
                       filename: file.filename ?? row.filename,
+                      mimeType: file.mimeType ?? row.mimeType,
                       sourceUrl: file.url,
                       uploadedAt: row.createdAt,
                     });

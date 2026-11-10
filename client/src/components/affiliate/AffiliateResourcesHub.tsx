@@ -337,6 +337,7 @@ function Printed({
       openDeck({
         title: item.title,
         filename: file.filename ?? item.filename,
+        mimeType: file.mimeType ?? item.mimeType,
         sourceUrl: file.url,
         uploadedAt: file.createdAt ?? item.createdAt,
       });
@@ -354,6 +355,7 @@ function Printed({
       openDeck({
         title: item.title,
         filename: file.filename ?? item.filename,
+        mimeType: file.mimeType ?? item.mimeType,
         sourceUrl: file.url,
         uploadedAt: item.createdAt,
       });
@@ -378,7 +380,7 @@ function Printed({
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => {
           const inline = inlineDocumentKind(item);
-          const uploadedLabel = inline ? formatUploadedLabel(item.createdAt) : null;
+          const uploadedLabel = formatUploadedLabel(item.createdAt);
           return (
           <article key={item.id} className="rounded-lg border border-border p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
@@ -429,7 +431,7 @@ function Printed({
         })}
         {literature.map((item) => {
           const inline = inlineDocumentKind(item);
-          const uploadedLabel = inline ? formatUploadedLabel(item.createdAt) : null;
+          const uploadedLabel = formatUploadedLabel(item.createdAt);
           return (
           <article key={`lit-${item.id}`} className="rounded-lg border border-border p-4 space-y-3">
             <h3 className="font-medium text-sm">

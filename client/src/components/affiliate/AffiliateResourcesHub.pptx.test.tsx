@@ -25,8 +25,8 @@ const deck = {
   title: "Investor deck",
   description: "Q4 pitch",
   category: "Sales",
-  url: "/manus-storage/library-documents/investor-deck.pptx",
-  filename: "investor-deck.pptx",
+  url: "/manus-storage/library-documents/investor-deck",
+  filename: null,
   mimeType: PPTX_MIME_TYPE,
   createdAt: "2026-11-10T18:00:00.000Z",
 };
@@ -35,8 +35,8 @@ describe("printed materials PowerPoint", () => {
   it("shows the upload date and opens the deck instead of the private storage path", async () => {
     const requested: number[] = [];
     const file: LiteratureSignedFile = {
-      url: "https://signed.example/investor-deck.pptx",
-      filename: "investor-deck.pptx",
+      url: "https://signed.example/object",
+      filename: null,
       mimeType: PPTX_MIME_TYPE,
       createdAt: "2026-11-10T18:00:00.000Z",
     };

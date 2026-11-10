@@ -193,7 +193,7 @@ export default function AffiliateLiteratureAdmin() {
     const toggleNote = affiliateLibraryToggleNote(item);
     const inline = inlineDocumentKind(item);
     const deckFile = isPowerPointFile(item);
-    const uploadedLabel = inline ? formatUploadedLabel(item.createdAt) : null;
+    const uploadedLabel = formatUploadedLabel(item.createdAt);
     return (
       <div key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3" data-testid={`library-document-${item.id}`}>
         {deckFile ? <Presentation className="h-5 w-5 shrink-0 text-primary" /> : <FileText className="h-5 w-5 shrink-0 text-primary" />}
