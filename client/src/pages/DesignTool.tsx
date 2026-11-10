@@ -214,6 +214,8 @@ import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialo
 import { sessionSellableStyleIds, unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
 import { toast } from "sonner";
+import { DESIGNER_ROOM_FEATURE } from "@shared/affiliateFeaturePublish";
+import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
 import { cn } from "@/lib/utils";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import {
@@ -652,6 +654,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [affiliateSlugProp, search],
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
+  const affiliatePublish = useAffiliateFeaturePublish();
+  const affiliatePublishReady = Boolean(affiliateSlug) && affiliatePublish.status === "ready";
+  const publishedBuilderKey = ROOM_TYPES.filter((room) => affiliatePublish.anyPublished(DESIGNER_ROOM_FEATURE[room.value])).map((room) => room.value).join(",");
+  useEffect(() => {
+    if (!affiliatePublishReady) return;
+    const allowed = publishedBuilderKey.split(",").filter(Boolean);
+    if (allowed.includes(roomType)) return;
+    const next = allowed[0];
+    if (next) setRoomType(next as RoomType);
+  }, [affiliatePublishReady, publishedBuilderKey, roomType]);
   const cartDestination = cartPathForStoreScope(storeScope);
   // Account identity for browser drafts. It comes from the server's auth.me for
   // THIS request's own bearer token, so two tabs signed in as different people
@@ -19593,6 +19605,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 fixtures vs Closet modular parts). Five equal cells were narrower
                 than the word "Bathroom" in the catalog column, so the longest
                 label was clipped; flex cells keep every label readable. */}
+            {affiliatePublishReady && publishedBuilderKey.length === 0 && (
+              <div className="fixed inset-0 z-[80] flex items-center justify-center bg-background/95 p-6" data-testid="affiliate-builders-blocked">
+                <p className="max-w-md text-center text-sm text-muted-foreground">No builder is published for affiliates.</p>
+              </div>
+            )}
             <div className="flex flex-wrap gap-0.5 rounded-lg border border-border p-0.5 bg-muted/30 mb-2" role="tablist" aria-label="Room type">
               {ROOM_TYPES.map((rt) => (
                 <button
@@ -19600,6 +19617,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   title={t(("dt_room_" + rt.value) as SiteStringKey)}
                   data-testid={`designer-room-type-${rt.value}`}
 	                  onClick={() => {
+	                    if (affiliatePublishReady && !affiliatePublish.anyPublished(DESIGNER_ROOM_FEATURE[rt.value])) {
+	                      toast.error(`${t(("dt_room_" + rt.value) as SiteStringKey)} is not published for affiliates.`);
+	                      return;
+	                    }
 	                    if (rt.value === "closet" && !affiliateSlug && !placedRef.current.some((item) => isClosetPart(item.masterCode))) {
 	                      // New Closet plans belong in Studio. An existing MasterTrac
 	                      // draft stays here so its saved geometry is not lost.

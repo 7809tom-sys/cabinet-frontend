@@ -105,6 +105,7 @@ import SalesForecastAdmin from "@/components/admin/SalesForecastAdmin";
 import VendorUpdatesAdmin from "@/components/admin/VendorUpdatesAdmin";
 import VendorInventoryAdmin from "@/components/admin/VendorInventoryAdmin";
 import VendorOnboardingAdmin from "@/components/admin/VendorOnboardingAdmin";
+import PublishAdmin from "@/components/admin/PublishAdmin";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
 import ContractorAccessAdmin from "@/components/admin/ContractorAccessAdmin";
@@ -650,6 +651,7 @@ export default function AdminGroupedTabs() {
             <TabsContent value="vendor-onboarding" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Onboarding"><AdminTabHelp tab="vendor-onboarding" /><VendorOnboardingAdmin /></AdminTabErrorBoundary></TabsContent>
           </CatalogSubTabs>
         </TabsContent>
+        <TabsContent value="publish" className="mt-6"><AdminTabErrorBoundary tabName="Publish"><AdminTabHelp tab="publish" /><PublishAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="cabinet-config" className="mt-6"><AdminTabErrorBoundary tabName="Cabinet Config"><CabinetConfigAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="categories" className="mt-6"><AdminTabErrorBoundary tabName="Categories"><CategoriesAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="package-data" className="mt-6"><AdminTabErrorBoundary tabName="📦 Package Data & Parcel"><BulkDimensionsAdmin /></AdminTabErrorBoundary></TabsContent>
