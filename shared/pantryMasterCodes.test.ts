@@ -71,6 +71,40 @@ describe("pantry master codes", () => {
   });
 });
 
+describe("pantry master 0276 SQL", () => {
+  const source = readFileSync(resolve(__dirname, "../docs/sql/0276_pantry_master_codes.tidb.sql"), "utf8");
+  const executable = source
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("--"))
+    .join("\n")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  it("creates the table if needed and stores a snapshot price only where both parts are priced", () => {
+    expect(executable.some((statement) => /^\s*UPDATE\b/i.test(statement))).toBe(false);
+    expect(executable.some((statement) => /^\s*DELETE\b/i.test(statement))).toBe(false);
+    expect(executable[0]).toMatch(/^CREATE TABLE IF NOT EXISTS cabinet_dealz\.pantry_master_components /);
+    const priceInsert = executable.find((statement) => statement.startsWith("INSERT INTO cabinet_dealz.distributor_skus"));
+    expect(priceInsert).toBeDefined();
+    expect(priceInsert).toContain("base_sku.listPrice + top_sku.listPrice");
+    expect(priceInsert).toContain("base_sku.yourCost + top_sku.yourCost");
+    expect(priceInsert).toContain("base_sku.isAvailable = 1 AND top_sku.isAvailable = 1");
+    expect(priceInsert).toContain("base_sku.isPublished = 1 AND top_sku.isPublished = 1");
+    expect(priceInsert).toContain("top_sku.styleId <=> base_sku.styleId");
+    expect(priceInsert).toContain("existing_sku.styleId <=> base_sku.styleId");
+    expect(priceInsert).toContain("'1884', '1890', '1896'");
+    expect(priceInsert).not.toContain("'1876'");
+    const cabinetCheck = executable.at(-1) ?? "";
+    expect(cabinetCheck).toContain("style_link_count");
+    expect(cabinetCheck).toContain("priced_link_count");
+    expect(cabinetCheck).toContain("added_cabinet.placementType");
+    expect(cabinetCheck).toContain("'1884', '1890', '1896'");
+    expect(source).toContain("snapshot taken at paste time");
+    expect(source).toContain("shared/pantryMasterCodes.ts still computes the live sum");
+  });
+});
+
 describe("pantry master SQL", () => {
   const executable = sql
     .split("\n")
