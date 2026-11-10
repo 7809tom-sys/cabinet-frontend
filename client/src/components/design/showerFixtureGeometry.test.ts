@@ -188,7 +188,8 @@ describe("Shower surround, system and niche geometry", () => {
 
   it.each([
     ["PL-SN1614", 16, 14],
-    ["PL-SN1627", 27 + 1 / 16, 16 + 1 / 64],
+    // SKU naming is width x height, so SN1627 is 16-1/64 wide by 27-1/16 tall.
+    ["PL-SN1627", 16 + 1 / 64, 27 + 1 / 16],
     ["PL-SN1639", 16 + 1 / 64, 39 + 1 / 32],
   ] as const)("%s is an open recess of the published size", (code, widthIn, heightIn) => {
     const profile = verifiedPelicanBathroomFixtureProfile(code)!;

@@ -36,6 +36,8 @@ export type ShowerOpening = {
   insideWidthIn: number;
   /** Interior depth from the back wall to the front edge of the side panels. */
   insideDepthIn: number;
+  /** Published panel height, inches. A wall fitting must fit under this. */
+  panelHeightIn: number;
   /** Plan point of the back-left inside corner, for placing the parts that follow. */
   origin: { x: number; y: number };
 };
@@ -154,6 +156,7 @@ export function openingForSurround(surround: PlacedFurniture, openingRoom: RoomD
     bay,
     insideWidthIn: entry.profile.widthIn,
     insideDepthIn: entry.profile.depthIn,
+    panelHeightIn: entry.profile.heightIn,
     origin: { x: surround.x, y: surround.y },
   };
 }
@@ -328,6 +331,19 @@ export function placeWallFittingOnPanel(
     };
   }
 
+  // A NICHE must fit inside the panel it is mounted on: its top is
+  // `mountHeightIn + height`, and that may never pass the panel's top edge, or it
+  // sticks up above the shower walls (Tom's report).
+  //
+  // The clamp applies only to those recessed parts. A valve/head system is drawn
+  // from its own internal geometry (valve at 48", head at 80") and its profile
+  // `heightIn` is the full wet-wall stack, so clamping it would drag the whole
+  // fitting down to the floor.
+  const needsPanelClamp = entry.profile.kind === "shower-niche" || entry.profile.kind === "soap-tray";
+  const mounted = needsPanelClamp
+    ? clampWallFittingMountHeight(clampHeight(heightIn), entry.profile.heightIn, surroundPanelHeightIn(opening), 0)
+    : clampHeight(heightIn);
+
   const placed = makeFurniture(entry.definition.id, 0, 0);
   return {
     ...placed,
@@ -337,8 +353,44 @@ export function placeWallFittingOnPanel(
     // A side panel is perpendicular to the back panel, so its fitting turns a
     // quarter turn with it.
     rotation: side === "back" ? bay.rotation : (((bay.rotation + 90) % 360) + 360) % 360,
-    mountHeightIn: clampHeight(heightIn),
+    mountHeightIn: mounted,
   };
+}
+
+/**
+ * The highest a wall fitting may be mounted so it still fits inside its panel.
+ *
+ * Tom's rule: a niche must never stick up above the shower walls. The top of the
+ * part is `mountHeightIn + height`, and the surround panel's top is the published
+ * panel height, so the mount is capped at `panelHeight - height`. A niche taller
+ * than the panel cannot fit at all: it is capped at the panel height (top flush
+ * with the panel) and its bottom is kept at or above the pan, so it is still
+ * visible inside the enclosure rather than buried in the floor.
+ */
+/** The panel height of the surround an opening belongs to. */
+export function surroundPanelHeightIn(opening: ShowerOpening): number {
+  return Math.max(0, opening.panelHeightIn ?? 0);
+}
+
+export function clampWallFittingMountHeight(
+  requestedHeightIn: number,
+  partHeightIn: number,
+  panelHeightIn: number,
+  panLevelIn = 0,
+): number {
+  const requested = Number.isFinite(requestedHeightIn) ? requestedHeightIn : 0;
+  const part = Math.max(0, Number.isFinite(partHeightIn) ? partHeightIn : 0);
+  const panel = Math.max(0, Number.isFinite(panelHeightIn) ? panelHeightIn : 0);
+  const pan = Math.max(0, Number.isFinite(panLevelIn) ? panLevelIn : 0);
+  // The lowest a part may sit is the pan level, so it is never below the shower floor.
+  const lowest = pan;
+  if (part >= panel) {
+    // Taller than the panel: the top goes flush with the panel, and the bottom
+    // stays at the pan, which is the only placement that keeps it inside the walls.
+    return Math.max(lowest, panel - part);
+  }
+  const highest = panel - part;
+  return Math.min(Math.max(requested, lowest), highest);
 }
 
 export function placeWallFitting(

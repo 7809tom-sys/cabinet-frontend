@@ -14,6 +14,7 @@ import {
   type ShowerOpening,
   placeWallFittingOnPanel,
   openingForSurround,
+  clampWallFittingMountHeight,
 } from "./showerPlacementAssembly";
 import { SKIPPABLE_STEPS } from "@/components/shower/ShowerBuilderWizard";
 
@@ -293,5 +294,41 @@ describe("wall fittings mount on a chosen shower panel", () => {
     const back = placeWallFittingOnPanel("PL-86S22S BN", "back", opening, 48)!;
     const left = placeWallFittingOnPanel("PL-86S22S BN", "left", opening, 48)!;
     expect(left.rotation).not.toBe(back.rotation);
+  });
+});
+
+/**
+ * A niche must never stick up above the shower walls.
+ *
+ * Its top is `mountHeightIn + height`, which may not pass the surround panel's
+ * published height. Tom saw a niche poking out of the top of the enclosure.
+ */
+describe("wall fittings stay inside their panel height", () => {
+  it("caps the mount so the part's top never passes the panel top", () => {
+    // A 27-1/16" niche in a 74" tub surround: anything above 46-15/16" pokes out.
+    const mounted = clampWallFittingMountHeight(60, 27 + 1 / 16, 74);
+    expect(mounted).toBeCloseTo(74 - (27 + 1 / 16), 3);
+    expect(mounted + (27 + 1 / 16)).toBeCloseTo(74, 3);
+  });
+
+  it("leaves a mount that already fits exactly where it was asked", () => {
+    expect(clampWallFittingMountHeight(44, 16, 96)).toBe(44);
+  });
+
+  it("keeps the bottom at pan level when the part is taller than the panel", () => {
+    // A 39" niche in a 30"-tall panel cannot fit; the only legal place is the pan.
+    const mounted = clampWallFittingMountHeight(20, 39 + 1 / 32, 30);
+    expect(mounted).toBeGreaterThanOrEqual(0);
+    expect(mounted).toBe(Math.max(0, 30 - (39 + 1 / 32)));
+  });
+
+  it("applies the clamp through real niche placement", () => {
+    const room = { width: 96, depth: 120, ceilingHeight: 96 } as any;
+    const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+    const niche = placeWallFittingOnPanel("PL-SN1639", "back", opening, 200)!;
+    expect(niche).not.toBeNull();
+    expect(niche.mountHeightIn).toBeLessThanOrEqual(opening.panelHeightIn);
+    // Top of the niche never passes the panel's top edge.
+    expect(niche.mountHeightIn + (39 + 1 / 32)).toBeLessThanOrEqual(opening.panelHeightIn + 0.01);
   });
 });
