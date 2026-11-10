@@ -20,7 +20,7 @@ import {
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall,
-  STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
+  STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
@@ -85,55 +85,40 @@ export function catalogMatchingWallDesignHeight(
   return catalog.filter((row) => row.placement !== "wall" || Math.abs(dim(row.height, 0) - height) <= SAME_HEIGHT_IN);
 }
 
-/**
- * The refrigerator cap and a hood or range bridge stay at their own heights.
- * The cabinet above the microwave does not: in a 42" design it is a 42" upper.
- */
-export function keepsOwnWallHeight(item: PlacedCabinet): boolean {
-  if (item.overRangeMicrowaveBridge === true) return true;
-  if (item.refrigeratorAssemblyRole === "bridge") return true;
-  if (item.refrigeratorAssemblyId) return true;
+/** Range, microwave, refrigerator, and hood own the cabinet above them. A dishwasher does not. */
+function applianceOwnsUpper(item: PlacedCabinet): boolean {
+  if (isRangeOrOven(item.masterCode, item.description)) return true;
+  if (isRefrigerator(item)) return true;
+  if (/^MW-/i.test(item.masterCode ?? "")) return true;
+  if (isRangeHoodPlacement(item)) return true;
   return /hood/i.test(`${item.masterCode ?? ""} ${item.description ?? ""}`);
 }
 
-/** Top of the range to the bottom of the microwave, in inches. */
-export function rangeToMicrowaveClearanceIn(
-  placed: readonly PlacedCabinet[],
-  cabinet: PlacedCabinet,
-  room: RoomData,
-): { clearanceIn: number; rangeTopIn: number; microwaveBottomIn: number; microwaveTopIn: number; cabinetBottomIn: number; cabinetTopIn: number } | null {
-  const side = cabinetWall(cabinet, room);
-  const center = wallRunOffset(cabinet, side, room) + wallRunSpan(cabinet, side, room) / 2;
-  const onSpot = (item: PlacedCabinet) => cabinetWall(item, room) === side
-    && Math.abs(wallRunOffset(item, side, room) + wallRunSpan(item, side, room) / 2 - center) <= 1;
-  const range = placed.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && onSpot(item));
-  const microwave = placed.find((item) => item.placement === "appliance" && /^MW-/i.test(item.masterCode ?? "") && onSpot(item));
-  if (!range || !microwave) return null;
-  const rangeTopIn = (Number(range.mountBottom) || 0) + (Number(range.height) || 0);
-  const microwaveBottomIn = Number(microwave.mountBottom) || 0;
-  const microwaveTopIn = microwaveBottomIn + (Number(microwave.height) || 0);
-  const cabinetBottomIn = Number(cabinet.mountBottom) || 0;
-  const cabinetTopIn = cabinetBottomIn + (Number(cabinet.height) || 0);
-  return {
-    clearanceIn: microwaveBottomIn - rangeTopIn,
-    rangeTopIn,
-    microwaveBottomIn,
-    microwaveTopIn,
-    cabinetBottomIn,
-    cabinetTopIn,
-  };
-}
-
-function microwaveClearanceNote(placed: readonly PlacedCabinet[], cabinet: PlacedCabinet, room: RoomData): string {
-  const measure = rangeToMicrowaveClearanceIn(placed, cabinet, room);
-  if (!measure) {
-    return `${cabinet.masterCode} (${formatEighthInches(Number(cabinet.height))}) is the cabinet above the microwave. No range and microwave pair was found to measure the clearance.`;
-  }
-  const overlaps = measure.cabinetBottomIn < measure.microwaveTopIn - 0.05 && measure.cabinetTopIn > measure.microwaveBottomIn + 0.05;
-  const overlap = overlaps
-    ? ` The ${formatEighthInches(Number(cabinet.height))} cabinet occupies ${formatEighthInches(measure.cabinetBottomIn)}–${formatEighthInches(measure.cabinetTopIn)} and overlaps the microwave at ${formatEighthInches(measure.microwaveBottomIn)}–${formatEighthInches(measure.microwaveTopIn)}. The microwave was not lowered.`
-    : "";
-  return `${cabinet.masterCode} is the ${formatEighthInches(Number(cabinet.height))} cabinet above the microwave. Top of the range to the bottom of the microwave is ${formatEighthInches(measure.clearanceIn)}.${overlap}`;
+/**
+ * Cabinets above an appliance keep that appliance's height rule. Everything
+ * else in a 42" design is brought up to 42". The microwave bridge is 24" with
+ * its bottom at 72"; the refrigerator cap and the range/hood bridge stay as placed.
+ */
+export function keepsOwnWallHeight(
+  item: PlacedCabinet,
+  placed: readonly PlacedCabinet[] = [],
+  room?: RoomData,
+): boolean {
+  if (item.overRangeMicrowaveBridge === true) return true;
+  if (item.refrigeratorAssemblyRole === "bridge") return true;
+  if (item.refrigeratorAssemblyId) return true;
+  if (/hood/i.test(`${item.masterCode ?? ""} ${item.description ?? ""}`)) return true;
+  if (!room) return false;
+  const wall = cabinetWall(item, room);
+  const start = wallRunOffset(item, wall, room);
+  const end = start + wallRunSpan(item, wall, room);
+  return placed.some((other) => {
+    if (other.uid === item.uid || !applianceOwnsUpper(other)) return false;
+    if (cabinetWall(other, room) !== wall) return false;
+    const otherStart = wallRunOffset(other, wall, room);
+    const otherEnd = otherStart + wallRunSpan(other, wall, room);
+    return Math.min(end, otherEnd) - Math.max(start, otherStart) > 0.5;
+  });
 }
 
 function rejectsSingleDoorTwentyFour(row: DesignCabinet): boolean {
@@ -162,9 +147,7 @@ export function enforceFortyTwoWallCabinets(input: {
   const notes: string[] = [];
   let working = [...input.placed];
   for (const item of input.placed) {
-    const microwaveUnder = item.overRangeMicrowaveBridge === true
-      && rangeToMicrowaveClearanceIn(input.placed, item, input.room) != null;
-    if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item) || (keepsOwnWallHeight(item) && !microwaveUnder)) continue;
+    if (item.placement !== "wall" || isFillerItem(item) || isPanelItem(item) || keepsOwnWallHeight(item, input.placed, input.room)) continue;
     if (Math.abs(Number(item.height) - height) <= SAME_HEIGHT_IN) continue;
     const wanted = Number(item.width) || 0;
     const exact = stock.find((row) => Math.abs(dim(row.width, 0) - wanted) <= COLLISION_EPSILON_IN);
@@ -177,10 +160,6 @@ export function enforceFortyTwoWallCabinets(input: {
       continue;
     }
     const width = dim(nearest.width, wanted);
-    // Only the cabinet that actually has a microwave under it becomes a 42"
-    // upper. A bridge or hood over a range with no microwave keeps its height.
-    const aboveMicrowave = item.overRangeMicrowaveBridge === true
-      && rangeToMicrowaveClearanceIn(input.placed, item, input.room) != null;
     const replacement: PlacedCabinet = {
       ...item,
       cabinetId: nearest.id,
@@ -193,21 +172,8 @@ export function enforceFortyTwoWallCabinets(input: {
       numberOfDoors: nearest.numberOfDoors,
       numberOfDrawers: nearest.numberOfDrawers,
       catalogImageUrl: nearest.catalogImageUrl ?? item.catalogImageUrl,
-      // Same bottom line as the other 42" uppers. The microwave is left on its
-      // standard mount; this flag stops the 72" bridge repair from putting the
-      // 42" box back on that short-bridge datum.
       mountBottom: ordinaryWallMountBottom({ ...nearest, height }),
-      mountBottomAdjusted: aboveMicrowave ? true : item.mountBottomAdjusted,
-      overRangeMicrowaveBridge: aboveMicrowave ? false : item.overRangeMicrowaveBridge,
     };
-    if (aboveMicrowave) {
-      working = working.map((entry) => entry.uid === item.uid ? replacement : entry);
-      notes.push(microwaveClearanceNote(working, replacement, input.room));
-      if (Math.abs(width - wanted) > 0.05) {
-        notes.push(`No ${formatEighthInches(wanted)} × ${formatEighthInches(height)} wall cabinet above the microwave; ${nearest.masterCode} (${formatEighthInches(width)} × ${formatEighthInches(height)}) replaced ${item.masterCode}.`);
-      }
-      continue;
-    }
     const without = working.filter((entry) => entry.uid !== item.uid);
     const accepted = appendCollisionFreePlacements(without, [replacement], input.room);
     if (accepted.rejected.length > 0) {

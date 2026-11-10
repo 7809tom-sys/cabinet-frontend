@@ -1,7 +1,7 @@
 /**
- * A 42" Auto Design uses 42" wall stock for every upper, including the cabinet
- * above the microwave. The cabinet above the refrigerator, and a hood or
- * bridge over a range that has no microwave, stay at their current heights.
+ * A 42" Auto Design uses 42" wall stock for every ordinary upper. The cabinet
+ * above the microwave stays the 24" bridge (bottom at 72"). The refrigerator
+ * cap and a hood stay at their own heights.
  */
 import { describe, expect, it } from "vitest";
 import matrixCatalog from "@/lib/__fixtures__/autoDesignMatrixCatalog.json";
@@ -168,7 +168,7 @@ describe("42 inch wall cabinets", () => {
     expect(twoDoor?.height).toBe(42);
   });
 
-  it("makes the cabinet above the microwave 42 inches and leaves the refrigerator cap", () => {
+  it("keeps the 24 inch bridge above the microwave and leaves the refrigerator cap", () => {
     const bridge = {
       ...baseAt("W3024", 30, 40),
       placement: "wall" as const,
@@ -215,21 +215,50 @@ describe("42 inch wall cabinets", () => {
       room: ROOM,
     });
     const overMicrowave = result.placed.find((item) => item.uid === bridge.uid);
-    expect(overMicrowave?.masterCode).toBe("W3042");
-    expect(overMicrowave?.height).toBe(42);
-    expect(overMicrowave?.overRangeMicrowaveBridge).toBe(false);
-    expect(result.placed.find((item) => item.uid === microwave.uid)?.mountBottom).toBe(54);
+    const microwaveAfter = result.placed.find((item) => item.uid === microwave.uid);
+    expect(overMicrowave?.masterCode).toBe("W3024");
+    expect(overMicrowave?.height).toBe(24);
+    expect(overMicrowave?.mountBottom).toBe(72);
+    expect(overMicrowave?.overRangeMicrowaveBridge).toBe(true);
+    expect(microwaveAfter?.mountBottom).toBe(54);
+    expect((microwaveAfter?.mountBottom ?? 0) + (microwaveAfter?.height ?? 0)).toBeLessThanOrEqual((overMicrowave?.mountBottom ?? 0) + 0.05);
     expect(result.placed.find((item) => item.refrigeratorAssemblyRole === "bridge")?.height).toBe(24);
-    expect(result.notes.some((note) => note.includes("18") && /range/i.test(note))).toBe(true);
     expect(result.placed.find((item) => item.uid === short.uid)?.masterCode).toBe("W3042");
-    const bridgeOnly = enforceFortyTwoWallCabinets({
-      placed: [range, bridge, cap],
-      catalog: [wall(2, "W3042", 30, 42), wall(9, "W3024", 30, 24), wall(8, "W362424", 36, 24)],
+  });
+
+  it("leaves the cabinet above a fridge, range, or hood alone and still raises the one above a dishwasher", () => {
+    const fridge = { ...baseAt("FRIDGE-36", 36, 0), placement: "appliance" as const, depth: 30, height: 70, description: "Refrigerator" };
+    const overFridge = {
+      ...baseAt("W362424", 36, 0), placement: "wall" as const, depth: 24, height: 24, mountBottom: 72,
+    };
+    const hood = { ...baseAt("HOOD-30", 30, 40), placement: "appliance" as const, depth: 18, height: 18, mountBottom: 66, description: "Range hood" };
+    const overHood = {
+      ...baseAt("W3012", 30, 40), placement: "wall" as const, depth: 12, height: 12, mountBottom: 84,
+    };
+    const range = { ...baseAt("RANGE-30", 30, 76), placement: "appliance" as const, height: 36, mountBottom: 0, description: "Range" };
+    const overRange = {
+      ...baseAt("W3018", 30, 76), placement: "wall" as const, depth: 12, height: 18, mountBottom: 72,
+    };
+    const dishwasher = { ...baseAt("DW-24", 24, 112), placement: "appliance" as const, height: 34.5, description: "Dishwasher" };
+    const overDishwasher = {
+      ...baseAt("W2430", 24, 112), placement: "wall" as const, depth: 12, height: 30, mountBottom: 54, numberOfDoors: 2,
+    };
+    const result = enforceFortyTwoWallCabinets({
+      placed: [fridge, overFridge, hood, overHood, range, overRange, dishwasher, overDishwasher],
+      catalog: [wall(1, "W3042", 30, 42), wall(2, "W2442", 24, 42, 2), wall(3, "W362424", 36, 24), wall(4, "W2430", 24, 30, 2)],
       nominalIn: 42,
       room: ROOM,
     });
-    expect(bridgeOnly.placed.find((item) => item.uid === bridge.uid)?.masterCode).toBe("W3024");
-    expect(bridgeOnly.placed.find((item) => item.uid === bridge.uid)?.height).toBe(24);
+    expect(result.placed.find((item) => item.uid === overFridge.uid)?.masterCode).toBe("W362424");
+    expect(result.placed.find((item) => item.uid === overFridge.uid)?.height).toBe(24);
+    expect(result.placed.find((item) => item.uid === overHood.uid)?.masterCode).toBe("W3012");
+    expect(result.placed.find((item) => item.uid === overHood.uid)?.height).toBe(12);
+    expect(result.placed.find((item) => item.uid === overRange.uid)?.masterCode).toBe("W3018");
+    expect(result.placed.find((item) => item.uid === overRange.uid)?.height).toBe(18);
+    const aboveDishwasher = result.placed.find((item) => item.uid === overDishwasher.uid);
+    expect(aboveDishwasher?.masterCode).toBe("W2442");
+    expect(aboveDishwasher?.height).toBe(42);
+    expect(aboveDishwasher?.numberOfDoors).toBe(2);
   });
 });
 
@@ -283,14 +312,16 @@ describe("a measured 42 inch kitchen", () => {
     for (const item of ordinary) {
       expect(item.height, item.masterCode).toBeCloseTo(42, 1);
     }
-    const overMicrowave = walls.find((item) => item.masterCode.replace(/[^A-Z0-9]/g, "") === "W3042"
-      && Math.abs((item.wallOffset ?? 0) - 44 + 15) < 20);
+    const overMicrowave = walls.find((item) => item.overRangeMicrowaveBridge === true);
     const microwave = run.placed.find((item) => /^MW-/i.test(item.masterCode));
-    const range = run.placed.find((item) => /RANGE/i.test(item.masterCode));
-    const rangeTop = (Number(range?.mountBottom) || 0) + (Number(range?.height) || 0);
-    const microwaveBottom = Number(microwave?.mountBottom) || 0;
-    expect(overMicrowave?.height).toBeCloseTo(42, 1);
-    expect(microwaveBottom - rangeTop).toBeCloseTo(18, 1);
+    expect(overMicrowave?.masterCode.replace(/[^A-Z0-9]/g, "")).toMatch(/^W3024$/);
+    expect(overMicrowave?.height).toBeCloseTo(24, 1);
+    expect(overMicrowave?.mountBottom).toBeCloseTo(72, 1);
+    const microwaveTop = (Number(microwave?.mountBottom) || 0) + (Number(microwave?.height) || 0);
+    const bridgeBottom = Number(overMicrowave?.mountBottom) || 0;
+    const bridgeTop = bridgeBottom + (Number(overMicrowave?.height) || 0);
+    expect(microwaveTop).toBeLessThanOrEqual(bridgeBottom + 0.05);
+    expect(bridgeTop).toBeCloseTo(96, 1);
     const fridgeCap = walls.find((item) => item.refrigeratorAssemblyRole === "bridge");
     expect(fridgeCap?.height).toBeLessThan(42);
     expect(fridgeCap?.masterCode).toMatch(/W36/);

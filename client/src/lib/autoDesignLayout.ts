@@ -1511,8 +1511,8 @@ export function runAutoDesignLayout(args: {
     notes.push(...overRunCompanions.notes);
   }
   reviewFindings.push(...overRunCompanions.findings);
-  // A 42" design: every ordinary upper is the line's 42" box. The cabinet above
-  // the microwave, the cabinet above the refrigerator, and a hood stay as placed.
+  // A 42" design: every upper that is not above an appliance is the line's 42"
+  // box. The microwave bridge, the refrigerator cap, and the range/hood bridge stay.
   const fortyTwo = enforceFortyTwoWallCabinets({
     placed: working,
     catalog: args.wallCatalog,
