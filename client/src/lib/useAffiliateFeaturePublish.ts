@@ -1,9 +1,11 @@
+import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import {
   anyAffiliateFeaturePublished,
   isPublishedForAffiliate,
   type AffiliateFeaturePublishRow,
   type PublishSubjectKind,
+  type TerritorySubjectKind,
 } from "@shared/affiliateFeaturePublish";
 
 type QueryError = { message?: string; data?: { code?: string } | null; shape?: { data?: { code?: string } | null; message?: string } | null };
@@ -43,6 +45,8 @@ type PublishClient = {
 export type AffiliateFeaturePublishStatus = "loading" | "ready" | "missing" | "error";
 
 export function useAffiliateFeaturePublish() {
+  const { user } = useAuth();
+  const role = (user as { role?: string | null } | null)?.role ?? null;
   const client = trpc as unknown as PublishClient;
   const query = client.distributorAdmin.listAffiliateFeaturePublish.useQuery(undefined, { retry: false });
   const raw = query.data;
@@ -62,9 +66,9 @@ export function useAffiliateFeaturePublish() {
     status,
     errorMessage: query.error?.message ?? null,
     rows: readyRows,
-    anyPublished: (featureKey: string) => anyAffiliateFeaturePublished(readyRows, featureKey),
-    isPublished: (subject: { kind: PublishSubjectKind; id: number }, featureKey: string) =>
-      isPublishedForAffiliate(readyRows, subject, featureKey),
+    anyPublished: (featureKey: string) => anyAffiliateFeaturePublished(readyRows, featureKey, { role }),
+    isPublished: (subject: { kind: TerritorySubjectKind; id: number }, featureKey: string) =>
+      isPublishedForAffiliate(readyRows, subject, featureKey, { role }),
   };
 }
 

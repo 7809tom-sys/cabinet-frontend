@@ -10,7 +10,7 @@ const publishState = vi.hoisted(() => ({
   status: "missing" as "missing" | "ready" | "loading" | "error",
   errorMessage: null as string | null,
   rows: [] as Array<{
-    subjectKind: "distributor" | "vendor";
+    subjectKind: "distributor" | "vendor" | "global";
     subjectId: number;
     featureKey: string;
     published: boolean;
@@ -106,6 +106,83 @@ describe("Publish tab", () => {
       featureKey: "bathroom_builder",
       published: false,
     });
+  });
+
+  it("puts Bathroom builder first and saves Off everywhere as a global row with published off", () => {
+    publishState.status = "ready";
+    render(<PublishAdmin />);
+    const switches = screen.getAllByRole("switch", { name: /Off everywhere:/ });
+    expect(switches[0].getAttribute("aria-label")).toBe("Off everywhere: Bathroom builder");
+    expect(switches).toHaveLength(16);
+    fireEvent.click(switches[0]);
+    expect(save).toHaveBeenCalledWith({
+      subjectKind: "global",
+      subjectId: 0,
+      featureKey: "bathroom_builder",
+      published: false,
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Shut off Acme Cabinets" }));
+    expect(save).toHaveBeenCalledWith({
+      subjectKind: "distributor",
+      subjectId: 4,
+      featureKey: "all",
+      published: false,
+    });
+    expect(screen.queryByRole("switch", { name: "Shut off Pelican Supply" })).toBeNull();
+  });
+
+  it("turns Off everywhere back off by saving published on, without removing the row", () => {
+    publishState.status = "ready";
+    publishState.rows = [{
+      subjectKind: "global",
+      subjectId: 0,
+      featureKey: "bathroom_builder",
+      published: false,
+      updatedByName: "Tom",
+      updatedAt: "2026-11-10T15:00:00.000Z",
+    }];
+    render(<PublishAdmin />);
+    const item = screen.getByTestId("off-everywhere-bathroom_builder");
+    expect(item.textContent).toContain("Tom");
+    fireEvent.click(screen.getByRole("switch", { name: "Off everywhere: Bathroom builder" }));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith({
+      subjectKind: "global",
+      subjectId: 0,
+      featureKey: "bathroom_builder",
+      published: true,
+    });
+  });
+
+  it("saves Shut off for that distributor as featureKey all, and turning it back off restores by saving published on", () => {
+    publishState.status = "ready";
+    publishState.rows = [{
+      subjectKind: "distributor",
+      subjectId: 4,
+      featureKey: "all",
+      published: false,
+      updatedByName: "Tom",
+      updatedAt: "2026-11-10T15:04:00.000Z",
+    }, {
+      subjectKind: "distributor",
+      subjectId: 4,
+      featureKey: "bathroom_builder",
+      published: true,
+      updatedByName: "Tom",
+      updatedAt: "2026-11-02T15:04:00.000Z",
+    }];
+    render(<PublishAdmin />);
+    const shutoff = screen.getByTestId("publish-shutoff-distributor-4");
+    expect(shutoff.textContent).toContain("Shut off Acme Cabinets");
+    expect(shutoff.textContent).toContain("Tom");
+    fireEvent.click(screen.getByRole("switch", { name: "Shut off Acme Cabinets" }));
+    expect(save).toHaveBeenCalledWith({
+      subjectKind: "distributor",
+      subjectId: 4,
+      featureKey: "all",
+      published: true,
+    });
+    expect(screen.getByTestId("publish-row-distributor-4-bathroom_builder").textContent).toContain("Published");
   });
 
   it("stays closed for anyone who is not an admin", () => {
