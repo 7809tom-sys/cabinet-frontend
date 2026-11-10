@@ -140,7 +140,7 @@ function makeRenderer(width: number, height: number) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   return renderer;
 }
@@ -158,19 +158,19 @@ function buildScene(placed: PlacedCabinet[], width: number, height: number) {
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(roomW / 2, 0, roomD / 2);
-  floor.receiveShadow = true;
+  floor.receiveShadow = false;
   scene.add(floor);
 
   const wallMat = new THREE.MeshStandardMaterial({ color: "#f6f4ef", roughness: 0.95 });
   const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, ceiling, 4 * INCH), wallMat);
   backWall.position.set(roomW / 2, ceiling / 2, -2 * INCH);
-  backWall.receiveShadow = true;
+  backWall.receiveShadow = false;
   scene.add(backWall);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.15));
   const key = new THREE.DirectionalLight(0xffffff, 1.5);
   key.position.set(roomW * 0.55, ceiling + 4, roomD * 0.35);
-  key.castShadow = true;
+  key.castShadow = false;
   key.shadow.mapSize.set(2048, 2048);
   const shadowCam = key.shadow.camera as THREE.OrthographicCamera;
   shadowCam.left = -roomW;

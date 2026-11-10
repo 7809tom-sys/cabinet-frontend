@@ -51,9 +51,7 @@ export function addIllustrativeMasterTracCorner(parent: THREE.Group, board: Mast
   const finish = masterTracProduct(board.masterCode)?.finish ?? "Glacier White";
   const material = new THREE.MeshStandardMaterial({ color: masterTracFinishColor(finish), roughness: 0.82, side: THREE.DoubleSide });
   const shelf = new THREE.Mesh(illustrativeMasterTracCornerGeometry(), material);
-  shelf.castShadow = true;
-  // Extruded curved polygons can self-shadow in the closet preview; only the
-  // measured straight boards and room floor receive cast shadows.
+  shelf.castShadow = false;
   shelf.receiveShadow = false;
   shelf.userData = { sku: board.masterCode, masterTracCornerSurface: true, illustrative: true };
   group.add(shelf);
@@ -71,8 +69,8 @@ export function addStraightBoard(parent: THREE.Group, board: PlacedCabinet, loca
     new THREE.MeshStandardMaterial({ color, roughness: 0.82 }),
   );
   mesh.position.set((localXIn + board.width / 2) * IN, ((board.mountBottom ?? 0) + (board.height ?? 0.75) / 2) * IN, board.depth / 2 * IN);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
   mesh.userData = { sku: board.masterCode, masterTracStraightBoard: true };
   parent.add(mesh);
   const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x756f65, transparent: true, opacity: 0.45 }));
@@ -87,8 +85,8 @@ export function addCornerReturnUpright(parent: THREE.Group, board: PlacedCabinet
     new THREE.MeshStandardMaterial({ color, roughness: 0.82 }));
   mesh.position.set((side === "start" ? board.depth / 2 : spanIn - board.depth / 2) * IN,
     (board.height ?? 87) / 2 * IN, (CORNER_FOOTPRINT_IN + board.width / 2) * IN);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
   mesh.userData = { sku: board.masterCode, masterTracCornerReturn: true, sourcedDimensions: true, camLockGeometry: false };
   parent.add(mesh);
   const outline = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x756f65, transparent: true, opacity: 0.48 }));
@@ -244,7 +242,7 @@ export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCab
     scene.background = new THREE.Color("#eae7df");
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = false;
     element.appendChild(renderer.domElement);
     renderer.domElement.dataset.testid = "mastertrac-corner-3d-canvas";
     const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 300);
@@ -260,12 +258,12 @@ export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCab
     scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const key = new THREE.DirectionalLight(0xffffff, 2.15);
     key.position.set(span / 2 - 1, 14, 7);
-    key.castShadow = true;
+    key.castShadow = false;
     scene.add(key);
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(16, span + 7), 11), new THREE.MeshStandardMaterial({ color: 0xddd8cb, roughness: 1 }));
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(span / 2, -0.04, 1);
-    floor.receiveShadow = true;
+    floor.receiveShadow = false;
     scene.add(floor);
     const assembly = masterTracCornerAssembly(group.boards);
     if (assembly) scene.add(assembly);

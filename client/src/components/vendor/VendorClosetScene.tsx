@@ -109,8 +109,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const renderer = rendererHostRef.current.ensureMounted(host);
     if (!renderer) return;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.enabled = false;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.6;
@@ -134,27 +133,23 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     scene.add(new THREE.HemisphereLight(0xfff6e8, 0xa9a2a0, 2.1));
     const windowLight = new THREE.DirectionalLight(0xfff5df, 3.9);
     windowLight.position.set(w / 2 + 1, 9, 7);
-    windowLight.castShadow = true;
-    windowLight.shadow.mapSize.set(2048, 2048);
-    windowLight.shadow.camera.left = -14; windowLight.shadow.camera.right = 14;
-    windowLight.shadow.camera.top = 14; windowLight.shadow.camera.bottom = -14;
-    windowLight.shadow.bias = -0.0002;
+    windowLight.castShadow = false;
     scene.add(windowLight);
     const fill = new THREE.DirectionalLight(0xfff6e8, 1.15);
     fill.position.set(-2, 4, -5); scene.add(fill);
     const room = new THREE.Group(); scene.add(room);
     const oak = new THREE.MeshStandardMaterial({ color: 0xb69a77, roughness: 0.78 });
     const floor = new THREE.Mesh(new THREE.BoxGeometry(Math.max(6, w + 2), 0.13, Math.max(5, roomDepth)), oak);
-    floor.position.set(w / 2, -0.1, 1.6); floor.receiveShadow = true; room.add(floor);
+    floor.position.set(w / 2, -0.1, 1.6); floor.receiveShadow = false; room.add(floor);
     const seamMaterial = new THREE.LineBasicMaterial({ color: 0x967d62, transparent: true, opacity: 0.35 });
     for (let z = -0.4; z <= 4.4; z += 0.44) {
       const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-1, -0.033, z), new THREE.Vector3(w + 1, -0.033, z)]), seamMaterial); room.add(line);
     }
     const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xf3eee5, roughness: 0.95, transparent: true, opacity: 1 });
     const wall = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), Math.max(6, studioPanelHeight(design) * IN + 1.1), CLOSET_WALL_SLAB_THICKNESS_FT), wallMaterial);
-    wall.position.set(w / 2, (studioPanelHeight(design) * IN + 1.1) / 2, CLOSET_WALL_SLAB_CENTER_FT); wall.receiveShadow = true; room.add(wall);
+    wall.position.set(w / 2, (studioPanelHeight(design) * IN + 1.1) / 2, CLOSET_WALL_SLAB_CENTER_FT); wall.receiveShadow = false; room.add(wall);
     const baseboard = new THREE.Mesh(new THREE.BoxGeometry(Math.max(4, w + 2), 0.23, 0.11), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82 }));
-    baseboard.position.set(w / 2, 0.12, -0.08); baseboard.receiveShadow = true; room.add(baseboard);
+    baseboard.position.set(w / 2, 0.12, -0.08); baseboard.receiveShadow = false; room.add(baseboard);
     const palette = MAT[design.finish];
     const texture = woodTexture(design.finish);
     const boardMat = new THREE.MeshPhysicalMaterial({ color: palette.face, map: texture, roughness: 0.65, metalness: 0.02, clearcoat: 0.09, clearcoatRoughness: 0.65 });
@@ -174,15 +169,15 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
     const activeTowerParts = new THREE.Group(); parts.add(activeTowerParts);
     const companion = new THREE.Group(); parts.add(companion);
     const targets: THREE.Mesh[] = [];
-    const box = (width: number, height: number, depth: number, x: number, y: number, z: number, mat: THREE.Material, shadow = true) => {
+    const box = (width: number, height: number, depth: number, x: number, y: number, z: number, mat: THREE.Material) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(width * IN, height * IN, depth * IN), mat);
       mesh.position.set(x * IN, y * IN, z * IN);
-      mesh.castShadow = shadow; mesh.receiveShadow = true; activeTowerParts.add(mesh); return mesh;
+      mesh.castShadow = false; mesh.receiveShadow = false; activeTowerParts.add(mesh); return mesh;
     };
-    const worldBox = (width: number, height: number, depth: number, x: number, y: number, z: number, mat: THREE.Material, shadow = true) => {
+    const worldBox = (width: number, height: number, depth: number, x: number, y: number, z: number, mat: THREE.Material) => {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(width * IN, height * IN, depth * IN), mat);
       mesh.position.set(x * IN, y * IN, z * IN);
-      mesh.castShadow = shadow; mesh.receiveShadow = true; companion.add(mesh); return mesh;
+      mesh.castShadow = false; mesh.receiveShadow = false; companion.add(mesh); return mesh;
     };
     const panelHeight = studioPanelHeight(design);
     const fixedBottom = studioFixedBottom(design);
@@ -252,7 +247,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         const body = new THREE.Mesh(garmentGeometries[hanger.kind], decorFabric[(bayIndex + hanger.kind.length) % decorFabric.length]);
         body.scale.set(bodyWidth * IN, (dropIn + hemVarianceIn) * IN, 1);
         body.position.set((bayLeftIn + hanger.leftIn + hanger.widthIn / 2) * IN, (hanger.rodBottomIn + hangingOffsetIn - dropIn) * IN, depth * 0.58 * IN - (hangerIndex % 3) * 0.02);
-        body.castShadow = true; body.receiveShadow = true;
+        body.castShadow = false; body.receiveShadow = false;
         body.userData = { decorKind: "hanger", hangerKind: hanger.kind, silhouette: true };
         group.add(body);
         // Hanger bar and hook, so the garment reads as hanging rather than floating.
@@ -270,7 +265,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
           const piece = new THREE.Mesh(hangerBarGeometry, decorFabric[(stack.hueIndex + layer) % decorFabric.length]);
           piece.scale.set(stack.widthIn * IN, 1.1 * IN, 9 * IN);
           piece.position.set((bayLeftIn + stack.leftIn + stack.widthIn / 2) * IN, (stack.shelfBottomIn + 0.75 + 1.1 * (layer + 0.5) + layer * 0.12 + hangingOffsetIn) * IN, 7.6 * IN);
-          piece.castShadow = true; piece.receiveShadow = true;
+          piece.castShadow = false; piece.receiveShadow = false;
           piece.userData = { decorKind: "folded" };
           group.add(piece);
         }
@@ -295,7 +290,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
           const piece = new THREE.Mesh(hangerBarGeometry, decorShoe[shoe.hueIndex % decorShoe.length]);
           piece.scale.set(shoe.widthIn * 0.46 * IN, shoe.heightIn * IN, STUDIO_DECOR_SHOE_DEPTH_IN * IN);
           piece.position.set(rest.offsetFromBayCenterIn * IN, rest.aboveShelfBottomIn * IN, -rest.behindFrontEdgeIn * IN);
-          piece.castShadow = true; piece.receiveShadow = true;
+          piece.castShadow = false; piece.receiveShadow = false;
           piece.userData = { decorKind: "shoe", decorOnly: true, shelfBottomIn: shoe.shelfBottomIn, illustrativePitchDeg: rest.pitchDeg, restsOnShoeShelf: true };
           shelf.decorGroup.add(piece);
         }
@@ -315,7 +310,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       box(bay.widthIn, 0.75, depth, cursor + 0.75 + bay.widthIn / 2, fixedTop + 0.375 + (design.mount === "hanging" ? 6 : 0), depth / 2, boardMat);
       // Field-cut authority covers straight fixed/adjustable shelves only; no shortened cleat is implied.
       if (!studioBayCut(bay)) {
-        const cleat = box(bay.widthIn, 5.5, 0.75, cursor + 0.75 + bay.widthIn / 2, panelHeight - 3 + (design.mount === "hanging" ? 6 : 0), -0.14, edgeMat, false);
+        const cleat = box(bay.widthIn, 5.5, 0.75, cursor + 0.75 + bay.widthIn / 2, panelHeight - 3 + (design.mount === "hanging" ? 6 : 0), -0.14, edgeMat);
         cleat.userData = { realSkuReference: true, hardwareShapeIllustrative: true };
       }
       const cx = cursor + 0.75 + bay.widthIn / 2;
@@ -333,13 +328,13 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
 
           const shoeBoard = new THREE.Mesh(new THREE.BoxGeometry(bay.widthIn * IN, 0.75 * IN, shoeDepth * IN), shoeMat);
           shoeBoard.position.set(0, 0.375 * IN, -shoeDepth / 2 * IN);
-          shoeBoard.castShadow = true; shoeBoard.receiveShadow = true;
+          shoeBoard.castShadow = false; shoeBoard.receiveShadow = false;
           shoeBoard.userData = { illustrativePitchDeg: STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, sourcedShelfThicknessIn: 0.75, visualGeometryIllustrative: true };
           shoeGroup.add(shoeBoard);
 
           const shoeFence = new THREE.Mesh(new THREE.BoxGeometry((bay.widthIn - 0.4) * IN, 0.16 * IN, 0.16 * IN), metalMat);
           shoeFence.position.set(0, (0.75 + 0.08) * IN, -0.5 * IN);
-          shoeFence.castShadow = false; shoeFence.receiveShadow = true;
+          shoeFence.castShadow = false; shoeFence.receiveShadow = false;
           shoeFence.userData = { illustrativePitchDeg: STUDIO_ILLUSTRATIVE_SHOE_PITCH_DEG, fenceGeometryIllustrative: true };
           shoeGroup.add(shoeFence);
           activeTowerParts.add(shoeGroup);
@@ -372,7 +367,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         const surface = studioBasketSurface(placement.sku);
         const basketMesh = new THREE.Mesh(new THREE.BoxGeometry(placement.nominalWidthIn * IN, placement.nominalHeightIn * IN, placement.nominalDepthIn * IN), basketLinerMat);
         basketMesh.position.set(cx * IN, (placement.bottomIn + placement.nominalHeightIn / 2) * IN, (placement.nominalDepthIn / 2) * IN);
-        basketMesh.castShadow = true; basketMesh.receiveShadow = true;
+        basketMesh.castShadow = false; basketMesh.receiveShadow = false;
         const lip = new THREE.Mesh(new THREE.BoxGeometry(placement.nominalWidthIn * IN, 0.15 * IN, placement.nominalDepthIn * IN), basketFrameMat);
         lip.position.y = (placement.nominalHeightIn / 2 - 0.075) * IN;
         basketMesh.add(lip);
@@ -380,9 +375,9 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
         activeTowerParts.add(basketMesh);
       }
       if (index === selectedBay) {
-        const trim = box(bay.widthIn + 1.2, 0.18, 0.18, cursor + bay.widthIn / 2 + 0.75, 0.05, depth + 1, brass, false);
+        const trim = box(bay.widthIn + 1.2, 0.18, 0.18, cursor + bay.widthIn / 2 + 0.75, 0.05, depth + 1, brass);
         trim.userData = { selectionMarker: true };
-        box(bay.widthIn, panelHeight - 5, 0.1, cursor + bay.widthIn / 2 + 0.75, panelHeight / 2 + (design.mount === "hanging" ? 6 : 0), depth + 0.4, hintMat, false);
+        box(bay.widthIn, panelHeight - 5, 0.1, cursor + bay.widthIn / 2 + 0.75, panelHeight / 2 + (design.mount === "hanging" ? 6 : 0), depth + 0.4, hintMat);
       }
       const hit = new THREE.Mesh(new THREE.BoxGeometry(bay.widthIn * IN, (panelHeight - 7) * IN, 0.05), hitMat);
       hit.position.set((cursor + 0.75 + bay.widthIn / 2) * IN, (panelHeight / 2 + (design.mount === "hanging" ? 6 : 0)) * IN, (depth + 0.7) * IN);
@@ -437,7 +432,7 @@ export function VendorClosetScene({ design, selectedBay, selectedCornerId = null
       mesh.rotation.x = Math.PI / 2;
       mesh.scale.set(cornerShelf.scaleX, cornerShelf.scaleZ, 1);
       mesh.position.set(cornerShelf.x * IN, (shelf.elevationIn + STUDIO_CORNER_SHELF_THICKNESS_IN) * IN, cornerShelf.z * IN);
-      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.castShadow = false; mesh.receiveShadow = false;
       mesh.userData = { cornerShelfPlanningEnvelope: true, illustrativePieShelf: true, finish: design.finish, sku: shelf.sku, cornerId: shelf.cornerId, mount: shelf.mount, geometryRevision: shelf.geometryRevision, nominalFootprintIn: shelf.nominalFootprintIn, profileIllustrative: true, installationFitToVerify: true };
       parts.add(mesh);
       if (shelf.towerConnection === "visualAligned") {
