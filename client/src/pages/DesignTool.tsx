@@ -322,7 +322,7 @@ import { reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdj
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
 import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
 import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
-import { isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
+import { designerWallWineRackSections, isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
 import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
 import { cornerOccupantRefrigeratorUids, refrigeratorOccupyingCorner, validatePlacedCornerRefrigerator } from "@/lib/cornerRefrigeratorPlacement";
@@ -5236,8 +5236,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    }
 	    if (paletteType === "wall") {
 	      const glass = heightFilteredPalette.filter(isCatalogGlassChoice);
-	      const standard = heightFilteredPalette.filter((cabinet) => !isCatalogGlassChoice(cabinet));
-	      const sections: { label: string; items: DesignCabinet[] }[] = [];
+	      const standard = heightFilteredPalette.filter((cabinet) => !isCatalogGlassChoice(cabinet) && !isWallWineRackCabinet(cabinet));
+	      const sections: { label: string; items: DesignCabinet[] }[] = [
+	        ...designerWallWineRackSections(heightFilteredPalette.filter((cabinet) => !isCatalogGlassChoice(cabinet))),
+	      ];
 	      if (glass.length > 0) sections.push({ label: "Glass Door Wall Cabinets", items: glass });
 	      const byHeight = new Map<number, DesignCabinet[]>();
 	      for (const cabinet of standard) {
@@ -5312,10 +5314,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   useEffect(() => {
     if (catalogCollapseRequest !== paletteType || !COLLAPSIBLE_CATALOG_TABS.has(paletteType)) return;
-    const groupKeys = groupedPalette.map((group) => `${paletteType}:${group.label}`);
-    if (groupKeys.length === 0) return;
+    if (groupedPalette.length === 0) return;
     setCollapsedGroups((current) => {
       const next = new Set(current);
+      // A wine rack the line sells stays open. Collapsing its 15" or 18"
+      // height group is what hid WRC / WXR on the Wall tab.
+      const groupKeys = groupedPalette
+        .filter((group) => !group.items.some((item) => isWallWineRackCabinet(item)))
+        .map((group) => `${paletteType}:${group.label}`);
       groupKeys.forEach((key) => next.add(key));
       return next;
     });
