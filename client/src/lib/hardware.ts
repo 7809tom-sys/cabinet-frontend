@@ -451,18 +451,23 @@ export function hardwareScheduleNote(schedule: HardwareSchedule): string | null 
 // the AI kitchen-preview rendering prompt (so generated images place hardware
 // realistically) and the installer note on the build sheet.
 //
-// Convention captured from the shop:
+// Convention:
 //   FRAMED doors (Shaker, Slim Shaker, raised/recessed panel — anything with a
 //   stile/rail frame around a center panel):
-//     • Horizontal: center the hardware's center point in the middle of the ~3"
-//       vertical stile on the latch (handle) side — NOT on the flat center panel.
-//     • Vertical, BASE doors: 2.5–3" UP from the inside edge of the bottom rail.
-//     • Vertical, WALL/UPPER doors: 2.5–3" DOWN from the inside edge of the top
-//       rail (mirror of the base rule, so pairs read symmetrically across a run).
-//   SLAB / flat doors (no frame): inset ~1.5" from the latch-side edge and ~2.5–3"
-//     from the near horizontal edge (bottom for base, top for upper).
+//     • The pull is vertical on the latch stile, centered in that stile — not
+//       on the flat center panel. Two doors meet in the middle, so each pull
+//       sits on the inner stile.
+//     • BASE doors: the top of the pull is 2.75" below the top of the door.
+//     • WALL/UPPER doors: the bottom of the pull is 2.75" above the bottom of
+//       the door.
+//     • TALL/PANTRY doors: at a comfortable reach near the base-to-wall
+//       transition (about 42" off the floor). Stacked leaves meet at that
+//       rail instead.
+//   SLAB / flat doors (no frame): inset ~1.5" from the latch-side edge and
+//     2.75" from the near horizontal edge (top for base, bottom for upper).
 //   DRAWERS: pull centered both horizontally and vertically on the drawer face.
-// All distances are to the hardware's CENTER POINT.
+// All distances are to the hardware's CENTER POINT unless a clearance is
+// measured to the end of the pull.
 
 export type DoorConstruction = "framed" | "slab";
 
@@ -516,6 +521,54 @@ export function doorHardwareOffsetFromFaceCenterIn(
 }
 
 /**
+ * How far a vertical door pull stays off the near horizontal edge, in inches.
+ * The same clearance is used at the top of a base door and the bottom of a wall door.
+ */
+export const DOOR_PULL_EDGE_CLEARANCE_IN = 2.75;
+/**
+ * Floor height for a full-height tall/pantry door pull. It sits in the open
+ * band between the counter (34½") and the usual wall-cabinet bottom (54"),
+ * where a standing person can reach it.
+ */
+export const TALL_DOOR_PULL_FLOOR_HEIGHT_IN = 42;
+
+export type DoorPullVerticalAnchor = "top" | "bottom" | "reach";
+
+/**
+ * Signed vertical offset of a door pull's center from the door face center, in inches.
+ * Positive is up.
+ *
+ * "top" — base doors, floor-seated wall cabinets, and the lower leaf of a stacked
+ * pantry. The top of the pull is 2.75" below the top of the door.
+ * "bottom" — wall doors and the upper leaf of a stacked pantry. The bottom of
+ * the pull is 2.75" above the bottom of the door.
+ * "reach" — one full-height tall door. The pull center targets 42" off the floor
+ * and is clamped so the whole pull stays on the door.
+ */
+export function doorPullCenterOffsetFromFaceCenterIn(input: {
+  faceHeightIn: number;
+  pullLengthIn: number;
+  anchor: DoorPullVerticalAnchor;
+  /** Floor height of this door's center. Used by "reach". */
+  doorCenterFloorIn?: number;
+  targetFloorIn?: number;
+}): number {
+  const face = Number.isFinite(input.faceHeightIn) ? Math.max(0, input.faceHeightIn) : 0;
+  const requestedLength = Number.isFinite(input.pullLengthIn) ? Math.max(0, input.pullLengthIn) : 0;
+  const pull = Math.min(requestedLength, face);
+  const clearance = Math.min(DOOR_PULL_EDGE_CLEARANCE_IN, Math.max(0, face - pull));
+  const insetToCenter = clearance + pull / 2;
+  if (input.anchor === "bottom") return insetToCenter - face / 2;
+  if (input.anchor === "reach") {
+    const target = input.targetFloorIn ?? TALL_DOOR_PULL_FLOOR_HEIGHT_IN;
+    const centerFloor = Number.isFinite(input.doorCenterFloorIn) ? input.doorCenterFloorIn! : target;
+    const maxUp = Math.max(0, face / 2 - pull / 2);
+    return Math.max(-maxUp, Math.min(maxUp, target - centerFloor));
+  }
+  return face / 2 - insetToCenter;
+}
+
+/**
  * Classify a door style string as framed vs slab. Shaker, slim shaker, and any
  * raised/recessed/panel door is framed; "slab", "flat", or "euro" is slab.
  * Defaults to framed (the most common case in this catalog).
@@ -540,22 +593,24 @@ export function hardwarePlacementSpec(
   doorStyle: string | null | undefined,
 ): HardwarePlacementSpec {
   const construction = doorConstruction(doorStyle);
-  const offset = `${RAIL_OFFSET_MIN_IN}–${RAIL_OFFSET_MAX_IN}"`;
+  const clearance = `${DOOR_PULL_EDGE_CLEARANCE_IN}"`;
   if (construction === "framed") {
     return {
       construction,
       doorRule:
-        `Framed door: center the knob/pull on the ~${FRAMED_STILE_WIDTH_IN}" latch-side stile ` +
-        `(centered within the frame, not on the center panel). Base doors: ${offset} up from the ` +
-        `bottom rail; wall/upper doors: ${offset} down from the top rail.`,
+        `Framed door: vertical pull centered on the ~${FRAMED_STILE_WIDTH_IN}" latch-side stile ` +
+        `(on the frame, not on the center panel). Two-door cabinets place both pulls on the inner meeting stiles. ` +
+        `Base doors: ${clearance} down from the top rail, opposite the hinge. ` +
+        `Wall/upper doors: ${clearance} up from the bottom rail, opposite the hinge. ` +
+        `Tall/pantry doors: a comfortable height near the base-to-wall transition, opposite the hinge.`,
       drawerRule: "Drawer: pull centered horizontally and vertically on the drawer face.",
     };
   }
   return {
     construction,
     doorRule:
-      `Slab door: inset the knob/pull ~1.5" from the latch-side edge and ${offset} from the ` +
-      `near horizontal edge (bottom for base, top for upper).`,
+      `Slab door: vertical pull inset ~1.5" from the latch-side edge and ${clearance} from the ` +
+      `near horizontal edge (top for base, bottom for upper). Tall doors sit near the base-to-wall transition.`,
     drawerRule: "Drawer: pull centered horizontally and vertically on the drawer face.",
   };
 }

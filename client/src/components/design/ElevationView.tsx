@@ -27,6 +27,7 @@ import {
   drawerCountForCabinet,
   displayDrawerCount,
   doorHardwareCenterFromLeftIn,
+  doorPullCenterOffsetFromFaceCenterIn,
   FRAMED_STILE_CENTER_IN,
   normalizeDoorHardwareFramePosition,
 } from "@/lib/hardware";
@@ -2399,10 +2400,10 @@ export function HardwareOverlay({
     }
   }
   if (hasDoors) {
-    // Knob/pull near the bottom inner corner of the door band — positioned on
-    // the handle side (opposite of the hinge).
-    // Bar pulls: position near the bottom 20% of the door (like real kitchens).
-    // Knobs: position near the top 15% of the door (near the handle side corner).
+    // Door pulls are vertical on the latch stile. Base doors (and a wall
+    // cabinet seated on the floor) keep the pull just under the top of the
+    // door. Wall doors keep it just above the bottom. A pantry's upper door
+    // bank meets the drawers below, so that pull sits on the lower rail.
     const fixedDoorBandStart = doorBandStartPct != null && doorBandStartPct > 0 && doorBandStartPct < 100 ? doorBandStartPct : null;
     const doorHeightPct = pantryDoorPct ?? (fixedDoorBandStart != null ? 100 - fixedDoorBandStart : 100 - drawerBand);
     const doorBandTop = pantryDoorPct == null ? (fixedDoorBandStart ?? drawerBand) : 0;
@@ -2411,9 +2412,18 @@ export function HardwareOverlay({
     const topRailCenterPct = Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight > 0
       ? (resolvedRail > 0 ? resolvedRail : 3) / 2 / (resolvedCabinetHeight * (doorHeightPct / 100)) * doorHeightPct
       : doorHeightPct * 0.06;
-    const requestedDoorTop = raisedDoorPullOnRail || normalizedDoorPosition === "top-center"
+    const verticalAnchor = pantryLayout ? "bottom" as const : raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
+    const inchPlacedTop = Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight > 0 && doorHeightPct > 0
+      ? doorBandTop + doorHeightPct / 2 - (doorPullCenterOffsetFromFaceCenterIn({
+        faceHeightIn: resolvedCabinetHeight * doorHeightPct / 100,
+        pullLengthIn: resolvedCabinetHeight * verticalDoorPullHeightPct / 100,
+        anchor: verticalAnchor,
+      }) / resolvedCabinetHeight) * 100
+      : null;
+    const fallbackFraction = verticalAnchor === "bottom" ? 0.82 : raisedDoorPullOnRail ? 0.13 : 0.18;
+    const requestedDoorTop = normalizedDoorPosition === "top-center" && !raisedDoorPullOnRail
       ? doorBandTop + topRailCenterPct
-      : doorBandTop + doorHeightPct * (doorPiece === "knob" ? 0.15 : isWall ? 0.76 : 0.24);
+      : inchPlacedTop ?? doorBandTop + doorHeightPct * fallbackFraction;
     const isVerticalDoorPull = doorPiece === "pull" && (normalizedDoorPosition !== "top-center" || raisedDoorPullOnRail);
     const doorTop = pantryLayout && isVerticalDoorPull
       ? Math.min(doorBandTop + doorHeightPct - verticalDoorPullHeightPct / 2 - topRailCenterPct, Math.max(doorBandTop + verticalDoorPullHeightPct / 2 + topRailCenterPct, requestedDoorTop))

@@ -72,7 +72,7 @@ import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixt
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup, pelicanChinaMaterial } from "@/lib/pelicanToiletMesh";
 import { doorOpeningAppearance, roomDoorSwing } from "@/lib/doorOpeningAppearance";
-import { catalogHardwareFinishSurface, doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwareFramePosition, type HardwareStyleId } from "@/lib/hardware";
+import { catalogHardwareFinishSurface, doorHardwareOffsetFromFaceCenterIn, doorPullCenterOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwareFramePosition, type DoorPullVerticalAnchor, type HardwareStyleId } from "@/lib/hardware";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { trpc } from "@/lib/trpc";
 import { buildMosaicUnitImage } from "@/lib/mosaicUnitImage";
@@ -6441,12 +6441,11 @@ export function addCabinet(
       hardwareMaterial,
     );
     if (isCupPull) pull.rotation.z = Math.PI / 2;
-    // Doors swing from their outside edge. Pulls therefore sit vertically at
-    // the center meeting edge (opposite hinge). Separate upper door banks use
-    // the physical bottom rail: the *lower end* of the handle is 2¾ inches
-    // above that rail, rather than positioning the centerline there. That
-    // keeps the whole pull inside the door. Lower/pantry doors retain their
-    // existing upper-side placement.
+    // Doors swing from their outside edge. Pulls sit on the opposite stile
+    // (two doors meet on the inner stiles). Base doors keep the pull just
+    // under the top edge. Wall doors keep it just above the bottom edge.
+    // A single full-height tall door aims at a 42" reach. Stacked pantry
+    // leaves meet at the shared rail: upper leaf from below, lower leaf from above.
     const automaticSide = hingeSide === "left" ? 1 : hingeSide === "right" ? -1 : -Math.sign(x || 1);
     // Drawers are fixed at the horizontal center by CabinetDealz construction
     // rules. Saved hardware choices remain effective only for door pulls.
@@ -6460,17 +6459,26 @@ export function addCabinet(
         explicitSide < 0 ? "left" : explicitSide > 0 ? "right" : "center",
         profileFrameWidthIn,
       ) * INCH;
-    const upperDoorBottomRailClearance = Math.min(2.75 * INCH, Math.max(0, faceHeight - pullLength));
-    const upperDoorBottomRailCenter = upperDoorBottomRailClearance + pullLength / 2;
+    const verticalAnchor: DoorPullVerticalAnchor = tallUpperDoorUsesMeetingRail || mountedWallDoorUsesBottomRail
+      ? "bottom"
+      : sku.placementType === "tall" && raisedFloorWallDoorPull
+        ? "reach"
+        : "top";
+    const mountBottomIn = Number(sku.mountBottom);
+    const cabinetHeightIn = Number(sku.height);
+    const doorCenterFloorIn = Number.isFinite(cabinetHeightIn) && cabinetHeightIn > 0
+      ? (Number.isFinite(mountBottomIn) ? mountBottomIn : 0) + cabinetHeightIn / 2 + y / INCH
+      : undefined;
     const pullY = drawer
       ? y
-      : raisedFloorWallDoorPull
-        ? y + faceHeight * 0.34
-        : requestedTopCenteredDoorPull
-          ? y + faceHeight / 2 - topRailWidth / 2
-      : tallUpperDoorUsesMeetingRail || mountedWallDoorUsesBottomRail
-            ? y - faceHeight / 2 + upperDoorBottomRailCenter
-            : y + faceHeight * 0.3;
+      : requestedTopCenteredDoorPull && !raisedFloorWallDoorPull
+        ? y + faceHeight / 2 - topRailWidth / 2
+        : y + doorPullCenterOffsetFromFaceCenterIn({
+          faceHeightIn: faceHeight / INCH,
+          pullLengthIn: pullLength / INCH,
+          anchor: verticalAnchor,
+          doorCenterFloorIn,
+        }) * INCH;
     pull.position.set(pullX, pullY, isKnob ? z + 0.012 : z);
     pull.userData = {
       cabinetHardware: true,
@@ -6478,7 +6486,8 @@ export function addCabinet(
       hardwareStyleId: selectedHardware.id,
       verticalPull: !isKnob && !drawer && !horizontalTopRailPull,
       pullDoorZone: drawer ? null : doorZone,
-      pullVerticalRail: drawer ? null : tallUpperDoorUsesMeetingRail || mountedWallDoorUsesBottomRail ? "bottom" : doorZone === "lower" ? "upper-side" : null,
+      pullVerticalAnchor: drawer || (requestedTopCenteredDoorPull && !raisedFloorWallDoorPull) ? null : verticalAnchor,
+      pullVerticalRail: drawer ? null : verticalAnchor === "bottom" ? "bottom" : verticalAnchor === "reach" ? "reach" : doorZone === "lower" || verticalAnchor === "top" ? "upper-side" : null,
       pullEdge: raisedFloorWallDoorPull ? "raised-door-rail" : horizontalTopRailPull ? "top-center" : resolvedHardwarePosition === "auto" || resolvedHardwarePosition === "paired" ? (drawer ? "center" : "opposite-hinge") : resolvedHardwarePosition,
       ...(hingeSide ? { hingeSide, handleSide: horizontalTopRailPull ? "top-center" : resolvedHardwarePosition === "auto" || resolvedHardwarePosition === "paired" ? hingeSide === "left" ? "right" : "left" : resolvedHardwarePosition } : { handleSide: horizontalTopRailPull ? "top-center" : resolvedHardwarePosition === "auto" || resolvedHardwarePosition === "paired" ? (automaticSide < 0 ? "left" : "right") : resolvedHardwarePosition }),
       hardwarePosition: resolvedHardwarePosition,
@@ -7083,7 +7092,11 @@ export function addCabinet(
     const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
     pull.position.set(
       doorCenter.x + localX.x * pullAlong + face.outward.x * 0.058,
-      -doorHeight * 0.3,
+      doorPullCenterOffsetFromFaceCenterIn({
+        faceHeightIn: doorHeight / INCH,
+        pullLengthIn: pullLength / INCH,
+        anchor: "bottom",
+      }) * INCH,
       doorCenter.z + localX.z * pullAlong + face.outward.z * 0.058,
     );
     pull.rotation.y = face.rotationY;
@@ -7180,7 +7193,11 @@ export function addCabinet(
         const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
         pull.position.set(
           door.position.x + tangentX * pullOffset + normalX * 0.058,
-          door.position.y - diagonalDoorHeight * 0.3,
+          door.position.y + doorPullCenterOffsetFromFaceCenterIn({
+            faceHeightIn: diagonalDoorHeight / INCH,
+            pullLengthIn: pullLength / INCH,
+            anchor: placement === "wall" ? "bottom" : "top",
+          }) * INCH,
           door.position.z + tangentZ * pullOffset + normalZ * 0.058,
         );
         pull.rotation.y = door.rotation.y;
@@ -7193,6 +7210,43 @@ export function addCabinet(
           stem.userData = { cabinetHardwareMount: true, diagonalDoorPullMount: true };
           frontGroup.add(stem);
         }
+      } else if (hardwareStyle(surfaceTextures?.hardwareStyleId).doorPiece !== "none") {
+        // Paired diagonal doors carry a vertical pull on each inner stile.
+        const pullLength = Math.min(Math.max(0.12, diagonalDoorHeight * 0.28), 0.86);
+        const normalX = Math.sin(door.rotation.y);
+        const normalZ = Math.cos(door.rotation.y);
+        const hardwarePosition = normalizeDoorHardwareFramePosition(sku.hardwarePosition ?? sku.handleSide ?? "auto");
+        const meetingSide = direction < 0 ? "right" : "left";
+        const handleSideName = hardwarePosition === "left" || hardwarePosition === "right" ? hardwarePosition : meetingSide;
+        const faceWidth = diagonalDoorWidth - 0.03;
+        const pullOffset = doorHardwareOffsetFromFaceCenterIn(faceWidth / INCH, handleSideName, profileFrameWidthIn) * INCH;
+        const tangentX = Math.cos(door.rotation.y);
+        const tangentZ = -Math.sin(door.rotation.y);
+        const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
+        pull.position.set(
+          door.position.x + tangentX * pullOffset + normalX * 0.058,
+          door.position.y + doorPullCenterOffsetFromFaceCenterIn({
+            faceHeightIn: diagonalDoorHeight / INCH,
+            pullLengthIn: pullLength / INCH,
+            anchor: placement === "wall" ? "bottom" : "top",
+          }) * INCH,
+          door.position.z + tangentZ * pullOffset + normalZ * 0.058,
+        );
+        pull.rotation.y = door.rotation.y;
+        pull.userData = {
+          cabinetHardware: true,
+          cabinetPull: "door",
+          diagonalDoorPull: true,
+          verticalPull: true,
+          pullEdge: "opposite-hinge",
+          handleSide: handleSideName,
+          pullVerticalAnchor: placement === "wall" ? "bottom" : "top",
+          hardwarePosition,
+          frameWidthIn: profileFrameWidthIn,
+          frameCenterInsetIn: profileFrameWidthIn / 2,
+          dimensionalCabinetDetail: true,
+        };
+        frontGroup.add(pull);
       }
     }
     if (sku.glassDoor) {
@@ -7282,23 +7336,21 @@ export function addCabinet(
       const hingeSide = sku.swing === "right" ? "right" as const : "left" as const;
       const hardwarePosition = normalizeDoorHardwareFramePosition(sku.hardwarePosition ?? sku.handleSide ?? "auto");
       const pullLength = Math.min(Math.max(0.12, faceHeight * 0.28), 0.86);
-      // Base lazy-Susan pulls sit at the upper opening edge of their operative
-      // door, unlike the lower-centered pull used on ordinary base doors.
+      // Base lazy-Susan pulls sit just under the top of the operative door.
+      // A wall easy-reach corner uses the bottom edge unless the cabinet is
+      // seated on the floor, in which case the pull moves up with a base door.
     const raisedFloorWallCornerDoorPull = placement === "wall" && usesRaisedFloorWallDoorPull({
       placement: sku.placementType,
       mountBottom: sku.mountBottom,
       islandFace: sku.islandFace,
       islandCounterHeightWallCabinet: sku.islandCounterHeightWallCabinet,
     });
-    const upperOpeningPullY = faceHeight / 2 - pullLength / 2 - 0.08;
-    // Normal wall cabinets use the lower door rail for an ergonomic reach from
-    // below. The only exception is wall cabinetry intentionally seated at the
-    // floor/toe-kick datum, which follows the existing raised-pull convention.
-    const bottomDoorRailClearance = Math.min(2.75 * INCH, Math.max(0, faceHeight - pullLength));
-    const bottomDoorRailPullY = -faceHeight / 2 + bottomDoorRailClearance + pullLength / 2;
-    const cornerDoorPullY = placement === "wall" && !raisedFloorWallCornerDoorPull
-      ? bottomDoorRailPullY
-      : upperOpeningPullY;
+    const cornerPullAnchor: DoorPullVerticalAnchor = placement === "wall" && !raisedFloorWallCornerDoorPull ? "bottom" : "top";
+    const cornerDoorPullY = doorPullCenterOffsetFromFaceCenterIn({
+      faceHeightIn: faceHeight / INCH,
+      pullLengthIn: pullLength / INCH,
+      anchor: cornerPullAnchor,
+    }) * INCH;
       const targets = hardwarePosition === "paired"
         ? [backDoor, sideDoor]
         : [hingeSide === "left" ? backDoor : sideDoor];
@@ -7489,7 +7541,11 @@ export function addCabinet(
       const localX = { x: Math.cos(face.rotationY), z: -Math.sin(face.rotationY) };
       pull.position.set(
         doorCenter.x + localX.x * pullAlong + face.outward.x * (doorThickness / 2 + 0.02),
-        doorHeight * 0.12,
+        doorPullCenterOffsetFromFaceCenterIn({
+          faceHeightIn: doorHeight / INCH,
+          pullLengthIn: pullLength / INCH,
+          anchor: "top",
+        }) * INCH,
         doorCenter.z + localX.z * pullAlong + face.outward.z * (doorThickness / 2 + 0.02),
       );
       pull.rotation.y = face.rotationY;

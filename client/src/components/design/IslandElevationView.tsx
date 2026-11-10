@@ -34,6 +34,7 @@ import {
   drawerCountForCabinet,
   displayDrawerCount,
   doorHardwareCenterFromLeftIn,
+  doorPullCenterOffsetFromFaceCenterIn,
   FRAMED_STILE_CENTER_IN,
   normalizeDoorHardwareFramePosition,
 } from "@/lib/hardware";
@@ -237,7 +238,7 @@ function DoorFront({
 }
 
 export function IslandHardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct, isWall = false, faceHeightIn,
 }: {
   doors: number; drawers: number;
   doorPiece: "knob" | "pull" | "none";
@@ -250,6 +251,8 @@ export function IslandHardwareOverlay({
   raisedDoorPullOnRail?: boolean;
   /** Doors start this many percent below the top of the face (farmhouse sink apron zone). */
   doorBandStartPct?: number;
+  isWall?: boolean;
+  faceHeightIn?: number | null;
 }) {
   const metal = `linear-gradient(135deg, color-mix(in srgb, ${accent} 55%, #ffffff) 0%, ${accent} 38%, color-mix(in srgb, ${accent} 70%, #000000) 72%, color-mix(in srgb, ${accent} 88%, #ffffff) 100%)`;
   const metalShadow = "0 1px 1.5px rgba(0,0,0,0.35), inset 0 0.5px 0 rgba(255,255,255,0.55)";
@@ -313,7 +316,22 @@ export function IslandHardwareOverlay({
   const items: React.ReactNode[] = [];
   if (doors > 0 && doorPiece !== "none") {
     const bandStart = doorBandStartPct != null && doorBandStartPct > 0 && doorBandStartPct < 100 ? doorBandStartPct : 0;
-    const topPct = raisedDoorPullOnRail || normalizedDoorPosition === "top-center" ? bandStart + (100 - bandStart) * 0.13 : bandStart + (100 - bandStart) * 0.5;
+    const sharesFaceWithDrawers = drawers > 0;
+    const regionTop = sharesFaceWithDrawers ? 0 : bandStart;
+    const regionHeight = sharesFaceWithDrawers ? 100 / (drawers + 1) : 100 - bandStart;
+    const verticalAnchor = raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
+    const resolvedFaceHeight = Number(faceHeightIn);
+    const inchPlacedTop = !sharesFaceWithDrawers && Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight > 0 && regionHeight > 0
+      ? regionTop + regionHeight / 2 - (doorPullCenterOffsetFromFaceCenterIn({
+        faceHeightIn: resolvedFaceHeight * regionHeight / 100,
+        pullLengthIn: resolvedFaceHeight * 0.28,
+        anchor: verticalAnchor,
+      }) / resolvedFaceHeight) * 100
+      : null;
+    const edgeFraction = normalizedDoorPosition === "top-center" && !raisedDoorPullOnRail
+      ? 0.13
+      : verticalAnchor === "bottom" ? 0.82 : raisedDoorPullOnRail ? 0.13 : 0.18;
+    const topPct = inchPlacedTop ?? regionTop + regionHeight * edgeFraction;
     const visibleDoorPieces = normalizedDoorPosition === "paired" || (normalizedDoorPosition === "auto" && doors > 1)
       ? Math.min(doors, 2)
       : 1;
@@ -553,6 +571,8 @@ export function IslandElevationView({
               swing={resolveSwing(p)}
               faceWidthIn={cabSizeAlong}
               frameStileIn={cabFrameStileIn}
+              isWall={isWall}
+              faceHeightIn={height}
               doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
             />
           )}
