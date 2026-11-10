@@ -21,6 +21,12 @@ export type PantryComponentRole = "base" | "top";
 export type PantryMasterComponent = {
   code: string;
   role: PantryComponentRole;
+  /** Piece height used by the elevation. Base sits on the floor. */
+  heightIn: number;
+  /** Catalog or November 2026 guide description. Not a rewritten sentence. */
+  description: string;
+  /** Drawer bands drawn on the elevation. Omitted when the piece is not a drawer stack. */
+  drawerCount?: number;
 };
 
 export type PantryMasterCode = {
@@ -29,6 +35,10 @@ export type PantryMasterCode = {
   heightIn: 84 | 90 | 96 | 76.5;
   widthIn: 18;
   depthIn: 24;
+  /** Sentence shown on the preload shopping list. */
+  shoppingDescription: string;
+  /** Public path of the assembled elevation. */
+  diagramPath: string;
   /** Tom named 1884. The others follow the same sum and still need his yes. */
   confirmedByTom: boolean;
   components: readonly [PantryMasterComponent, PantryMasterComponent];
@@ -41,9 +51,11 @@ export const PANTRY_MASTER_CODES: readonly PantryMasterCode[] = [
     widthIn: 18,
     depthIn: 24,
     confirmedByTom: true,
+    shoppingDescription: '18" utility base UCB1854, 54" H, with the 30" stacker W183024 on top, 84" total',
+    diagramPath: "/pantry/1884.svg",
     components: [
-      { code: "UCB1854", role: "base" },
-      { code: "W183024", role: "top" },
+      { code: "UCB1854", role: "base", heightIn: 54, description: '18" x 54" Utility Base Cabinet' },
+      { code: "W183024", role: "top", heightIn: 30, description: '18" x 30" x 24" Wall Cabinet' },
     ],
   },
   {
@@ -52,9 +64,11 @@ export const PANTRY_MASTER_CODES: readonly PantryMasterCode[] = [
     widthIn: 18,
     depthIn: 24,
     confirmedByTom: false,
+    shoppingDescription: '18" utility base UCB1854, 54" H, with the 36" stacker W183624 on top, 90" total',
+    diagramPath: "/pantry/1890.svg",
     components: [
-      { code: "UCB1854", role: "base" },
-      { code: "W183624", role: "top" },
+      { code: "UCB1854", role: "base", heightIn: 54, description: '18" x 54" Utility Base Cabinet' },
+      { code: "W183624", role: "top", heightIn: 36, description: '18" x 36" x 24" Wall Cabinet' },
     ],
   },
   {
@@ -63,9 +77,11 @@ export const PANTRY_MASTER_CODES: readonly PantryMasterCode[] = [
     widthIn: 18,
     depthIn: 24,
     confirmedByTom: false,
+    shoppingDescription: '18" utility base UCB1854, 54" H, with the 42" stacker W184224 on top, 96" total',
+    diagramPath: "/pantry/1896.svg",
     components: [
-      { code: "UCB1854", role: "base" },
-      { code: "W184224", role: "top" },
+      { code: "UCB1854", role: "base", heightIn: 54, description: '18" x 54" Utility Base Cabinet' },
+      { code: "W184224", role: "top", heightIn: 42, description: '18" x 42" x 24" Wall Cabinet' },
     ],
   },
   {
@@ -74,9 +90,11 @@ export const PANTRY_MASTER_CODES: readonly PantryMasterCode[] = [
     widthIn: 18,
     depthIn: 24,
     confirmedByTom: false,
+    shoppingDescription: '18" three-drawer base, 34.5" H, with the 42" stacker W184224 on top, 76.5" total, for confined spaces',
+    diagramPath: "/pantry/1876.svg",
     components: [
-      { code: "3DB18", role: "base" },
-      { code: "W184224", role: "top" },
+      { code: "3DB18", role: "base", heightIn: 34.5, description: '18" 3 Drawer Base Cabinet', drawerCount: 3 },
+      { code: "W184224", role: "top", heightIn: 42, description: '18" x 42" x 24" Wall Cabinet' },
     ],
   },
 ];
