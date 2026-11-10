@@ -17,6 +17,7 @@ import {
 } from "@/lib/doorColorSpectrum";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { buildMainSiteJsonLd } from "@/lib/seo/jsonLd";
@@ -74,6 +75,9 @@ function AuthenticatedWelcomeBanner() {
 
 function Hero() {
   const { t } = useLanguage();
+  const { user } = useAuth();
+  const offerings = useCustomerOfferings();
+  const showGroup = offerings.visible || user?.role === "admin";
   return (
     <section className="relative overflow-hidden bg-[var(--color-navy)] text-white">
       {/* Background texture */}
@@ -124,31 +128,31 @@ function Hero() {
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link href="/kitchens">
+              {showGroup && <Link href="/kitchens">
                 <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
                   Plan a Complete Kitchen
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-              </Link>
-              <Link href="/bundles">
+              </Link>}
+              {showGroup && <Link href="/bundles">
                 <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
                   <PackageOpen className="h-4 w-4" />
                   Kitchen Packages
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-              </Link>
+              </Link>}
               <Link href="/design">
                 <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
                   Start from Scratch
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
-              <Link href="/closet">
+              {showGroup && <Link href="/closet">
                 <Button size="lg" variant="outline" className="border-white/80 text-white bg-white/5 hover:bg-white/15 hover:border-white gap-2">
                   Plan a Closet
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-              </Link>
+              </Link>}
             </div>
           </div>
 
@@ -212,6 +216,9 @@ function Hero() {
 // ─── About Your Kitchen ───────────────────────────────────────────────────────
 
 function AboutYourKitchen() {
+  const { user } = useAuth();
+  const offerings = useCustomerOfferings();
+  const showGroup = offerings.visible || user?.role === "admin";
   const questions = [
     { icon: Ruler, question: "Where do I start?", answer: "Start with how you use your kitchen: prep, cook, clean up, and store. Then lay those work areas onto your walls before choosing finishes." },
     { icon: Grid3X3, question: "What layout fits my space?", answer: "Try a single-wall, galley, L-shape, U-shape, or island layout in the designer and compare the options side by side." },
@@ -249,7 +256,7 @@ function AboutYourKitchen() {
               loading="lazy"
               decoding="async"
             />
-            <Link href="/bundles"><Button variant="outline" className="gap-2 bg-background">Browse Kitchen Packages <ArrowRight className="h-4 w-4" /></Button></Link>
+            {showGroup && <Link href="/bundles"><Button variant="outline" className="gap-2 bg-background">Browse Kitchen Packages <ArrowRight className="h-4 w-4" /></Button></Link>}
           </div>
         </div>
       </div>

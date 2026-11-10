@@ -4,6 +4,8 @@ import { trpc } from "@/lib/trpc";
 import { affiliateDashboardLinks, affiliateDashboardPath, affiliateDesignerPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
 import { affiliatePortalFallback, resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
 import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
+import { CUSTOMER_OFFERING_AFFILIATE_SECTIONS } from "@shared/customerOfferings";
 import type { AffiliateFeatureKey } from "@shared/affiliateFeaturePublish";
 import { AffiliateTierCard } from "@/components/affiliate/AffiliateTierCard";
 import type { AffiliateTierDashboard } from "@shared/affiliatePricingTier";
@@ -416,6 +418,7 @@ export default function AffiliateDashboard() {
   const [section, setSection] = useState<AffiliateSection>(initialSection);
   const [catalogVendor, setCatalogVendor] = useState<string | null>(null);
   const affiliatePublish = useAffiliateFeaturePublish();
+  const offerings = useCustomerOfferings();
   const gateFeature = (feature: AffiliateFeatureKey, label: string, node: ReactElement) => {
     if (affiliatePublish.status === "error") {
       return <p role="alert" data-testid="affiliate-feature-error">Could not check whether {label} is published for affiliates.</p>;
@@ -568,6 +571,9 @@ export default function AffiliateDashboard() {
   }
 
   function renderSection() {
+    if (!offerings.visible && user?.role !== "admin" && (CUSTOMER_OFFERING_AFFILIATE_SECTIONS as readonly string[]).includes(section)) {
+      return <p data-testid="customer-offering-hidden">This section is not available.</p>;
+    }
     switch (section) {
       case "design":
         return (

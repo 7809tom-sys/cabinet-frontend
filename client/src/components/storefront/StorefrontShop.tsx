@@ -16,6 +16,7 @@ import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { useFamilyLock, type LockedFamily } from "@/hooks/useFamilyLock";
 import { useStorefrontBranding, type StorefrontBranding } from "@/hooks/useStorefrontBranding";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { favoriteStorageKey as buildFavoriteStorageKey, filterFavoriteFamilies, parseFavoriteFamilyIds, toggleFavoriteFamilyId } from "@/lib/favoriteFamilies";
 import { favoriteSyncStatusText } from "@/lib/favoriteSyncStatus";
 import {
@@ -333,10 +334,13 @@ function FamilyPicker({
     [visibleFamilies],
   );
 
-  const { data: affiliatePromos } = trpc.storefront.activeBannerAndPromos.useQuery(
+  const offerings = useCustomerOfferings();
+  const showOfferings = offerings.visible || user?.role === "admin";
+  const { data: affiliatePromosRaw } = trpc.storefront.activeBannerAndPromos.useQuery(
     { slug: slug! },
     { enabled: !!slug, staleTime: 5 * 60 * 1000 }
   );
+  const affiliatePromos = showOfferings ? affiliatePromosRaw : undefined;
   const promoByStyleId = useMemo(() => {
     const map = new Map<number, string>();
     for (const p of affiliatePromos?.promos ?? []) {
@@ -582,6 +586,9 @@ function LockedCatalog({
   slug?: string;
 }) {
   // The affiliate's white-label name for this line (falls back to central name).
+  const { user } = useAuth();
+  const offerings = useCustomerOfferings();
+  const showOfferings = offerings.visible || user?.role === "admin";
   const displayName = publicStyleName(branding.brandName(family.styleId, family.name));
   const [showDetails, setShowDetails] = useState(false);
   const [category, setCategory] = useState<string | null>(null);
@@ -621,7 +628,8 @@ function LockedCatalog({
     [family.styleId, category, subGroup, debounced, slug]
   );
   const { data: catalog, isLoading } = trpc.storefront.familyCatalog.useQuery(catalogInput);
-  const { data: promos } = trpc.promotions.activeForStorefront.useQuery();
+  const { data: promosRaw } = trpc.promotions.activeForStorefront.useQuery();
+  const promos = showOfferings ? promosRaw : [];
 
   // The Wall tab is filtered server-side by EXACT category, so a rack the
   // supplier filed as "Accessories / Wine Storage", "Wine Rack / Open Display",

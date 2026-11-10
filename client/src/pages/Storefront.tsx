@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
 import { StorefrontEmbed } from "@/components/storefront/StorefrontEmbed";
 import { StorefrontSocialIcons } from "@/components/storefront/StorefrontSocialIcons";
@@ -109,6 +110,9 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
     }
   }, [data?.referralCode, data?.slug, setReferral]);
 
+  const { user } = useAuth();
+  const offerings = useCustomerOfferings();
+  const showGroup = offerings.visible || user?.role === "admin";
   const brand = useMemo<Brand>(
     () => ({
       primary: color(data?.primaryColor, PLATFORM_NAVY),
@@ -350,7 +354,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
         </div>
 
         {/* ─── Kitchen Packages promo band ─────────────────────────────── */}
-        <section id="bundles" className="py-14 md:py-16 border-b border-border">
+        {showGroup && <section id="bundles" className="py-14 md:py-16 border-b border-border">
           <div className="container">
             <div className="flex flex-col md:flex-row md:items-center gap-8">
               <div className="flex-1">
@@ -386,7 +390,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
               </div>
             </div>
           </div>
-        </section>
+        </section>}
 
         {/* ─── Surfaces & Fixtures promo band ─────────────────────────── */}
         <section className="py-14 md:py-16 bg-muted/40">
@@ -427,7 +431,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
         </section>
 
         {/* ─── Closet Studio promo band ─────────────────────────────────── */}
-        <section className="border-b border-border py-12">
+        {showGroup && <section className="border-b border-border py-12">
           <div className="container flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
             <div>
               <div className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide" style={{ color: brand.accent }}>
@@ -444,7 +448,7 @@ export default function Storefront({ slug, previewData, focusShop = false }: { s
               </Button>
             </Link>
           </div>
-        </section>
+        </section>}
 
         {/* ─── How it works ────────────────────────────────────────────── */}
         <section className="py-16 md:py-20 bg-muted/30">

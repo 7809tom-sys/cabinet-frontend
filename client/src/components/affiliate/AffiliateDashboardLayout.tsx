@@ -41,7 +41,9 @@ import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affili
 import { AffiliateStoreSwitcher } from "./AffiliateStoreSwitcher";
 import { buildAffiliateCatalogVendors, customerLinkVisibility } from "@shared/affiliateStorefrontControls";
 import { catalogVendorPublished, DESIGNER_ROOM_FEATURE } from "@shared/affiliateFeaturePublish";
+import { CUSTOMER_OFFERING_AFFILIATE_SECTIONS, isCustomerOfferingCatalogVendor } from "@shared/customerOfferings";
 import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { contractorPreviewHref } from "@/lib/contractorScope";
 
 export type AffiliateSection =
@@ -190,6 +192,8 @@ function SidebarInner({
   const { state, toggleSidebar } = useSidebar();
   const affiliatePublish = useAffiliateFeaturePublish();
   const publishReady = affiliatePublish.status === "ready";
+  const offerings = useCustomerOfferings();
+  const hideOfferings = !offerings.visible && user?.role !== "admin";
   const isCollapsed = state === "collapsed";
   const [customerLinksOpen, setCustomerLinksOpen] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(true);
@@ -205,6 +209,7 @@ function SidebarInner({
   // Affiliates/partners own the store; admins reach the same link in View As.
   const canPreviewContractor = Boolean(isAffiliateOwner || isAdmin);
   const visibleNavItems = NAV_ITEMS.filter((item) => {
+    if (hideOfferings && (CUSTOMER_OFFERING_AFFILIATE_SECTIONS as readonly string[]).includes(item.section)) return false;
     // Email settings belong to the store owner or a platform admin only.
     // Another affiliate's team member must not see this entry at all.
     if (item.section === "email") return canOpenEmail;
@@ -233,9 +238,11 @@ function SidebarInner({
       ? distributorSelections.map((row) => ({ id: row.id, name: row.name, publicName: row.publicName, selected: row.selected }))
       : null,
   );
-  const visibleVendors = publishReady
-    ? vendorNav.vendors.filter((vendor) => catalogVendorPublished(affiliatePublish.rows, vendor))
-    : vendorNav.vendors;
+  const visibleVendors = vendorNav.vendors.filter((vendor) => {
+    if (publishReady && !catalogVendorPublished(affiliatePublish.rows, vendor)) return false;
+    if (hideOfferings && isCustomerOfferingCatalogVendor(vendor)) return false;
+    return true;
+  });
   const designerPublished = !publishReady || Object.values(DESIGNER_ROOM_FEATURE).some((feature) => affiliatePublish.anyPublished(feature));
   const closetPublished = !publishReady || affiliatePublish.anyPublished("closet_studio");
   const quotePublished = !publishReady || affiliatePublish.anyPublished("quote");
@@ -353,7 +360,7 @@ function SidebarInner({
                         {linkAccess.designer && designerPublished && (
                           <CustomerLink label="Preview Storefront Designer" href={designerUrl} icon={Palette} tooltip="See the 3D designer the way your customers see it. To design for a customer, use Design Workspace." />
                         )}
-                        {linkAccess.closet && closetPublished && (
+                        {linkAccess.closet && closetPublished && !hideOfferings && (
                           <CustomerLink label="Open Closet Studio" href={`/store/${storeSlug}/closet`} icon={Layers} tooltip="Open Closet Studio" />
                         )}
                         {linkAccess.quote && quotePublished && (

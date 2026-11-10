@@ -19,6 +19,8 @@ import {
 } from "@/lib/designerMobileCartBridge";
 import { affiliateStorefrontPath } from "@/lib/affiliateStorefrontUrl";
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
+import { isCustomerOfferingPath } from "@shared/customerOfferings";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { DesignerHelperNotice } from "@/components/design/DesignerHelperNotice";
 import { toast } from "sonner";
 import "./TopNav.css";
@@ -97,6 +99,8 @@ export function TopNav() {
   const [location] = useLocation();
   const search = useSearch();
   const { user, logout } = useAuth();
+  const offerings = useCustomerOfferings();
+  const showOfferings = offerings.visible || user?.role === "admin";
   const { count: cartCount } = useCart();
   const { t } = useLanguage();
   const isDesignerMobile = useIsMobile(1024) && location.startsWith("/design");
@@ -256,7 +260,7 @@ export function TopNav() {
 
         {/* Desktop nav */}
         <nav data-testid="site-toolbar-navigation" className="hidden xl:flex items-center gap-0" aria-label="Shopping navigation">
-          {PRIMARY_LINKS.map((link) => (
+          {PRIMARY_LINKS.filter((link) => showOfferings || !isCustomerOfferingPath(link.href)).map((link) => (
             <Link
               key={link.href}
               href={link.href}
@@ -269,7 +273,7 @@ export function TopNav() {
               {t(link.key)}
             </Link>
           ))}
-          <Link
+          {showOfferings && <Link
             href="/hardware"
             className={`px-1 py-2 2xl:px-2.5 rounded-md xl:text-[13px] 2xl:text-sm font-medium whitespace-nowrap transition-colors duration-150 ${
               isActive("/hardware")
@@ -278,7 +282,7 @@ export function TopNav() {
             }`}
           >
             Hardware
-          </Link>
+          </Link>}
 
           {/* More dropdown (secondary links + portals) */}
           <div className="relative">
@@ -298,7 +302,7 @@ export function TopNav() {
                 className="absolute right-0 top-full mt-1 w-52 rounded-lg border border-border bg-popover shadow-lg py-1 fade-in"
                 onMouseLeave={() => setMoreOpen(false)}
               >
-                {MORE_LINKS.map((link) => (
+                {MORE_LINKS.filter((link) => showOfferings || !isCustomerOfferingPath(link.href)).map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
@@ -463,7 +467,7 @@ export function TopNav() {
       {mobileOpen && (
         <div className="xl:hidden border-t border-border bg-background slide-up">
           <nav className="container py-4 flex flex-col gap-1">
-            {ALL_LINKS.map((link) => (
+            {ALL_LINKS.filter((link) => showOfferings || !isCustomerOfferingPath(link.href)).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
@@ -477,7 +481,7 @@ export function TopNav() {
                 {t(link.key)}
               </Link>
             ))}
-            <Link
+            {showOfferings && <Link
               href="/hardware"
               onClick={() => setMobileOpen(false)}
               className={`px-3 py-2.5 rounded-md text-sm font-medium transition-colors ${
@@ -487,7 +491,7 @@ export function TopNav() {
               }`}
             >
               Hardware
-            </Link>
+            </Link>}
             <div className="border-t border-border my-2" />
             {visiblePortalLinks.map((link) => (
               <Link

@@ -216,6 +216,7 @@ import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glas
 import { toast } from "sonner";
 import { DESIGNER_ROOM_FEATURE } from "@shared/affiliateFeaturePublish";
 import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { cn } from "@/lib/utils";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import {
@@ -655,6 +656,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const affiliateSlug = affiliateSlugForStoreScope(storeScope);
   const affiliatePublish = useAffiliateFeaturePublish();
+  const offerings = useCustomerOfferings();
+  const showClosetOffering = offerings.visible || isAdmin;
   const affiliatePublishReady = Boolean(affiliateSlug) && affiliatePublish.status === "ready";
   const publishedBuilderKey = ROOM_TYPES.filter((room) => affiliatePublish.anyPublished(DESIGNER_ROOM_FEATURE[room.value])).map((room) => room.value).join(",");
   useEffect(() => {
@@ -19611,7 +19614,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               </div>
             )}
             <div className="flex flex-wrap gap-0.5 rounded-lg border border-border p-0.5 bg-muted/30 mb-2" role="tablist" aria-label="Room type">
-              {ROOM_TYPES.map((rt) => (
+              {ROOM_TYPES.map((rt) => (showClosetOffering || rt.value !== "closet") && (
                 <button
                   key={rt.value}
                   title={t(("dt_room_" + rt.value) as SiteStringKey)}
@@ -19653,7 +19656,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <div className="mb-2 overflow-hidden rounded-lg border border-stone-300 bg-stone-50" data-testid="mastertrac-palette-header">
                 {!isTabletWorkspace && <img src={MASTERTRAC_BROCHURE_PHOTO} alt="Assembled WoodTrac MasterTrac closet photographed in the supplied brochure; example installation, not a photograph of an individual SKU" className="h-24 w-full object-cover" />}
                 <div className="space-y-1.5 p-2">
-	                  {!affiliateSlug && <><a href="/closet" data-testid="open-closet-studio-from-legacy" className="flex min-h-10 items-center justify-center rounded-md bg-[#244338] px-3 text-center text-xs font-semibold text-white hover:bg-[#315444]">Open the new Closet Studio</a>
+	                  {showClosetOffering && !affiliateSlug && <><a href="/closet" data-testid="open-closet-studio-from-legacy" className="flex min-h-10 items-center justify-center rounded-md bg-[#244338] px-3 text-center text-xs font-semibold text-white hover:bg-[#315444]">Open the new Closet Studio</a>
 	                    <p className="text-[10px] leading-snug text-stone-600">Existing Closet plans remain editable here. Studio starts a separate local design; it does not import this plan.</p></>}
 	                  <div className="flex items-center justify-between gap-2">
                     <div className="text-[11px] font-semibold">WoodTrac MasterTrac · 454 manufacturer SKUs</div>

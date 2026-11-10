@@ -65,6 +65,7 @@ import PelicanCatalogAdmin from "@/components/admin/PelicanCatalogAdmin";
 import { AnalyticsAdmin } from "@/components/admin/AnalyticsAdmin";
 import FullDatabaseExport from "@/components/admin/FullDatabaseExport";
 import AdminGroupedTabs from "@/components/admin/AdminGroupedTabs";
+import { CustomerOfferingsSwitch } from "@/components/admin/CustomerOfferingsSwitch";
 import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
 
 function statusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
@@ -655,7 +656,8 @@ export default function Admin() {
             Manage affiliates, review Pro Network applications, and handle countertop quote requests.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <CustomerOfferingsSwitch />
           <a
             href={`${import.meta.env.VITE_ANALYTICS_ENDPOINT || ""}/share/${import.meta.env.VITE_ANALYTICS_WEBSITE_ID || ""}/Cabinet%20Dealz`}
             target="_blank"

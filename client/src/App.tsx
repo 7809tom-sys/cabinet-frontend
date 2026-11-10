@@ -14,6 +14,7 @@ import { GoogleAnalyticsTracker } from "@/components/GoogleAnalyticsTracker";
 import DesignerHistoryNav from "@/components/design/DesignerHistoryNav";
 import { DesignerErrorBoundary } from "@/components/design/DesignerErrorBoundary";
 import { AffiliatePublishedFeature } from "@/components/affiliate/AffiliatePublishedFeature";
+import { CustomerOfferingGate } from "@/components/CustomerOfferingGate";
 import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
@@ -526,7 +527,9 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <KitchenDiscovery affiliateSlug={params.slug} />
+                <CustomerOfferingGate>
+                  <KitchenDiscovery affiliateSlug={params.slug} />
+                </CustomerOfferingGate>
               </AffiliateShell>
             </Suspense>
           )}
@@ -535,9 +538,11 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <AffiliatePublishedFeature feature="kitchen_packages">
-                  <BundleDeals affiliateSlug={params.slug} />
-                </AffiliatePublishedFeature>
+                <CustomerOfferingGate>
+                  <AffiliatePublishedFeature feature="kitchen_packages">
+                    <BundleDeals affiliateSlug={params.slug} />
+                  </AffiliatePublishedFeature>
+                </CustomerOfferingGate>
               </AffiliateShell>
             </Suspense>
           )}
@@ -590,9 +595,11 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <AffiliatePublishedFeature feature="hardware_catalog">
-                  <Hardware />
-                </AffiliatePublishedFeature>
+                <CustomerOfferingGate>
+                  <AffiliatePublishedFeature feature="hardware_catalog">
+                    <Hardware />
+                  </AffiliatePublishedFeature>
+                </CustomerOfferingGate>
               </AffiliateShell>
             </Suspense>
           )}
@@ -602,9 +609,11 @@ export default function App() {
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug} fullHeight>
                 <DesignerErrorBoundary surface="closet">
-                  <AffiliatePublishedFeature feature="closet_studio">
-                    <VendorClosetStudio affiliateSlug={params.slug} />
-                  </AffiliatePublishedFeature>
+                  <CustomerOfferingGate>
+                    <AffiliatePublishedFeature feature="closet_studio">
+                      <VendorClosetStudio affiliateSlug={params.slug} />
+                    </AffiliatePublishedFeature>
+                  </CustomerOfferingGate>
                 </DesignerErrorBoundary>
               </AffiliateShell>
             </Suspense>
@@ -672,7 +681,9 @@ export default function App() {
         <Route path="/hardware">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
-              <Hardware />
+              <CustomerOfferingGate>
+                <Hardware />
+              </CustomerOfferingGate>
             </Suspense>
           </AppLayout>
         </Route>
@@ -736,7 +747,9 @@ export default function App() {
           <div className="flex h-[100dvh] flex-col overflow-hidden">
             <Suspense fallback={<PageLoader />}>
               <DesignerErrorBoundary surface="closet">
-                <VendorClosetStudio />
+                <CustomerOfferingGate>
+                  <VendorClosetStudio />
+                </CustomerOfferingGate>
               </DesignerErrorBoundary>
             </Suspense>
           </div>
@@ -1076,14 +1089,18 @@ export default function App() {
         <Route path="/bundles">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
-              <BundleDeals />
+              <CustomerOfferingGate>
+                <BundleDeals />
+              </CustomerOfferingGate>
             </Suspense>
           </AppLayout>
         </Route>
         <Route path="/kitchens">
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
-              <KitchenDiscovery />
+              <CustomerOfferingGate>
+                <KitchenDiscovery />
+              </CustomerOfferingGate>
             </Suspense>
           </AppLayout>
         </Route>

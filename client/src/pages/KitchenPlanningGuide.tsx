@@ -14,6 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { KITCHEN_SCENES } from "@/lib/doorFamilyPhotos";
 import { useSeo } from "@/hooks/useSeo";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { useCustomerOfferings } from "@/lib/useCustomerOfferings";
 import { buildKitchenDiscoveryJsonLd } from "@/lib/seo/jsonLd";
 
 const PLANNING_FAQS = [
@@ -95,6 +97,9 @@ function publicOrigin(): string {
 }
 
 export default function KitchenPlanningGuide() {
+  const { user } = useAuth();
+  const offerings = useCustomerOfferings();
+  const showGroup = offerings.visible || user?.role === "admin";
   const origin = publicOrigin();
   const title = "Kitchen Planning Guide";
   const description = "Plan your kitchen with practical answers about measurements, layouts, work triangles, clearances, corners, storage, and the next steps in the CabinetDealz designer.";
@@ -130,7 +135,7 @@ export default function KitchenPlanningGuide() {
             <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-200 sm:text-lg">Start with your room and the way you live in it. These practical answers make it easier to measure, compare layouts, and build a kitchen plan that works before you choose the finish.</p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href="/design"><Button size="lg" className="w-full gap-2 bg-[var(--color-gold)] font-semibold text-[var(--color-navy)] hover:bg-[#e3b45f] sm:w-auto">Start Designing <ArrowRight className="h-4 w-4" /></Button></Link>
-              <Link href="/bundles"><Button size="lg" variant="outline" className="w-full gap-2 border-white/60 bg-transparent text-white hover:bg-white/10 hover:text-white sm:w-auto">Browse Kitchen Packages</Button></Link>
+              {showGroup && <Link href="/bundles"><Button size="lg" variant="outline" className="w-full gap-2 border-white/60 bg-transparent text-white hover:bg-white/10 hover:text-white sm:w-auto">Browse Kitchen Packages</Button></Link>}
             </div>
             <p className="mt-4 inline-flex items-center gap-2 text-sm text-slate-300"><Clock3 className="h-4 w-4 text-[var(--color-gold)]" /> First layouts commonly take about 10–15 minutes.</p>
           </div>
