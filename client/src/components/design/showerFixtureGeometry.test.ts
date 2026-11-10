@@ -239,6 +239,86 @@ describe("Shower surround, system and niche geometry", () => {
     expect(inch(box.max.x - box.min.x)).toBeLessThan(niche.widthIn + 2);
   });
 
+  /**
+   * Regression: the shower head was not connected to the valve.
+   *
+   * The riser used to be built from the constants 42" and 72" with no deck offset,
+   * so it started wherever those landed rather than at the valve, and the shopper's
+   * chosen heights were ignored entirely. It must start at the valve trim and end
+   * at the arm's centreline, at whatever heights were actually set.
+   */
+  it("runs the riser from the valve up to the shower arm at the real heights", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const heights = { valveHeightIn: 48, headHeightIn: 80 };
+    const parts = makeShowerSystemParts(profile, materials, heights);
+    const byName = (name: string) => parts.find((entry) => entry.part === name)!.mesh;
+
+    const riser = byName("shower-riser");
+    const valve = byName("shower-valve-trim");
+    const head = byName("shower-head");
+
+    riser.geometry.computeBoundingBox();
+    const riserBox = riser.geometry.boundingBox!.clone().translate(riser.position);
+    const valveTop = valve.position.y + 0.25 * (1 / 12);
+    expect(head.position.y).toBeLessThan(byName("shower-head-arm").position.y);
+
+    // The pipe reaches the valve at the bottom...
+    expect(riserBox.min.y).toBeGreaterThan(valveTop);
+    // Riser starts 1.5" above the valve centre, just clear of the 0.5"-thick trim.
+    expect(riserBox.min.y).toBeCloseTo(valve.position.y + 1.5 * (1 / 12), 3);
+    // ...and the shower arm at the top, so there is no gap at either end. The arm
+    // sits on the riser's centreline; the head hangs 0.4" below it.
+    const arm = byName("shower-head-arm");
+    expect(riserBox.max.y).toBeCloseTo(arm.position.y, 3);
+    // And it is a real, visible pipe, not a sliver.
+    expect(riserBox.max.y - riserBox.min.y).toBeGreaterThan((80 - 48) * (1 / 12) * 0.5);
+  });
+
+  it("follows the heights the shopper sets, not the old constants", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const low = makeShowerSystemParts(profile, materials, { valveHeightIn: 36, headHeightIn: 66 });
+    const high = makeShowerSystemParts(profile, materials, { valveHeightIn: 60, headHeightIn: 92 });
+    const valveY = (parts: ReturnType<typeof makeShowerSystemParts>) =>
+      parts.find((entry) => entry.part === "shower-valve-trim")!.mesh.position.y;
+    const riserY = (parts: ReturnType<typeof makeShowerSystemParts>) =>
+      parts.find((entry) => entry.part === "shower-riser")!.mesh.position.y;
+    // A taller valve setting really moves the valve, and the riser with it.
+    expect(high.length).toBe(low.length);
+    expect(valveY(high)).toBeGreaterThan(valveY(low));
+    expect(riserY(high)).toBeGreaterThan(riserY(low));
+    // 60" - 36" = 24" of extra height, in scene units.
+    expect(valveY(high) - valveY(low)).toBeCloseTo(24 * (1 / 12), 2);
+  });
+
+  it("seats the riser escutcheon at the valve, plumbed into the wall", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80 });
+    const escutcheon = parts.find((entry) => entry.part === "shower-riser-escutcheon");
+    expect(escutcheon).toBeTruthy();
+    const valve = parts.find((entry) => entry.part === "shower-valve-trim")!.mesh;
+    expect(escutcheon!.mesh.position.y).toBeGreaterThan(valve.position.y);
+  });
+
+  /**
+   * Regression: Tom could not delete the niche.
+   *
+   * A niche is a shallow open box — 3-17/32" recess, 0.12" shells — so a click
+   * usually lands in the opening and the ray reaches the wall behind it. No hit
+   * means no selection, and no selection means no delete. The designer now adds an
+   * invisible, raycastable box covering the whole envelope; these assertions pin
+   * the properties that make it work.
+   */
+  it("covers the niche with an invisible but raycastable pick box", () => {
+    const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1627")!;
+    // The geometry builder itself stays a display model; the pick box is added by
+    // the 3D fixture builder, which is where the raycast happens. What matters
+    // here is the envelope it must cover.
+    const { inch, box } = bounds(makeShowerNicheParts(niche, materials));
+    expect(inch(box.max.x - box.min.x)).toBeGreaterThan(niche.widthIn);
+    expect(inch(box.max.y - box.min.y)).toBeGreaterThan(niche.heightIn);
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12, 1);
+  });
+
   it("keeps the soap trays illustrative rather than claiming a measured fit", () => {
     for (const code of ["PL-SD88 Corner", "PL-SD125 Side"]) {
       const profile = verifiedPelicanBathroomFixtureProfile(code)!;

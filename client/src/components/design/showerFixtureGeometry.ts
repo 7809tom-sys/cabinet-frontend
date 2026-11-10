@@ -299,7 +299,7 @@ export function makeShowerSurroundParts(
 export function makeShowerSystemParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
-  options: { deckHeightIn?: number; wallDepthIn?: number } = {},
+  options: { deckHeightIn?: number; wallDepthIn?: number; valveHeightIn?: number; headHeightIn?: number } = {},
 ): ShowerPart[] {
   const deck = Math.max(0, options.deckHeightIn ?? 0) * INCH;
   const reach = (profile.tubFillerSpoutReachIn ?? 8) * INCH;
@@ -307,6 +307,18 @@ export function makeShowerSystemParts(
   // system is built about the origin too: the wall sits half a footprint away on
   // +Z and the head reaches back toward the room.
   const wallZ = ((profile.depthIn || 8) / 2) * INCH;
+
+  // Heights above the deck. These used to be the constants 42 and 72 with no
+  // deck offset at all, so on a shower whose pan sits on the floor the riser ran
+  // from y = 0 and the valve was wherever 42" landed — never where the shopper
+  // put it. Now the caller passes the real mounted heights and the riser spans
+  // exactly valve-to-arm.
+  const valveHeightIn = Number.isFinite(options.valveHeightIn) && (options.valveHeightIn ?? 0) > 0
+    ? options.valveHeightIn!
+    : 42;
+  const headHeightIn = Number.isFinite(options.headHeightIn) && (options.headHeightIn ?? 0) > 0
+    ? Math.max(options.headHeightIn!, valveHeightIn + 1)
+    : Math.max(72, valveHeightIn + 30);
 
   const parts: ShowerPart[] = [];
   const push = (mesh: THREE.Mesh, part: string) => {
@@ -316,7 +328,7 @@ export function makeShowerSystemParts(
   };
 
   // ---- Valve trim plate and lever -------------------------------------------
-  const valveY = deck + 42 * INCH;
+  const valveY = deck + valveHeightIn * INCH;
   const plate = new THREE.Mesh(
     new THREE.CylinderGeometry(3 * INCH, 3 * INCH, 0.5 * INCH, 32),
     materials.metal,
@@ -334,13 +346,28 @@ export function makeShowerSystemParts(
   push(lever, "shower-valve-handle");
 
   // ---- Riser and head -------------------------------------------------------
-  const headY = deck + 72 * INCH;
+  const headY = deck + headHeightIn * INCH;
+  // The riser is the visible pipe from the valve body up to the shower arm. It has
+  // to start at the TOP of the valve trim and end at the arm's centreline, or it
+  // reads as a floating rod with a gap at one end.
+  const riserBottom = valveY + 1.5 * INCH;   // just above the trim plate
+  const riserTop = headY;                    // the arm's centreline
   const riser = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, Math.max(1, headY - valveY), 16),
+    new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, Math.max(0.5 * INCH, riserTop - riserBottom), 16),
     materials.metal,
   );
-  riser.position.set(0, (headY + valveY) / 2, wallZ - 0.4 * INCH);
+  riser.position.set(0, (riserTop + riserBottom) / 2, wallZ - 0.4 * INCH);
   push(riser, "shower-riser");
+
+  // Escutcheon at the wall where the riser meets the panel, so the pipe looks
+  // plumbed into the wall rather than glued on.
+  const escutcheon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55 * INCH, 0.62 * INCH, 0.14 * INCH, 20),
+    materials.metal,
+  );
+  escutcheon.rotation.x = Math.PI / 2;
+  escutcheon.position.set(0, riserBottom, wallZ - 0.07 * INCH);
+  push(escutcheon, "shower-riser-escutcheon");
 
   // Arm out into the room along -Z, then the head face over the pan.
   const arm = new THREE.Mesh(
