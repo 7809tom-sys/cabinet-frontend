@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,11 @@ import { trpc } from "@/lib/trpc";
 import { useAffiliateFeaturePublish, useSetAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
 import {
   AFFILIATE_FEATURES,
+  GLOBAL_SUBJECT_ID,
+  GLOBAL_SUBJECT_KIND,
+  SUBJECT_KILL_FEATURE_KEY,
+  publishFlagOff,
+  publishFlagOn,
   publishRowFor,
   type AffiliateFeatureKey,
   type PublishSubjectKind,
@@ -39,7 +44,12 @@ type SubjectRow = {
   note: string;
 };
 
-const PAGE_SIZE = 40;
+const SUBJECT_PAGE_SIZE = 8;
+
+const OFF_EVERYWHERE_FEATURES = [
+  ...AFFILIATE_FEATURES.filter((item) => item.key === "bathroom_builder"),
+  ...AFFILIATE_FEATURES.filter((item) => item.key !== "bathroom_builder"),
+];
 
 function formatWhen(value: string | null | undefined): string {
   if (!value) return "—";
@@ -100,12 +110,8 @@ export default function PublishAdmin() {
   }, [subjects, search]);
 
   const features = feature === "all" ? AFFILIATE_FEATURES : AFFILIATE_FEATURES.filter((item) => item.key === feature);
-  const pairs = useMemo(
-    () => filteredSubjects.flatMap((subject) => features.map((item) => ({ subject, feature: item }))),
-    [filteredSubjects, features],
-  );
-  const pageCount = Math.max(1, Math.ceil(pairs.length / PAGE_SIZE));
-  const visible = pairs.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(filteredSubjects.length / SUBJECT_PAGE_SIZE));
+  const visibleSubjects = filteredSubjects.slice(page * SUBJECT_PAGE_SIZE, (page + 1) * SUBJECT_PAGE_SIZE);
 
   if (loading) {
     return <div className="flex justify-center py-12"><Spinner /></div>;
@@ -119,7 +125,7 @@ export default function PublishAdmin() {
       <div>
         <h2 className="text-lg font-semibold">Publish</h2>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Every distributor and every vendor is listed with every affiliate feature. Publish for affiliates is off until you turn that row on. Affiliate Literature is not here.
+          Every distributor and every vendor has one switch per feature. Publish for affiliates is off until you turn that row on. Off everywhere turns one feature off for all of them. Shut off turns every feature off for that distributor. Turning either switch back off restores the individual switches. Affiliate Literature is not here.
         </p>
       </div>
       {publish.status === "missing" && (
@@ -143,6 +149,42 @@ export default function PublishAdmin() {
           {vendors.error ? <p className="text-sm text-destructive" role="alert">Could not load vendors: {vendors.error.message}</p> : null}
         </div>
       )}
+      <div className="overflow-hidden rounded-lg border" data-testid="publish-off-everywhere">
+        <ul>
+          {OFF_EVERYWHERE_FEATURES.map((item) => {
+            const stored = publish.status === "ready"
+              ? publishRowFor(publish.rows, { kind: GLOBAL_SUBJECT_KIND, id: GLOBAL_SUBJECT_ID }, item.key)
+              : null;
+            const off = publishFlagOff(stored?.published);
+            return (
+              <li key={item.key} className="flex items-center justify-between gap-3 border-b px-3 py-2 last:border-0" data-testid={`off-everywhere-${item.key}`}>
+                <div>
+                  <div className="text-sm font-medium">{item.label}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {publish.status === "ready" ? (stored?.updatedByName || "—") : "—"}
+                    {" · "}
+                    {publish.status === "ready" ? formatWhen(stored?.updatedAt) : "—"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Off everywhere</span>
+                  <Switch
+                    checked={off}
+                    disabled={!canSave}
+                    aria-label={`Off everywhere: ${item.label}`}
+                    onCheckedChange={(checked) => save.mutate({
+                      subjectKind: GLOBAL_SUBJECT_KIND,
+                      subjectId: GLOBAL_SUBJECT_ID,
+                      featureKey: item.key,
+                      published: !checked,
+                    })}
+                  />
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Input
           className="h-9 min-w-56 flex-1"
@@ -169,7 +211,7 @@ export default function PublishAdmin() {
       {!distributors.isLoading && !vendors.isLoading && subjects.length === 0 && !distributors.error && !vendors.error && (
         <p className="text-sm text-muted-foreground">No distributors or vendors are on file.</p>
       )}
-      {visible.length > 0 && (
+      {visibleSubjects.length > 0 && (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full min-w-[980px] text-sm">
             <thead className="border-b bg-muted/50 text-xs text-muted-foreground">
@@ -184,52 +226,90 @@ export default function PublishAdmin() {
               </tr>
             </thead>
             <tbody>
-              {visible.map(({ subject, feature: item }) => {
-                const stored = publish.status === "ready"
-                  ? publishRowFor(publish.rows, { kind: subject.kind, id: subject.id }, item.key)
+              {visibleSubjects.map((subject) => {
+                const kill = publish.status === "ready"
+                  ? publishRowFor(publish.rows, { kind: subject.kind, id: subject.id }, SUBJECT_KILL_FEATURE_KEY)
                   : null;
-                const published = stored?.published === true;
+                const shutOff = publishFlagOff(kill?.published);
                 return (
-                  <tr key={`${subject.kind}-${subject.id}-${item.key}`} className="border-b last:border-0" data-testid={`publish-row-${subject.kind}-${subject.id}-${item.key}`}>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{subject.name}</div>
-                      <div className="text-xs text-muted-foreground">{subject.note}</div>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs">{subject.code}</td>
-                    <td className="px-3 py-2">{item.label}</td>
-                    <td className="px-3 py-2">
-                      {publish.status === "ready" ? (
-                        <Badge variant={published ? "default" : "secondary"}>{published ? "Published" : "Not published"}</Badge>
-                      ) : (
-                        <Badge variant="outline">Unknown</Badge>
-                      )}
-                    </td>
-                    <td className="px-3 py-2">{publish.status === "ready" ? (stored?.updatedByName || "—") : "—"}</td>
-                    <td className="px-3 py-2">{publish.status === "ready" ? formatWhen(stored?.updatedAt) : "—"}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-end gap-2">
-                        <span className="text-xs text-muted-foreground">Publish for affiliates</span>
-                        <Switch
-                          checked={published}
-                          disabled={!canSave}
-                          aria-label={`Publish for affiliates: ${subject.name} ${item.label}`}
-                          onCheckedChange={(checked) => save.mutate({
-                            subjectKind: subject.kind,
-                            subjectId: subject.id,
-                            featureKey: item.key,
-                            published: checked,
-                          })}
-                        />
-                      </div>
-                    </td>
-                  </tr>
+                  <Fragment key={`${subject.kind}-${subject.id}`}>
+                    {subject.kind === "distributor" && (
+                      <tr className="border-b bg-muted/30" data-testid={`publish-shutoff-${subject.kind}-${subject.id}`}>
+                        <td className="px-3 py-2" colSpan={6}>
+                          <div className="font-medium">Shut off {subject.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {publish.status === "ready" ? (kill?.updatedByName || "—") : "—"}
+                            {" · "}
+                            {publish.status === "ready" ? formatWhen(kill?.updatedAt) : "—"}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-xs text-muted-foreground">Shut off {subject.name}</span>
+                            <Switch
+                              checked={shutOff}
+                              disabled={!canSave}
+                              aria-label={`Shut off ${subject.name}`}
+                              onCheckedChange={(checked) => save.mutate({
+                                subjectKind: subject.kind,
+                                subjectId: subject.id,
+                                featureKey: SUBJECT_KILL_FEATURE_KEY,
+                                published: !checked,
+                              })}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {features.map((item) => {
+                      const stored = publish.status === "ready"
+                        ? publishRowFor(publish.rows, { kind: subject.kind, id: subject.id }, item.key)
+                        : null;
+                      const published = publishFlagOn(stored?.published);
+                      return (
+                        <tr key={`${subject.kind}-${subject.id}-${item.key}`} className="border-b last:border-0" data-testid={`publish-row-${subject.kind}-${subject.id}-${item.key}`}>
+                          <td className="px-3 py-2">
+                            <div className="font-medium">{subject.name}</div>
+                            <div className="text-xs text-muted-foreground">{subject.note}</div>
+                          </td>
+                          <td className="px-3 py-2 font-mono text-xs">{subject.code}</td>
+                          <td className="px-3 py-2">{item.label}</td>
+                          <td className="px-3 py-2">
+                            {publish.status === "ready" ? (
+                              <Badge variant={published ? "default" : "secondary"}>{published ? "Published" : "Not published"}</Badge>
+                            ) : (
+                              <Badge variant="outline">Unknown</Badge>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">{publish.status === "ready" ? (stored?.updatedByName || "—") : "—"}</td>
+                          <td className="px-3 py-2">{publish.status === "ready" ? formatWhen(stored?.updatedAt) : "—"}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-xs text-muted-foreground">Publish for affiliates</span>
+                              <Switch
+                                checked={published}
+                                disabled={!canSave}
+                                aria-label={`Publish for affiliates: ${subject.name} ${item.label}`}
+                                onCheckedChange={(checked) => save.mutate({
+                                  subjectKind: subject.kind,
+                                  subjectId: subject.id,
+                                  featureKey: item.key,
+                                  published: checked,
+                                })}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
-      {pairs.length > PAGE_SIZE && (
+      {filteredSubjects.length > SUBJECT_PAGE_SIZE && (
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">Page {page + 1} of {pageCount}</span>
           <div className="flex gap-2">
