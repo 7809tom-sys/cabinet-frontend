@@ -36,6 +36,7 @@ import { resolveCheckoutAlias } from "@/lib/affiliateCheckoutAlias";
 import { installationEstimateDocumentPath } from "@shared/installationEstimateLink";
 import { isHardwareCheckoutLine, isSurfaceCheckoutLine } from "@/lib/cartCheckoutPrefill";
 import { checkoutUnitPriceForLine, isCabinetFreightLine } from "@/lib/orderLinePricing";
+import { checkoutTotalWithLiveShipping, liveShippingQuotePanel } from "@/lib/liveShippingQuoteDisplay";
 import { getSiteSignInUrl } from "@/const";
 import { isTemporaryOneDollarFreeShippingOrder, isTemporaryOneDollarCheckoutTestItem } from "@shared/temporaryCheckoutTest";
 import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
@@ -710,6 +711,17 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
   const customerInfoComplete = Boolean(
     name.trim() && emailValid && phone.trim() && addressLine1.trim() && city.trim() && taxState.length === 2 && /^\d{5}(?:-\d{4})?$/.test(zip.trim()),
   );
+  const shippingAddressReady = deliveryMethod === "ship"
+    && zipDebounced.length >= 5
+    && city.trim().length > 0
+    && taxState.length === 2
+    && addressLine1.trim().length > 0;
+  const liveShippingPanel = liveShippingQuotePanel({
+    hasItems: freightInput.items.length > 0 || hasHardwareLines,
+    addressReady: shippingAddressReady,
+    fetching: freightEstimate.isFetching || hardwareFreightQuote.isFetching,
+    available: Boolean(freightEstimate.data?.available) || hardwareFreightCents > 0,
+  });
 
   function handleSubmit() {
     if (stagingTestMode) {
@@ -1123,6 +1135,12 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
             {total > 0 ? `$${total.toFixed(2)}` : "—"}
           </p>
         </div>
+        {deliveryMethod === "ship" && (freightEstimate.data?.available || hardwareFreightCents > 0) && (
+          <div className="flex items-center justify-between text-sm" data-testid="live-shipping-total">
+            <span className="text-muted-foreground">Shipping</span>
+            <span className="font-medium tabular-nums">${((freightCents + hardwareFreightCents) / 100).toFixed(2)}</span>
+          </div>
+        )}
 
         {/* State selector for sales tax */}
         <div className="border-t border-border pt-3">
@@ -1178,11 +1196,11 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
           </div>
         )}
 
-        {/* No state selected — show pre-tax total prominently */}
+        {/* No state selected — merchandise plus any live shipping already returned. */}
         {!taxInfo && total > 0 && (
           <div className="flex items-center justify-between border-t border-border pt-3">
             <p className="text-xs text-muted-foreground">Select your state above to see estimated tax</p>
-            <p className="font-serif text-2xl font-bold tabular-nums">${total.toFixed(2)}</p>
+            <p className="font-serif text-2xl font-bold tabular-nums" data-testid="checkout-total-with-shipping">${checkoutTotalWithLiveShipping({ merchandise: total, tax: 0, shippingCents: deliveryMethod === "ship" ? freightCents + hardwareFreightCents : 0 }).toFixed(2)}</p>
           </div>
         )}
       </div>
@@ -1429,11 +1447,11 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
                 </span>
               </span>
             </label>
-            {!customerInfoComplete ? (
-              <p role="status" className="text-xs text-amber-800">Complete the required name, phone, street address, city, state, and ZIP above to calculate the shipping quote.</p>
-            ) : freightEstimate.isFetching ? (
+            {liveShippingPanel === "need-address" ? (
+              <p role="status" className="text-xs text-amber-800">Complete the street address, city, state, and ZIP above to calculate the shipping quote. Your name, email, and phone are required before the order can be submitted.</p>
+            ) : liveShippingPanel === "calculating" ? (
               <FreightCalculatingStatus upsRequested={carrierPreference === "ups"} />
-            ) : freightEstimate.data?.available ? (
+            ) : liveShippingPanel === "quote" && freightEstimate.data?.available ? (
               <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
                 <div className="flex items-center justify-between gap-3 text-sm font-semibold">
                   <span>Verified shipping total</span>
@@ -1499,6 +1517,9 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
                   </div>
                 )}
               </div>
+            )}
+            {liveShippingPanel === "quote" && !customerInfoComplete && (
+              <p className="text-xs text-muted-foreground">This shipping rate is included in the total. Enter your name, email, and phone before submitting the order.</p>
             )}
               </>
             )}

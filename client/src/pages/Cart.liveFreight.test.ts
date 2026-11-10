@@ -60,6 +60,8 @@ describe("Cart address-first checkout", () => {
     expect(reviewSource).toContain("trpc.freight.estimate.useQuery(freightInput");
     expect(reviewSource).toContain("trpc.hardware.quote.useQuery(hardwareQuoteInput");
     expect(reviewSource).toContain("customerInfoComplete");
+    expect(reviewSource).toContain("liveShippingQuotePanel");
+    expect(reviewSource).not.toContain("{!customerInfoComplete ? (");
   });
 
   it("retains separate address-stage carrier controls and accessible live-rate feedback", () => {
