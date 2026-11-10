@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
 import { Spinner } from "@/components/ui/spinner";
 import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
-import { AFFILIATE_FEATURES, type AffiliateFeatureKey } from "@shared/affiliateFeaturePublish";
+import { AFFILIATE_FEATURES, affiliateFeatureAlwaysOpen, type AffiliateFeatureKey } from "@shared/affiliateFeaturePublish";
 
 /**
- * Affiliate entry check. When the server publish list is loaded, the feature
- * stays closed unless some distributor or vendor has it switched on.
- * When that procedure is not deployed yet, the existing screen stays up and
- * the admin Publish tab explains that the server is not enforcing it yet.
+ * Affiliate entry check. When an admin has loaded the publish list, the
+ * feature stays closed unless some distributor or vendor has it switched on.
+ * Quote requests skip this check: the shopping cart and quote pages stay up.
+ * When the list is missing or this caller cannot read it, the existing screen
+ * stays up. Each feature read is still checked on the server. A real load
+ * failure still shows the error.
  */
 export function AffiliatePublishedFeature({
   feature,
@@ -17,6 +19,7 @@ export function AffiliatePublishedFeature({
   children: ReactNode;
 }) {
   const publish = useAffiliateFeaturePublish();
+  if (affiliateFeatureAlwaysOpen(feature)) return children;
   const label = AFFILIATE_FEATURES.find((item) => item.key === feature)?.label ?? feature;
   if (publish.status === "loading") {
     return (

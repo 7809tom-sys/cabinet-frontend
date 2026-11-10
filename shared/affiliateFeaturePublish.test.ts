@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   AFFILIATE_FEATURES,
+  affiliateFeatureAlwaysOpen,
   anyAffiliateFeaturePublished,
   catalogVendorPublished,
   designerRoomOffered,
@@ -27,6 +28,10 @@ describe("affiliate feature publish", () => {
       "closet_studio",
     ]));
     expect(keys.join(" ")).not.toMatch(/literature/i);
+    expect(keys).toContain("quote");
+    expect(affiliateFeatureAlwaysOpen("quote")).toBe(true);
+    expect(affiliateFeatureAlwaysOpen("closet_studio")).toBe(false);
+    expect(AFFILIATE_FEATURES.find((feature) => feature.key === "quote")?.gatedIn).toContain("stay open");
   });
 
   it("stays unpublished until an explicit row is on", () => {

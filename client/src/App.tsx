@@ -403,22 +403,18 @@ export default function App() {
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <AffiliatePublishedFeature feature="quote">
-                  <OrderBuilder />
-                </AffiliatePublishedFeature>
+                <OrderBuilder />
               </AffiliateShell>
             </Suspense>
           )}
         </Route>
-        {/* Older referral messages used /order/new. Keep that published path
-            working so it remains inside the affiliate shell and cart scope. */}
+        {/* Older referral messages used /order/new. Keep that path working so
+            it remains inside the affiliate shell and cart scope. */}
         <Route path="/store/:slug/order/new">
           {(params) => (
             <Suspense fallback={<PageLoader />}>
               <AffiliateShell slug={params.slug}>
-                <AffiliatePublishedFeature feature="quote">
-                  <OrderBuilder />
-                </AffiliatePublishedFeature>
+                <OrderBuilder />
               </AffiliateShell>
             </Suspense>
           )}

@@ -1,0 +1,72 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 10 Nov 2026 18:40:00 +0000
+Subject: [PATCH] Keep affiliate cart pricing and quote requests off the publish switch.
+
+The shopping cart and a quote request must stay available for affiliates.
+Publish tab switches must not close them.
+
+orders.priceLines is the price read the quote page uses after the cart
+continues to checkout. orders.createRequest saves that quote. Both called
+guardAffiliateFeature with feature "quote", so an unpublished quote row
+rejected the cart checkout with "This feature is not published for affiliates."
+
+Remove those two calls. Leave every other feature guard in place.
+listAffiliateFeaturePublish and setAffiliateFeaturePublish stay admin-only,
+so the Publish tab is unchanged.
+
+No SQL. Nothing in this patch deletes a row or sends an order.
+
+Apply from the cabinet-backend repository root:
+
+    git apply --check /path/to/cabinet-backend-quote-cart-always-open.patch
+    git apply /path/to/cabinet-backend-quote-cart-always-open.patch
+
+Cloud agents cannot push 7809tom-sys/cabinet-backend (403). Apply this file
+there and deploy it before affiliate checkout depends on the new behavior.
+
+---
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -5,7 +5,6 @@
+ import { ensureAffiliatePipelineDeal } from "../lib/crmPipelineAttach";
+ import { resolvePresentation } from "../lib/presentation";
+ import { assertNoPreviewSuppliers } from "../lib/distributorPreview";
+-import { guardAffiliateFeature } from "../lib/affiliateFeaturePublish";
+ import { getDb, hasPositivePublishedCabinetPrice, notInConflict } from "../db";
+ import {
+   cabinets,
+@@ -564,7 +563,6 @@
+       if (!db || input.cabinetIds.length === 0) {
+         return { prices: [] as { cabinetId: number; unitPrice: number | null; originalUnitPrice: number | null; promoName: string | null; myCost: number | null; freeShipping: boolean }[] };
+       }
+-      await guardAffiliateFeature(db, { role: ctx.user?.role, slug: input.affiliateSlug, feature: "quote" });
+       const ps = await getPricingSettingsForViewer(ctx.user);
+       const rows = await db
+         .select({
+@@ -828,9 +826,6 @@
+             ? "Contractor"
+             : "Homeowner";
+       const scopeSlug = input.storeScope.trim().toLowerCase();
+-      if (!isAdmin && scopeSlug !== "owner") {
+-        await guardAffiliateFeature(db, { role: ctx.user?.role, slug: scopeSlug, feature: "quote" });
+-      }
+       const affiliatePricing = await loadAffiliateStorefrontPricing(scopeSlug);
+       if (scopeSlug !== "owner" && !affiliatePricing) {
+         throw new TRPCError({ code: "NOT_FOUND", message: "This affiliate store is not available." });
+diff --git a/server/routers/orders.quoteAlwaysOpen.test.ts b/server/routers/orders.quoteAlwaysOpen.test.ts
+new file mode 100644
+--- /dev/null
++++ b/server/routers/orders.quoteAlwaysOpen.test.ts
+@@ -0,0 +1,11 @@
++import { readFileSync } from "node:fs";
++import { describe, expect, it } from "vitest";
++
++const orders = readFileSync(new URL("./orders.ts", import.meta.url), "utf8");
++
++describe("affiliate cart and quote requests", () => {
++  it("does not let the quote publish switch reject cart pricing or a quote request", () => {
++    expect(orders).not.toContain('feature: "quote"');
++    expect(orders).not.toContain("guardAffiliateFeature");
++  });
++});
