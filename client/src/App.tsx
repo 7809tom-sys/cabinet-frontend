@@ -109,6 +109,7 @@ const Terms = lazy(() => import("@/pages/Terms"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
 const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
 const CrmCustomerLookupPreview = lazy(() => import("@/pages/CrmCustomerLookupPreview"));
+const PptxViewerSample = import.meta.env.DEV ? lazy(() => import("@/pages/PptxViewerSample")) : null;
 const InstallationEstimateDocument = lazy(() => import("@/pages/InstallationEstimateDocument"));
 const Hardware = lazy(() => import("@/pages/Hardware"));
 const AffiliateGuide = lazy(() => import("@/pages/AffiliateGuide"));
@@ -1193,6 +1194,14 @@ export default function App() {
             </Suspense>
           </Route>
         )}
+
+        {import.meta.env.DEV && PptxViewerSample ? (
+          <Route path="/dev/pptx-preview">
+            <Suspense fallback={<PageLoader />}>
+              <PptxViewerSample />
+            </Suspense>
+          </Route>
+        ) : null}
 
         <Route path="/terms">
           <AppLayout>

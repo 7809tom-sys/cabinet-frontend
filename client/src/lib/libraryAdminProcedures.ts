@@ -40,6 +40,8 @@ export type LibraryDocument = {
   documentRole: string | null;
   affiliateToggledAt: string | Date | null;
   affiliateToggledByName: string | null;
+  /** `affiliate_literature.createdAt`. Null only when an old payload omitted it. */
+  createdAt: string | Date | null;
 };
 
 export type LibraryUploadInput = {
@@ -76,6 +78,7 @@ export type RawLibraryDocument = Partial<Omit<LibraryDocument, "visibility">> & 
   documentRole?: string | null;
   affiliateToggledAt?: string | Date | null;
   affiliateToggledByName?: string | null;
+  createdAt?: string | Date | null;
 };
 
 /** A short-lived link to one private document, from `affiliateResources.adminSignedFile`. */
@@ -98,6 +101,7 @@ export function toLibraryDocument(row: RawLibraryDocument): LibraryDocument {
     documentRole: typeof row.documentRole === "string" && row.documentRole.trim() ? row.documentRole : null,
     affiliateToggledAt: row.affiliateToggledAt ?? null,
     affiliateToggledByName: row.affiliateToggledByName ?? null,
+    createdAt: row.createdAt ?? null,
   };
 }
 

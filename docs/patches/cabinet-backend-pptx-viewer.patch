@@ -1,0 +1,101 @@
+diff --git a/server/affiliateResources.libraryFallback.test.ts b/server/affiliateResources.libraryFallback.test.ts
+index cd04079..721bbf6 100644
+--- a/server/affiliateResources.libraryFallback.test.ts
++++ b/server/affiliateResources.libraryFallback.test.ts
+@@ -192,6 +192,55 @@ describe("affiliateResources.adminSignedFile without the visibility column", ()
+   });
+ });
+ 
++describe("affiliateResources.literatureSignedFile", () => {
++  const deck = {
++    ...affiliateRow,
++    filename: "investor-deck.pptx",
++    mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
++  };
++
++  function dbReturning(rows: unknown[]) {
++    return {
++      select: () => ({
++        from: () => ({
++          where: () => ({ limit: async () => rows }),
++        }),
++      }),
++    };
++  }
++
++  it("signs an affiliate-visible deck and returns the stored upload time", async () => {
++    getDbMock.mockResolvedValue(dbReturning([deck]));
++    accessMock.mockResolvedValue(affiliateAccess);
++    const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
++
++    await expect(caller.literatureSignedFile({ id: deck.id })).resolves.toEqual({
++      url: `https://signed.example/${deck.fileKey}`,
++      filename: deck.filename,
++      mimeType: deck.mimeType,
++      createdAt: deck.createdAt,
++    });
++  });
++
++  it("does not sign an internal document for an affiliate", async () => {
++    getDbMock.mockResolvedValue(dbReturning([internalRow]));
++    accessMock.mockResolvedValue(affiliateAccess);
++    const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
++
++    await expect(caller.literatureSignedFile({ id: internalRow.id })).rejects.toThrow(/not available/);
++    expect(signedMock).not.toHaveBeenCalled();
++  });
++
++  it("lets an admin open an internal deck", async () => {
++    getDbMock.mockResolvedValue(dbReturning([internalRow]));
++    const caller = affiliateResourcesRouter.createCaller({ user: admin } as never);
++
++    const file = await caller.literatureSignedFile({ id: internalRow.id });
++    expect(file.url).toBe(`https://signed.example/${internalRow.fileKey}`);
++    expect(file.createdAt).toEqual(internalRow.createdAt);
++  });
++});
++
+ describe("every library read goes through the fallback", () => {
+   it("leaves no bare select() on affiliate_literature in the server", () => {
+     // select() names every column, including the four added by hand, which is
+diff --git a/server/routers/affiliateResources.ts b/server/routers/affiliateResources.ts
+index 1553756..29d16ac 100644
+--- a/server/routers/affiliateResources.ts
++++ b/server/routers/affiliateResources.ts
+@@ -242,9 +242,36 @@ export const affiliateResourcesRouter = router({
+         url: row.url,
+         mimeType: row.mimeType,
+         filename: row.filename,
++        createdAt: row.createdAt,
+       }));
+   }),
+ 
++  /**
++   * Signed-in affiliate open for one library document. The stored `/manus-storage`
++   * path is refused by the storage proxy, so the portal asks here for a short
++   * lived signed URL and renders a PowerPoint in the browser. Internal rows stay
++   * hidden: a non-admin who guesses an id gets the same not-found as a missing row.
++   * Admins may open any row, matching adminSignedFile.
++   */
++  literatureSignedFile: protectedProcedure
++    .input(z.object({ id: z.number().int().positive() }))
++    .query(async ({ ctx, input }) => {
++      await requireAffiliateReader(ctx.user);
++      const db = await getDb();
++      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
++      const [row] = await readLiteratureRows((columns) => db
++        .select(columns)
++        .from(affiliateLiterature)
++        .where(eq(affiliateLiterature.id, input.id))
++        .limit(1));
++      if (!row?.fileKey) throw new TRPCError({ code: "NOT_FOUND", message: "That document is not available." });
++      if (!isAffiliateLibraryDocument(row) && ctx.user.role !== "admin") {
++        throw new TRPCError({ code: "NOT_FOUND", message: "That document is not available." });
++      }
++      const url = await storageGetSignedUrl(row.fileKey);
++      return { url, filename: row.filename, mimeType: row.mimeType, createdAt: row.createdAt };
++    }),
++
+   /**
+    * Admin-only open. A literature URL is a private-bucket key, so the admin page
+    * asks here for a short-lived signed link rather than linking the stored path.

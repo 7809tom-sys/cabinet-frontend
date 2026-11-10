@@ -9,6 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Spinner } from "@/components/ui/spinner";
 import { AFFILIATE_RESOURCE_TYPES, type AffiliateResourceType } from "@shared/affiliateResources";
+import { formatUploadedLabel, inlineDocumentKind } from "@shared/pptxDocument";
+import { PptxDeckViewer, type PptxDeckSource } from "@/components/documents/PptxDeckViewer";
 import { ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 
 type Draft = {
@@ -61,6 +63,7 @@ export default function AffiliateResourcesAdmin() {
   const [file, setFile] = useState<File | null>(null);
   const [thumbnail, setThumbnail] = useState<File | null>(null);
   const [dragId, setDragId] = useState<number | null>(null);
+  const [deck, setDeck] = useState<PptxDeckSource | null>(null);
   const save = trpc.affiliateResources.adminSave.useMutation({
     onSuccess: () => {
       toast.success("Resource saved");
@@ -194,7 +197,12 @@ export default function AffiliateResourcesAdmin() {
       </div>
       {list.isLoading ? <Spinner className="h-6 w-6" /> : null}
       <div className="space-y-2">
-        {items.map((item, index) => (
+        {items.map((item, index) => {
+          const row = item as typeof item & { filename?: string | null; mimeType?: string | null; createdAt?: string | Date | null; hasFile?: boolean };
+          const inline = inlineDocumentKind(row);
+          const deckFile = inline != null;
+          const uploadedLabel = inline ? formatUploadedLabel(row.createdAt) : null;
+          return (
           <div
             key={item.id}
             draggable
@@ -204,7 +212,10 @@ export default function AffiliateResourcesAdmin() {
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"
           >
             <div>
-              <p className="text-sm font-medium">{item.title}</p>
+              <p className="text-sm font-medium">
+                {item.title}
+                {uploadedLabel ? <span className="ml-2 font-normal text-muted-foreground" data-testid={`resource-admin-uploaded-${item.id}`}>{uploadedLabel}</span> : null}
+              </p>
               <p className="text-xs text-muted-foreground">{item.type} · {item.category}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -223,6 +234,20 @@ export default function AffiliateResourcesAdmin() {
                 [ids[index + 1], ids[index]] = [ids[index], ids[index + 1]];
                 reorder.mutate({ ids });
               }}><ChevronDown className="h-4 w-4" /></Button>
+              {deckFile && row.hasFile ? (
+                <Button type="button" size="sm" variant="outline" onClick={() => {
+                  void utils.affiliateResources.signedFile.fetch({ id: item.id, kind: "file" }).then((file) => {
+                    setDeck({
+                      title: item.title,
+                      filename: file.filename ?? row.filename,
+                      sourceUrl: file.url,
+                      uploadedAt: row.createdAt,
+                    });
+                  }).catch((error: unknown) => {
+                    toast.error(error instanceof Error ? error.message : `Could not open ${item.title}.`);
+                  });
+                }} aria-label={`View ${item.title}`}>View</Button>
+              ) : null}
               <Button type="button" size="sm" variant="outline" onClick={() => setDraft({
                 id: item.id,
                 type: item.type,
@@ -239,8 +264,10 @@ export default function AffiliateResourcesAdmin() {
               <Button type="button" size="icon" variant="ghost" aria-label={`Delete ${item.title}`} onClick={() => remove.mutate({ id: item.id })}><Trash2 className="h-4 w-4" /></Button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
+      <PptxDeckViewer open={deck != null} deck={deck} onClose={() => setDeck(null)} />
     </div>
   );
 }

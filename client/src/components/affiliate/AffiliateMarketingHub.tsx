@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { affiliateDashboardLinks, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
 import { affiliateGuidePath, affiliateGuidesMatchingQuery } from "@/lib/affiliateGuides";
 import { CredentialsPanel } from "@/components/affiliate/CredentialsPanel";
-import { AffiliateResourceBrowser, type EducationResource } from "@/components/affiliate/AffiliateResourcesHub";
+import { AffiliateResourceBrowser, type EducationResource, type LiteratureCard, type LiteratureSignedFile } from "@/components/affiliate/AffiliateResourcesHub";
 import { AffiliateSocialLinksPanel } from "@/components/affiliate/AffiliateSocialLinksPanel";
 import { KbisBoothAssetsPanel } from "@/components/affiliate/KbisBoothAssetsPanel";
 import {
@@ -103,6 +103,29 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
     return utils.affiliateResources.signedFile.fetch({ id, kind });
   }
 
+  async function openLiterature(id: number): Promise<LiteratureSignedFile> {
+    const client = utils as unknown as {
+      affiliateResources: {
+        literatureSignedFile: { fetch: (input: { id: number }) => Promise<LiteratureSignedFile> };
+      };
+    };
+    return client.affiliateResources.literatureSignedFile.fetch({ id });
+  }
+
+  const literatureCards: LiteratureCard[] = (literature.data ?? []).map((item) => {
+    const row = item as LiteratureCard & { createdAt?: Date | string | null };
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      url: row.url,
+      filename: row.filename,
+      mimeType: row.mimeType,
+      createdAt: row.createdAt ?? null,
+    };
+  });
+
   return (
     <div className="space-y-6 max-w-5xl" data-testid="marketing-hub">
       <div>
@@ -135,7 +158,8 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
             <AffiliateResourceBrowser
               section={section}
               items={items}
-              literature={literature.data ?? []}
+              literature={literatureCards}
+              onRequestLiterature={openLiterature}
               progress={progress.data ?? []}
               query={query}
               storeName={affiliate.storeName}
@@ -174,7 +198,8 @@ export default function AffiliateMarketingHub({ affiliate }: { affiliate: Market
           <AffiliateResourceBrowser
             section="guides"
             items={items}
-            literature={literature.data ?? []}
+            literature={literatureCards}
+            onRequestLiterature={openLiterature}
             progress={progress.data ?? []}
             query={query}
             storeName={affiliate.storeName}

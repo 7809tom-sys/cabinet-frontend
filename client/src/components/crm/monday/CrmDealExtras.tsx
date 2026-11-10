@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { crmDueState } from "@shared/crmMailbox";
+import { DOCUMENT_DOWNLOAD_ENABLED, formatUploadedLabel, inlineDocumentKind } from "@shared/pptxDocument";
+import { saveDocumentFromUrl } from "@/components/documents/pptxPreview";
+import { PptxDeckViewer, type PptxDeckSource } from "@/components/documents/PptxDeckViewer";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +31,7 @@ export function CrmDealFiles({ dealId }: { dealId: number }) {
   });
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [deck, setDeck] = useState<PptxDeckSource | null>(null);
   return (
     <div>
       <p className="mb-2 text-xs font-semibold text-muted-foreground">Files</p>
@@ -37,14 +41,41 @@ export function CrmDealFiles({ dealId }: { dealId: number }) {
         <Button type="button" variant="outline" disabled={!name.trim() || !url.trim() || add.isPending} onClick={() => add.mutate({ dealId, fileName: name.trim(), fileUrl: url.trim() })}>Add</Button>
       </div>
       <ul className="space-y-1">
-        {(files.data ?? []).map((file) => (
+        {(files.data ?? []).map((file) => {
+          const uploadedAt = (file as { createdAt?: string | Date | null }).createdAt ?? null;
+          const inline = inlineDocumentKind({ filename: file.fileName, url: file.fileUrl });
+          const uploadedLabel = inline ? formatUploadedLabel(uploadedAt) : null;
+          return (
           <li key={file.id} className="flex items-center justify-between gap-2 text-xs">
-            <a className="truncate text-primary hover:underline" href={file.fileUrl} target="_blank" rel="noreferrer">{file.fileName}</a>
-            <button className="text-red-600" onClick={() => remove.mutate({ id: file.id })} aria-label={`Remove ${file.fileName}`}>Remove</button>
+            {inline ? (
+              <button
+                type="button"
+                className="truncate text-left text-primary hover:underline"
+                onClick={() => setDeck({
+                  title: file.fileName,
+                  filename: file.fileName,
+                  sourceUrl: file.fileUrl,
+                  uploadedAt,
+                })}
+              >
+                {file.fileName}
+                {uploadedLabel ? <span className="ml-2 text-muted-foreground" data-testid={`deal-file-uploaded-${file.id}`}>{uploadedLabel}</span> : null}
+              </button>
+            ) : (
+              <a className="truncate text-primary hover:underline" href={file.fileUrl} target="_blank" rel="noreferrer">{file.fileName}</a>
+            )}
+            <span className="flex shrink-0 items-center gap-2">
+              {DOCUMENT_DOWNLOAD_ENABLED && inline ? (
+                <button type="button" className="text-primary hover:underline" onClick={() => { void saveDocumentFromUrl(file.fileUrl, file.fileName); }}>Download</button>
+              ) : null}
+              <button className="text-red-600" onClick={() => remove.mutate({ id: file.id })} aria-label={`Remove ${file.fileName}`}>Remove</button>
+            </span>
           </li>
-        ))}
+          );
+        })}
         {(files.data ?? []).length === 0 && <li className="text-xs text-muted-foreground">No files yet.</li>}
       </ul>
+      <PptxDeckViewer open={deck != null} deck={deck} onClose={() => setDeck(null)} />
     </div>
   );
 }

@@ -9,9 +9,20 @@ const { state } = vi.hoisted(() => ({
     updateInputs: [] as Record<string, unknown>[],
     uploadInputs: [] as Record<string, unknown>[],
     signedFileInputs: [] as Record<string, unknown>[],
+    signedFile: null as null | { url: string; filename: string; mimeType: string },
     invalidated: 0,
     refresh: [] as Array<() => void>,
   },
+}));
+
+vi.mock("@/components/documents/pptxPreview", () => ({
+  fetchDocumentBytes: vi.fn(async () => new Uint8Array([0x50, 0x4b, 0x03, 0x04]).buffer),
+  renderInlineDocument: vi.fn(async (host: HTMLElement) => {
+    host.textContent = "Private decks stay in this browser.";
+    return { destroy() {}, slideCount: 1, updatePagination() {} };
+  }),
+  downloadDocumentBytes: vi.fn(),
+  saveDocumentFromUrl: vi.fn(),
 }));
 
 vi.mock("@/lib/trpc", () => ({
@@ -33,7 +44,7 @@ vi.mock("@/lib/trpc", () => ({
             adminSignedFile: {
               fetch: async (input: Record<string, unknown>) => {
                 state.signedFileInputs.push(input);
-                return { url: "https://storage.example/signed/guide.md", filename: "guide.md", mimeType: "text/plain" };
+                return state.signedFile ?? { url: "https://storage.example/signed/guide.md", filename: "guide.md", mimeType: "text/plain" };
               },
             },
           },
@@ -169,6 +180,7 @@ beforeEach(() => {
   state.updateInputs = [];
   state.uploadInputs = [];
   state.signedFileInputs = [];
+  state.signedFile = null;
   state.invalidated = 0;
   state.refresh = [];
 });
@@ -272,18 +284,80 @@ describe("admin literature page: Affiliate library checkbox", () => {
     expect(screen.getByTestId("library-toggle-note-7").textContent).toContain("Added to the affiliate library by Tom on 2026-11-10");
   });
 
-  it("opens a document through adminSignedFile, never through the private url", async () => {
+  it("opens a pdf in the page and a spreadsheet through the signed link", async () => {
     const opened: string[] = [];
     const openSpy = vi.spyOn(window, "open").mockImplementation((url) => {
       opened.push(String(url));
       return null;
     });
     render(<AffiliateLiteratureAdmin />);
-    fireEvent.click(screen.getByRole("button", { name: "Open Website Improvement Proposal — Lessons from Marazzi USA" }));
+    fireEvent.click(screen.getByRole("button", { name: "View Website Improvement Proposal — Lessons from Marazzi USA" }));
     await waitFor(() => expect(state.signedFileInputs).toEqual([{ id: 7 }]));
-    expect(opened).toEqual(["https://storage.example/signed/guide.md"]);
-    // The row url is a private-bucket path and the storage proxy refuses it.
+    await waitFor(() => expect(screen.getByTestId("pptx-deck-viewer")).toBeTruthy());
+    expect(opened).toEqual([]);
+    expect(screen.queryByRole("button", { name: /Download Website Improvement/ })).toBeNull();
+    openSpy.mockRestore();
+    cleanup();
+
+    state.rows = [{
+      id: 12,
+      title: "Price workbook",
+      category: "Pricing",
+      filename: "prices.xlsx",
+      url: "/manus-storage/library-documents/prices.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      sizeBytes: 100,
+      isPublished: false,
+      sortOrder: 0,
+      visibility: "internal",
+    }];
+    state.signedFile = {
+      url: "https://signed.example/prices.xlsx",
+      filename: "prices.xlsx",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    };
+    state.signedFileInputs = [];
+    const sheetSpy = vi.spyOn(window, "open").mockImplementation((url) => {
+      opened.push(String(url));
+      return null;
+    });
+    render(<AffiliateLiteratureAdmin />);
+    fireEvent.click(screen.getByRole("button", { name: "Open Price workbook" }));
+    await waitFor(() => expect(opened).toEqual(["https://signed.example/prices.xlsx"]));
     expect(opened.some((url) => url.includes("/manus-storage/library-documents/"))).toBe(false);
+    sheetSpy.mockRestore();
+  });
+
+  it("views a PowerPoint in the browser and shows when it was uploaded", async () => {
+    state.rows = [{
+      id: 11,
+      title: "Investor deck",
+      description: "Private pitch",
+      category: "Sales",
+      filename: "investor-deck.pptx",
+      url: "/manus-storage/library-documents/investor-deck.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      sizeBytes: 48000,
+      isPublished: false,
+      sortOrder: 0,
+      visibility: "internal",
+      documentRole: "literature",
+      createdAt: "2026-11-10T18:00:00.000Z",
+    }];
+    state.signedFile = {
+      url: "https://signed.example/investor-deck.pptx",
+      filename: "investor-deck.pptx",
+      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    };
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    render(<AffiliateLiteratureAdmin />);
+    expect(screen.getByTestId("library-uploaded-11").textContent).toBe("Uploaded Nov 10, 2026");
+    fireEvent.click(screen.getByRole("button", { name: "View Investor deck" }));
+    await waitFor(() => expect(screen.getByTestId("pptx-deck-viewer")).toBeTruthy());
+    expect(screen.getByTestId("pptx-slide-host").textContent).toContain("Private decks stay in this browser.");
+    expect(screen.getByTestId("pptx-uploaded").textContent).toBe("Uploaded Nov 10, 2026");
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
     openSpy.mockRestore();
   });
 });

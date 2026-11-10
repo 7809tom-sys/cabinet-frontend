@@ -15,6 +15,16 @@ import AffiliateLiteratureAdmin from "./AffiliateLiteratureAdmin";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+vi.mock("@/components/documents/pptxPreview", () => ({
+  fetchDocumentBytes: vi.fn(async () => new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer),
+  renderInlineDocument: vi.fn(async (host: HTMLElement) => {
+    host.textContent = "Pitch notes stay on this page.";
+    return { destroy() {}, slideCount: 1, updatePagination() {} };
+  }),
+  downloadDocumentBytes: vi.fn(),
+  saveDocumentFromUrl: vi.fn(),
+}));
+
 type Row = Record<string, unknown>;
 
 const rows: Row[] = [
@@ -157,9 +167,11 @@ describe("real tRPC client: Affiliate library tick", () => {
       return null;
     });
     renderAdmin();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Open Kitchen Installation Cost Sheet" })).toBeTruthy());
-    fireEvent.click(screen.getByRole("button", { name: "Open Kitchen Installation Cost Sheet" }));
-    await waitFor(() => expect(opened).toEqual(["https://storage.example/signed/sheet.pdf"]));
+    await waitFor(() => expect(screen.getByRole("button", { name: "View Kitchen Installation Cost Sheet" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "View Kitchen Installation Cost Sheet" }));
+    await waitFor(() => expect(screen.getByTestId("pptx-deck-viewer")).toBeTruthy());
+    expect(opened).toEqual([]);
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
     expect(calls.some((call) => call.path === "affiliateResources.adminSignedFile" && call.type === "query")).toBe(true);
     openSpy.mockRestore();
   });

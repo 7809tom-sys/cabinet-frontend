@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { BookOpen, Download, FileText, Lock, LockOpen, Trash2, Upload } from "lucide-react";
+import { BookOpen, Download, FileText, Lock, LockOpen, Presentation, Trash2, Upload } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,14 @@ import {
   type LibraryCategory,
 } from "@shared/libraryVisibility";
 import { toLibraryDocument, useAffiliateLiteratureAdmin, type LibraryDocument } from "@/lib/libraryAdminProcedures";
+import {
+  DOCUMENT_DOWNLOAD_ENABLED,
+  formatUploadedLabel,
+  inlineDocumentKind,
+  isPowerPointFile,
+} from "@shared/pptxDocument";
+import { saveDocumentFromUrl } from "@/components/documents/pptxPreview";
+import { PptxDeckViewer, type PptxDeckSource } from "@/components/documents/PptxDeckViewer";
 
 function formatBytes(value: number | null) {
   if (!value) return "—";
@@ -41,6 +49,7 @@ export default function AffiliateLiteratureAdmin() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
+  const [deck, setDeck] = useState<PptxDeckSource | null>(null);
 
   const items = (list.data ?? []).map(toLibraryDocument);
   const literature = items.filter((item) => !isReferenceLibraryDocument(item));
@@ -115,10 +124,25 @@ export default function AffiliateLiteratureAdmin() {
    * procedure itself is not a tRPC hook, and the client throws
    * `hooks[lastArg] is not a function` (minified: `e[i] is not a function`).
    */
-  async function openDocument(item: { id: number; title: string }) {
+  async function openDocument(item: LibraryDocument) {
     setOpeningId(item.id);
     try {
       const file = await utils.affiliateResources.adminSignedFile.fetch({ id: item.id });
+      const kind = inlineDocumentKind({
+        filename: item.filename || file.filename,
+        mimeType: item.mimeType || file.mimeType,
+        url: file.url,
+      });
+      if (kind) {
+        setDeck({
+          title: item.title,
+          filename: file.filename ?? item.filename,
+          mimeType: item.mimeType || file.mimeType,
+          sourceUrl: file.url,
+          uploadedAt: item.createdAt,
+        });
+        return;
+      }
       window.open(file.url, "_blank", "noopener,noreferrer");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Could not open ${item.title}.`);
@@ -150,16 +174,40 @@ export default function AffiliateLiteratureAdmin() {
     });
   }
 
+  async function downloadDocument(item: LibraryDocument) {
+    setOpeningId(item.id);
+    try {
+      const file = await utils.affiliateResources.adminSignedFile.fetch({ id: item.id });
+      await saveDocumentFromUrl(file.url, file.filename ?? item.filename);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not download ${item.title}.`);
+    } finally {
+      setOpeningId(null);
+    }
+  }
+
   function renderItem(item: LibraryDocument) {
     const inAffiliate = isAffiliateLibraryDocument(item);
     const isReference = isReferenceLibraryDocument(item);
     const inferred = inferredReferenceReason(item);
     const toggleNote = affiliateLibraryToggleNote(item);
+    const inline = inlineDocumentKind(item);
+    const deckFile = isPowerPointFile(item);
+    const uploadedLabel = inline ? formatUploadedLabel(item.createdAt) : null;
     return (
       <div key={item.id} className="flex flex-wrap items-center gap-3 px-4 py-3" data-testid={`library-document-${item.id}`}>
-        <FileText className="h-5 w-5 shrink-0 text-primary" />
+        {deckFile ? <Presentation className="h-5 w-5 shrink-0 text-primary" /> : <FileText className="h-5 w-5 shrink-0 text-primary" />}
         <div className="min-w-[240px] flex-1">
-          <div className="font-medium">{item.title}</div>
+          <div className="font-medium">
+            {inline ? (
+              <button type="button" className="text-left hover:underline" onClick={() => openDocument(item)}>
+                {item.title}
+              </button>
+            ) : item.title}
+            {uploadedLabel ? (
+              <span className="ml-2 text-xs font-normal text-muted-foreground" data-testid={`library-uploaded-${item.id}`}>{uploadedLabel}</span>
+            ) : null}
+          </div>
           <div className="text-xs text-muted-foreground">{item.filename} · {formatBytes(item.sizeBytes)} · {item.category}</div>
           {item.description && <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</div>}
           {isReference && (
@@ -206,9 +254,23 @@ export default function AffiliateLiteratureAdmin() {
             className="gap-1.5"
             disabled={openingId === item.id}
             onClick={() => openDocument(item)}
-            aria-label={`Open ${item.title}`}
+            aria-label={`${inline ? "View" : "Open"} ${item.title}`}
           >
-            <Download className="h-3.5 w-3.5" />{openingId === item.id ? "Opening…" : "Open"}
+            {deckFile ? <Presentation className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+            {openingId === item.id ? "Opening…" : inline ? "View" : "Open"}
+          </Button>
+        ) : null}
+        {DOCUMENT_DOWNLOAD_ENABLED && inline && item.url ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            disabled={openingId === item.id}
+            onClick={() => downloadDocument(item)}
+            aria-label={`Download ${item.title}`}
+          >
+            <Download className="h-3.5 w-3.5" /> Download
           </Button>
         ) : null}
         <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => remove.mutate({ id: item.id })} aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></Button>
@@ -282,6 +344,7 @@ export default function AffiliateLiteratureAdmin() {
           )}
         </CardContent>
       </Card>
+      <PptxDeckViewer open={deck != null} deck={deck} onClose={() => setDeck(null)} />
     </div>
   );
 }

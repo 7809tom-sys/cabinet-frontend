@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   BookOpen, CheckCircle2, Circle, Copy, Download, ExternalLink, PlayCircle,
 } from "lucide-react";
-import { resourceMatchesQuery, youtubeNocookieEmbed, type AffiliateResourceMeta } from "@shared/affiliateResources";
-import { SCRIPT_SITUATIONS } from "@shared/affiliateResources";
+import { resourceMatchesQuery, SCRIPT_SITUATIONS, youtubeNocookieEmbed, type AffiliateResourceMeta } from "@shared/affiliateResources";
+import { DOCUMENT_DOWNLOAD_ENABLED, formatUploadedLabel, inlineDocumentKind } from "@shared/pptxDocument";
+import { saveDocumentFromUrl } from "@/components/documents/pptxPreview";
+import { PptxDeckViewer, type PptxDeckSource } from "@/components/documents/PptxDeckViewer";
 
 export type EducationResource = {
   id: number;
@@ -31,12 +34,15 @@ export type LiteratureCard = {
   description: string | null;
   category: string;
   url: string;
-  filename: string;
+  filename?: string | null;
+  mimeType?: string | null;
+  createdAt?: Date | string | null;
 };
 
 type Progress = { resourceId: number; completed: boolean; progressPercent: number };
 type Section = "start" | "scripts" | "guides" | "videos" | "printed" | "social" | "tips";
-type SignedFile = { url: string; mimeType: string | null; filename: string | null };
+export type SignedFile = { url: string; mimeType: string | null; filename: string | null };
+export type LiteratureSignedFile = SignedFile & { createdAt?: Date | string | null };
 
 async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
@@ -72,6 +78,7 @@ export function AffiliateResourceBrowser({
   onToggleComplete,
   onVideoProgress,
   onRequestFile,
+  onRequestLiterature,
 }: {
   section: Section;
   items: EducationResource[];
@@ -84,6 +91,7 @@ export function AffiliateResourceBrowser({
   onToggleComplete: (resource: EducationResource, completed: boolean) => void;
   onVideoProgress: (resource: EducationResource, progressPercent: number, completed: boolean) => void;
   onRequestFile: (id: number, kind: "file" | "thumbnail") => Promise<SignedFile>;
+  onRequestLiterature?: (id: number) => Promise<LiteratureSignedFile>;
 }) {
   const visible = useMemo(
     () => items.filter((item) => resourceMatchesQuery(item, query)),
@@ -138,6 +146,7 @@ export function AffiliateResourceBrowser({
         storeName={storeName}
         logoUrl={logoUrl}
         onRequestFile={onRequestFile}
+        onRequestLiterature={onRequestLiterature}
       />
     );
   }
@@ -302,31 +311,82 @@ function Printed({
   storeName,
   logoUrl,
   onRequestFile,
+  onRequestLiterature,
 }: {
   items: EducationResource[];
   literature: LiteratureCard[];
   storeName: string;
   logoUrl: string | null;
   onRequestFile: (id: number, kind: "file" | "thumbnail") => Promise<SignedFile>;
+  onRequestLiterature?: (id: number) => Promise<LiteratureSignedFile>;
 }) {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [deck, setDeck] = useState<PptxDeckSource | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  function openDeck(source: PptxDeckSource) {
+    setPreviewUrl(null);
+    setDeck(source);
+  }
+
+  async function viewLiterature(item: LiteratureCard) {
+    if (!onRequestLiterature) return;
+    setOpeningId(`lit-${item.id}`);
+    try {
+      const file = await onRequestLiterature(item.id);
+      openDeck({
+        title: item.title,
+        filename: file.filename ?? item.filename,
+        sourceUrl: file.url,
+        uploadedAt: file.createdAt ?? item.createdAt,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not open ${item.title}.`);
+    } finally {
+      setOpeningId(null);
+    }
+  }
+
+  async function viewResource(item: EducationResource) {
+    setOpeningId(`res-${item.id}`);
+    try {
+      const file = await onRequestFile(item.id, "file");
+      openDeck({
+        title: item.title,
+        filename: file.filename ?? item.filename,
+        sourceUrl: file.url,
+        uploadedAt: item.createdAt,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : `Could not open ${item.title}.`);
+    } finally {
+      setOpeningId(null);
+    }
+  }
+
   return (
     <div className="space-y-4" data-testid="printed-materials">
       <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
         <p className="font-medium text-foreground">Printed Materials</p>
         <p className="mt-1">No Cura catalog was found in this project. Brochures, spec sheets, and door-style cards show up here after an admin publishes them.</p>
         {logoUrl ? (
-          <p className="mt-2">Your store logo is on file for {storeName}. Uploaded PDFs download as provided. The business card and phone strip in Share & Promote already use your store name.</p>
+          <p className="mt-2">Your store logo is on file for {storeName}. PDFs, Word notes, and PowerPoint decks open in this page. The business card and phone strip in Share & Promote already use your store name.</p>
         ) : (
-          <p className="mt-2">Add a logo in Customize Store if you want it on the business card in Share & Promote. Uploaded PDFs download as provided.</p>
+          <p className="mt-2">Add a logo in Customize Store if you want it on the business card in Share & Promote. PDFs, Word notes, and PowerPoint decks open in this page.</p>
         )}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        {items.map((item) => (
+        {items.map((item) => {
+          const inline = inlineDocumentKind(item);
+          const uploadedLabel = inline ? formatUploadedLabel(item.createdAt) : null;
+          return (
           <article key={item.id} className="rounded-lg border border-border p-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <h3 className="font-medium text-sm">{item.title}</h3>
+                <h3 className="font-medium text-sm">
+                  {item.title}
+                  {uploadedLabel ? <span className="ml-2 font-normal text-muted-foreground" data-testid={`resource-uploaded-${item.id}`}>{uploadedLabel}</span> : null}
+                </h3>
                 <p className="text-xs text-muted-foreground mt-1">{item.category}</p>
               </div>
               {logoUrl ? <img src={logoUrl} alt="" className="h-8 w-8 rounded object-contain" /> : null}
@@ -335,37 +395,81 @@ function Printed({
             <div className="flex flex-wrap gap-2">
               {item.hasFile ? (
                 <>
-                  <Button type="button" size="sm" variant="outline" onClick={() => onRequestFile(item.id, "file").then((file) => setPreviewUrl(file.url))}>Preview</Button>
-                  <Button type="button" size="sm" className="gap-1.5" onClick={() => onRequestFile(item.id, "file").then((file) => {
-                    const anchor = document.createElement("a");
-                    anchor.href = file.url;
-                    anchor.target = "_blank";
-                    anchor.rel = "noopener noreferrer";
-                    anchor.download = file.filename ?? "resource";
-                    anchor.click();
-                  })}>
-                    <Download className="h-3.5 w-3.5" /> Download
-                  </Button>
+                  {inline ? (
+                    <Button type="button" size="sm" variant="outline" disabled={openingId === `res-${item.id}`} onClick={() => viewResource(item)} aria-label={`View ${item.title}`}>
+                      {openingId === `res-${item.id}` ? "Opening…" : "View"}
+                    </Button>
+                  ) : (
+                    <Button type="button" size="sm" variant="outline" onClick={() => onRequestFile(item.id, "file").then((file) => setPreviewUrl(file.url))}>Preview</Button>
+                  )}
+                  {!inline ? (
+                    <Button type="button" size="sm" className="gap-1.5" aria-label={`Download ${item.title}`} onClick={() => onRequestFile(item.id, "file").then((file) => {
+                      const anchor = document.createElement("a");
+                      anchor.href = file.url;
+                      anchor.target = "_blank";
+                      anchor.rel = "noopener noreferrer";
+                      anchor.download = file.filename ?? "resource";
+                      anchor.click();
+                    })}>
+                      <Download className="h-3.5 w-3.5" /> Download
+                    </Button>
+                  ) : null}
+                  {DOCUMENT_DOWNLOAD_ENABLED && inline ? (
+                    <Button type="button" size="sm" className="gap-1.5" aria-label={`Download ${item.title}`} onClick={() => onRequestFile(item.id, "file").then((file) => {
+                      void saveDocumentFromUrl(file.url, file.filename);
+                    })}>
+                      <Download className="h-3.5 w-3.5" /> Download
+                    </Button>
+                  ) : null}
                 </>
               ) : <span className="text-xs text-muted-foreground">No file uploaded yet.</span>}
             </div>
           </article>
-        ))}
-        {literature.map((item) => (
+          );
+        })}
+        {literature.map((item) => {
+          const inline = inlineDocumentKind(item);
+          const uploadedLabel = inline ? formatUploadedLabel(item.createdAt) : null;
+          return (
           <article key={`lit-${item.id}`} className="rounded-lg border border-border p-4 space-y-3">
-            <h3 className="font-medium text-sm">{item.title}</h3>
+            <h3 className="font-medium text-sm">
+              {inline ? (
+                <button type="button" className="text-left hover:underline" onClick={() => viewLiterature(item)}>{item.title}</button>
+              ) : item.title}
+              {uploadedLabel ? <span className="ml-2 font-normal text-muted-foreground" data-testid={`literature-uploaded-${item.id}`}>{uploadedLabel}</span> : null}
+            </h3>
             <p className="text-xs text-muted-foreground">{item.category}</p>
             {item.description ? <p className="text-sm text-muted-foreground">{item.description}</p> : null}
-            <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-primary">
-              <ExternalLink className="h-3.5 w-3.5" /> Open published literature
-            </a>
+            {inline ? (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" size="sm" disabled={!onRequestLiterature || openingId === `lit-${item.id}`} onClick={() => viewLiterature(item)} aria-label={`View ${item.title}`}>
+                  {openingId === `lit-${item.id}` ? "Opening…" : "View"}
+                </Button>
+                {DOCUMENT_DOWNLOAD_ENABLED ? (
+                  <Button type="button" size="sm" variant="outline" className="gap-1.5" disabled={!onRequestLiterature || openingId === `lit-${item.id}`} aria-label={`Download ${item.title}`} onClick={() => {
+                    if (!onRequestLiterature) return;
+                    onRequestLiterature(item.id).then((file) => saveDocumentFromUrl(file.url, file.filename ?? item.filename)).catch((error) => {
+                      toast.error(error instanceof Error ? error.message : `Could not download ${item.title}.`);
+                    });
+                  }}>
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <a href={item.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm text-primary">
+                <ExternalLink className="h-3.5 w-3.5" /> Open published literature
+              </a>
+            )}
           </article>
-        ))}
+          );
+        })}
       </div>
       {!items.length && !literature.length ? <Empty label="Nothing is published in Printed Materials yet." /> : null}
       {previewUrl ? (
         <iframe title="PDF preview" src={previewUrl} className="h-[480px] w-full rounded-md border border-border" />
       ) : null}
+      <PptxDeckViewer open={deck != null} deck={deck} onClose={() => setDeck(null)} />
     </div>
   );
 }
