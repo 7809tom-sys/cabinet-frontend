@@ -207,25 +207,6 @@ function turnAtEdge(
   return turns.includes(45) ? 45 : turns[0]!;
 }
 
-/** An adjoining run whose cabinets reach the shared vertex closes the corner. */
-function adjoiningRunReachesVertex(
-  room: RoomData,
-  frame: WallRunFrame,
-  edge: RunEdge,
-  placed: readonly PlacedCabinet[],
-): boolean {
-  const point = edgePoint(frame, edge);
-  return framesMeetingAt(room, frame, edge).some((other) => {
-    const atOtherStart = Math.hypot(other.start.x - point.x, other.start.y - point.y) <= 0.5;
-    return placed.some((item) => {
-      if (!isRunPiece(item) || cabinetWall(item, room) !== other.id) return false;
-      const span = runSpanOf(item, other.id, room);
-      const distance = atOtherStart ? Math.abs(span.start) : Math.abs(other.length - span.end);
-      return distance <= insideCornerHoldIn(45, Number(item.depth) || STD.BASE_DEPTH) + DISHWASHER_PANEL_MAX_WIDTH_IN;
-    });
-  });
-}
-
 /** A user-chosen panel already covers this dishwasher edge. */
 function edgeAlreadyFinished(
   placed: readonly PlacedCabinet[],
@@ -301,6 +282,9 @@ export function syncDishwasherPanels(input: {
   };
 
   for (const dishwasher of dishwashers) {
+    // Island ends are finished by applyExposedDishwasherPanelRule. A room-wall
+    // guess would put the return on the nearest wall instead of the island.
+    if (dishwasher.islandFace) continue;
     const wallId = cabinetWall(dishwasher, room) as string | null;
     if (!wallId) continue;
     const frame = roomWallRunFrames(room).find((candidate) => candidate.id === wallId) ?? null;
@@ -326,10 +310,9 @@ export function syncDishwasherPanels(input: {
       const hold = insideCornerHoldIn(45, Number(dishwasher.depth) || STD.BASE_DEPTH);
       const distanceToVertex = edge === "start" ? own.start : Math.max(0, frame.length - own.end);
       const turn = turnAtEdge(room, frame, edge, distanceToVertex, hold);
-      // The run ends here: it simply stops, or it turns onto another run. A
-      // square corner closed by the adjoining run needs nothing. A square
-      // corner with no cabinet on the return is an open side, not a closed one.
-      if (turn != null && turn !== 45 && adjoiningRunReachesVertex(room, frame, edge, withoutPanels)) continue;
+      // A square corner is a wall. Nov 10 2026: a side that touches a wall does
+      // not get a dishwasher panel. A 45° wedge is not a flush wall.
+      if (turn != null && turn !== 45) continue;
       // The owner's switches unpublish a rule without disturbing any other panel.
       // The run-end and the 45 degree turn are separate rules, so one can be
       // turned off without losing the other.
@@ -345,7 +328,15 @@ export function syncDishwasherPanels(input: {
       }
 
       const along = edge === "end" ? own.end : own.start - width;
-      if (along < -EPS || along + width > frame.length + EPS) continue;
+      // A peninsula end is open air. The return may finish that end even when
+      // the panel's outer face lands past the saved run length.
+      const pastEnd = along + width - frame.length;
+      const beforeStart = -along;
+      const peninsulaOverflow = frame.kind === "peninsula" && (
+        (edge === "end" && pastEnd > EPS && pastEnd <= width + EPS)
+        || (edge === "start" && beforeStart > EPS && beforeStart <= width + EPS)
+      );
+      if ((along < -EPS || along + width > frame.length + EPS) && !peninsulaOverflow) continue;
 
       if (!stock || stock.price == null || stock.price <= 0) {
         warnings.push({
@@ -380,6 +371,7 @@ export function syncDishwasherPanels(input: {
         rotation: spot.rotation,
         wallId: spot.wallId ?? wallId,
         wallOffset: spot.wallOffset ?? along,
+        peninsulaSide: spot.peninsulaSide ?? dishwasher.peninsulaSide ?? null,
         mountBottom: 0,
         numberOfDoors: 0,
         numberOfDrawers: 0,

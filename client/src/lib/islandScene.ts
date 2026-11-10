@@ -3,6 +3,7 @@ import {
   STD,
   bearsIslandCountertop,
   bearsCountertop,
+  islandDishwasherPanelOverhangs,
   cabinetCollisionDetail,
   clampIslandToRoom,
   effectiveStyleId,
@@ -858,12 +859,14 @@ export function islandCountertopRects(island: IslandZone, placed: PlacedCabinet[
   }
   return groups.flatMap((group) => {
     const bounds = islandCountertopSupportBounds(group);
-    return bounds ? [orientIslandCountertopRect({
-      x: bounds.x - overhang,
-      y: bounds.y - overhang,
-      width: bounds.width + overhang * 2,
-      depth: bounds.depth + overhang * 2,
-    }, island, rotation)] : [];
+    if (!bounds) return [];
+    const reveal = islandDishwasherPanelOverhangs(group, overhang);
+    return [orientIslandCountertopRect({
+      x: bounds.x - reveal.left,
+      y: bounds.y - reveal.top,
+      width: bounds.width + reveal.left + reveal.right,
+      depth: bounds.depth + reveal.top + reveal.bottom,
+    }, island, rotation)];
   });
 }
 
@@ -955,12 +958,14 @@ export function islandCountertopRect(island: IslandZone, placed: PlacedCabinet[]
   const supports = placed.filter((item) => isIslandAssemblyMember(item, island, placed) && bearsIslandCountertop(item));
   const bounds = islandCountertopSupportBounds(supports);
   const overhang = islandCountertopOverhangIn(island);
-  return bounds ? {
-    x: bounds.x - overhang,
-    y: bounds.y - overhang,
-    width: bounds.width + overhang * 2,
-    depth: bounds.depth + overhang * 2,
-  } : null;
+  if (!bounds) return null;
+  const reveal = islandDishwasherPanelOverhangs(supports, overhang);
+  return {
+    x: bounds.x - reveal.left,
+    y: bounds.y - reveal.top,
+    width: bounds.width + reveal.left + reveal.right,
+    depth: bounds.depth + reveal.top + reveal.bottom,
+  };
 }
 
 /**

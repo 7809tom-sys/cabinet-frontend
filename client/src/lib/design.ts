@@ -7709,6 +7709,41 @@ export function trimPiecesNeeded(
 export const COUNTERTOP_DEPTH_IN = 25.5;
 
 /**
+ * Overhang on each side of an island support box. A dishwasher return that is
+ * the outer face of that box ends flush: the slab stops on the panel, and the
+ * other sides keep the ordinary reveal. With no return panel every side is
+ * the requested overhang.
+ */
+export function islandDishwasherPanelOverhangs(
+  supports: readonly PlacedCabinet[],
+  overhang: number,
+): { left: number; right: number; top: number; bottom: number } {
+  const reveal = { left: overhang, right: overhang, top: overhang, bottom: overhang };
+  if (supports.length === 0) return reveal;
+  const boxes = supports.map((item) => ({ item, footprint: placedFootprint(item) }));
+  const minX = Math.min(...boxes.map(({ item }) => item.x));
+  const minY = Math.min(...boxes.map(({ item }) => item.y));
+  const maxX = Math.max(...boxes.map(({ item, footprint }) => item.x + footprint.w));
+  const maxY = Math.max(...boxes.map(({ item, footprint }) => item.y + footprint.d));
+  for (const { item, footprint } of boxes) {
+    if (item.autoPlacedReason !== DISHWASHER_RUN_END_PANEL_REASON) continue;
+    const right = item.x + footprint.w;
+    const bottom = item.y + footprint.d;
+    // The return's thin plan face is the finished end. Do not cancel the
+    // front or back reveal just because the panel is as deep as the run.
+    if (footprint.w <= 6.01) {
+      if (Math.abs(item.x - minX) <= 0.05) reveal.left = 0;
+      if (Math.abs(right - maxX) <= 0.05) reveal.right = 0;
+    }
+    if (footprint.d <= 6.01) {
+      if (Math.abs(item.y - minY) <= 0.05) reveal.top = 0;
+      if (Math.abs(bottom - maxY) <= 0.05) reveal.bottom = 0;
+    }
+  }
+  return reveal;
+}
+
+/**
  * A bathroom vanity keeps its catalog body depth in the shared countertop
  * geometry. Pelican vanity bases are 21 inches deep, so their finished top is
  * 22.5 inches (the standard 1.5-inch front overhang), not the kitchen-only
@@ -7811,8 +7846,9 @@ export function countertopArea(
     const overhang = island.countertopOverhang == null || !Number.isFinite(configuredOverhang)
       ? 1.5
       : Math.max(0, Math.min(24, configuredOverhang));
-    const slabWidth = island.countertopWidth ?? maxX - minX + overhang * 2;
-    const slabDepth = island.countertopDepth ?? maxY - minY + overhang * 2;
+    const reveal = islandDishwasherPanelOverhangs(islandSupports, overhang);
+    const slabWidth = island.countertopWidth ?? maxX - minX + reveal.left + reveal.right;
+    const slabDepth = island.countertopDepth ?? maxY - minY + reveal.top + reveal.bottom;
     islandSquareIn = slabWidth * slabDepth;
     squareIn += islandSquareIn;
   }
@@ -13390,6 +13426,8 @@ export function peninsulaCountertopSurface(
   room: RoomData,
   requestedStartIn = 0,
   requestedLengthIn = run.length,
+  /** Extra inches a dishwasher return may carry the slab past the saved run. */
+  overflowPastEndIn = 0,
 ): CountertopSurface {
   // A saved design can carry former 12/15-inch seating or pony-wall choices,
   // but countertop geometry now follows only the actual base-cabinet support.
@@ -13401,9 +13439,12 @@ export function peninsulaCountertopSurface(
   const oppositeSideExtension = peninsulaLowerWorktopOppositeSideExtensionIn(run, room);
   const slabDepth = COUNTERTOP_DEPTH_IN + oppositeSideExtension;
   const runLength = Math.max(0, Number(run.length) || 0);
-  const startIn = Math.max(0, Math.min(runLength, Number(requestedStartIn) || 0));
-  const lengthIn = Math.max(0, Math.min(runLength - startIn, Number(requestedLengthIn) || 0));
-  const spot = wallPlacementAt(startIn, lengthIn, slabDepth, run.id as WallSide, room, run.cabinetSide ?? "left");
+  const overflowIn = Math.max(0, Number(overflowPastEndIn) || 0);
+  const cap = runLength + overflowIn;
+  const startIn = Math.max(0, Math.min(cap, Number(requestedStartIn) || 0));
+  const lengthIn = Math.max(0, Math.min(cap - startIn, Number(requestedLengthIn) || 0));
+  const extendsPastRun = startIn + lengthIn > runLength + COLLISION_EPSILON_IN;
+  const spot = wallPlacementAt(startIn, lengthIn, slabDepth, run.id as WallSide, room, run.cabinetSide ?? "left", !extendsPastRun);
   const footprint = placedFootprint({
     uid: `peninsula-countertop-${run.id}-${startIn}`,
     cabinetId: 0,
@@ -14664,8 +14705,13 @@ function peninsulaCountertopSupportSegments(
       // A corner cabinet supports the adjacent return only at its shared start.
       // Its own run still uses its stored wall offset above.
       : 0;
-    const start = Math.max(0, Math.min(run.length, offset));
-    const end = Math.max(start, Math.min(run.length, start + span));
+    // A dishwasher return may finish a peninsula end a panel-width past the
+    // saved run. Other supports stay clipped to the run.
+    const endCap = cabinet.autoPlacedReason === DISHWASHER_RUN_END_PANEL_REASON
+      ? run.length + span
+      : run.length;
+    const start = Math.max(0, Math.min(endCap, offset));
+    const end = Math.max(start, Math.min(endCap, start + span));
     return end - start > COLLISION_EPSILON_IN ? [{ start, end }] : [];
   }).sort((left, right) => left.start - right.start || left.end - right.end);
 
@@ -15096,12 +15142,12 @@ export function countertopSurfaces(
         if (opening.start >= support.end - COLLISION_EPSILON_IN) break;
         const clippedStart = Math.max(cursor, opening.start);
         if (clippedStart - cursor > COLLISION_EPSILON_IN) {
-          out.push(peninsulaCountertopSurface(run, room, cursor, clippedStart - cursor));
+          out.push(peninsulaCountertopSurface(run, room, cursor, clippedStart - cursor, Math.max(0, support.end - run.length)));
         }
         cursor = Math.max(cursor, Math.min(support.end, opening.end));
       }
       if (support.end - cursor > COLLISION_EPSILON_IN) {
-        out.push(peninsulaCountertopSurface(run, room, cursor, support.end - cursor));
+        out.push(peninsulaCountertopSurface(run, room, cursor, support.end - cursor, Math.max(0, support.end - run.length)));
       }
     }
   }
@@ -15179,10 +15225,11 @@ export function countertopSurfaces(
       const minY = Math.min(...footprints.map(({ item }) => item.y));
       const maxX = Math.max(...footprints.map(({ item, footprint }) => item.x + footprint.w));
       const maxY = Math.max(...footprints.map(({ item, footprint }) => item.y + footprint.d));
-      const width = island.countertopWidth ?? maxX - minX + 3;
-      const depth = island.countertopDepth ?? maxY - minY + 3;
-      const centerX = (minX + maxX) / 2 + Number(island.countertopOffsetX ?? 0);
-      const centerY = (minY + maxY) / 2 + Number(island.countertopOffsetY ?? 0);
+      const reveal = islandDishwasherPanelOverhangs(supports, 1.5);
+      const width = island.countertopWidth ?? maxX - minX + reveal.left + reveal.right;
+      const depth = island.countertopDepth ?? maxY - minY + reveal.top + reveal.bottom;
+      const centerX = (minX + maxX) / 2 + (reveal.right - reveal.left) / 2 + Number(island.countertopOffsetX ?? 0);
+      const centerY = (minY + maxY) / 2 + (reveal.bottom - reveal.top) / 2 + Number(island.countertopOffsetY ?? 0);
       out.push({ x: centerX - width / 2, y: centerY - depth / 2, width, depth, kind: "island" });
     }
   }

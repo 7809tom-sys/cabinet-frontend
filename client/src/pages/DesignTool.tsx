@@ -168,7 +168,7 @@ import { withFramelessExposedFinish } from "@/lib/framelessExposedFinish";
 import { withChosenProfiles, useChosenDoorProfiles } from "@/lib/useChosenDoorProfiles";
 import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
-import { syncDishwasherPanels, type DishwasherPanelStock, type DishwasherPanelWarning } from "@/lib/dishwasherPanelRule";
+import { applyExposedDishwasherPanelRule, type DishwasherPanelStock, type DishwasherPanelWarning } from "@/lib/exposedDishwasherPanelRule";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
@@ -5660,10 +5660,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     setExposedPanelWarnings((prev) => sameExposedPanelWarnings(prev, plan.warnings) ? prev : plan.warnings);
   }, [aefSpecPanelsLoading, catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId, designStyleId]);
-  // Owner rule: a dishwasher that ends a run, or a run that turns at 45° on it,
-  // carries a DWR dishwasher panel. This runs after the exposed-side pass so the
-  // dishwasher's measured run end is final, and it is idempotent: a settled plan
-  // is returned by reference, so it can never start a placement loop.
+  // Owner rule (Nov 10 2026): an exposed dishwasher side gets that line's own
+  // dishwasher panel. Auto Design calls the same applyExposedDishwasherPanelRule.
+  // This runs after the exposed-side pass, and a settled plan is returned by
+  // reference so it cannot start a placement loop.
   const dishwasherPanelStockCatalog = useMemo<DishwasherPanelStock[]>(() => autoPanelCatalog.map((item) => ({
     id: item.id,
     masterCode: item.masterCode,
@@ -5677,10 +5677,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   })), [autoPanelCatalog, priceMap, designStyleId]);
   useEffect(() => {
     const current = placedRef.current;
-    const plan = syncDishwasherPanels({
+    const styles = (doorStyles ?? []) as Array<{ id: number; ourName?: string | null; styleCode?: string | null }>;
+    const activeStyle = designStyleId != null ? styles.find((style) => style.id === designStyleId) : undefined;
+    const lineLabel = activeStyle?.ourName?.trim() || activeStyle?.styleCode?.trim() || (designStyleId != null ? `Cabinet line ${designStyleId}` : "This cabinet line");
+    const plan = applyExposedDishwasherPanelRule({
       placed: current,
       room: roomRef.current,
+      island,
       catalog: dishwasherPanelStockCatalog,
+      lineLabel,
+      pricesReady: Boolean(designStyleId) && !catalogFillersLoading && !aefSpecPanelsLoading && priceRowsFetched,
     });
     if (plan.placed !== current) {
       placedRef.current = plan.placed;
@@ -5691,7 +5697,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         && prev.every((warning, index) => warning.id === plan.warnings[index]?.id && warning.message === plan.warnings[index]?.message)) return prev;
       return plan.warnings;
     });
-  }, [dishwasherPanelStockCatalog, placed, setPlaced]);
+  }, [aefSpecPanelsLoading, catalogFillersLoading, designStyleId, dishwasherPanelStockCatalog, doorStyles, island, placed, priceRowsFetched, setPlaced]);
 
   // Issue #354 items 3 and 4 (Tom): an exposed side beside a range or microwave,
   // or the side a smaller neighbour leaves showing, gets its 3/4" book panel
@@ -8221,9 +8227,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         notes: opening.faucetClearanceNote,
       });
     }
+    dishwasherPanelWarnings.forEach((warning, index) => {
+      if (!warning.id.startsWith("missing-price:")) return;
+      out.push({
+        code: `NOTE-${index + 1}`,
+        description: warning.message,
+        category: "Design note",
+        qty: 1,
+        unitPrice: null,
+        notes: warning.message,
+      });
+    });
 
     return out;
-  }, [designStyleName, activeTrims, cartableLines, distributorNameById, lockedDistributorId, openings, trimPriceByCode]);
+  }, [designStyleName, activeTrims, cartableLines, dishwasherPanelWarnings, distributorNameById, lockedDistributorId, openings, trimPriceByCode]);
 
   const materialsListRows = useMemo(() => buildMaterialsListRows({
     buildRows,
@@ -16960,7 +16977,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // change; or at an open run end). Each notice says which side and why.
   const designCheckWarnings = [
     ...exposedPanelWarnings,
-    ...dishwasherPanelWarnings,
+    ...dishwasherPanelWarnings.filter((warning) => !warning.id.startsWith("missing-price:")),
     ...sidePanelWarnings,
     // The exposed-side panels take real run width, so a run that no longer fits
     // is a visible refusal here, not a silent overrun.
@@ -17001,6 +17018,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         data-canvas-only={canvasOnly ? "true" : undefined}
         className={canvasOnly ? "fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-background" : "flex flex-col h-full min-h-0"}
       >
+      {dishwasherPanelWarnings.some((warning) => warning.id.startsWith("missing-price:")) && !canvasOnly && (
+        <div data-testid="dishwasher-panel-note" role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+          <p className="font-semibold">Dishwasher panel</p>
+          <ul className="mt-1 list-disc pl-5">
+            {dishwasherPanelWarnings.filter((warning) => warning.id.startsWith("missing-price:")).map((warning) => (
+              <li key={warning.id}>{warning.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {designCheckNotice.visible && designCheckWarnings.length > 0 && !canvasOnly && (
         <div data-testid="design-check-panel" role="status" className="flex items-start justify-between gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
           <div>
