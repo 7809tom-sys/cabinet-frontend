@@ -11505,6 +11505,10 @@ function addPelicanBathroomFixture(
     nichePickBox.position.set(0, Math.max(profile.heightIn * INCH, 0.12) / 2, Math.max(profile.depthIn * INCH, 0.06) / 2);
     nichePickBox.name = "shower-niche-pick-box";
     add(nichePickBox, "shower-niche-pick-box");
+    // `add` sets cast/receiveShadow; keep the pick box out of the render entirely.
+    // `visible = false` still raycasts (unlike turning off `layers`), which is what
+    // makes the niche selectable where its thin shells are not.
+    nichePickBox.visible = false;
   } else if (profile.kind === "shower-wall") {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, Math.max(depth, 0.02)), new THREE.MeshStandardMaterial({ color: "#e7e2dc", roughness: 0.72 }));
     panel.position.y = height / 2;
