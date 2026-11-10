@@ -20,6 +20,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/auto
 import type { AutoDesignInputs } from "@/lib/autoDesignAutoBuild";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
 import { designStyleIds } from "@/lib/acceptedDoorAppearance";
+import { buildDesignCabinetCartLines } from "@/lib/designCartLines";
 import {
   designDefaultStyleId,
   distinctStyleIds,
@@ -290,8 +291,8 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     expect(designToolSource.match(/finish=\{activeFinish\}/g)).toHaveLength(1);
     expect(designToolSource).toContain("return (sid != null && finishById.get(sid)) || designFinish;");
     expect(designToolSource).toContain("return (sid != null && panelKindById.get(sid)) || designPanelKind;");
-    expect(designToolSource).toContain("dropIneligibleSkins(current, designStyle)");
-    expect(designToolSource).toContain("hickorySkinSuggestions(placed, room, designStyle as never)");
+    expect(designToolSource).toContain("dropIneligibleSkins(current, skinStyleForCab)");
+    expect(designToolSource).toContain("hickorySkinSuggestions(placed, room, skinStyleForCab)");
     const withoutNameDefinition = designToolSource.replace(/^\s+const designStyleName = .*$/m, "");
     expect(withoutNameDefinition).not.toMatch(/\?\? activeFinish\b|\?\? activeStyleName\b/);
     // The selected cabinet shows its own finish (Color 1 when it inherits).
@@ -300,5 +301,69 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     // Color trace resolves inherited cabinets against Color 1.
     expect(designToolSource).toContain(": null) ?? designStyle;");
     expect(designToolSource).toContain(": designKitchenDoorColor;");
+  });
+
+  it("Auto Design, Auto-Fill, fillers and Rule 10 panels read the Color 1 catalog, not the lit brush", () => {
+    const query = (placement: string) => {
+      const start = designToolSource.indexOf(`placement: "${placement}",\n    styleId:`);
+      return designToolSource.slice(start, start + 120);
+    };
+    expect(designToolSource).toMatch(/autoFillCabinets, isLoading: autoFillCabinetsLoading \} = trpc\.design\.placeableCabinets\.useQuery\(\{\s+placement: "base",\s+styleId: designStyleId \?\? undefined,/);
+    expect(designToolSource).toMatch(/threeDAccessoryCatalog, isLoading: catalogFillersLoading \} = trpc\.design\.placeableCabinets\.useQuery\(\{\s+placement: "accessory",\s+styleId: designStyleId \?\? undefined,/);
+    expect(designToolSource).toContain("}, { enabled: designStyleId != null });");
+    expect(designToolSource).toMatch(/wallCabPool, isLoading: wallCabPoolLoading \} = trpc\.design\.placeableCabinets\.useQuery\(\{\s+placement: "wall",\s+styleId: designStyleId \?\? undefined,/);
+    expect(query("tall")).toContain("styleId: designStyleId ?? undefined,");
+    expect(designToolSource).toMatch(/const \{ data: liveMasterCabinets \} = trpc\.design\.placeableCabinets\.useQuery\(\s+\{\s+styleId: designStyleId \?\? undefined,/);
+    // The palette and the Corner tab still list what the next placed cabinet (the brush) can be.
+    expect(designToolSource).toMatch(/Narrow to the chosen line \+ style so only purchasable cabinets show\.\s+styleId: styleId \?\? undefined,/);
+    // A repaired angled filler pair takes its own cabinet's finish.
+    expect(designToolSource).toContain("(cabinet) => cabinet.styleId ?? null,");
+  });
+
+  it("inventory and sink-base hooks re-run when Color 1 changes", () => {
+    const sinkSwap = designToolSource.slice(designToolSource.indexOf("const result = applyAutomaticSinkBaseSubstitutions({"), designToolSource.indexOf("const undoSinkBaseSwap = useCallback"));
+    expect(sinkSwap).toMatch(/sinkBaseOutOfStock,\s+designStyleId,\s+\]\);/);
+    expect(sinkSwap).not.toMatch(/^\s+styleId,$/m);
+    const choose = designToolSource.slice(designToolSource.indexOf("const chooseStockPrompt = useCallback("), designToolSource.indexOf("const applyReadjustOption = useCallback("));
+    expect(choose).toMatch(/setPlaced, setSelectedUid, designStyleId\]\);/);
+    const swap = designToolSource.slice(designToolSource.indexOf("const swapInventoryCabinet = useCallback("), designToolSource.indexOf("const swapInventoryCabinet = useCallback(") + 1600);
+    expect(swap).toContain("stockPromptUnlocked, designStyleId]);");
+    for (const body of [sinkSwap, choose, swap]) expect(body).not.toMatch(/[\[ ]styleId[,\]]/);
+  });
+
+  it("skins are judged per cabinet: its own finish, else Color 1", () => {
+    expect(designToolSource).toContain("setPlaced((current) => dropIneligibleSkins(current, skinStyleForCab));");
+    expect(designToolSource).toContain("return hickorySkinSuggestions(placed, room, skinStyleForCab);");
+    expect(designToolSource).toMatch(/const skinStyleForCab = useCallback\(\s+\(cabinet: \{ styleId\?: number \| null \}\) => \(cabinet\.styleId != null\s+\? \(doorStyles \?\? \[\]\)\.find\(\(style\) => style\.id === cabinet\.styleId\) \?\? designStyle\s+: designStyle\)/);
+    expect(designToolSource).toContain("dropIneligibleSkins(pricedPlaced, (item) => (item.styleId != null");
+  });
+
+  it("Color 2 lit with no Color 2 chosen still prices every inherited cabinet from Color 1", () => {
+    const designStyleId = designDefaultStyleId(null, AERO_BLANC.id, "B");
+    expect(designStyleId).toBe(AERO_BLANC.id);
+    const placed = [
+      { uid: "b1", cabinetId: 11, masterCode: "B24", description: "Base 24", placement: "base", x: 0, y: 0, width: 24, depth: 24, rotation: 0, styleId: null },
+      { uid: "w1", cabinetId: 12, masterCode: "W3030", description: "Wall 30", placement: "wall", x: 0, y: 0, width: 30, depth: 12, rotation: 0 },
+    ] as PlacedCabinet[];
+    const lines = buildDesignCabinetCartLines({
+      placed,
+      styleId: designStyleId,
+      distributorId: DISTRIBUTOR,
+      tier: "homeowner",
+      styleNameById: new Map([[AERO_BLANC.id, "Aero Blanc"]]),
+      unitPriceFor: (cabinet) => (cabinet.masterCode === "B24" ? 300 : 250),
+    });
+    expect(lines.map((line) => [line.masterCode, line.styleId, line.unitPrice])).toEqual([["B24", AERO_BLANC.id, 300], ["W3030", AERO_BLANC.id, 250]]);
+    // No pricing, cart, build-sheet or 3D pricing gate reads the brush.
+    const cart = designToolSource.slice(designToolSource.indexOf("const cabinetCartLines = useMemo(() => {"), designToolSource.indexOf("const cabinetCartLines = useMemo(() => {") + 400);
+    expect(cart).toContain("if (!designStyleId) return [] as CartItem[];");
+    expect(cart).toContain("styleId: designStyleId,");
+    expect(designToolSource).toContain("push(filler.id, designStyleId, filler.masterCode)");
+    expect(designToolSource).not.toMatch(/if \(!styleId\) return (\[\]|null)/);
+    expect(designToolSource).not.toMatch(/!!styleId\b|styleId \? (unit|pricingStyleIdFor)/);
+    expect(designToolSource).toContain("const unitPrice = priceMap.get(`${panel.cabinetId}:${panel.styleId}`) ?? null;");
+    expect(designToolSource).toMatch(/bundleCabinetPricingSignature\(\s+placed\.map\(\(cabinet\) => \(\{ \.\.\.cabinet, styleId: pricingStyleIdFor\(cabinet\) \}\)\),\s+designStyleId,/);
+    expect(designToolSource).toContain("{missingPricePopoverTarget && designStyleId && (");
+    expect(designToolSource).toContain('if (!designStyleId && placed.length > 0 && paletteType !== "closetparts") {');
   });
 });

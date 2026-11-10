@@ -49,7 +49,7 @@ describe("Design Tool automatic angled front-miter workflow", () => {
 	    expect(source).toContain("Every physical 45-degree cabinet turn must close with its two finished");
 	    expect(source).toContain("The open 45° cabinet front was closed with two catalog filler boards joined on one continuous miter.");
 	    expect(source).toContain("explicit Part 1 flag and checkout block—not a reason to leave a physical");
-	    expect(source).toContain("[catalogFillers, room, styleId, placed]");
+	    expect(source).toContain("[catalogFillers, room, placed]");
   });
 
   it("keeps both physical miter boards on the invoice with their real per-board cut note", () => {

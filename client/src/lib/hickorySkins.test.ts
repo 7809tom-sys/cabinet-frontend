@@ -119,3 +119,20 @@ describe("hickorySkinSuggestions", () => {
     expect(hickorySkinSuggestions([midBase], ROOM, { woodSpecies: "Oak", doorStyle: "Slab" })).toEqual([]);
   });
 });
+
+describe("hickorySkinSuggestions on a two-color design", () => {
+  const hickory = { woodSpecies: "Hickory", ourName: "Hickory Shaker", boxConstruction: "frameless" };
+  const maple = { woodSpecies: "Maple", ourName: "Aspen White", boxConstruction: "frameless" };
+  it("suggests skins only for cabinets whose own finish (else Color 1) needs them", () => {
+    const own = cab({ uid: "own", x: 48, y: 0, styleId: 1 });
+    const inherited = cab({ uid: "inherited", x: 96, y: 0, styleId: null });
+    const placed = [own, inherited];
+    const colorOneMaple = (c: PlacedCabinet) => (c.styleId === 1 ? hickory : maple);
+    const colorOneHickory = (c: PlacedCabinet) => (c.styleId === 2 ? maple : hickory);
+    const all = hickorySkinSuggestions(placed, ROOM, hickory);
+    expect(new Set(all.map((s) => s.uid))).toEqual(new Set(["own", "inherited"]));
+    expect(hickorySkinSuggestions(placed, ROOM, colorOneMaple)).toEqual(all.filter((s) => s.uid === "own"));
+    expect(hickorySkinSuggestions(placed, ROOM, colorOneHickory)).toEqual(all);
+    expect(hickorySkinSuggestions(placed.map((c) => ({ ...c, styleId: 2 })), ROOM, colorOneHickory)).toEqual([]);
+  });
+});

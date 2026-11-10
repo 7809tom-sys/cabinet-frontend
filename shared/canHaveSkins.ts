@@ -171,6 +171,7 @@ export function isSkinProduct(item: {
 
 /**
  * Drop skin products when the style is not allowed to have them.
+ * Pass a function to judge each skin by its own finish (a two-color design).
  * Returns the same array when nothing changes.
  */
 export function dropIneligibleSkins<T extends {
@@ -178,8 +179,9 @@ export function dropIneligibleSkins<T extends {
   description?: string | null;
   subCategory?: string | null;
   category?: string | null;
-}>(placed: readonly T[], input: SkinEligibilityInput): T[] {
-  if (skinsAreNeeded(input)) return placed as T[];
-  const kept = placed.filter((item) => !isSkinProduct(item));
+}>(placed: readonly T[], input: SkinEligibilityInput | ((item: T) => SkinEligibilityInput)): T[] {
+  const styleFor = typeof input === "function" ? input : () => input;
+  if (typeof input !== "function" && skinsAreNeeded(input)) return placed as T[];
+  const kept = placed.filter((item) => !isSkinProduct(item) || skinsAreNeeded(styleFor(item)));
   return kept.length === placed.length ? placed as T[] : kept;
 }
