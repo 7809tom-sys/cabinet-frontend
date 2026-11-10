@@ -11456,6 +11456,11 @@ function addPelicanBathroomFixture(
   } else if (profile.kind === "shower-niche" || profile.kind === "soap-tray") {
     // A niche is recessed into a panel wall; a soap tray sits on a wall or pan.
     // Both are wall fittings with no floor footprint.
+    //
+    // The niche mesh is authored standing on y = 0, so the group itself carries the
+    // mounting height. Without this the niche was drawn at floor level and half of
+    // it sat below the pan — the thin slab hanging in Tom's 3D view.
+    group.position.y = Math.max(0, furniture.mountHeightIn ?? 0) * INCH;
     for (const { mesh, part } of makeShowerNicheParts(profile, {
       // A niche is recessed into the wall it sits in, so it takes the surround's
       // finish rather than a separate white box.
