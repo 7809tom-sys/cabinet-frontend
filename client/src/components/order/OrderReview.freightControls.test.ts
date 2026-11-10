@@ -45,6 +45,9 @@ describe("OrderReview freight accessorial controls", () => {
     expect(source).toContain('residential: deliveryLocationType === "residential"');
     expect(source).toContain("liftgate: liftgateRequired");
     expect(source).toContain("distributorId: optionalPositiveFreightId(line.cartDistributorId)");
+    expect(source).toContain("affiliateSlug: affiliateSlug ?? undefined");
+    expect(source).toContain("freightQuoteIsLiveCarrier(freightEstimate.data)");
+    expect(source).toContain("affiliateLiveRateFailureMessage");
     expect(source).toContain("isCabinetFreightLine(line)");
     expect(source).toContain("optionalPositiveFreightId(line.cartDistributorId) != null");
     expect(source).toContain("final pallet dimensions and loaded weight");
