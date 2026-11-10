@@ -12,6 +12,9 @@ import {
   doorConstruction,
   doorHardwareCenterFromLeftIn,
   doorHardwareOffsetFromFaceCenterIn,
+  doorPullCenterOffsetFromFaceCenterIn,
+  DOOR_PULL_EDGE_CLEARANCE_IN,
+  TALL_DOOR_PULL_FLOOR_HEIGHT_IN,
   normalizeDoorHardwareFramePosition,
   hardwarePlacementSpec,
   hardwarePlacementNote,
@@ -309,10 +312,37 @@ describe("hardware placement spec", () => {
     const spec = hardwarePlacementSpec("Shaker");
     expect(spec.construction).toBe("framed");
     expect(spec.doorRule).toMatch(/stile/i);
-    expect(spec.doorRule).toMatch(/2\.5–3"/);
-    expect(spec.doorRule).toMatch(/bottom rail/i);
+    expect(spec.doorRule).toMatch(/2\.75"/);
     expect(spec.doorRule).toMatch(/top rail/i);
+    expect(spec.doorRule).toMatch(/bottom rail/i);
+    expect(spec.doorRule).toMatch(/base-to-wall transition/i);
     expect(spec.drawerRule).toMatch(/centered/i);
+  });
+
+  it("places base pulls just under the top edge and wall pulls just above the bottom edge", () => {
+    const base = doorPullCenterOffsetFromFaceCenterIn({ faceHeightIn: 24, pullLengthIn: 6, anchor: "top" });
+    // Top of a 6" pull is 2.75" below the top of a 24" door, so the center is 5.75" below the top.
+    expect(12 - base).toBeCloseTo(DOOR_PULL_EDGE_CLEARANCE_IN + 3, 8);
+    const wall = doorPullCenterOffsetFromFaceCenterIn({ faceHeightIn: 24, pullLengthIn: 6, anchor: "bottom" });
+    expect(wall).toBeCloseTo(-base, 8);
+    expect(12 + wall).toBeCloseTo(DOOR_PULL_EDGE_CLEARANCE_IN + 3, 8);
+  });
+
+  it("keeps a full-height tall pull at a 42-inch reach and on the door", () => {
+    const offset = doorPullCenterOffsetFromFaceCenterIn({
+      faceHeightIn: 84,
+      pullLengthIn: 10,
+      anchor: "reach",
+      doorCenterFloorIn: 45,
+    });
+    expect(45 + offset).toBeCloseTo(TALL_DOOR_PULL_FLOOR_HEIGHT_IN, 8);
+    const clamped = doorPullCenterOffsetFromFaceCenterIn({
+      faceHeightIn: 20,
+      pullLengthIn: 6,
+      anchor: "reach",
+      doorCenterFloorIn: 10,
+    });
+    expect(Math.abs(clamped)).toBeLessThanOrEqual(7);
   });
 
   it("slab spec insets from the edges", () => {
