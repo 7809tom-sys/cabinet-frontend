@@ -606,6 +606,45 @@ function nextFittingBaseAlong(input: {
   return null;
 }
 
+/** Cabinet layers Auto Design paints. Appliances are not a door finish. */
+const AUTO_DESIGN_FINISH_PLACEMENTS = new Set(["base", "wall", "tall"]);
+
+/**
+ * One finish on every cabinet this build generated: uppers, bases, talls,
+ * fillers, and the island. `styleId` is the door the designer has selected.
+ * A null choice leaves stored styles alone.
+ *
+ * Neighbor copies and the peninsula pass can otherwise keep a second id
+ * (or none) after the wall runs were painted.
+ */
+/**
+ * The one door already stored on every base, wall, and tall cabinet, or null
+ * when the plan does not have exactly one. A follow-up piece (the range
+ * bridge) uses this so it cannot introduce a second finish.
+ */
+export function uniformCabinetStyleId(
+  placed: readonly { placement?: string | null; styleId?: number | null }[],
+): number | null {
+  const ids = placed
+    .filter((item) => item.placement === "base" || item.placement === "wall" || item.placement === "tall")
+    .map((item) => item.styleId ?? null);
+  const first = ids[0];
+  if (first == null || ids.length === 0) return null;
+  return ids.every((id) => id === first) ? first : null;
+}
+
+export function stampAutoDesignSingleFinish(
+  placed: readonly PlacedCabinet[],
+  styleId: number | null,
+): PlacedCabinet[] {
+  if (styleId == null) return [...placed];
+  return placed.map((item) => {
+    if (!AUTO_DESIGN_FINISH_PLACEMENTS.has(item.placement)) return item;
+    if (item.styleId === styleId) return item;
+    return { ...item, styleId };
+  });
+}
+
 /**
  * The measured Auto-Design build: anchors, refrigerator surround, corners,
  * base runs, hood, then wall cabinets. Galley fills Wall 1 and Wall 3 and
@@ -1522,7 +1561,9 @@ export function runAutoDesignLayout(args: {
       styleName: stage.input.designQuestionDoorStyleName ?? null,
       twoTone: false,
     };
-  if (doorSpec) {
+  // A door already selected in the designer is the finish. The question style
+  // is only applied when the build was not given that selection.
+  if (doorSpec && args.styleId == null) {
     working = applyDesignQuestionDoorSpec({
       cabinets: working,
       formerDefaultStyleId: args.styleId,
@@ -1641,6 +1682,11 @@ export function runAutoDesignLayout(args: {
       cabinetCode: base.masterCode,
     });
   }
+  // The door passed into the build is the one the designer has selected. It wins
+  // over a design-question id so the island and the wall runs cannot keep a
+  // second finish. With no selected door, the question style is the one finish.
+  const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
+  working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   return {
