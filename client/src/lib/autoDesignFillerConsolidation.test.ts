@@ -162,28 +162,89 @@ describe("findFillerClusters", () => {
 });
 
 describe("consolidateAutoDesignFillers", () => {
-  it("turns two boards in one run into one board of their combined width", () => {
+  it("closes a 4 inch leftover by resizing the run to stock widths", () => {
+    // B21 + 4" filler + B18 = 43". No 43" sum exists. The next stock sum is
+    // 45" (B24 + B21), and the wall beyond the filler is open, so the run
+    // extends 2" and the filler is gone.
     const run = [
-      placedBase("B27", 27, 0, "b1"),
-      placedFiller(1.25, 27, "f1", "b1"),
-      placedBase("B27", 27, 28.25, "b2"),
-      placedFiller(3, 55.25, "f2", "b2"),
+      placedBase("B21", 21, 0, "b1"),
+      placedFiller(4, 21, "f4", "b1"),
+      placedBase("B18", 18, 25, "b2"),
     ];
     const result = consolidateAutoDesignFillers({
       placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
-      maxFillerIn: 6, makeUid: uidFactory(), styleId: 1,
+      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
     });
-    const fillers = result.placed.filter((item) => /filler/i.test(`${item.masterCode} ${item.description}`));
-    expect(fillers).toHaveLength(1);
-    // 27 + 27 + 4.25 (or the 30 inch SKU closing it): the run is still closed end to end.
-    const total = result.placed.reduce((sum, item) => sum + item.width, 0);
-    expect(total).toBeCloseTo(58.25, 2);
-    expect(result.changes.length).toBeGreaterThan(0);
+    expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
+    expect(result.placed.map((item) => item.masterCode).sort()).toEqual(["B21", "B24"]);
+    expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBe(45);
+    expect(result.changes[0]?.kind).toBe("repack");
   });
 
-  it("closes a boardless run with the wider stock SKU instead of two boards", () => {
-    // 27 + 1 + 29 + 1 = 58: the 27 inch base becomes a 30 only if the line sells
-    // one AND the run keeps its length, so this case is a real board.
+  it("slides the range so a 5 inch filler becomes a stock cabinet", () => {
+    const rangeSpot = wallPlacementAt(35, 30, 25, "top", ROOM);
+    const range = {
+      uid: "range", cabinetId: 0, masterCode: "RANGE-30", description: "30 inch range", placement: "appliance",
+      width: 30, depth: 25, height: 36, numberOfDoors: 0, numberOfDrawers: 0, mountBottom: 0,
+      ...rangeSpot,
+    } as PlacedCabinet;
+    const catalog = [...CATALOG, catalogRow({ id: 10, masterCode: "B36", width: "36" })];
+    const run = [placedBase("B30", 30, 0, "b30"), placedFiller(5, 30, "f5", "b30"), range];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog, fillers: FILLERS,
+      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
+    });
+    expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
+    expect(result.placed.find((item) => item.masterCode === "B36")?.width).toBe(36);
+    const moved = result.placed.find((item) => item.uid === "range")!;
+    expect(moved.wallOffset ?? moved.x).toBeCloseTo(36, 2);
+  });
+
+  it("keeps a gap of 1 inch or less as filler", () => {
+    const run = [placedBase("B27", 27, 0, "b1"), placedFiller(0.75, 27, "f1", "b1")];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
+      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
+    });
+    const boards = result.placed.filter((item) => item.fillerPieceGroupId);
+    expect(boards).toHaveLength(1);
+    expect(boards[0]!.width).toBeCloseTo(0.75, 2);
+    expect(result.changes).toHaveLength(0);
+  });
+
+  it("keeps the 3 inch blind-corner filler and the inside-L corner filler", () => {
+    const cornerSpot = wallPlacementAt(0, 36, 36, "top", ROOM);
+    const corner = {
+      uid: "bbc", cabinetId: 50, masterCode: "BBC42", description: "42 inch blind corner", placement: "base",
+      width: 36, depth: 36, height: 34.5, numberOfDoors: 1, numberOfDrawers: 0, cornerType: "blind-corner",
+      ...cornerSpot,
+    } as PlacedCabinet;
+    const blindFiller = {
+      ...placedFiller(3, 36, "blind", "bbc"),
+      fillerForCabinetUid: "bbc",
+    };
+    const cornerFiller = placedFiller(3, 0, "inside-l");
+    const run = [cornerFiller, corner, blindFiller, placedBase("B21", 21, 39, "b21")];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
+      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
+    });
+    const kept = result.placed.filter((item) => item.uid === "blind" || item.uid === "inside-l");
+    expect(kept.map((item) => item.width).sort()).toEqual([3, 3]);
+  });
+
+  it("never resizes a run onto a single-door 24 inch cabinet", () => {
+    const single = catalogRow({ id: 80, masterCode: "B24S", width: "24", numberOfDoors: 1, description: "24 inch single door base" });
+    const run = [placedBase("B21", 21, 0, "b21"), placedFiller(3, 21, "f3", "b21")];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: [single, ...CATALOG.filter((row) => row.masterCode !== "B24")],
+      fillers: FILLERS, maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
+    });
+    expect(result.placed.some((item) => item.masterCode === "B24S")).toBe(false);
+    expect(result.placed.some((item) => (item.numberOfDoors ?? 0) === 1 && Math.abs(item.width - 24) <= 0.05)).toBe(false);
+  });
+
+  it("keeps each 1 inch gap's filler instead of merging them into a wider strip", () => {
     const run = [
       placedBase("B27", 27, 0, "b1"),
       placedFiller(1, 27, "f1", "b1"),
@@ -194,57 +255,23 @@ describe("consolidateAutoDesignFillers", () => {
       placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
       maxFillerIn: 6, makeUid: uidFactory(), styleId: 1,
     });
-    // Two boards of 1 inch are one board of 2 inches, or one widened cabinet: never two boards.
-    const boards = result.placed.filter((item) => !!item.fillerPieceGroupId);
-    expect(boards).toHaveLength(1);
-    expect(boards[0]!.width).toBeCloseTo(2, 2);
-    expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBeCloseTo(56, 2);
+    const boards = result.placed.filter((item) => item.fillerPieceGroupId);
+    expect(boards).toHaveLength(2);
+    expect(boards.map((item) => item.width).sort()).toEqual([1, 1]);
   });
 
-  it("leaves a single board exactly where it is when no stock width closes it", () => {
-    // 21 + 4 = 25: the line sells no 25 inch base, so the board stays.
-    const run = [placedBase("B21", 21, 0, "b1"), placedFiller(4, 21, "f1", "b1")];
-    const result = consolidateAutoDesignFillers({
-      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
-      maxFillerIn: 6, makeUid: uidFactory(), styleId: 1,
-    });
-    expect(result.placed).toHaveLength(2);
-    expect(result.changes).toHaveLength(0);
-  });
-
-  it("absorbs a single board into a wider stock SKU when one exists", () => {
-    // 27 + 3 = 30, and the line sells B30: the run closes with no filler at all.
+  it("closes a 27 inch base plus a 3 inch board as B30", () => {
     const run = [placedBase("B27", 27, 0, "b1"), placedFiller(3, 27, "f1", "b1")];
     const result = consolidateAutoDesignFillers({
       placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
       maxFillerIn: 6, makeUid: uidFactory(), styleId: 1,
     });
-    expect(result.changes).toHaveLength(1);
-    expect(result.changes[0]!.kind).toBe("widen");
     expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
     expect(result.placed.map((item) => item.masterCode)).toEqual(["B30"]);
     expect(result.placed[0]!.width).toBe(30);
   });
 
-  it("replaces two boards past 3 inches with a wider stock cabinet", () => {
-    // 27 + 3 + 27 + 3 = 60. The line sells B33, so both boards are absorbed
-    // instead of staying stacked beside each other.
-    const run = [
-      placedBase("B27", 27, 0, "b1"),
-      placedFiller(3, 27, "f1", "b1"),
-      placedBase("B27", 27, 30, "b2"),
-      placedFiller(3, 57, "f2", "b2"),
-    ];
-    const result = consolidateAutoDesignFillers({
-      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
-      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
-    });
-    expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
-    expect(result.placed.map((item) => item.masterCode).sort()).toEqual(["B27", "B33"]);
-    expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBe(60);
-  });
-
-  it("refuses to merge boards whose combined width exceeds the filler maximum", () => {
+  it("closes two 3 inch boards with stock cabinets even when they exceed a 3 inch filler cap", () => {
     const run = [
       placedBase("B27", 27, 0, "b1"),
       placedFiller(3, 27, "f1", "b1"),
@@ -255,7 +282,9 @@ describe("consolidateAutoDesignFillers", () => {
       placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
       maxFillerIn: 3, makeUid: uidFactory(), styleId: 1,
     });
-    expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(2);
+    expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
+    expect(result.placed.map((item) => item.masterCode)).toEqual(["B30", "B30"]);
+    expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBe(60);
   });
 
   it("is idempotent: a consolidated run is unchanged on a second pass", () => {
