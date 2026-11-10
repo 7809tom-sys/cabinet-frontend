@@ -8,7 +8,7 @@ import {
 } from "./pantryMasterCodes";
 
 const sql = readFileSync(
-  resolve(__dirname, "../docs/sql/0276_pantry_master_codes.tidb.sql"),
+  resolve(__dirname, "../docs/sql/0277_pantry_master_1876.tidb.sql"),
   "utf8",
 );
 
@@ -31,8 +31,20 @@ describe("pantry master codes", () => {
     expect(pantryMasterByCode("1896")?.confirmedByTom).toBe(false);
   });
 
+  it("stacks 3DB18 on the floor under W184224 for the 76.5 inch pantry", () => {
+    expect(pantryMasterByCode("1876")).toMatchObject({
+      heightIn: 76.5,
+      confirmedByTom: false,
+      components: [
+        { code: "3DB18", role: "base" },
+        { code: "W184224", role: "top" },
+      ],
+    });
+    expect(pantryMasterByCode("1876")?.components.map((part) => part.code)).not.toContain("UCB1854");
+  });
+
   it("does not turn the regular wall code 1830 or W1830 into a pantry master", () => {
-    expect(PANTRY_MASTER_CODES.map((master) => master.masterCode)).toEqual(["1884", "1890", "1896"]);
+    expect(PANTRY_MASTER_CODES.map((master) => master.masterCode)).toEqual(["1884", "1890", "1896", "1876"]);
     expect(pantryMasterByCode("1830")).toBeNull();
     expect(pantryMasterByCode("W1830")).toBeNull();
     for (const master of PANTRY_MASTER_CODES) {
@@ -68,19 +80,17 @@ describe("pantry master SQL", () => {
     .map((part) => part.trim())
     .filter(Boolean);
 
-  it("inserts the three masters and does not update, delete, or redefine W1830", () => {
+  it("inserts 1876 and does not update, delete, or redefine W1830", () => {
     expect(executable.some((statement) => /^\s*UPDATE\b/i.test(statement))).toBe(false);
     expect(executable.some((statement) => /^\s*DELETE\b/i.test(statement))).toBe(false);
     const inserts = executable.filter((statement) => statement.startsWith("INSERT"));
     expect(inserts.length).toBeGreaterThan(0);
     for (const statement of inserts) expect(statement).toMatch(/WHERE NOT EXISTS/i);
-    expect(sql).toContain("'1884'");
-    expect(sql).toContain("'1890'");
-    expect(sql).toContain("'1896'");
-    expect(sql).toContain("'UCB1854'");
-    expect(sql).toContain("'W183024'");
-    expect(sql).toContain("'W183624'");
-    expect(sql).toContain("'W184224'");
+    const inserted = inserts.join("\n");
+    expect(inserted).toContain("'1876'");
+    expect(inserted).toContain("'3DB18'");
+    expect(inserted).toContain("'W184224'");
+    expect(inserted).not.toContain("'UCB1854'");
     expect(executable.some((statement) => statement.includes("'W1830'"))).toBe(false);
     expect(executable.some((statement) => statement.includes("'1830'"))).toBe(false);
   });

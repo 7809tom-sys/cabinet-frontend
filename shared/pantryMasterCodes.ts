@@ -9,6 +9,11 @@
  * 1884 is the code Tom named: UCB1854 (54" base) + W183024 (30" top) = 84".
  * 1890 and 1896 use that same height sum and are waiting on Tom's confirmation.
  * They do not replace 1830.
+ *
+ * 1876 is the confined-space stack: 3DB18, the 18 x 34.5 x 24 three-drawer
+ * base, on the floor, with W184224 (18 x 42 x 24) on top. 34.5 + 42 = 76.5.
+ * The code 1876 follows the height-number pattern and still needs Tom's OK.
+ * It is not part of the UCB1854 stacks.
  */
 
 export type PantryComponentRole = "base" | "top";
@@ -19,12 +24,12 @@ export type PantryMasterComponent = {
 };
 
 export type PantryMasterCode = {
-  masterCode: "1884" | "1890" | "1896";
+  masterCode: "1884" | "1890" | "1896" | "1876";
   /** Overall stacked height, base height plus top height. */
-  heightIn: 84 | 90 | 96;
+  heightIn: 84 | 90 | 96 | 76.5;
   widthIn: 18;
   depthIn: 24;
-  /** Tom named 1884. The other two follow the same sum and still need his yes. */
+  /** Tom named 1884. The others follow the same sum and still need his yes. */
   confirmedByTom: boolean;
   components: readonly [PantryMasterComponent, PantryMasterComponent];
 };
@@ -60,6 +65,17 @@ export const PANTRY_MASTER_CODES: readonly PantryMasterCode[] = [
     confirmedByTom: false,
     components: [
       { code: "UCB1854", role: "base" },
+      { code: "W184224", role: "top" },
+    ],
+  },
+  {
+    masterCode: "1876",
+    heightIn: 76.5,
+    widthIn: 18,
+    depthIn: 24,
+    confirmedByTom: false,
+    components: [
+      { code: "3DB18", role: "base" },
       { code: "W184224", role: "top" },
     ],
   },
