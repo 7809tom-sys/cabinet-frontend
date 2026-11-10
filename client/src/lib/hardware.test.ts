@@ -123,6 +123,14 @@ describe("door / drawer counting", () => {
     expect(doorCountForCabinet(cab({ numberOfDoors: 2 }))).toBe(2);
   });
 
+  it("draws a 24 inch single-door SKU as two doors and leaves the code alone", () => {
+    const single = cab({ masterCode: "W2430S", description: "Single Door Wall", placement: "wall", width: 24, numberOfDoors: 1 });
+    expect(doorCountForCabinet(single)).toBe(2);
+    expect(single.masterCode).toBe("W2430S");
+    expect(doorCountForCabinet(cab({ masterCode: "W2130", description: "Single Door Wall", placement: "wall", width: 21, numberOfDoors: 1 }))).toBe(1);
+    expect(doorCountForCabinet(cab({ masterCode: "DCW2430", description: "Diagonal Corner", placement: "wall", width: 24, numberOfDoors: 1, cornerType: "diagonal" }))).toBe(1);
+  });
+
   it("keeps B21 and under at one door even when the stored count says two", () => {
     for (const masterCode of ["B12", "B-15", "B18", "B-21", "B21-R"]) {
       expect(doorCountForCabinet(cab({ masterCode, numberOfDoors: 2, width: 36 }))).toBe(1);
@@ -217,7 +225,7 @@ describe("hardware per cabinet", () => {
   });
 
   it("cup-pull style mixes cup pulls on drawers + knobs on doors", () => {
-    const c = hardwareForCabinet(cab({ masterCode: "B-30-2D", numberOfDoors: 1, numberOfDrawers: 2 }), "cup-pull");
+    const c = hardwareForCabinet(cab({ masterCode: "B-18", width: 18, numberOfDoors: 1, numberOfDrawers: 2 }), "cup-pull");
     expect(c.knobs).toBe(1);
     expect(c.cupPulls).toBe(2);
     expect(c.barPulls).toBe(0);

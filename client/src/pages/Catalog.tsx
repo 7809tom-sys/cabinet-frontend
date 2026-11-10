@@ -14,6 +14,7 @@ import { CabinetImage } from "@/components/CabinetImage";
 import { CabinetQuickViewDialog } from "@/components/catalog/CabinetQuickViewDialog";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { type CabinetLike, cabinetTypeLabel } from "@/lib/cabinetGraphics";
+import { designerCabinetName } from "@/lib/designerCabinetNames";
 import {
   CATALOG_CONSTRUCTION_OPTIONS,
   CATALOG_SORT_OPTIONS,
@@ -160,7 +161,7 @@ function CabinetCard({ cabinet, styleId, distributorLabel, affiliateSlug, onQuic
           />
 
           <p className="mt-2 line-clamp-2 text-sm font-medium leading-snug text-foreground">
-            {translateSpec(cabinet.description, lang)}
+            {translateSpec(designerCabinetName(cabinet), lang)}
           </p>
 
           {(cabinet.width || cabinet.height || cabinet.depth) && (

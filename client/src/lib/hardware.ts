@@ -19,6 +19,7 @@ import {
   isLCornerCabinet,
 } from "./design";
 import { standardBaseDoorCount, standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
+import { isTwentyFourSingleDoorDataError } from "@shared/twentyFourDoorFace";
 
 // True only for the genuine Corner Drawer Base (CDB), which legitimately shows a
 // drawer stack. All OTHER L-corner cabinets (easy-reach ERB, lazy-Susan LSB,
@@ -250,13 +251,30 @@ function cabinetWidthIn(p: PlacedCabinet): number {
 export function doorCountForCabinet(p: PlacedCabinet): number {
   if (!carriesHardware(p)) return 0;
   // B09–B21 are always one door, even when a catalog row says 2. B24 and wider
-  // standard bases are always two doors. Other families still trust the stored count.
+  // standard bases are always two doors. A stored count of one door on any other
+  // standard 24" cabinet is the same data error and is drawn as two doors.
   const standardDoors = standardBaseDoorCount(p);
   if (standardDoors != null) return standardDoors;
-  if (typeof p.numberOfDoors === "number") return Math.max(0, p.numberOfDoors);
   // A turned bridge is a single-door upper on its side; its placed width is the
   // cabinet's height, so the width rule below would read two doors.
   if (p.turnedSideways === true) return 1;
+  // A stored count of exactly one door on a standard 24" cabinet is a data
+  // error. Other stored counts (including a real zero) still win.
+  if (p.numberOfDoors === 1 && isTwentyFourSingleDoorDataError({
+    masterCode: p.masterCode,
+    description: p.description,
+    width: cabinetWidthIn(p) || p.width,
+    category: p.category,
+    subCategory: p.subCategory,
+    graphicType: p.customProfile,
+    cornerType: p.cornerType,
+    facePattern: p.facePattern,
+    openingType: p.openingType,
+    turnedSideways: p.turnedSideways,
+    noDoor: p.noDoor,
+    isCornerCabinet: p.isCornerCabinet,
+  })) return 2;
+  if (typeof p.numberOfDoors === "number") return Math.max(0, p.numberOfDoors);
   const hay = `${p.description ?? ""} ${p.masterCode ?? ""}`.toLowerCase();
   if ((/\bdrawer base\b|^db|drawer\b/.test(hay)) && !/door/.test(hay)) return 0;
   // No stored door count: infer by width the way real cabinetry is built. A

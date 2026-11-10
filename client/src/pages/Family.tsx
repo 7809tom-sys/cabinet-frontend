@@ -14,6 +14,7 @@ import { DoorStyleSwatch } from "@/components/DoorStyleSwatch";
 import { realImageUrl } from "@/lib/doorFamilyPhotos";
 import { finishColors } from "@/lib/design";
 import { type CabinetLike, cabinetTypeLabel } from "@/lib/cabinetGraphics";
+import { designerCabinetName } from "@/lib/designerCabinetNames";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { translateSpec } from "@/lib/i18n/specPhrases";
@@ -144,7 +145,7 @@ function FamilyCabinetCard({
   function handleAdd() {
     const res = addItem({
       masterCode: item.masterCode,
-      name: translateSpec(item.description, lang) || item.masterCode,
+      name: translateSpec(designerCabinetName(item), lang) || item.masterCode,
       styleId,
       styleLabel,
       distributorId: item.distributorId ?? null,
@@ -215,7 +216,7 @@ function FamilyCabinetCard({
           </div>
 
           <p className="text-sm font-medium text-foreground mt-2 leading-snug line-clamp-2">
-            {translateSpec(item.description, lang)}
+            {translateSpec(designerCabinetName(item), lang)}
           </p>
 
           {(item.width || item.height || item.depth) && (
