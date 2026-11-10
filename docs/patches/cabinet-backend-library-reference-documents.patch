@@ -1,0 +1,598 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 10 Nov 2026 00:50:00 +0000
+Subject: [PATCH] Keep reference library documents unpublished until the owner
+ ticks Affiliate library.
+
+Reference material (catalogs, installation cost sheets, price lists, spec
+books) lives in cabinet_dealz.affiliate_literature with the affiliate
+literature. This patch is the server half of that split. The admin page in
+cabinet-frontend shows a Reference section; this is what stops those rows
+reaching an affiliate.
+
+  shared/libraryVisibility.ts
+      The same file as cabinet-frontend. isAffiliateLibraryDocument now
+      returns false for a reference row unless visibility is affiliate,
+      isPublished is true, AND affiliateToggledAt is set. That timestamp is
+      written only when the owner ticks Affiliate library. There is still no
+      public state.
+
+  affiliateResources.publishedLiterature
+      Already filters with isAffiliateLibraryDocument, so the affiliate query
+      enforces the rule. A category of Product Catalogs or Installation, a
+      title or file name that is a catalog, cost sheet, price list, or spec
+      book, or documentRole = reference, is enough. A missing documentRole
+      column reads as null and the category and title rule still applies.
+
+  affiliateLiterature.adminUpload / adminUpdate
+      Accept `reference`. It writes documentRole and nothing else: it does
+      not publish, and it does not clear the who/when audit. Ticking
+      Affiliate library is still the only write of visibility, isPublished,
+      and affiliateToggledAt / By / ByName.
+
+  docs/sql/0273_library_reference_documents.tidb.sql
+      Tom pastes this himself. It does not run from the app. Statement 3 is
+      the preview. Statement 4 is the UPDATE. A second run of the ALTER
+      answers "Duplicate column name 'documentRole'", which is safe to skip.
+
+Apply from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-library-reference-documents.patch
+
+Then paste docs/sql/0273_library_reference_documents.tidb.sql in the TiDB
+editor, one line at a time. Read the preview before the UPDATE. Nothing in
+this patch deploys the frontend, and nothing here is public.
+---
+diff --git a/docs/sql/0273_library_reference_documents.tidb.sql b/docs/sql/0273_library_reference_documents.tidb.sql
+new file mode 100644
+index 0000000..e610746
+--- /dev/null
++++ b/docs/sql/0273_library_reference_documents.tidb.sql
+@@ -0,0 +1,56 @@
++-- TiDB SQL editor version. Numbered 0273. Run after the library visibility columns
++-- (0255, or 0269 if that is the file that added them on this database).
++-- One statement per line, so each line can be pasted on its own in the TiDB
++-- editor. Every table is cabinet_dealz.<table>. No table aliases.
++-- Do not run this from an application. Tom pastes it in the TiDB editor.
++--
++-- Reference material (catalogs, installation cost sheets, price lists, spec
++-- books) has been sitting in the same library as affiliate literature. This
++-- file adds documentRole and marks the rows the rule can identify. It does not
++-- guess ids. A row is reference when ANY of these is true:
++--
++--   category is 'Product Catalogs' or 'Installation'
++--     (the live admin list: SolidTrac Catalog is Product Catalogs; the Kitchen
++--     Installation Cost Sheet is Installation. Sales & Marketing and Training
++--     are affiliate literature and are not in this list.)
++--   OR the title or the filename contains, ignoring case: cost sheet, costsheet,
++--     price list, pricelist, spec book, specbook, or catalog.
++--
++-- The description is not part of the rule. A sales brochure can mention a
++-- catalog without being one.
++--
++-- Reference rows that nobody has ticked in the admin (affiliateToggledAt is
++-- null) are set back to internal and unpublished. A row the owner already
++-- ticked keeps that publish and its audit. The affiliate read still requires
++-- the tick: visibility affiliate AND isPublished 1 AND, for a reference row,
++-- affiliateToggledAt set. Nothing here makes a document public.
++--
++-- Safe to re-run, but not silent about it. Statement 1 is a PLAIN ADD COLUMN
++-- because TiDB Cloud rejects "ADD COLUMN IF NOT EXISTS". On a second run it
++-- answers "Duplicate column name 'documentRole'". THAT ERROR IS SAFE: the
++-- column already exists. Skip that line and paste the next. Statement 4 only
++-- updates rows that are not already reference, so a second run changes nothing.
++--
++-- Run order: statement 1, then statement 2 must show the column, then statement
++-- 3 is the preview. Read every row in that preview. If a document you want to
++-- keep as ordinary affiliate literature is in it, stop and do not run statement
++-- 4. Statement 5 shows what was marked. Statement 6 is what an affiliate can
++-- see, and it must not list a reference row that was never ticked.
++
++-- 1. The role column. literature is the default, so a row this file does not mark stays affiliate literature. This must succeed before any line below reads the column.
++ALTER TABLE cabinet_dealz.affiliate_literature ADD COLUMN documentRole VARCHAR(16) NOT NULL DEFAULT 'literature';
++
++-- 2. VERIFY (read-only). Expect one row: documentRole, varchar, not nullable, default literature. Do not continue until you see it.
++SELECT column_name AS presentColumn, data_type AS columnType, is_nullable AS nullable, column_default AS defaultValue FROM information_schema.columns WHERE table_schema = 'cabinet_dealz' AND table_name = 'affiliate_literature' AND column_name = 'documentRole' ORDER BY column_name;
++
++-- 3. PREVIEW (read-only). These are the rows statement 4 will mark Reference. Read them before you update. Stop if a row here is affiliate literature you want to keep publishing without treating it as reference.
++SELECT id AS literatureId, title, category, filename, visibility, isPublished, affiliateToggledAt, affiliateToggledByName, documentRole FROM cabinet_dealz.affiliate_literature WHERE documentRole <> 'reference' AND (category IN ('Product Catalogs', 'Installation') OR LOWER(title) LIKE '%cost sheet%' OR LOWER(title) LIKE '%costsheet%' OR LOWER(filename) LIKE '%cost sheet%' OR LOWER(filename) LIKE '%costsheet%' OR LOWER(title) LIKE '%price list%' OR LOWER(title) LIKE '%pricelist%' OR LOWER(filename) LIKE '%price list%' OR LOWER(filename) LIKE '%pricelist%' OR LOWER(title) LIKE '%spec book%' OR LOWER(title) LIKE '%specbook%' OR LOWER(filename) LIKE '%spec book%' OR LOWER(filename) LIKE '%specbook%' OR LOWER(title) LIKE '%catalog%' OR LOWER(filename) LIKE '%catalog%') ORDER BY id;
++
++-- 4. UPDATE (run only after statement 3 lists the rows you expect). Marks them reference. A row with no affiliate tick is unpublished. A row already ticked keeps its visibility, isPublished, and the audit columns.
++UPDATE cabinet_dealz.affiliate_literature SET documentRole = 'reference', isPublished = IF(affiliateToggledAt IS NULL, 0, isPublished), visibility = IF(affiliateToggledAt IS NULL, 'internal', visibility) WHERE documentRole <> 'reference' AND (category IN ('Product Catalogs', 'Installation') OR LOWER(title) LIKE '%cost sheet%' OR LOWER(title) LIKE '%costsheet%' OR LOWER(filename) LIKE '%cost sheet%' OR LOWER(filename) LIKE '%costsheet%' OR LOWER(title) LIKE '%price list%' OR LOWER(title) LIKE '%pricelist%' OR LOWER(filename) LIKE '%price list%' OR LOWER(filename) LIKE '%pricelist%' OR LOWER(title) LIKE '%spec book%' OR LOWER(title) LIKE '%specbook%' OR LOWER(filename) LIKE '%spec book%' OR LOWER(filename) LIKE '%specbook%' OR LOWER(title) LIKE '%catalog%' OR LOWER(filename) LIKE '%catalog%');
++
++-- 5. VERIFY (read-only). The reference section after the update. A row with affiliateToggledAt null must show visibility internal and isPublished 0.
++SELECT id AS literatureId, title, category, filename, documentRole, visibility, isPublished, affiliateToggledAt, affiliateToggledByName FROM cabinet_dealz.affiliate_literature WHERE documentRole = 'reference' ORDER BY id;
++
++-- 6. VERIFY (read-only). Exactly what an affiliate portal can see. A reference row appears here only when it was ticked (affiliateToggledAt is set) and both publish flags agree.
++SELECT id AS literatureId, title, documentRole, visibility, isPublished, affiliateToggledAt FROM cabinet_dealz.affiliate_literature WHERE visibility = 'affiliate' AND isPublished = 1 AND (documentRole <> 'reference' OR affiliateToggledAt IS NOT NULL) ORDER BY id;
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index 85ed2ac..7205311 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -4325,6 +4325,10 @@ export const affiliateLiterature = mysqlTable("affiliate_literature", {
+   affiliateToggledAt: timestamp("affiliateToggledAt"),
+   affiliateToggledBy: int("affiliateToggledBy"),
+   affiliateToggledByName: varchar("affiliateToggledByName", { length: 255 }),
++  // "literature" or "reference". Reference stays out of the affiliate read
++  // until the owner ticks Affiliate library. Added by hand in
++  // docs/sql/0273_library_reference_documents.tidb.sql.
++  documentRole: varchar("documentRole", { length: 16 }).default("literature").notNull(),
+   sortOrder: int("sortOrder").default(0).notNull(),
+   uploadedBy: int("uploadedBy"),
+   createdAt: timestamp("createdAt").defaultNow().notNull(),
+diff --git a/server/affiliateResources.libraryFallback.test.ts b/server/affiliateResources.libraryFallback.test.ts
+index cd04079..9210802 100644
+--- a/server/affiliateResources.libraryFallback.test.ts
++++ b/server/affiliateResources.libraryFallback.test.ts
+@@ -128,6 +128,38 @@ describe("affiliateResources.publishedLiterature without the visibility column",
+     expect(rows.map((row) => row.id)).not.toContain(internalRow.id);
+   });
+ 
++  it("keeps a reference document off the affiliate list until the owner ticks it", async () => {
++    const costSheet = {
++      ...affiliateRow,
++      id: 11,
++      title: "Kitchen Installation Cost Sheet",
++      category: "Installation",
++      filename: "KitchenCostSheet.pdf",
++      affiliateToggledAt: null,
++    };
++    const ticked = {
++      ...costSheet,
++      id: 12,
++      title: "SolidTrac Catalog",
++      category: "Product Catalogs",
++      filename: "solidtrac.pdf",
++      affiliateToggledAt: new Date("2026-11-10T00:30:00Z"),
++    };
++    getDbMock.mockResolvedValue({
++      select: () => ({
++        from: () => ({
++          where: () => ({ orderBy: async () => [affiliateRow, costSheet, ticked] }),
++        }),
++      }),
++    });
++    accessMock.mockResolvedValue(affiliateAccess);
++    const caller = affiliateResourcesRouter.createCaller({ user: affiliate } as never);
++
++    const rows = await caller.publishedLiterature();
++    expect(rows.map((row) => row.title)).toEqual(["Brochure", "SolidTrac Catalog"]);
++    expect(rows.map((row) => row.id)).not.toContain(costSheet.id);
++  });
++
+   it("rethrows a failure that is not a missing column", async () => {
+     const failure = new Error("connect ECONNREFUSED 127.0.0.1:4000");
+     getDbMock.mockResolvedValue({
+diff --git a/server/lib/affiliateLiteratureSchema.test.ts b/server/lib/affiliateLiteratureSchema.test.ts
+index fe2e03b..9deac7d 100644
+--- a/server/lib/affiliateLiteratureSchema.test.ts
++++ b/server/lib/affiliateLiteratureSchema.test.ts
+@@ -120,6 +120,7 @@ describe("reading the library without the visibility columns", () => {
+       affiliateToggledAt: new Date("2026-11-05T09:00:00Z"),
+       affiliateToggledBy: 1,
+       affiliateToggledByName: "Tom",
++      documentRole: null,
+     });
+   });
+ 
+diff --git a/server/lib/affiliateLiteratureSchema.ts b/server/lib/affiliateLiteratureSchema.ts
+index b921622..d450a1b 100644
+--- a/server/lib/affiliateLiteratureSchema.ts
++++ b/server/lib/affiliateLiteratureSchema.ts
+@@ -20,7 +20,9 @@
+ import type { MySqlColumn } from "drizzle-orm/mysql-core";
+ import {
+   isLibraryVisibility,
++  normalizeLibraryRole,
+   normalizeLibraryVisibility,
++  type LibraryRole,
+   type LibraryVisibility,
+ } from "@shared/libraryVisibility";
+ import { affiliateLiterature } from "../../drizzle/schema";
+@@ -38,6 +40,7 @@ export const LIBRARY_OPTIONAL_COLUMNS = [
+   "affiliateToggledAt",
+   "affiliateToggledBy",
+   "affiliateToggledByName",
++  "documentRole",
+ ] as const;
+ 
+ export type LibraryOptionalColumn = (typeof LIBRARY_OPTIONAL_COLUMNS)[number];
+@@ -47,6 +50,7 @@ const COLUMN_LABELS: Record<LibraryOptionalColumn, string> = {
+   affiliateToggledAt: "affiliateToggledAt",
+   affiliateToggledBy: "affiliateToggledBy",
+   affiliateToggledByName: "affiliateToggledByName",
++  documentRole: "documentRole",
+ };
+ 
+ /**
+@@ -76,6 +80,7 @@ const OPTIONAL_COLUMN_DEFINITIONS: Record<LibraryOptionalColumn, MySqlColumn> =
+   affiliateToggledAt: affiliateLiterature.affiliateToggledAt,
+   affiliateToggledBy: affiliateLiterature.affiliateToggledBy,
+   affiliateToggledByName: affiliateLiterature.affiliateToggledByName,
++  documentRole: affiliateLiterature.documentRole,
+ };
+ 
+ /**
+@@ -111,6 +116,8 @@ export type LibraryDocumentRow = {
+   affiliateToggledAt: Date | null;
+   affiliateToggledBy: number | null;
+   affiliateToggledByName: string | null;
++  /** Null when the column is not on the table yet. The shared helper then uses category and title. */
++  documentRole: LibraryRole | null;
+ };
+ 
+ function asNumber(value: unknown): number | null {
+@@ -171,6 +178,7 @@ export function toLibraryDocumentRow(
+       : typeof row.affiliateToggledByName === "string"
+         ? row.affiliateToggledByName
+         : null,
++    documentRole: absent.has("documentRole") ? null : normalizeLibraryRole(row.documentRole),
+   };
+ }
+ 
+@@ -323,6 +331,7 @@ export type LibraryOptionalWrite = {
+   affiliateToggledAt?: Date | null;
+   affiliateToggledBy?: number | null;
+   affiliateToggledByName?: string | null;
++  documentRole?: LibraryRole | null;
+ };
+ 
+ /** The same values, minus any key the database has said it cannot store. */
+diff --git a/server/routers/affiliateLiterature.ts b/server/routers/affiliateLiterature.ts
+index 36e5c46..386ecf4 100644
+--- a/server/routers/affiliateLiterature.ts
++++ b/server/routers/affiliateLiterature.ts
+@@ -6,6 +6,7 @@ import { storagePut } from "../storage";
+ import { affiliateLiterature } from "../../drizzle/schema";
+ import {
+   LIBRARY_DOCUMENT_FILE_PREFIX,
++  libraryRoleForReferenceSwitch,
+   visibilityForAffiliateLibrarySwitch,
+   type LibraryVisibility,
+ } from "@shared/libraryVisibility";
+@@ -113,6 +114,12 @@ export const affiliateLiteratureRouter = router({
+        * affiliates. Neither value makes a document public.
+        */
+       inAffiliateLibrary: z.boolean().default(false),
++      /**
++       * Files the upload in the Reference section. Off (the default) keeps it
++       * as affiliate literature. On does not publish it: the Affiliate library
++       * checkbox is the only publish.
++       */
++      reference: z.boolean().default(false),
+     }))
+     .mutation(async ({ ctx, input }) => {
+       if (!ALLOWED_MIME_TYPES.has(input.mimeType)) {
+@@ -138,6 +145,7 @@ export const affiliateLiteratureRouter = router({
+         affiliateToggledAt: input.inAffiliateLibrary ? new Date() : null,
+         affiliateToggledBy: input.inAffiliateLibrary ? ctx.user.id : null,
+         affiliateToggledByName: input.inAffiliateLibrary ? ctx.user.name ?? null : null,
++        documentRole: libraryRoleForReferenceSwitch(input.reference),
+         uploadedBy: ctx.user.id,
+       };
+       const inserted = await logged("adminUpload", () => writeLiteratureRow({
+@@ -145,7 +153,12 @@ export const affiliateLiteratureRouter = router({
+         values,
+         // An internal document needs no optional column; an affiliate one must
+         // record the toggle, so it waits for docs/sql/0269 rather than half-saving.
+-        requireColumns: input.inAffiliateLibrary ? ["visibility", "affiliateToggledAt", "affiliateToggledBy"] : [],
++        // A reference mark needs documentRole (docs/sql/0273) or it would be stored
++        // as ordinary literature.
++        requireColumns: [
++          ...(input.inAffiliateLibrary ? ["visibility", "affiliateToggledAt", "affiliateToggledBy"] as const : []),
++          ...(input.reference ? ["documentRole"] as const : []),
++        ],
+         write: (next) => db.insert(affiliateLiterature).values(next as typeof values),
+       }));
+       return { id: (inserted[0] as any)?.insertId, url: stored.url };
+@@ -163,12 +176,17 @@ export const affiliateLiteratureRouter = router({
+        * row update, so the three can never disagree.
+        */
+       inAffiliateLibrary: z.boolean().optional(),
++      /**
++       * The Reference checkbox. It writes documentRole only. It does not publish
++       * and it does not clear the affiliate-library audit.
++       */
++      reference: z.boolean().optional(),
+       sortOrder: z.number().int().min(0).max(100000).optional(),
+     }))
+     .mutation(async ({ ctx, input }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+-      const { id, inAffiliateLibrary, ...patch } = input;
++      const { id, inAffiliateLibrary, reference, ...patch } = input;
+       const values: Record<string, unknown> = { ...patch };
+       if (inAffiliateLibrary !== undefined) {
+         const visibility: LibraryVisibility = visibilityForAffiliateLibrarySwitch(inAffiliateLibrary);
+@@ -180,15 +198,20 @@ export const affiliateLiteratureRouter = router({
+           affiliateToggledByName: ctx.user.name ?? null,
+         });
+       }
++      if (reference !== undefined) {
++        values.documentRole = libraryRoleForReferenceSwitch(reference);
++      }
+       if (!Object.keys(values).length) return { id };
+       await logged("adminUpdate", () => writeLiteratureRow({
+         procedure: "adminUpdate",
+         values,
+         // Toggling without the visibility columns would leave the audit trail
+         // half-written, so the toggle is refused until 0269 has run.
+-        requireColumns: inAffiliateLibrary !== undefined
+-          ? ["visibility", "affiliateToggledAt", "affiliateToggledBy"]
+-          : [],
++        // Marking reference without documentRole would silently stay literature.
++        requireColumns: [
++          ...(inAffiliateLibrary !== undefined ? ["visibility", "affiliateToggledAt", "affiliateToggledBy"] as const : []),
++          ...(reference !== undefined ? ["documentRole"] as const : []),
++        ],
+         write: (next) => db.update(affiliateLiterature).set(next).where(eq(affiliateLiterature.id, id)),
+       }));
+       return { id };
+diff --git a/server/routers/affiliateResources.ts b/server/routers/affiliateResources.ts
+index 1553756..55a63c4 100644
+--- a/server/routers/affiliateResources.ts
++++ b/server/routers/affiliateResources.ts
+@@ -218,6 +218,10 @@ export const affiliateResourcesRouter = router({
+     // Only documents an admin explicitly put in the affiliate library. Both the
+     // visibility column AND the legacy isPublished flag have to agree, so a
+     // hand edit to one of them cannot publish an internal document.
++    // A reference document (catalog, cost sheet, price list, spec book, or a
++    // row marked documentRole = reference) also needs affiliateToggledAt, which
++    // is written only when the owner ticks Affiliate library. isAffiliateLibraryDocument
++    // is that rule; filtering here is what keeps it off the affiliate portal.
+     //
+     // The filter runs on the shaped row rather than in SQL because visibility is
+     // added by hand in docs/sql/0269: before that SQL runs, a WHERE on the column
+diff --git a/shared/libraryVisibility.test.ts b/shared/libraryVisibility.test.ts
+index 6d4c546..40d5501 100644
+--- a/shared/libraryVisibility.test.ts
++++ b/shared/libraryVisibility.test.ts
+@@ -1,16 +1,23 @@
+ import { describe, expect, it } from "vitest";
+ import {
++  DEFAULT_LIBRARY_ROLE,
+   DEFAULT_LIBRARY_VISIBILITY,
+   LIBRARY_DOCUMENT_FILE_PREFIX,
++  REFERENCE_LIBRARY_CATEGORIES,
+   affiliateLibraryToggleNote,
++  inferredReferenceReason,
+   isAffiliateLibraryDocument,
++  isInferredReferenceDocument,
+   isInternalLibraryDocument,
+   isLibraryDocumentStorageKey,
+   isLibraryVisibility,
+   isPublishedForAffiliateLibrarySwitch,
++  isReferenceLibraryDocument,
++  libraryRoleForReferenceSwitch,
+   libraryVisibilityDescription,
+   libraryVisibilityLabel,
+   normalizeLibraryVisibility,
++  referenceNameReason,
+   visibilityForAffiliateLibrarySwitch,
+ } from "./libraryVisibility";
+ 
+@@ -75,6 +82,65 @@ describe("library visibility rules", () => {
+     expect(isLibraryDocumentStorageKey(null)).toBe(false);
+   });
+ 
++  it("keeps reference material out of the affiliate library until the owner ticks it", () => {
++    const costSheet = {
++      title: "Kitchen Installation Cost Sheet",
++      filename: "KitchenCostSheet.pdf",
++      category: "Installation",
++      documentRole: "literature" as const,
++    };
++    const catalog = {
++      title: "SolidTrac Catalog",
++      filename: "solidtrac.pdf",
++      category: "Product Catalogs",
++    };
++    // The live categories, and the title/file-name rule, are reference even
++    // before the role column says so, and even when the role still says literature.
++    expect(isReferenceLibraryDocument(costSheet)).toBe(true);
++    expect(isReferenceLibraryDocument(catalog)).toBe(true);
++    expect(inferredReferenceReason(costSheet)).toBe("category Installation");
++    expect(referenceNameReason("Master price list", "prices.pdf")).toBe("price list");
++    expect(referenceNameReason("Door spec book", null)).toBe("spec book");
++    expect(isInferredReferenceDocument({ title: "SolidTrac Catalog", filename: "solidtrac.pdf" })).toBe(true);
++
++    // Published flags alone are not the owner's tick.
++    expect(isAffiliateLibraryDocument({ ...costSheet, visibility: "affiliate", isPublished: true })).toBe(false);
++    expect(isAffiliateLibraryDocument({ ...costSheet, visibility: "affiliate", isPublished: true, affiliateToggledAt: null })).toBe(false);
++    expect(isAffiliateLibraryDocument({ ...catalog, visibility: "internal", isPublished: true, affiliateToggledAt: "2026-11-10T00:00:00.000Z" })).toBe(false);
++
++    // The tick is the audit timestamp the checkbox writes.
++    expect(isAffiliateLibraryDocument({
++      ...costSheet,
++      visibility: "affiliate",
++      isPublished: true,
++      affiliateToggledAt: "2026-11-10T00:00:00.000Z",
++    })).toBe(true);
++
++    // A stored Reference mark covers a document the name rule would miss.
++    expect(isReferenceLibraryDocument({ title: "Field notes", filename: "notes.pdf", category: "General", documentRole: "reference" })).toBe(true);
++    expect(isAffiliateLibraryDocument({
++      title: "Field notes",
++      filename: "notes.pdf",
++      category: "General",
++      documentRole: "reference",
++      visibility: "affiliate",
++      isPublished: true,
++    })).toBe(false);
++
++    // Sales literature is unchanged: both flags, no tick required.
++    const brochure = { title: "Cabinet Dealz Affiliate Portal Sales Brochure", filename: "CabinetDealz_Affiliate_Portal_Sales_Brochure.pdf", category: "Sales & Marketing", documentRole: "literature" };
++    expect(isReferenceLibraryDocument(brochure)).toBe(false);
++    expect(isAffiliateLibraryDocument({ ...brochure, visibility: "affiliate", isPublished: true })).toBe(true);
++    // The description can mention a catalog. The rule does not read it: the row type has no description field.
++    const brochureMentioningCatalog = { ...brochure, description: "catalog curation" };
++    expect(isReferenceLibraryDocument(brochureMentioningCatalog)).toBe(false);
++
++    expect(DEFAULT_LIBRARY_ROLE).toBe("literature");
++    expect(libraryRoleForReferenceSwitch(true)).toBe("reference");
++    expect(libraryRoleForReferenceSwitch(false)).toBe("literature");
++    expect(REFERENCE_LIBRARY_CATEGORIES).toEqual(["Product Catalogs", "Installation"]);
++  });
++
+   it("writes the audit line from the recorded name and time", () => {
+     const when = "2026-11-05T14:30:00.000Z";
+     expect(affiliateLibraryToggleNote({ visibility: "affiliate", isPublished: true, affiliateToggledAt: when, affiliateToggledByName: "Tom" }))
+diff --git a/shared/libraryVisibility.ts b/shared/libraryVisibility.ts
+index 2bca6b9..9fe2196 100644
+--- a/shared/libraryVisibility.ts
++++ b/shared/libraryVisibility.ts
+@@ -10,6 +10,12 @@
+  *               there is no public value, no public query, and the bytes live
+  *               in the private storage bucket behind a signed URL.
+  *
++ * Reference is not a third visibility. A reference document (a catalog, a cost
++ * sheet, a price list, a spec book) stays in this same library, in its own
++ * section, and is still either internal or affiliate. It is never public.
++ * Reference items are not returned to affiliates unless the owner has ticked
++ * Affiliate library on that item, which is the only write of the audit columns.
++ *
+  * The same file ships in cabinet-backend as `shared/libraryVisibility.ts`, so
+  * the server and the admin page cannot disagree about what a value means.
+  * New documents start `internal`; only an explicit admin action changes that.
+@@ -41,9 +47,64 @@ export function isLibraryDocumentStorageKey(value: string | null | undefined): b
+ 
+ export const AFFILIATE_LIBRARY_SWITCH_LABEL = "Affiliate library";
+ 
++export const REFERENCE_LIBRARY_SWITCH_LABEL = "Reference";
++
++/**
++ * Roles are separate from visibility. `literature` is the affiliate-literature
++ * list. `reference` is the reference section. Anything unrecognised is literature,
++ * so a typo cannot hide a document the owner already published by calling it
++ * reference, and it cannot by itself publish one either.
++ */
++export const LIBRARY_ROLES = ["literature", "reference"] as const;
++
++export type LibraryRole = (typeof LIBRARY_ROLES)[number];
++
++export const DEFAULT_LIBRARY_ROLE: LibraryRole = "literature";
++
++/**
++ * Categories on the live admin list that are reference material.
++ * Sales & Marketing and Training are affiliate literature and are not in this list.
++ */
++export const REFERENCE_LIBRARY_CATEGORIES = ["Product Catalogs", "Installation"] as const;
++
++/**
++ * Title or file-name rule for the other reference documents (price lists, spec
++ * books, catalogs and cost sheets filed under some other category). Description
++ * text is ignored: a sales brochure can mention a catalog without being one.
++ * The same words are in docs/sql/0273 so the one-time UPDATE matches this helper.
++ */
++export const REFERENCE_NAME_PATTERNS: readonly { label: string; pattern: RegExp }[] = [
++  { label: "cost sheet", pattern: /cost\s*sheets?/i },
++  { label: "price list", pattern: /price\s*lists?/i },
++  { label: "spec book", pattern: /spec\s*books?/i },
++  { label: "catalog", pattern: /catalogs?/i },
++];
++
++/** Categories the upload form offers, including the ones already stored on live rows. */
++export const LIBRARY_CATEGORIES = [
++  "Internal",
++  "Sales",
++  "Marketing",
++  "Sales & Marketing",
++  "Pricing",
++  "Training",
++  "Legal",
++  "Product Catalogs",
++  "Installation",
++  "General",
++] as const;
++
++export type LibraryCategory = (typeof LIBRARY_CATEGORIES)[number];
++
+ export type LibraryVisibilityRow = {
+   visibility?: string | null;
+   isPublished?: boolean | null;
++  /** Null when the column has not been added yet. */
++  documentRole?: string | null;
++  category?: string | null;
++  title?: string | null;
++  filename?: string | null;
++  affiliateToggledAt?: Date | string | null;
+ };
+ 
+ export function isLibraryVisibility(value: unknown): value is LibraryVisibility {
+@@ -66,13 +127,76 @@ export function isInternalLibraryDocument(row: LibraryVisibilityRow): boolean {
+   return normalizeLibraryVisibility(row.visibility) === "internal";
+ }
+ 
++export function isLibraryRole(value: unknown): value is LibraryRole {
++  return typeof value === "string" && (LIBRARY_ROLES as readonly string[]).includes(value);
++}
++
++/** A missing or unrecognised role is literature. Reference has to be explicit or inferred. */
++export function normalizeLibraryRole(value: unknown): LibraryRole | null {
++  if (value == null || value === "") return null;
++  return isLibraryRole(value) ? value : null;
++}
++
++export function isReferenceLibraryCategory(category: string | null | undefined): boolean {
++  const name = (category ?? "").trim();
++  return (REFERENCE_LIBRARY_CATEGORIES as readonly string[]).includes(name);
++}
++
++/** Why a title or file name is reference material, or null when it is not. */
++export function referenceNameReason(title: string | null | undefined, filename: string | null | undefined): string | null {
++  const haystack = `${title ?? ""}\n${filename ?? ""}`;
++  const match = REFERENCE_NAME_PATTERNS.find((rule) => rule.pattern.test(haystack));
++  return match ? match.label : null;
++}
++
++/**
++ * Reference by category or by title/file name, whether or not the role column
++ * has been stored. A stored role of `literature` does not override this: those
++ * words are what the owner asked to keep out of the affiliate library.
++ */
++export function inferredReferenceReason(row: LibraryVisibilityRow): string | null {
++  if (isReferenceLibraryCategory(row.category)) return `category ${row.category}`;
++  const named = referenceNameReason(row.title, row.filename);
++  return named ? `title or file name is a ${named}` : null;
++}
++
++export function isInferredReferenceDocument(row: LibraryVisibilityRow): boolean {
++  return inferredReferenceReason(row) != null;
++}
++
++/**
++ * Reference when the owner marked it, or when the category / title / file name
++ * rule matches. A null role (column not added yet) still follows the rule.
++ */
++export function isReferenceLibraryDocument(row: LibraryVisibilityRow): boolean {
++  if (normalizeLibraryRole(row.documentRole) === "reference") return true;
++  return isInferredReferenceDocument(row);
++}
++
++export function libraryRoleForReferenceSwitch(reference: boolean): LibraryRole {
++  return reference ? "reference" : "literature";
++}
++
+ /**
+  * The one predicate the affiliate-facing read must use. Both the visibility
+  * column and the legacy isPublished column have to agree, so a raw SQL edit to
+  * either one cannot quietly publish an internal strategy document.
++ *
++ * A reference document also needs the audit timestamp. That timestamp is written
++ * only when the owner ticks Affiliate library. A row that is merely isPublished,
++ * or that was backfilled to visibility affiliate without a tick, stays out.
+  */
+ export function isAffiliateLibraryDocument(row: LibraryVisibilityRow): boolean {
+-  return normalizeLibraryVisibility(row.visibility) === "affiliate" && row.isPublished === true;
++  const published = normalizeLibraryVisibility(row.visibility) === "affiliate" && row.isPublished === true;
++  if (!published) return false;
++  if (!isReferenceLibraryDocument(row)) return true;
++  return hasAffiliateLibraryToggle(row);
++}
++
++function hasAffiliateLibraryToggle(row: LibraryVisibilityRow): boolean {
++  if (row.affiliateToggledAt == null || row.affiliateToggledAt === "") return false;
++  const when = new Date(row.affiliateToggledAt);
++  return !Number.isNaN(when.getTime());
+ }
+ 
+ /** The value stored when the "Affiliate library" checkbox is checked or cleared. */

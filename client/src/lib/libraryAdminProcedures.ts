@@ -36,6 +36,8 @@ export type LibraryDocument = {
   isPublished: boolean;
   sortOrder: number;
   visibility: LibraryVisibility;
+  /** Null when the database has no documentRole column yet. */
+  documentRole: string | null;
   affiliateToggledAt: string | Date | null;
   affiliateToggledByName: string | null;
 };
@@ -48,6 +50,8 @@ export type LibraryUploadInput = {
   mimeType: string;
   dataBase64: string;
   inAffiliateLibrary: boolean;
+  /** True files the upload in the Reference section. Defaults off in the form. */
+  reference: boolean;
 };
 
 type ProcedureError = { message: string; data?: { code?: string } | null };
@@ -69,6 +73,7 @@ export type RawLibraryDocument = Partial<Omit<LibraryDocument, "visibility">> & 
   title: string;
   fileKey?: string | null;
   visibility?: string | null;
+  documentRole?: string | null;
   affiliateToggledAt?: string | Date | null;
   affiliateToggledByName?: string | null;
 };
@@ -90,6 +95,7 @@ export function toLibraryDocument(row: RawLibraryDocument): LibraryDocument {
     isPublished: row.isPublished === true,
     sortOrder: row.sortOrder ?? 0,
     visibility: normalizeLibraryVisibility(row.visibility, DEFAULT_LIBRARY_VISIBILITY),
+    documentRole: typeof row.documentRole === "string" && row.documentRole.trim() ? row.documentRole : null,
     affiliateToggledAt: row.affiliateToggledAt ?? null,
     affiliateToggledByName: row.affiliateToggledByName ?? null,
   };
@@ -108,41 +114,37 @@ type LibraryProcedures = {
   };
   adminUpdate: {
     useMutation: (
-      options?: MutationOptions<{ id: number }, { id: number; inAffiliateLibrary?: boolean }>,
-    ) => Mutation<{ id: number; inAffiliateLibrary?: boolean }>;
+      options?: MutationOptions<{ id: number }, { id: number; inAffiliateLibrary?: boolean; reference?: boolean }>,
+    ) => Mutation<{ id: number; inAffiliateLibrary?: boolean; reference?: boolean }>;
   };
   adminDelete: {
     useMutation: (options?: MutationOptions<{ id: number }, { id: number }>) => Mutation<{ id: number }>;
   };
 };
 
-/**
- * `affiliateResources.adminSignedFile` is the admin-only way to open a library
- * document. A row's `url` is a private-bucket path, and the storage proxy refuses
- * every `library-documents/` key, so linking `url` directly answers 403. The
- * procedure checks the admin role server-side and hands back a short-lived signed
- * link instead.
- */
-type SignedFileProcedures = {
-  adminSignedFile: {
-    fetch: (input: { id: number }) => Promise<LibrarySignedFile>;
-  };
-};
-
 export function useAffiliateLiteratureAdmin() {
   const client = trpc as unknown as {
     affiliateLiterature: LibraryProcedures;
-    affiliateResources: SignedFileProcedures;
     useUtils: () => {
       affiliateLiterature: { adminList: { invalidate: () => Promise<void> } };
+      /**
+       * `fetch` lives on the utils proxy. Calling it on the procedure proxy
+       * (`trpc.affiliateResources.adminSignedFile.fetch`) throws
+       * `hooks[lastArg] is not a function`, which the production bundle
+       * minifies to `e[i] is not a function`.
+       */
+      affiliateResources: {
+        adminSignedFile: { fetch: (input: { id: number }) => Promise<LibrarySignedFile> };
+      };
     };
   };
+  const utils = client.useUtils();
   return {
-    utils: client.useUtils(),
+    utils,
     list: client.affiliateLiterature.adminList.useQuery(),
+    // useMutation stays on the procedure, called during this hook's render.
     upload: client.affiliateLiterature.adminUpload,
     update: client.affiliateLiterature.adminUpdate,
     remove: client.affiliateLiterature.adminDelete,
-    signedFile: client.affiliateResources.adminSignedFile,
   };
 }
