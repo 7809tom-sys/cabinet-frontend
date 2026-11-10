@@ -234,7 +234,7 @@ function SidebarInner({
       : null,
   );
   const visibleVendors = publishReady
-    ? vendorNav.vendors.filter((vendor) => catalogVendorPublished(affiliatePublish.rows, vendor))
+    ? vendorNav.vendors.filter((vendor) => catalogVendorPublished(affiliatePublish.rows, vendor, { role: user?.role ?? null }))
     : vendorNav.vendors;
   const designerPublished = !publishReady || Object.values(DESIGNER_ROOM_FEATURE).some((feature) => affiliatePublish.anyPublished(feature));
   const closetPublished = !publishReady || affiliatePublish.anyPublished("closet_studio");

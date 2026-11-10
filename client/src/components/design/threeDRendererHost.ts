@@ -10,118 +10,115 @@ import * as THREE from "three";
  */
 export type ThreeDRendererFactory = () => THREE.WebGLRenderer | null;
 
-export function createThreeDWebGLRenderer(): THREE.WebGLRenderer | null {
+/**
+ * Context requests, most capable first. None asks for the discrete GPU:
+ * "high-performance" makes dual-GPU laptops switch GPUs, which can cost the
+ * page a context. three.js only renders through WebGL 2.
+ */
+export const THREE_D_CONTEXT_ATTEMPTS: readonly WebGLContextAttributes[] = [
+  { alpha: true, antialias: true, stencil: true, preserveDrawingBuffer: true, powerPreference: "default", failIfMajorPerformanceCaveat: false },
+  { alpha: true, antialias: false, stencil: true, preserveDrawingBuffer: true, powerPreference: "default", failIfMajorPerformanceCaveat: false },
+  { alpha: true, antialias: false, stencil: false, preserveDrawingBuffer: true, powerPreference: "low-power", failIfMajorPerformanceCaveat: false },
+];
+
+/**
+ * Why the last start failed. "blocked" is Chrome refusing WebGL to the whole
+ * site because a second GPU reset hit while the site held a live context. Only
+ * a reload the customer starts from the browser lifts it; a reload or
+ * navigation started by the page, even from a click, does not.
+ */
+export type ThreeDStartFailure = "blocked" | "unavailable";
+let lastStartFailure: ThreeDStartFailure | null = null;
+
+export function lastThreeDStartFailure(): ThreeDStartFailure | null {
+  return lastStartFailure;
+}
+
+function releaseContext(context: WebGLRenderingContext | WebGL2RenderingContext | null | undefined): void {
   try {
-    return new THREE.WebGLRenderer({ antialias: true, alpha: true, stencil: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
+    context?.getExtension("WEBGL_lose_context")?.loseContext();
   } catch {
-    // Some browsers refuse the first request (another tab or an earlier test may still
-    // hold graphics contexts). Retry with plainer settings before giving up.
+    /* already lost */
+  }
+}
+
+/**
+ * Asks for the context itself and hands it to three.js, instead of letting
+ * three.js ask. On a refused request three.js asks again without attributes just
+ * to word its error, and that second context is never released; a context that
+ * arrives already lost (the GPU process is restarting) makes its constructor
+ * throw. Either way a failed start would leave a live context behind.
+ */
+export function createThreeDWebGLRenderer(createCanvas: () => HTMLCanvasElement = () => document.createElement("canvas")): THREE.WebGLRenderer | null {
+  let blocked = false;
+  let lastError: unknown = null;
+  for (const attributes of THREE_D_CONTEXT_ATTEMPTS) {
+    let context: WebGL2RenderingContext | null = null;
     try {
-      return new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true });
-    } catch {
-      // Hybrid-graphics laptops can refuse the discrete GPU; ask for the
-      // integrated one and accept a software-backed context.
+      const canvas = createCanvas();
+      const onCreationError = (event: Event) => {
+        if (/blocked/i.test((event as WebGLContextEvent).statusMessage ?? "")) blocked = true;
+      };
+      canvas.addEventListener?.("webglcontextcreationerror", onCreationError);
       try {
-        return new THREE.WebGLRenderer({ preserveDrawingBuffer: true, powerPreference: "low-power", failIfMajorPerformanceCaveat: false });
-      } catch {
-        // Last resort for Chrome with a restricted GPU: default options only.
-        try {
-          return new THREE.WebGLRenderer({ preserveDrawingBuffer: true });
-        } catch (error) {
-          console.warn("[3D] WebGL could not start", error);
-          return null;
-        }
+        context = canvas.getContext("webgl2", attributes) as WebGL2RenderingContext | null;
+      } finally {
+        canvas.removeEventListener?.("webglcontextcreationerror", onCreationError);
       }
+      if (!context || context.isContextLost()) continue;
+      const renderer = new THREE.WebGLRenderer({ ...attributes, canvas, context } as THREE.WebGLRendererParameters);
+      lastStartFailure = null;
+      return renderer;
+    } catch (error) {
+      lastError = error;
+      releaseContext(context);
     }
   }
+  lastStartFailure = blocked ? "blocked" : "unavailable";
+  console.warn("[3D] WebGL could not start", lastError ?? lastStartFailure);
+  return null;
 }
 
-/**
- * Why no renderer could start. three.js only renders through WebGL 2, so a
- * browser that still offers WebGL 1 (WebGL 2 switched off) cannot be fixed by
- * retrying, and neither can one that offers no WebGL at all (graphics
- * acceleration off, or the GPU blocked for this page after repeated resets).
- */
-export type ThreeDWebGLSupport = "webgl2" | "webgl1-only" | "none";
+/** Waits between silent start attempts, then THREE_D_BACKGROUND_RETRY_MS for as long as the view stays open. */
+export const THREE_D_START_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 4000, 8000] as const;
+export const THREE_D_BACKGROUND_RETRY_MS = 15_000;
+/** Chrome restores a context lost to one GPU reset within about a second; past this the view starts a new one. */
+export const THREE_D_RESTORE_WAIT_MS = 2500;
 
-export function detectThreeDWebGLSupport(createCanvas: () => HTMLCanvasElement = () => document.createElement("canvas")): ThreeDWebGLSupport {
-  const tryContext = (type: "webgl2" | "webgl"): boolean => {
-    try {
-      const context = createCanvas().getContext(type) as WebGLRenderingContext | WebGL2RenderingContext | null;
-      if (!context) return false;
-      context.getExtension("WEBGL_lose_context")?.loseContext();
-      return true;
-    } catch {
-      return false;
-    }
-  };
-  if (tryContext("webgl2")) return "webgl2";
-  return tryContext("webgl") ? "webgl1-only" : "none";
-}
-
-export function threeDWebGLUnavailableMessage(support: ThreeDWebGLSupport): string {
-  const keep = "Your 2D plan and elevation preview remain available.";
-  if (support === "webgl1-only") {
-    return `The 3D view needs WebGL 2, which is turned off in this browser. In Chrome, open Settings > System, make sure "Use graphics acceleration when available" is on, and relaunch Chrome. On a work computer, WebGL 2 may be blocked by your IT policy. Then press Retry. ${keep}`;
-  }
-  if (support === "none") {
-    return `This browser is not letting this page use 3D graphics (WebGL is off or blocked). In Chrome, open Settings > System, turn on "Use graphics acceleration when available", and relaunch Chrome. If it is already on, chrome://gpu shows whether WebGL is blocked. Then press Retry. ${keep}`;
-  }
-  return `The interactive 3D view could not start. Close other 3D tabs, then press Retry. ${keep}`;
-}
-
-/** Recoveries from a GPU reset (a restored context or a new one) per browser session. */
-export const MAX_THREE_D_GPU_RECOVERIES = 3;
-const GPU_RECOVERIES_KEY = "cabinetdealz.threeDGpuRecoveries";
-let gpuRecoveriesThisPage = 0;
-
-export const THREE_D_GPU_RESET_LIMIT_MESSAGE =
-  "The graphics card has reset several times, so the 3D view stopped reconnecting to it. Reload the page to try again; if it keeps happening, restart Chrome or update the graphics driver. Your 2D plan and elevation preview remain available.";
-
-function sessionStorageOrNull(): Pick<Storage, "getItem" | "setItem"> | null {
-  try {
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Takes one of the session's GPU-reset recoveries. Chrome blocks WebGL for a
- * page that keeps resetting the GPU, so past the limit the 3D view stops and
- * says so instead of reconnecting forever. Without session storage the count
- * lasts for this page load.
- */
-export function claimThreeDGpuRecovery(storage: Pick<Storage, "getItem" | "setItem"> | null = sessionStorageOrNull()): boolean {
-  let used = gpuRecoveriesThisPage;
-  try {
-    used = Math.max(used, Number(storage?.getItem(GPU_RECOVERIES_KEY)) || 0);
-  } catch {
-    /* storage unavailable */
-  }
-  if (used >= MAX_THREE_D_GPU_RECOVERIES) return false;
-  gpuRecoveriesThisPage = used + 1;
-  try {
-    storage?.setItem(GPU_RECOVERIES_KEY, String(used + 1));
-  } catch {
-    /* storage unavailable */
-  }
-  return true;
-}
-
-/** Test hook: a fresh page load. */
-export function resetThreeDGpuRecoveriesForTests() {
-  gpuRecoveriesThisPage = 0;
-}
+export const THREE_D_STARTING_MESSAGE = "Starting the 3D view…";
+export const THREE_D_RECONNECTING_MESSAGE = "Reconnecting the 3D view…";
+export const THREE_D_UNAVAILABLE_MESSAGE =
+  "The 3D view is taking longer than usual to start. It keeps trying on its own; your 2D plan and elevation preview stay available.";
+export const THREE_D_BLOCKED_MESSAGE =
+  "Chrome paused 3D graphics on this site after your graphics card reset. Reload this page to bring the 3D view back; your design is kept on this device, and your 2D plan and elevation preview stay available.";
 
 /**
  * Renderers handed back by unmounted 3D views. Switching between Plan and 3D,
  * or between the kitchen, bathroom and closet designers, unmounts one view and
  * mounts the next; taking the parked renderer keeps the live WebGL context
  * count flat instead of asking the browser for a new context each time.
+ *
+ * A parked renderer still holds a live context, and Chrome blocks WebGL for the
+ * whole site once a second GPU reset (sleep and wake, a driver update, a display
+ * change) hits while the site holds one. So parking only bridges quick view
+ * switches: parked renderers are destroyed after THREE_D_PARK_GRACE_MS, and at
+ * once when the page is hidden.
  */
 const MAX_PARKED_RENDERERS = 2;
+export const THREE_D_PARK_GRACE_MS = 15_000;
 const parkedRenderers: THREE.WebGLRenderer[] = [];
+let parkTimer: ReturnType<typeof setTimeout> | null = null;
+let purgeWhenHiddenInstalled = false;
+
+function scheduleParkedRendererPurge(): void {
+  if (parkTimer) clearTimeout(parkTimer);
+  parkTimer = setTimeout(clearParkedThreeDRenderers, THREE_D_PARK_GRACE_MS);
+  if (purgeWhenHiddenInstalled || typeof document === "undefined") return;
+  purgeWhenHiddenInstalled = true;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") clearParkedThreeDRenderers();
+  });
+}
 
 function threeDRendererContextLost(renderer: THREE.WebGLRenderer): boolean {
   try {
@@ -132,6 +129,18 @@ function threeDRendererContextLost(renderer: THREE.WebGLRenderer): boolean {
 }
 
 function destroyThreeDRenderer(renderer: THREE.WebGLRenderer): void {
+  let context: WebGL2RenderingContext | null = null;
+  try {
+    context = renderer.getContext() as WebGL2RenderingContext;
+  } catch {
+    /* no context */
+  }
+  if (context && threeDRendererContextLost(renderer)) {
+    // A lost context cannot be released, and three.js has already asked Chrome
+    // to restore it; Chrome then brings it back with no renderer attached, a
+    // live context nobody owns. Give it straight back when that happens.
+    renderer.domElement.addEventListener("webglcontextrestored", () => releaseContext(context), { once: true });
+  }
   try {
     renderer.dispose();
   } finally {
@@ -153,8 +162,10 @@ export function parkedThreeDRendererCount(): number {
   return parkedRenderers.length;
 }
 
-/** Test hook: drops every parked renderer. */
+/** Destroys every parked renderer, releasing its context. */
 export function clearParkedThreeDRenderers(): void {
+  if (parkTimer) clearTimeout(parkTimer);
+  parkTimer = null;
   while (parkedRenderers.length > 0) destroyThreeDRenderer(parkedRenderers.pop()!);
 }
 
@@ -212,6 +223,7 @@ export class ThreeDRendererHost {
     // size call apply its own size and CSS.
     renderer.setSize(1, 1, false);
     parkedRenderers.push(renderer);
+    scheduleParkedRendererPurge();
   }
 
   /** Hard teardown for a failed start. forceContextLoss is required because
@@ -226,6 +238,14 @@ export class ThreeDRendererHost {
 }
 
 /**
+ * Hard ceiling for the drawing buffer. A 3x display otherwise allocates a
+ * framebuffer several times the CSS size, on top of a shadow map up to 2048,
+ * which is enough to reset the GPU. The quality profile already stays at or
+ * under this; sizeThreeDRenderer enforces it for every caller.
+ */
+export const THREE_D_MAX_PIXEL_RATIO = 1.75;
+
+/**
  * Resizes the reused canvas only when the pixel ratio or the CSS size actually
  * changed. Re-assigning the same width/height still resets the drawing buffer,
  * which would blank the frame that is already on screen.
@@ -236,10 +256,11 @@ export function sizeThreeDRenderer(
   height: number,
   pixelRatio: number,
 ): boolean {
+  const cappedRatio = Math.min(Math.max(1, pixelRatio || 1), THREE_D_MAX_PIXEL_RATIO);
   const current = new THREE.Vector2();
   renderer.getSize(current);
-  if (renderer.getPixelRatio() === pixelRatio && current.x === width && current.y === height) return false;
-  renderer.setPixelRatio(pixelRatio);
+  if (renderer.getPixelRatio() === cappedRatio && current.x === width && current.y === height) return false;
+  renderer.setPixelRatio(cappedRatio);
   renderer.setSize(width, height);
   return true;
 }

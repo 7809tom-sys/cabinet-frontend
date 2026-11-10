@@ -64,6 +64,20 @@ function reloadButton() {
 }
 
 describe("designer error boundary", () => {
+  it("can name the failure for a shared design instead of the designer default", () => {
+    function Broken() {
+      throw new Error("shared view failed");
+    }
+    act(() => root.render(
+      <DesignerErrorBoundary surface="shared-3d" pageReload={false} message="This design couldn't load">
+        <Broken />
+      </DesignerErrorBoundary>,
+    ));
+    expect(host.textContent).toContain("This design couldn't load");
+    expect(host.textContent).not.toContain("The designer hit a problem");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
   it("shows the in-place panel for a render error and remounts the designer on Reload", () => {
     let mounts = 0;
     let shouldThrow = true;

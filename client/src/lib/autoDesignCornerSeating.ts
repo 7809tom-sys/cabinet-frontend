@@ -87,12 +87,16 @@ function groupStillValid(placed: PlacedCabinet[], group: Group, openings: WallOp
 
 function movableGroups(
   working: PlacedCabinet[], room: RoomData, corner: { x: number; y: number }, cornerWallIds: readonly string[],
+  immovable: ReadonlySet<string> = new Set<string>(),
 ): Group[] {
   const groups: Group[] = [];
   for (const item of working) {
     const isFridge = isRefrigerator(item);
     const isRange = !isFridge && item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description);
     if (!isFridge && !isRange) continue;
+    // A refrigerator the person placed is a fixed anchor: the corner is designed
+    // around it, never by sliding it.
+    if (immovable.has(item.uid)) continue;
     const wallId = cabinetWall(item, room);
     if (!cornerWallIds.includes(wallId)) continue;
     const frame = wallRunFrame(wallId, room);
@@ -148,6 +152,11 @@ export function seatAutoDesignCorner(input: {
    * refrigerator keeps the 6 inch bay cap.
    */
   measuredApplianceUids?: readonly string[];
+  /**
+   * UIDs of refrigerators that must not move at all — a refrigerator already on
+   * the plan when Auto-Design started. The corner is designed around it.
+   */
+  immovableApplianceUids?: readonly string[];
 }): AutoDesignCornerSeatResult {
   const { source, slotLabel, target, room, openings } = input;
   const code = source.masterCode;
@@ -233,7 +242,7 @@ export function seatAutoDesignCorner(input: {
       : AUTO_DESIGN_MAX_APPLIANCE_NUDGE_IN;
     return Math.max(0, Math.min(input.maxNudgeIn ?? kindCap, kindCap));
   };
-  const groups = movableGroups(input.working, room, target, input.cornerWallIds).slice(0, 2);
+  const groups = movableGroups(input.working, room, target, input.cornerWallIds, new Set(input.immovableApplianceUids ?? [])).slice(0, 2);
   const stepsFor = (limit: number) => {
     const steps: number[] = [];
     for (let step = 0; step * NUDGE_STEP_IN <= limit + COLLISION_EPSILON_IN; step++) steps.push(step * NUDGE_STEP_IN);

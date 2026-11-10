@@ -788,10 +788,17 @@ export function applyAutoDesignWiggleRoom(input: {
   catalog: DesignCabinet[];
   origins: readonly AutoDesignAnchorOrigin[];
   lockedUids?: readonly string[];
+  /**
+   * Fixed anchors that may never move. A refrigerator already on the plan is
+   * passed here, so no wiggle jog can slide it out from under its own bay.
+   */
+  fixedUids?: readonly string[];
 }): { placed: PlacedCabinet[]; moves: AutoDesignWiggleMove[] } {
   let placed = [...input.placed];
   const cache = new Map<string, number>();
-  const locked = new Set(input.lockedUids ?? []);
+  // A refrigerator already on the plan is a fixed anchor: it never takes the
+  // wiggle jog, so nothing slides the appliance out from under its cabinets.
+  const locked = new Set([...(input.lockedUids ?? []), ...(input.fixedUids ?? [])]);
   const moves = new Map<string, AutoDesignWiggleMove>();
   const origins = [...input.origins].sort((left, right) => left.wallId.localeCompare(right.wallId) || left.originalStart - right.originalStart);
   const entryStarts = new Map<string, number>();

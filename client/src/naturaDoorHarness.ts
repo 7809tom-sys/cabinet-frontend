@@ -52,7 +52,7 @@ function makePane(host: HTMLElement): Pane {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = RESTORED_DOOR_LIGHTS.exposure;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = false;
   host.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();

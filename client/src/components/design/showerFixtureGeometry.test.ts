@@ -188,7 +188,8 @@ describe("Shower surround, system and niche geometry", () => {
 
   it.each([
     ["PL-SN1614", 16, 14],
-    ["PL-SN1627", 27 + 1 / 16, 16 + 1 / 64],
+    // SKU naming is width x height, so SN1627 is 16-1/64 wide by 27-1/16 tall.
+    ["PL-SN1627", 16 + 1 / 64, 27 + 1 / 16],
     ["PL-SN1639", 16 + 1 / 64, 39 + 1 / 32],
   ] as const)("%s is an open recess of the published size", (code, widthIn, heightIn) => {
     const profile = verifiedPelicanBathroomFixtureProfile(code)!;
@@ -196,13 +197,127 @@ describe("Shower surround, system and niche geometry", () => {
     expect(profile.widthIn).toBeCloseTo(widthIn, 4);
     expect(profile.heightIn).toBeCloseTo(heightIn, 4);
     const { size, inch, box } = bounds(makeShowerNicheParts(profile, materials));
-    // The recess goes into the wall: the body plus its face flange, measured from
-    // the flange plane (x = -shell) to the back of the box (x = depth).
-    expect(inch(size.x)).toBeGreaterThan(2);
-    expect(inch(size.x)).toBeCloseTo(profile.depthIn + 0.12, 1);
+    // The recess goes into the wall along +Z: the body plus its face flange,
+    // measured from the flange plane (z = -shell) to the back of the box
+    // (z = depth). Authored this way so the fixture's own group, which sits at
+    // floor level and whose +Z face is the wall, puts the recess into the wall
+    // rather than sideways across the shower.
+    expect(inch(size.z)).toBeGreaterThan(2);
+    expect(inch(size.z)).toBeCloseTo(profile.depthIn + 0.12, 1);
     // The face flange makes the outer frame a little bigger than the opening.
-    expect(inch(size.z)).toBeGreaterThan(profile.widthIn);
-    void box;
+    expect(inch(size.x)).toBeGreaterThan(profile.widthIn);
+    // It stands on the deck: the mesh never dips below its own mounting plane, so
+    // moving the group up to the mount height puts the whole niche above the pan.
+    // The flange laps 1/2" below the opening, which is the only part under zero.
+    expect(inch(box.min.y)).toBeCloseTo(-0.5, 1);
+    expect(inch(box.max.y)).toBeCloseTo(profile.heightIn + 0.5, 1);
+    expect(inch(box.max.y)).toBeGreaterThan(profile.heightIn);
+  });
+
+  /**
+   * Regression for the stray sheet Tom saw floating in the built shower.
+   *
+   * The niche used to be authored recessed along +X and centred on y = 0, while
+   * every fixture group is placed at floor level with its +Z face against the
+   * wall. That put half the niche below the pan and turned the recess sideways,
+   * so it rendered as a thin slab hanging in mid-air across the shower floor.
+   *
+   * The niche must therefore share the frame the rest of the shower uses: standing
+   * on y = 0, opening toward -Z, recess running into the wall along +Z.
+   */
+  it("authors the niche in the same frame as the other shower parts", () => {
+    const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1627")!;
+    const { inch, box } = bounds(makeShowerNicheParts(niche, materials));
+    // Standing on the deck, not straddling zero: the body never reaches far below it.
+    expect(inch(box.min.y)).toBeGreaterThanOrEqual(-0.5 - 0.01);
+    expect(inch(box.max.y)).toBeCloseTo(niche.heightIn + 0.5, 1);
+    // The recess runs into the wall on +Z, so the depth is the Z extent...
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12, 1);
+    // ...and the opening spans the published width on X. Under the old frame the
+    // width landed on Z and the thin depth on X, which is what read as a sideways
+    // panel hanging in the shower instead of a recess in the wall.
+    expect(inch(box.max.x - box.min.x)).toBeGreaterThan(niche.widthIn);
+    expect(inch(box.max.x - box.min.x)).toBeLessThan(niche.widthIn + 2);
+  });
+
+  /**
+   * Regression: the shower head was not connected to the valve.
+   *
+   * The riser used to be built from the constants 42" and 72" with no deck offset,
+   * so it started wherever those landed rather than at the valve, and the shopper's
+   * chosen heights were ignored entirely. It must start at the valve trim and end
+   * at the arm's centreline, at whatever heights were actually set.
+   */
+  it("runs the riser from the valve up to the shower arm at the real heights", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const heights = { valveHeightIn: 48, headHeightIn: 80 };
+    const parts = makeShowerSystemParts(profile, materials, heights);
+    const byName = (name: string) => parts.find((entry) => entry.part === name)!.mesh;
+
+    const riser = byName("shower-riser");
+    const valve = byName("shower-valve-trim");
+    const head = byName("shower-head");
+
+    riser.geometry.computeBoundingBox();
+    const riserBox = riser.geometry.boundingBox!.clone().translate(riser.position);
+    const valveTop = valve.position.y + 0.25 * (1 / 12);
+    expect(head.position.y).toBeLessThan(byName("shower-head-arm").position.y);
+
+    // The pipe reaches the valve at the bottom...
+    expect(riserBox.min.y).toBeGreaterThan(valveTop);
+    // Riser starts 1.5" above the valve centre, just clear of the 0.5"-thick trim.
+    expect(riserBox.min.y).toBeCloseTo(valve.position.y + 1.5 * (1 / 12), 3);
+    // ...and the shower arm at the top, so there is no gap at either end. The arm
+    // sits on the riser's centreline; the head hangs 0.4" below it.
+    const arm = byName("shower-head-arm");
+    expect(riserBox.max.y).toBeCloseTo(arm.position.y, 3);
+    // And it is a real, visible pipe, not a sliver.
+    expect(riserBox.max.y - riserBox.min.y).toBeGreaterThan((80 - 48) * (1 / 12) * 0.5);
+  });
+
+  it("follows the heights the shopper sets, not the old constants", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const low = makeShowerSystemParts(profile, materials, { valveHeightIn: 36, headHeightIn: 66 });
+    const high = makeShowerSystemParts(profile, materials, { valveHeightIn: 60, headHeightIn: 92 });
+    const valveY = (parts: ReturnType<typeof makeShowerSystemParts>) =>
+      parts.find((entry) => entry.part === "shower-valve-trim")!.mesh.position.y;
+    const riserY = (parts: ReturnType<typeof makeShowerSystemParts>) =>
+      parts.find((entry) => entry.part === "shower-riser")!.mesh.position.y;
+    // A taller valve setting really moves the valve, and the riser with it.
+    expect(high.length).toBe(low.length);
+    expect(valveY(high)).toBeGreaterThan(valveY(low));
+    expect(riserY(high)).toBeGreaterThan(riserY(low));
+    // 60" - 36" = 24" of extra height, in scene units.
+    expect(valveY(high) - valveY(low)).toBeCloseTo(24 * (1 / 12), 2);
+  });
+
+  it("seats the riser escutcheon at the valve, plumbed into the wall", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80 });
+    const escutcheon = parts.find((entry) => entry.part === "shower-riser-escutcheon");
+    expect(escutcheon).toBeTruthy();
+    const valve = parts.find((entry) => entry.part === "shower-valve-trim")!.mesh;
+    expect(escutcheon!.mesh.position.y).toBeGreaterThan(valve.position.y);
+  });
+
+  /**
+   * Regression: Tom could not delete the niche.
+   *
+   * A niche is a shallow open box — 3-17/32" recess, 0.12" shells — so a click
+   * usually lands in the opening and the ray reaches the wall behind it. No hit
+   * means no selection, and no selection means no delete. The designer now adds an
+   * invisible, raycastable box covering the whole envelope; these assertions pin
+   * the properties that make it work.
+   */
+  it("covers the niche with an invisible but raycastable pick box", () => {
+    const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1627")!;
+    // The geometry builder itself stays a display model; the pick box is added by
+    // the 3D fixture builder, which is where the raycast happens. What matters
+    // here is the envelope it must cover.
+    const { inch, box } = bounds(makeShowerNicheParts(niche, materials));
+    expect(inch(box.max.x - box.min.x)).toBeGreaterThan(niche.widthIn);
+    expect(inch(box.max.y - box.min.y)).toBeGreaterThan(niche.heightIn);
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12, 1);
   });
 
   it("keeps the soap trays illustrative rather than claiming a measured fit", () => {

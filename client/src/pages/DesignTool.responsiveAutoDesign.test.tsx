@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import DesignTool from "./DesignTool";
 import { AutoDesignDialog } from "@/components/design/AutoDesignDialog";
-import { autoDesignControlState, AUTO_DESIGN_EMPTY_PLAN_NOTE, AUTO_DESIGN_REFRIGERATOR_NOTE, type AutoDesignPlacedLike } from "@/lib/autoDesignAvailability";
+import { autoDesignControlState, AUTO_DESIGN_EMPTY_PLAN_NOTE, AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE, type AutoDesignPlacedLike } from "@/lib/autoDesignAvailability";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { CartProvider } from "@/contexts/CartContext";
 import { PreferredProductsProvider } from "@/contexts/PreferredProductsContext";
@@ -236,7 +236,7 @@ function dishwasherPickerAt(width: number): HTMLSelectElement {
 }
 
 function noteAt(width: number): HTMLElement | null {
-  const candidates = screen.queryAllByTestId(/auto-design-(refrigerator|blocked)-note/).filter((element) => visibleAt(element, width));
+  const candidates = screen.queryAllByTestId(/auto-design-(refrigerator-anchor|blocked)-note/).filter((element) => visibleAt(element, width));
   if (candidates.length === 0) return null;
   expect(candidates.length).toBe(1);
   return candidates[0] as HTMLElement;
@@ -267,14 +267,14 @@ describe("Auto-Design is identical on phone, tablet, and desktop", () => {
         "Right of sink",
       ]);
 
-      // No refrigerator in the layout means the blocked note is absent everywhere.
+      // No refrigerator in the layout means no anchor note and no blocked note anywhere.
       expect(noteAt(width)).toBeNull();
 
       // The More-sheet row stays in place too; it lives inside a closed sheet
       // here and is exercised by its own test below.
     });
 
-    it(`publishes the same refrigerator blocked note and disabled trigger at ${width}px`, async () => {
+    it(`keeps the trigger ENABLED and explains the refrigerator as a fixed anchor at ${width}px`, async () => {
       seedDraft([refrigerator]);
       await renderDesigner(width);
 
@@ -282,18 +282,22 @@ describe("Auto-Design is identical on phone, tablet, and desktop", () => {
         audienceAllowed: true,
         layoutLocked: false,
         placedCount: 0,
-        hasRefrigerator: true,
+        refrigeratorAnchor: true,
       });
       const trigger = triggerAt(width) as HTMLButtonElement;
-      expect(expected.enabled).toBe(false);
-      expect(trigger.disabled).toBe(true);
-      expect(trigger.getAttribute("title")).toBe(AUTO_DESIGN_REFRIGERATOR_NOTE);
+      // The bug this pins: a placed refrigerator used to gray the control out.
+      expect(expected.enabled).toBe(true);
+      expect(trigger.disabled).toBe(false);
+      expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen around your refrigerator");
 
+      // The visible sentence names the refrigerator as the anchor the build
+      // designs around; it is never a reason to stand down.
       const note = noteAt(width);
-      expect(note, `the refrigerator note must be visible at ${width}px`).toBeTruthy();
-      expect(note!.textContent).toBe(AUTO_DESIGN_REFRIGERATOR_NOTE);
+      expect(note, `the refrigerator anchor note must be visible at ${width}px`).toBeTruthy();
+      expect(note!.textContent).toBe(AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE);
+      expect(note!.textContent).not.toMatch(/isn't available/i);
 
-      // The dishwasher-side choice stays available so the pick survives the block.
+      // The dishwasher-side choice stays available beside it.
       expect(dishwasherPickerAt(width).value).toBe("right");
     });
 
@@ -309,7 +313,7 @@ describe("Auto-Design is identical on phone, tablet, and desktop", () => {
       const note = noteAt(width);
       expect(note, `the empty-plan reason must be visible at ${width}px`).toBeTruthy();
       expect(note!.textContent).toBe(AUTO_DESIGN_EMPTY_PLAN_NOTE);
-      expect(AUTO_DESIGN_EMPTY_PLAN_NOTE).not.toBe(AUTO_DESIGN_REFRIGERATOR_NOTE);
+      expect(AUTO_DESIGN_EMPTY_PLAN_NOTE).not.toBe(AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE);
     });
   }
 
@@ -366,7 +370,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
       audienceAllowed: true,
       layoutLocked: false,
       placedCount: 0,
-      hasRefrigerator: false,
+      refrigeratorAnchor: false,
     });
     const trigger = triggerAt(1280) as HTMLButtonElement;
     expect(expected.enabled).toBe(true);
@@ -400,14 +404,15 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
   });
 
-  it("keeps the opener shut for a refrigerator, matching the blocked button", async () => {
+  it("opens for a refrigerator alone, matching the enabled button", async () => {
     seedDraft([refrigerator]);
     await renderDesigner(1280);
 
-    expect((triggerAt(1280) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(triggerAt(1280));
+    const trigger = triggerAt(1280) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    fireEvent.click(trigger);
     await act(async () => {});
-    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
+    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
   });
 });
 

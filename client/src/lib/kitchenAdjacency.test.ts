@@ -150,6 +150,30 @@ describe("range and refrigerator spacing", () => {
     expect(result.flags).toEqual([]);
   });
 
+  it("never slides a refrigerator the person already placed when opening the range gap", () => {
+    const room = { ...DEFAULT_ROOM, width: 144 };
+    const range = placed({ uid: "range", masterCode: "RANGE-30", description: "30 inch range", placement: "appliance", width: 30, wallOffset: 20 });
+    const fridge = placed({ uid: "fridge", masterCode: "FRIDGE-36", description: "36 inch refrigerator", placement: "appliance", width: 36, wallOffset: 62 });
+    const result = separateRangeAndRefrigerator({
+      placed: [range, fridge],
+      room,
+      origins: [
+        { uid: "range", originalStart: wallRunOffset(range, "bottom", room) },
+        { uid: "fridge", originalStart: wallRunOffset(fridge, "bottom", room) },
+      ],
+      fixedRefrigeratorUids: ["fridge"],
+    });
+    const movedFridge = result.placed.find((item) => item.uid === "fridge")!;
+    // The fixed anchor keeps its exact along-wall position...
+    expect(wallRunOffset(movedFridge, "bottom", room)).toBeCloseTo(wallRunOffset(fridge, "bottom", room), 5);
+    expect(movedFridge.x).toBe(fridge.x);
+    // ...and the range takes the whole jog instead, still inside its own cap.
+    const movedRange = result.placed.find((item) => item.uid === "range")!;
+    const rangeShift = Math.abs(wallRunOffset(movedRange, "bottom", room) - wallRunOffset(range, "bottom", room));
+    expect(rangeShift).toBeGreaterThan(0);
+    expect(rangeShift).toBeLessThanOrEqual(3.05);
+  });
+
   it("flags a manual layout whose fillers are the only thing between the range and refrigerator", () => {
     const room = { ...DEFAULT_ROOM, width: 180 };
     const range = placed({ uid: "range", masterCode: "RANGE-30", description: "30 inch range", placement: "appliance", width: 30, wallOffset: 0 });

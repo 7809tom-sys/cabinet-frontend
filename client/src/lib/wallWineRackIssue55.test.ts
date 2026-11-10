@@ -23,7 +23,8 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { isWallWineRackCabinet, withWallWineRacks, type WallWineRackFields } from "@shared/wallWineRack";
+import { designerWallWineRackSections, isWallWineRackCabinet, withWallWineRacks, type WallWineRackFields } from "@shared/wallWineRack";
+import { mergeStorefrontCatalogPages, storefrontCatalogOffsets } from "./storefrontWallWineRacks";
 import { cabinetCanBeRenderedOrPlacedIn3d, isDesignerAccessoryItem } from "@shared/designerEligibility";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { familyTypeMatches } from "./familyCategoryFilters";
@@ -199,6 +200,112 @@ describe("issue #55: verified 3015 / 3018 wall wine racks reach every surface", 
       `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase().includes(query.toLowerCase())
     )).map((hit) => hit.item.masterCode);
     expect(byPhrase.length, 'search "wine rack" returned nothing').toBeGreaterThan(0);
+  });
+});
+
+describe("issue #55: each line shows only the wine racks its catalog already sells", () => {
+  // Dimensions and list prices are the live line-catalog values. The merge
+  // must keep them and must not add a code the line did not return.
+  const madisonWallPage = [
+    { id: 1, masterCode: "W3018", category: "Wall", subCategory: "Bridge / Stacker", width: "30.00", height: "18.00", depth: "12.00", listPrice: "210.00" },
+  ];
+  const madisonRest = [
+    {
+      id: 9390348,
+      masterCode: "WXR3018",
+      category: "Wall",
+      subCategory: "Wine Rack",
+      description: "Wall X Rack Cabinet Kit — 30\" W x 18\" H x 12\" D (2 boxes)",
+      width: "30.00",
+      height: "18.00",
+      depth: "12.00",
+      listPrice: "402.00",
+      homeownerPrice: "156.31",
+    },
+  ];
+  const prestonLine = [
+    {
+      id: 9360166,
+      masterCode: "WRC3015",
+      category: "Wall",
+      subCategory: "Wine Rack",
+      description: "30\"X 15\" Wall Wine Rack Cabinet",
+      width: "30.000",
+      height: "15.000",
+      depth: "12.000",
+      listPrice: "340.00",
+    },
+    {
+      id: 9360167,
+      masterCode: "WRC3018",
+      category: "Wall",
+      subCategory: "Wine Rack / Open Display",
+      description: "30\"X 18\" Wall Wine Rack Cabinet",
+      width: "30.000",
+      height: "18.000",
+      depth: "12.000",
+      listPrice: "355.00",
+    },
+    { id: 9, masterCode: "W3018", category: "Wall", subCategory: null, width: "30", height: "30", depth: "12", listPrice: "180.00" },
+  ];
+
+  it("loads the storefront page that SKU order places after the first 200 rows", () => {
+    // Madison Shaker White's full line is 337 rows. Wall alone is 107, which
+    // now fits in one 200-row page. View All still needs the next page.
+    expect(storefrontCatalogOffsets(107)).toEqual([]);
+    expect(storefrontCatalogOffsets(337)).toEqual([200]);
+    expect(storefrontCatalogOffsets(60, 60)).toEqual([]);
+    const shown = mergeStorefrontCatalogPages([madisonWallPage, madisonRest]);
+    const rack = shown.find((item) => item.masterCode === "WXR3018");
+    expect(rack).toMatchObject({ width: "30.00", height: "18.00", depth: "12.00", listPrice: "402.00", homeownerPrice: "156.31" });
+    expect(shown.map((item) => item.masterCode)).not.toContain("WRC3015");
+    expect(shown.map((item) => item.masterCode)).not.toContain("WRC3018");
+  });
+
+  it("puts the line's own racks on the catalog wall page without copying another line's codes", () => {
+    const firstPage = [madisonWallPage[0]];
+    const madisonShown = withWallWineRacks(firstPage, madisonRest);
+    expect(madisonShown.map((item) => item.masterCode)).toEqual(["W3018", "WXR3018"]);
+    expect(madisonShown.find((item) => item.masterCode === "WXR3018")).toMatchObject({
+      width: "30.00",
+      height: "18.00",
+      depth: "12.00",
+      listPrice: "402.00",
+    });
+    const prestonShown = withWallWineRacks(
+      [{ id: 9, masterCode: "W3018", category: "Wall", width: "30", height: "30", depth: "12" }],
+      prestonLine,
+    );
+    expect(prestonShown.map((item) => item.masterCode)).toEqual(["W3018", "WRC3015", "WRC3018"]);
+    expect(prestonShown.find((item) => item.masterCode === "WRC3015")).toMatchObject({
+      width: "30.000",
+      height: "15.000",
+      depth: "12.000",
+      listPrice: "340.00",
+    });
+    expect(prestonShown.find((item) => item.masterCode === "WRC3018")).toMatchObject({
+      width: "30.000",
+      height: "18.000",
+      depth: "12.000",
+      listPrice: "355.00",
+    });
+    expect(prestonShown.map((item) => item.masterCode)).not.toContain("WXR3018");
+    // A rack already on this page is not added a second time.
+    expect(withWallWineRacks(prestonLine, prestonLine).filter((item) => item.masterCode === "WRC3015")).toHaveLength(1);
+  });
+
+  it("opens a designer wall section for the racks that line returned", () => {
+    const madison = designerWallWineRackSections([...madisonWallPage, ...madisonRest]);
+    expect(madison).toEqual([
+      expect.objectContaining({
+        label: "Wine Rack",
+        items: [expect.objectContaining({ masterCode: "WXR3018", width: "30.00", height: "18.00", depth: "12.00", listPrice: "402.00" })],
+      }),
+    ]);
+    const preston = designerWallWineRackSections(prestonLine);
+    expect(preston.map((section) => section.label)).toEqual(["Wine Rack", "Wine Rack / Open Display"]);
+    expect(preston.flatMap((section) => section.items.map((item) => item.masterCode))).toEqual(["WRC3015", "WRC3018"]);
+    expect(designerWallWineRackSections(madisonWallPage)).toEqual([]);
   });
 });
 

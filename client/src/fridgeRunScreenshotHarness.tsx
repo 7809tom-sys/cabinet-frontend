@@ -220,7 +220,7 @@ function mount3D(host: HTMLElement, placed: PlacedCabinet[], room: RoomData) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.0;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   host.appendChild(renderer.domElement);
   renderer.domElement.style.width = `${width}px`;
@@ -239,23 +239,23 @@ function mount3D(host: HTMLElement, placed: PlacedCabinet[], room: RoomData) {
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(roomW / 2, 0, roomD / 2);
-  floor.receiveShadow = true;
+  floor.receiveShadow = false;
   scene.add(floor);
 
   const wallMat = new THREE.MeshStandardMaterial({ color: "#f6f4ef", roughness: 0.95 });
   const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, ceiling, 4 * INCH), wallMat);
   backWall.position.set(roomW / 2, ceiling / 2, -2 * INCH);
-  backWall.receiveShadow = true;
+  backWall.receiveShadow = false;
   scene.add(backWall);
   const leftWall = new THREE.Mesh(new THREE.BoxGeometry(4 * INCH, ceiling, roomD), wallMat);
   leftWall.position.set(-2 * INCH, ceiling / 2, roomD / 2);
-  leftWall.receiveShadow = true;
+  leftWall.receiveShadow = false;
   scene.add(leftWall);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0xd9d3c7, 1.15));
   const key = new THREE.DirectionalLight(0xffffff, 1.5);
   key.position.set(roomW * 0.5, ceiling + 5, roomD * 0.45);
-  key.castShadow = true;
+  key.castShadow = false;
   key.shadow.mapSize.set(2048, 2048);
   const shadowCam = key.shadow.camera as THREE.OrthographicCamera;
   shadowCam.left = -roomW;

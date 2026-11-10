@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 const pageSource = readFileSync(resolve(process.cwd(), "client/src/pages/DesignTool.tsx"), "utf8");
 const layoutSource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignLayout.ts"), "utf8");
+const anchorSource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignRefrigeratorAnchor.ts"), "utf8");
 const dialogSource = readFileSync(resolve(process.cwd(), "client/src/components/design/AutoDesignDialog.tsx"), "utf8");
 const availabilitySource = readFileSync(resolve(process.cwd(), "client/src/lib/autoDesignAvailability.ts"), "utf8");
 
@@ -23,19 +24,37 @@ describe("public Auto-Design Designer wiring", () => {
     expect(guardAt).toBeGreaterThan(-1);
     expect(pageSource.slice(guardAt, buttonAt)).not.toContain(")}");
     expect(pageSource).toContain("disabled={!autoDesignControl.enabled}");
-    expect(pageSource).toContain("AUTO_DESIGN_REFRIGERATOR_NOTE");
     expect(pageSource).toContain("buildAutoDesignLayout");
     expect(pageSource).toContain("runAutoDesignLayout");
   });
 
-  it("keeps the empty-plan and refrigerator rules as the only ways to gray it out", () => {
+  it("keeps the empty-plan rule as the only way to gray it out", () => {
     expect(availabilitySource).toContain("export function autoDesignControlState(input: {");
     expect(availabilitySource).toContain("if (!input.audienceAllowed) {");
     expect(availabilitySource).toContain('AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan"');
-    expect(availabilitySource).toContain("AUTO_DESIGN_REFRIGERATOR_NOTE");
+    // A refrigerator is a fixed anchor, never a reason to disable the control.
+    expect(availabilitySource).not.toMatch(/isn't available with a refrigerator/i);
+    expect(availabilitySource).toContain("AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE");
+    expect(pageSource).toContain("refrigeratorAnchor: layoutHasRefrigerator,");
     // The page hands the shared control a room-only availability flag, so the
     // audience branch in the helper is always satisfied in the Designer.
     expect(pageSource).toContain("audienceAllowed: autoDesignAvailable,");
+  });
+
+  it("treats a placed refrigerator as a fixed anchor instead of refusing to build", () => {
+    // The old refusal is gone from the build path.
+    expect(pageSource).not.toMatch(/return fail\(AUTO_DESIGN_REFRIGERATOR_NOTE\)/);
+    // The build reads the refrigerator off the plan and hands it to the layout.
+    expect(pageSource).toContain("anchoredRefrigeratorOf(preExistingPlacements)");
+    expect(pageSource).toContain("anchoredRefrigerator,");
+    expect(layoutSource).toContain("anchoredRefrigerator?: PlacedCabinet | null");
+    expect(layoutSource).toContain("buildAnchoredRefrigeratorBay({");
+    expect(anchorSource).toContain("export function buildAnchoredRefrigeratorBay(");
+    // Its floor space is reserved and nothing is allowed to move it.
+    expect(anchorSource).toContain("refrigeratorFloorReservation");
+    expect(layoutSource).toContain("fixedUids: anchoredUids,");
+    expect(layoutSource).toContain("fixedRefrigeratorUids: anchoredUids,");
+    expect(layoutSource).toContain("immovableApplianceUids: anchoredUids,");
   });
 
   it("requires the four measured anchors and explicit layout controls in the popup", () => {
@@ -80,8 +99,11 @@ describe("public Auto-Design Designer wiring", () => {
     expect(dialogSource).toContain("Do not add Dishwasher");
     expect(dialogSource).toContain("Do not add Refrigerator");
     expect(layoutSource).toContain('const refrigeratorRequested = plan.plan.anchors.some((anchor) => anchor.kind === "refrigerator")');
-    expect(layoutSource).toContain("if (refrigeratorRequested && (!args.refrigeratorCaps.length || !args.refrigeratorEndPanels.length))");
-    expect(layoutSource).toContain("if (refrigerator) {");
+    // The measured bay still needs its source-priced parts; a refrigerator that
+    // is already on the plan is a fixed anchor and needs no palette row.
+    expect(layoutSource).toContain("if (refrigeratorRequested && !anchoredRefrigerator && (!args.refrigeratorCaps.length || !args.refrigeratorEndPanels.length))");
+    expect(layoutSource).toContain("if (refrigerator && anchoredRefrigerator) {");
+    expect(layoutSource).toContain("} else if (refrigerator) {");
   });
 
   it("offers a left or right sink-adjacent dishwasher choice when no exact center is entered", () => {

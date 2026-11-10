@@ -1,16 +1,22 @@
 /**
- * Auto-Design is the measured kitchen build. A refrigerator already
- * in the layout turns that mode off and grays the control out. Turning it off
- * never rebuilds or clears the plan.
+ * Auto-Design is the measured kitchen build. A refrigerator already on the plan
+ * does not turn that mode off: a placed refrigerator is a FIXED ANCHOR. The
+ * build keeps it exactly where it is, reserves its floor space, and designs the
+ * cabinets, corners, tall boxes and uppers around it.
  */
 
-export const AUTO_DESIGN_REFRIGERATOR_NOTE =
-  "Auto-Design isn't available with a refrigerator in the layout.";
+/**
+ * Visible hint beside the Auto-Design control while a refrigerator is on the
+ * plan. It says what the build will do with that refrigerator; it is never a
+ * reason to gray the control out.
+ */
+export const AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE =
+  "Your refrigerator stays where it is; Auto-Design designs the cabinets around it.";
 
 /**
- * Visible explanation for the other grayed-out case. Every surface prints this
- * same sentence for the same reason, so a phone never shows a bare disabled
- * control where the desktop explains why.
+ * Visible explanation for the grayed-out case. Every surface prints this same
+ * sentence for the same reason, so a phone never shows a bare disabled control
+ * where the desktop explains why.
  */
 export const AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan";
 
@@ -44,30 +50,26 @@ export function layoutHasRefrigerator(items: readonly RefrigeratorLike[]): boole
   return items.some(isRefrigeratorAppliance);
 }
 
-/**
- * A refrigerator placed by the in-progress Auto-Design anchor step is part of
- * that build. Any other refrigerator means the layout is a fridge-plus-cabinet
- * plan and Auto-Design must stop.
- */
-export function refrigeratorBlocksAutoDesign(
-  items: readonly RefrigeratorLike[],
-  sessionAnchorUids: ReadonlySet<string>,
-): boolean {
-  return items.some((item) => isRefrigeratorAppliance(item) && (!item.uid || !sessionAnchorUids.has(item.uid)));
+/** The refrigerator Auto-Design adopts as a fixed anchor, or null when the plan has none. */
+export function anchoredRefrigeratorOf<T extends RefrigeratorLike>(items: readonly T[]): T | null {
+  return items.find(isRefrigeratorAppliance) ?? null;
 }
 
 export type AutoDesignControl = {
   shown: boolean;
   enabled: boolean;
   title: string;
-  /** Visible explanation while the control is grayed out because of a refrigerator. */
-  refrigeratorNote: string | null;
   /**
    * The single visible sentence every surface (desktop toolbar, phone/tablet top
    * actions, More sheet) prints while the control is disabled. `null` when the
    * control is enabled or hidden, so no width invents a different reason.
    */
   blockedNote: string | null;
+  /**
+   * Visible hint while the control is ENABLED and a refrigerator is on the plan.
+   * Null when there is no refrigerator, so the surfaces stay quiet.
+   */
+  refrigeratorAnchorNote: string | null;
 };
 
 /**
@@ -88,6 +90,20 @@ export function isSinkBasePlacement(item: AutoDesignPlacedLike): boolean {
   return SINK_BASE_CODE.test((item.masterCode ?? "").trim());
 }
 
+/**
+ * True when this placement is hand-placed cabinet work that makes the plan no
+ * longer empty. A pushed sink base is a fixture choice, and a refrigerator is a
+ * fixed anchor the build designs around, so neither one counts.
+ */
+export function autoDesignBlocksEmptyPlan(item: AutoDesignPlacedLike): boolean {
+  return !isSinkBasePlacement(item) && !isRefrigeratorAppliance(item);
+}
+
+/** How many placements count as hand-placed work, i.e. what keeps Auto-Design off an occupied plan. */
+export function autoDesignHandPlacedCount(items: readonly AutoDesignPlacedLike[]): number {
+  return items.filter(autoDesignBlocksEmptyPlan).length;
+}
+
 export function autoDesignControlState(input: {
   /**
    * Whether Auto-Design is offered in this workspace at all. The Designer now
@@ -97,49 +113,34 @@ export function autoDesignControlState(input: {
    */
   audienceAllowed: boolean;
   layoutLocked: boolean;
-  /** Placements other than a pushed sink base, so a sink never locks Auto-Design out. */
+  /** Placements other than a pushed sink base or a refrigerator, so neither locks Auto-Design out. */
   placedCount: number;
-  hasRefrigerator: boolean;
+  /**
+   * True when a refrigerator is already on the plan. It becomes the build's
+   * fixed anchor: it never disables the control, it only adds the visible hint.
+   */
+  refrigeratorAnchor?: boolean;
 }): AutoDesignControl {
   if (!input.audienceAllowed) {
-    return { shown: false, enabled: false, title: "", refrigeratorNote: null, blockedNote: null };
-  }
-  if (input.hasRefrigerator) {
-    return {
-      shown: true,
-      enabled: false,
-      title: AUTO_DESIGN_REFRIGERATOR_NOTE,
-      refrigeratorNote: AUTO_DESIGN_REFRIGERATOR_NOTE,
-      blockedNote: AUTO_DESIGN_REFRIGERATOR_NOTE,
-    };
+    return { shown: false, enabled: false, title: "", blockedNote: null, refrigeratorAnchorNote: null };
   }
   if (input.layoutLocked || input.placedCount > 0) {
     return {
       shown: true,
       enabled: false,
       title: "Start Auto-Design from an empty Designer",
-      refrigeratorNote: null,
       blockedNote: AUTO_DESIGN_EMPTY_PLAN_NOTE,
+      refrigeratorAnchorNote: null,
     };
   }
+  const anchorNote = input.refrigeratorAnchor ? AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE : null;
   return {
     shown: true,
     enabled: true,
-    title: "Auto-Design a kitchen from four fixed fixture anchors",
-    refrigeratorNote: null,
+    title: anchorNote
+      ? "Auto-Design a kitchen around your refrigerator"
+      : "Auto-Design a kitchen from four fixed fixture anchors",
     blockedNote: null,
+    refrigeratorAnchorNote: anchorNote,
   };
-}
-
-/**
- * True only when a refrigerator outside the active anchor set appears while
- * Auto-Design is open. Callers close the dialog and drop the corner stage.
- * They must not call the layout completer or the cancel path that empties the plan.
- */
-export function autoDesignShouldTurnOffForRefrigerator(input: {
-  blockedByRefrigerator: boolean;
-  dialogOpen: boolean;
-  cornerStageActive: boolean;
-}): boolean {
-  return input.blockedByRefrigerator && (input.dialogOpen || input.cornerStageActive);
 }

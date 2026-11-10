@@ -48,7 +48,8 @@ describe("DesignTool cabinet catalog organization", () => {
     expect(source).toContain("const selectCatalogPaletteTab = useCallback((tab: HeightFilterPaletteType) => {");
     expect(source).toContain("setCatalogCollapseRequest(tab)");
     expect(source).toContain("catalogCollapseRequest !== paletteType");
-    expect(source).toContain("groupedPalette.map((group) => `${paletteType}:${group.label}`)");
+    expect(source).toContain(".map((group) => `${paletteType}:${group.label}`)");
+    expect(source).toContain("!group.items.some((item) => isWallWineRackCabinet(item))");
     expect(source).toContain("onClick={() => { selectCatalogPaletteTab(tab);");
   });
 

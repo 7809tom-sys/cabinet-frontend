@@ -6380,6 +6380,15 @@ export function elevationBox(
     // Use the stored height when the user has resized the appliance (e.g. fridge height set to 72").
     // Fall back to the catalog elevHeight when no custom height is stored.
     const storedH = typeof p.height === "number" && p.height > 0 ? p.height : null;
+    // A cooktop is a thin opening in the counter, including on a sink base.
+    // It is not a floor appliance, and it does not require a range hood.
+    if (p.applianceRole === "countertop-opening") {
+      const height = storedH ?? STD.COUNTERTOP_THICKNESS;
+      const bottom = typeof p.mountBottom === "number" && p.mountBottom >= 0
+        ? p.mountBottom
+        : Math.max(0, STD.COUNTERTOP_HEIGHT - height);
+      return { bottom, height };
+    }
     if (def) {
       // Catalog mount height is the safe default, but the placement flow may
       // persist an intentional appliance mount (notably an MW-30 over a range).
@@ -13956,6 +13965,21 @@ function sharedCustomWallVertex(
  * Two diagonal walls meeting at 90 degrees remain a normal flush corner with
  * no 11-inch reservation.
  */
+/**
+ * Smaller angle between two wall tangents, folded so a 135° interior and a
+ * 45° interior are the same 45° cabinet turn. The result is in radians.
+ * JavaScript `%` keeps a negative sign, so a west-going wall used to miss the
+ * 45°/135° test even when the corner was a true angled join.
+ */
+function smallerWallTurnRadians(firstAngle: number, secondAngle: number): number {
+  const delta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
+  const separation = Math.min(delta, Math.PI * 2 - delta);
+  return Math.min(separation, Math.abs(Math.PI - separation));
+}
+
+/** Half a degree. Matches the corner-hold tolerance in `insideCornerHoldIn`. */
+const WALL_TURN_TOLERANCE_RAD = 0.5 * Math.PI / 180;
+
 export function customWallJoinTurnsFortyFive(
   first: NonNullable<RoomData["customWalls"]>[number],
   second: NonNullable<RoomData["customWalls"]>[number],
@@ -13964,9 +13988,8 @@ export function customWallJoinTurnsFortyFive(
   if (!room.vertices?.length) return false;
   const firstAngle = polygonWallAngle(first, room.vertices);
   const secondAngle = polygonWallAngle(second, room.vertices);
-  const raw = Math.abs(((firstAngle - secondAngle + Math.PI) % (Math.PI * 2)) - Math.PI);
-  const interiorTurn = Math.min(raw, Math.abs(Math.PI - raw));
-  return Math.abs(interiorTurn - Math.PI / 4) <= 1e-6;
+  const interiorTurn = smallerWallTurnRadians(firstAngle, secondAngle);
+  return Math.abs(interiorTurn - Math.PI / 4) <= WALL_TURN_TOLERANCE_RAD;
 }
 
 /**
@@ -13983,15 +14006,26 @@ function customWallJoinTurnsNinety(
   if (!room.vertices?.length) return false;
   const firstAngle = polygonWallAngle(first, room.vertices);
   const secondAngle = polygonWallAngle(second, room.vertices);
-  const raw = Math.abs(((firstAngle - secondAngle + Math.PI) % (Math.PI * 2)) - Math.PI);
-  const interiorTurn = Math.min(raw, Math.abs(Math.PI - raw));
-  return Math.abs(interiorTurn - Math.PI / 2) <= 1e-6;
+  const interiorTurn = smallerWallTurnRadians(firstAngle, secondAngle);
+  return Math.abs(interiorTurn - Math.PI / 2) <= WALL_TURN_TOLERANCE_RAD;
 }
 
 // A fitted 45°-corner filler is source stock cut to at most the 3-inch face
 // width. It moves the cabinet body's endpoint slightly beyond the mandatory
 // 11-inch hold, but it must not re-open the finished countertop pocket.
 const FITTED_FORTY_FIVE_CORNER_FILLER_MAX_IN = 3;
+/**
+ * How far a counter-bearing cabinet may sit from a 45°/135° vertex and still
+ * count as adjoining. The 11-inch hold plus a fitted filler is the far end.
+ * Anything closer — including a plain filler-sized seam — is the same corner,
+ * so the top runs through it instead of stopping at the cabinet.
+ */
+const ANGLED_CORNER_COUNTERTOP_REACH_IN = PENINSULA_INSIDE_CORNER_CLEARANCE_IN + FITTED_FORTY_FIVE_CORNER_FILLER_MAX_IN;
+
+function angledCornerCountertopReachesVertex(distance: number): boolean {
+  return distance >= -COLLISION_EPSILON_IN
+    && distance <= ANGLED_CORNER_COUNTERTOP_REACH_IN + COLLISION_EPSILON_IN;
+}
 
 function measuredWallCountertopEndpointCabinet(
   wallId: string,
@@ -14016,15 +14050,14 @@ function measuredWallCountertopEndpointCabinet(
       return { cabinet, distance };
     })
     .filter(({ distance }) => (
-      distance <= COLLISION_EPSILON_IN
-      // A true 45° join keeps cabinet faces at the 11-inch hold. A confirmed
-      // fitted filler can move the body endpoint up to its source 3-inch face
-      // width beyond that datum; its countertop must still close continuously
-      // from the mitered cabinet fronts back to the wall. This remains tightly
-      // bounded and never applies to a normal 90° corner or a free large gap.
-      || (allowRequiredFortyFiveHold
-        && distance >= PENINSULA_INSIDE_CORNER_CLEARANCE_IN - COLLISION_EPSILON_IN
-        && distance <= PENINSULA_INSIDE_CORNER_CLEARANCE_IN + FITTED_FORTY_FIVE_CORNER_FILLER_MAX_IN + COLLISION_EPSILON_IN)
+      // A 90° corner still has to sit on the vertex. A 45°/135° corner joins
+      // every adjoining cabinet from flush through the 11-inch hold plus its
+      // fitted filler. The old rule only accepted flush or the 11–14 inch
+      // band, so a cabinet six inches off the angled corner kept a separate
+      // slab and the return never met it.
+      allowRequiredFortyFiveHold
+        ? angledCornerCountertopReachesVertex(distance)
+        : distance <= COLLISION_EPSILON_IN
     ))
     .sort((left, right) => left.distance - right.distance)[0]?.cabinet ?? null;
 }
@@ -14032,9 +14065,10 @@ function measuredWallCountertopEndpointCabinet(
 /**
  * Returns the verified true-45 join envelope used as the evidence gate before
  * cutting and filling a measured-wall countertop turn. The final surface pass
- * uses that evidence to add the wall-side corner fill only where two equal
- * elevation base runs have the required 11-inch holds; it never creates stone
- * across a normal 90-degree join or a free gap.
+ * uses that evidence to add the wall-side corner fill wherever two equal
+ * elevation runs adjoin the vertex, from flush through the 11-inch hold plus
+ * a fitted filler. It never creates stone across a normal 90-degree join or a
+ * free gap past that reach.
  */
 export function measuredWallCountertopMiterSurfaces(
   placed: readonly PlacedCabinet[],
@@ -14262,15 +14296,20 @@ export function miteredMeasuredWallCountertopSurfaces(
     if (!shared) continue;
     const firstLength = polygonWallSegmentLength(firstWall, room.vertices);
     const secondLength = polygonWallSegmentLength(secondWall, room.vertices);
-      const endpointSurfaceIndex = (wallId: string, at: "start" | "end", length: number) => resolved.findIndex((surface) => {
-        if (surface.customWallId !== wallId) return false;
-        const start = surface.customWallRunStartIn ?? 0;
-        const end = start + (surface.linearInches ?? surface.width);
-        const distance = at === "start" ? Math.abs(start) : Math.abs(length - end);
-        return distance <= COLLISION_EPSILON_IN
-          || (distance >= PENINSULA_INSIDE_CORNER_CLEARANCE_IN - COLLISION_EPSILON_IN
-            && distance <= PENINSULA_INSIDE_CORNER_CLEARANCE_IN + FITTED_FORTY_FIVE_CORNER_FILLER_MAX_IN + COLLISION_EPSILON_IN);
-      });
+      const endpointSurfaceIndex = (wallId: string, at: "start" | "end", length: number) => {
+        let bestIndex = -1;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        resolved.forEach((surface, index) => {
+          if (surface.customWallId !== wallId) return;
+          const start = surface.customWallRunStartIn ?? 0;
+          const end = start + (surface.linearInches ?? surface.width);
+          const distance = at === "start" ? Math.abs(start) : Math.abs(length - end);
+          if (!angledCornerCountertopReachesVertex(distance) || distance >= bestDistance) return;
+          bestDistance = distance;
+          bestIndex = index;
+        });
+        return bestIndex;
+      };
     const firstIndex = endpointSurfaceIndex(firstId, shared.firstAt, firstLength);
     const secondIndex = endpointSurfaceIndex(secondId, shared.secondAt, secondLength);
     if (firstIndex < 0 || secondIndex < 0) continue;
@@ -16472,6 +16511,14 @@ export interface PlacedFurniture {
    * deleted part leaves the cart with it.
    */
   showerStepId?: "surround" | "pan" | "heads" | "niche" | "door";
+  /**
+   * Which panel of the shower a wall fitting was mounted on.
+   *
+   * Saved with the design so the shopper's choice survives a reload, so Move
+   * shower can re-seat the part on the SAME panel, and so the wizard can show the
+   * current choice when the part is selected again.
+   */
+  showerPanelSide?: "back" | "left" | "right" | null;
 }
 
 export function makeFurniture(defId: string, x: number, y: number): PlacedFurniture {

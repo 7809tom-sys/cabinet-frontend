@@ -324,7 +324,8 @@ describe("#352: every cabinet uses the design's finish unless it was deliberatel
     // The palette and the Corner tab still list what the next placed cabinet (the brush) can be.
     expect(designToolSource).toMatch(/Narrow to the chosen line \+ style so only purchasable cabinets show\.\s+styleId: styleId \?\? undefined,/);
     // A repaired angled filler pair takes its own cabinet's finish.
-    expect(designToolSource).toContain("(cabinet) => cabinet.styleId ?? null,");
+    expect(designToolSource).toContain("const styleFor = (cabinet: PlacedCabinet) => cabinet.styleId ?? null;");
+    expect(designToolSource).toContain("repairMissingAngledWallFillers(");
   });
 
   it("inventory and sink-base hooks re-run when Color 1 changes", () => {

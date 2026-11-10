@@ -65,7 +65,9 @@ function stubCanvas2d() {
     fillStyle: "", strokeStyle: "", globalAlpha: 1, lineWidth: 1,
     fillRect() {}, beginPath() {}, moveTo() {}, bezierCurveTo() {}, stroke() {},
   };
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(((kind: string) => kind === "2d" ? context : null) as unknown as HTMLCanvasElement["getContext"]);
+  // The renderer host asks for the WebGL 2 context itself before handing it to the stubbed renderer.
+  const webgl2 = { isContextLost: () => false, getExtension: () => null };
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(((kind: string) => kind === "2d" ? context : kind === "webgl2" ? webgl2 : null) as unknown as HTMLCanvasElement["getContext"]);
 }
 
 function cornerDesign(cornerId: StudioCornerId): StudioDesign {

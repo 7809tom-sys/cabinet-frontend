@@ -5,17 +5,14 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
-import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { THREE_D_GPU_RESET_LIMIT_MESSAGE, ThreeDRendererHost, claimThreeDGpuRecovery, detectThreeDWebGLSupport, sizeThreeDRenderer, threeDWebGLUnavailableMessage, type ThreeDWebGLSupport } from "./threeDRendererHost";
+import { THREE_D_BLOCKED_MESSAGE, THREE_D_RECONNECTING_MESSAGE, THREE_D_STARTING_MESSAGE, THREE_D_UNAVAILABLE_MESSAGE, ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
+import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, MoonStar, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Sun, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Camera, CheckCircle2, ChevronDown, Download, Eye, FileDown, Info, LoaderCircle, Magnet, Mail, Maximize2, Minimize2, Minus, Move3D, Palette, PanelTop, Plus, Printer, RefreshCw, Rotate3D, Save, Share2, Sparkles, Trash2 } from "lucide-react";
 import { immersiveToggleLabel } from "@/lib/designerImmersive";
 import {
   THREE_D_FLOATING_COLUMN_TEST_ID,
@@ -72,7 +69,7 @@ import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixt
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup, pelicanChinaMaterial } from "@/lib/pelicanToiletMesh";
 import { doorOpeningAppearance, roomDoorSwing } from "@/lib/doorOpeningAppearance";
-import { catalogHardwareFinishSurface, doorHardwareOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwareFramePosition, type HardwareStyleId } from "@/lib/hardware";
+import { catalogHardwareFinishSurface, doorHardwareOffsetFromFaceCenterIn, doorPullCenterOffsetFromFaceCenterIn, hardwareStyle, normalizeDoorHardwareFramePosition, type DoorPullVerticalAnchor, type HardwareStyleId } from "@/lib/hardware";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
 import { trpc } from "@/lib/trpc";
 import { buildMosaicUnitImage } from "@/lib/mosaicUnitImage";
@@ -107,7 +104,6 @@ import { GEMINI_MATERIAL_MANIFEST_WIRE_VERSION, geminiMaterialManifestWireValida
 import { resolvePelicanDesignerMaterial } from "@/lib/pelicanQuartzMaterialMaps";
 import { resolveSinkFinish } from "@/lib/bathroomSinkFinish";
 import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/woodGrainVariation";
-import { SHADOW_STRENGTH_MAX, normalizeShadowStrength, readShadowStrengthPreference, shadowStrengthDescription, shadowStrengthLabel, shadowStrengthScale, writeShadowStrengthPreference } from "@/lib/shadowStrength";
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
 import { makeAlcoveTubParts } from "./alcoveTubGeometry";
 import {
@@ -1117,6 +1113,8 @@ interface Props {
   onGeometryRendered?: () => void;
   /** True while a GPU reset has paused the 3D view, so the page can hold back dialogs that would cover the notice. */
   onGraphicsPausedChange?: (paused: boolean) => void;
+  /** Chrome blocked WebGL for the site; only a reload by the customer brings the 3D view back. */
+  onWebglBlocked?: () => void;
   /** Persists an interactive wall-height adjustment back to the current 2D room. */
   onRoomWallHeightChange?: (heightIn: number) => void;
   /** Persists individual back, left, right, and front wall heights. */
@@ -2106,12 +2104,12 @@ export function threeDRenderQualityProfile(input: {
       ? "balanced"
       : "high";
   if (tier === "mobile") {
-    return { tier, pixelRatioCap: 1.25, shadowMapSize: 1024, maxAnisotropy: 4, environmentEnabled: true };
+    return { tier, pixelRatioCap: 1.25, maxAnisotropy: 4, environmentEnabled: true };
   }
   if (tier === "balanced") {
-    return { tier, pixelRatioCap: 1.5, shadowMapSize: 1536, maxAnisotropy: 6, environmentEnabled: true };
+    return { tier, pixelRatioCap: 1.5, maxAnisotropy: 6, environmentEnabled: true };
   }
-  return { tier, pixelRatioCap: 1.75, shadowMapSize: 2048, maxAnisotropy: 8, environmentEnabled: true };
+  return { tier, pixelRatioCap: 1.75, maxAnisotropy: 8, environmentEnabled: true };
 }
 
 export type HybridPlanUnderlayModel = {
@@ -4706,7 +4704,7 @@ export function addMasterTracConceptStorage(root: THREE.Group, anchor: PlacedCab
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(x * INCH, y * INCH, z * INCH);
     mesh.userData.masterTracConceptComponent = component;
-    mesh.castShadow = true;
+    mesh.castShadow = false;
     if (component === "drawer-front-illustration" || component === "shoe-board-illustration") {
       const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: "#68635d", transparent: true, opacity: 0.8 }));
       outline.userData.masterTracConceptOutline = true;
@@ -4979,8 +4977,8 @@ export function addCabinet(
     cabinet.position.y = (requestedMountBottom + resolvedHeightIn / 2) * INCH;
     cabinet.userData.masterTracBoard = { sku: sku.masterCode, shape: masterTrac.shape, finish: masterTrac.finish, thicknessIn: masterTrac.thicknessIn, bottomIn: requestedMountBottom, ...(sku.masterTracShelfCut ? { cut: sku.masterTracShelfCut } : {}) };
     const board = new THREE.Mesh(new THREE.BoxGeometry(bodyWidth, resolvedHeightIn * INCH, bodyDepth), boardMaterial);
-    board.castShadow = true;
-    board.receiveShadow = true;
+    board.castShadow = false;
+    board.receiveShadow = false;
     board.userData.masterTracBoardSurface = true;
     const boardOutline = new THREE.LineSegments(
       new THREE.EdgesGeometry(board.geometry),
@@ -6317,7 +6315,7 @@ export function addCabinet(
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(piece.w, piece.h, SHAKER_NOTCH_THICKNESS), shakerNotchMaterial(color, piece.band));
         mesh.position.set(piece.x, piece.y, notchZ);
         mesh.castShadow = false;
-        mesh.receiveShadow = true;
+        mesh.receiveShadow = false;
         mesh.userData = { shakerNotch: true, shakerNotchSide: piece.side, shakerNotchBand: piece.band, dimensionalCabinetDetail: true };
         frameGroup.add(mesh);
       }
@@ -6441,12 +6439,11 @@ export function addCabinet(
       hardwareMaterial,
     );
     if (isCupPull) pull.rotation.z = Math.PI / 2;
-    // Doors swing from their outside edge. Pulls therefore sit vertically at
-    // the center meeting edge (opposite hinge). Separate upper door banks use
-    // the physical bottom rail: the *lower end* of the handle is 2¾ inches
-    // above that rail, rather than positioning the centerline there. That
-    // keeps the whole pull inside the door. Lower/pantry doors retain their
-    // existing upper-side placement.
+    // Doors swing from their outside edge. Pulls sit on the opposite stile
+    // (two doors meet on the inner stiles). Base doors keep the pull just
+    // under the top edge. Wall doors keep it just above the bottom edge.
+    // A single full-height tall door aims at a 42" reach. Stacked pantry
+    // leaves meet at the shared rail: upper leaf from below, lower leaf from above.
     const automaticSide = hingeSide === "left" ? 1 : hingeSide === "right" ? -1 : -Math.sign(x || 1);
     // Drawers are fixed at the horizontal center by CabinetDealz construction
     // rules. Saved hardware choices remain effective only for door pulls.
@@ -6460,17 +6457,26 @@ export function addCabinet(
         explicitSide < 0 ? "left" : explicitSide > 0 ? "right" : "center",
         profileFrameWidthIn,
       ) * INCH;
-    const upperDoorBottomRailClearance = Math.min(2.75 * INCH, Math.max(0, faceHeight - pullLength));
-    const upperDoorBottomRailCenter = upperDoorBottomRailClearance + pullLength / 2;
+    const verticalAnchor: DoorPullVerticalAnchor = tallUpperDoorUsesMeetingRail || mountedWallDoorUsesBottomRail
+      ? "bottom"
+      : sku.placementType === "tall" && raisedFloorWallDoorPull
+        ? "reach"
+        : "top";
+    const mountBottomIn = Number(sku.mountBottom);
+    const cabinetHeightIn = Number(sku.height);
+    const doorCenterFloorIn = Number.isFinite(cabinetHeightIn) && cabinetHeightIn > 0
+      ? (Number.isFinite(mountBottomIn) ? mountBottomIn : 0) + cabinetHeightIn / 2 + y / INCH
+      : undefined;
     const pullY = drawer
       ? y
-      : raisedFloorWallDoorPull
-        ? y + faceHeight * 0.34
-        : requestedTopCenteredDoorPull
-          ? y + faceHeight / 2 - topRailWidth / 2
-      : tallUpperDoorUsesMeetingRail || mountedWallDoorUsesBottomRail
-            ? y - faceHeight / 2 + upperDoorBottomRailCenter
-            : y + faceHeight * 0.3;
+      : requestedTopCenteredDoorPull && !raisedFloorWallDoorPull
+        ? y + faceHeight / 2 - topRailWidth / 2
+        : y + doorPullCenterOffsetFromFaceCenterIn({
+          faceHeightIn: faceHeight / INCH,
+          pullLengthIn: pullLength / INCH,
+          anchor: verticalAnchor,
+          doorCenterFloorIn,
+        }) * INCH;
     pull.position.set(pullX, pullY, isKnob ? z + 0.012 : z);
     pull.userData = {
       cabinetHardware: true,
@@ -6478,7 +6484,8 @@ export function addCabinet(
       hardwareStyleId: selectedHardware.id,
       verticalPull: !isKnob && !drawer && !horizontalTopRailPull,
       pullDoorZone: drawer ? null : doorZone,
-      pullVerticalRail: drawer ? null : tallUpperDoorUsesMeetingRail || mountedWallDoorUsesBottomRail ? "bottom" : doorZone === "lower" ? "upper-side" : null,
+      pullVerticalAnchor: drawer || (requestedTopCenteredDoorPull && !raisedFloorWallDoorPull) ? null : verticalAnchor,
+      pullVerticalRail: drawer ? null : verticalAnchor === "bottom" ? "bottom" : verticalAnchor === "reach" ? "reach" : doorZone === "lower" || verticalAnchor === "top" ? "upper-side" : null,
       pullEdge: raisedFloorWallDoorPull ? "raised-door-rail" : horizontalTopRailPull ? "top-center" : resolvedHardwarePosition === "auto" || resolvedHardwarePosition === "paired" ? (drawer ? "center" : "opposite-hinge") : resolvedHardwarePosition,
       ...(hingeSide ? { hingeSide, handleSide: horizontalTopRailPull ? "top-center" : resolvedHardwarePosition === "auto" || resolvedHardwarePosition === "paired" ? hingeSide === "left" ? "right" : "left" : resolvedHardwarePosition } : { handleSide: horizontalTopRailPull ? "top-center" : resolvedHardwarePosition === "auto" || resolvedHardwarePosition === "paired" ? (automaticSide < 0 ? "left" : "right") : resolvedHardwarePosition }),
       hardwarePosition: resolvedHardwarePosition,
@@ -7083,7 +7090,11 @@ export function addCabinet(
     const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
     pull.position.set(
       doorCenter.x + localX.x * pullAlong + face.outward.x * 0.058,
-      -doorHeight * 0.3,
+      doorPullCenterOffsetFromFaceCenterIn({
+        faceHeightIn: doorHeight / INCH,
+        pullLengthIn: pullLength / INCH,
+        anchor: "bottom",
+      }) * INCH,
       doorCenter.z + localX.z * pullAlong + face.outward.z * 0.058,
     );
     pull.rotation.y = face.rotationY;
@@ -7180,7 +7191,11 @@ export function addCabinet(
         const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
         pull.position.set(
           door.position.x + tangentX * pullOffset + normalX * 0.058,
-          door.position.y - diagonalDoorHeight * 0.3,
+          door.position.y + doorPullCenterOffsetFromFaceCenterIn({
+            faceHeightIn: diagonalDoorHeight / INCH,
+            pullLengthIn: pullLength / INCH,
+            anchor: placement === "wall" ? "bottom" : "top",
+          }) * INCH,
           door.position.z + tangentZ * pullOffset + normalZ * 0.058,
         );
         pull.rotation.y = door.rotation.y;
@@ -7193,6 +7208,43 @@ export function addCabinet(
           stem.userData = { cabinetHardwareMount: true, diagonalDoorPullMount: true };
           frontGroup.add(stem);
         }
+      } else if (hardwareStyle(surfaceTextures?.hardwareStyleId).doorPiece !== "none") {
+        // Paired diagonal doors carry a vertical pull on each inner stile.
+        const pullLength = Math.min(Math.max(0.12, diagonalDoorHeight * 0.28), 0.86);
+        const normalX = Math.sin(door.rotation.y);
+        const normalZ = Math.cos(door.rotation.y);
+        const hardwarePosition = normalizeDoorHardwareFramePosition(sku.hardwarePosition ?? sku.handleSide ?? "auto");
+        const meetingSide = direction < 0 ? "right" : "left";
+        const handleSideName = hardwarePosition === "left" || hardwarePosition === "right" ? hardwarePosition : meetingSide;
+        const faceWidth = diagonalDoorWidth - 0.03;
+        const pullOffset = doorHardwareOffsetFromFaceCenterIn(faceWidth / INCH, handleSideName, profileFrameWidthIn) * INCH;
+        const tangentX = Math.cos(door.rotation.y);
+        const tangentZ = -Math.sin(door.rotation.y);
+        const pull = new THREE.Mesh(new THREE.BoxGeometry(0.022, pullLength, 0.026), hardwareMaterial);
+        pull.position.set(
+          door.position.x + tangentX * pullOffset + normalX * 0.058,
+          door.position.y + doorPullCenterOffsetFromFaceCenterIn({
+            faceHeightIn: diagonalDoorHeight / INCH,
+            pullLengthIn: pullLength / INCH,
+            anchor: placement === "wall" ? "bottom" : "top",
+          }) * INCH,
+          door.position.z + tangentZ * pullOffset + normalZ * 0.058,
+        );
+        pull.rotation.y = door.rotation.y;
+        pull.userData = {
+          cabinetHardware: true,
+          cabinetPull: "door",
+          diagonalDoorPull: true,
+          verticalPull: true,
+          pullEdge: "opposite-hinge",
+          handleSide: handleSideName,
+          pullVerticalAnchor: placement === "wall" ? "bottom" : "top",
+          hardwarePosition,
+          frameWidthIn: profileFrameWidthIn,
+          frameCenterInsetIn: profileFrameWidthIn / 2,
+          dimensionalCabinetDetail: true,
+        };
+        frontGroup.add(pull);
       }
     }
     if (sku.glassDoor) {
@@ -7282,23 +7334,21 @@ export function addCabinet(
       const hingeSide = sku.swing === "right" ? "right" as const : "left" as const;
       const hardwarePosition = normalizeDoorHardwareFramePosition(sku.hardwarePosition ?? sku.handleSide ?? "auto");
       const pullLength = Math.min(Math.max(0.12, faceHeight * 0.28), 0.86);
-      // Base lazy-Susan pulls sit at the upper opening edge of their operative
-      // door, unlike the lower-centered pull used on ordinary base doors.
+      // Base lazy-Susan pulls sit just under the top of the operative door.
+      // A wall easy-reach corner uses the bottom edge unless the cabinet is
+      // seated on the floor, in which case the pull moves up with a base door.
     const raisedFloorWallCornerDoorPull = placement === "wall" && usesRaisedFloorWallDoorPull({
       placement: sku.placementType,
       mountBottom: sku.mountBottom,
       islandFace: sku.islandFace,
       islandCounterHeightWallCabinet: sku.islandCounterHeightWallCabinet,
     });
-    const upperOpeningPullY = faceHeight / 2 - pullLength / 2 - 0.08;
-    // Normal wall cabinets use the lower door rail for an ergonomic reach from
-    // below. The only exception is wall cabinetry intentionally seated at the
-    // floor/toe-kick datum, which follows the existing raised-pull convention.
-    const bottomDoorRailClearance = Math.min(2.75 * INCH, Math.max(0, faceHeight - pullLength));
-    const bottomDoorRailPullY = -faceHeight / 2 + bottomDoorRailClearance + pullLength / 2;
-    const cornerDoorPullY = placement === "wall" && !raisedFloorWallCornerDoorPull
-      ? bottomDoorRailPullY
-      : upperOpeningPullY;
+    const cornerPullAnchor: DoorPullVerticalAnchor = placement === "wall" && !raisedFloorWallCornerDoorPull ? "bottom" : "top";
+    const cornerDoorPullY = doorPullCenterOffsetFromFaceCenterIn({
+      faceHeightIn: faceHeight / INCH,
+      pullLengthIn: pullLength / INCH,
+      anchor: cornerPullAnchor,
+    }) * INCH;
       const targets = hardwarePosition === "paired"
         ? [backDoor, sideDoor]
         : [hingeSide === "left" ? backDoor : sideDoor];
@@ -7489,7 +7539,11 @@ export function addCabinet(
       const localX = { x: Math.cos(face.rotationY), z: -Math.sin(face.rotationY) };
       pull.position.set(
         doorCenter.x + localX.x * pullAlong + face.outward.x * (doorThickness / 2 + 0.02),
-        doorHeight * 0.12,
+        doorPullCenterOffsetFromFaceCenterIn({
+          faceHeightIn: doorHeight / INCH,
+          pullLengthIn: pullLength / INCH,
+          anchor: "top",
+        }) * INCH,
         doorCenter.z + localX.z * pullAlong + face.outward.z * (doorThickness / 2 + 0.02),
       );
       pull.rotation.y = face.rotationY;
@@ -11048,7 +11102,7 @@ function addThreeDBaseboards(root: THREE.Group, placed: PlacedCabinet[], opening
       board.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);
       board.rotation.y = transform.rotation;
       board.translateZ((THREE_D_BASEBOARD_DEPTH_IN / 2) * INCH);
-      board.receiveShadow = true;
+      board.receiveShadow = false;
       board.userData = { baseboard: true, side, start: span.start, end: span.end };
       root.add(board);
     }
@@ -11151,7 +11205,7 @@ function addThreeDBacksplash(
     const transform = threeDBacksplashTransform({ ...segment, start: render.start, end: render.end }, room);
     mesh.position.set(transform.x * INCH, transform.y * INCH, transform.z * INCH);
     mesh.rotation.y = transform.rotation;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = false;
     mesh.userData = {
       measuredBacksplash: true, ...segment, tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind,
       continuousTileField: true, clippedAroundSavedPlan: true, cornerAnchor: anchor,
@@ -11223,7 +11277,7 @@ function addThreeDCountertopUpstands(
       transform.z * INCH + (segment.side === "top" ? inset : segment.side === "bottom" ? -inset : 0),
     );
     mesh.rotation.y = transform.rotation;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = false;
     mesh.userData = { countertopUpstand: true, ...segment, physicalHeightIn: heightIn, clippedAroundSavedPlan: true };
     root.add(mesh);
   }
@@ -11334,8 +11388,8 @@ function addPelicanBathroomFixture(
   const dark = new THREE.MeshStandardMaterial({ color: profile.finish === "vitreous-china-matte-black" ? "#050607" : "#c7d1d4", roughness: 0.3 });
   const add = (mesh: THREE.Mesh, part: string) => {
     mesh.userData = { pelicanBathroomFixturePart: part, pelicanCode: profile.pelicanCode };
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     group.add(mesh);
   };
 
@@ -11365,28 +11419,31 @@ function addPelicanBathroomFixture(
       for (const edge of [-1, 1] as const) {
         const stile = new THREE.Mesh(new THREE.BoxGeometry(frame, panelHeight, panelDepth * 1.1), metal);
         stile.position.set(x + edge * (panelWidth / 2 - frame / 2), panelHeight / 2, 0);
-        stile.castShadow = true;
+        stile.castShadow = false;
         add(stile, "shower-door-frame-stile");
       }
       for (const [label, y] of [["shower-door-frame-top", panelHeight - frame / 2], ["shower-door-frame-bottom", frame / 2]] as const) {
         const bar = new THREE.Mesh(new THREE.BoxGeometry(panelWidth, frame, panelDepth * 1.1), metal);
         bar.position.set(x, y, 0);
-        bar.castShadow = true;
+        bar.castShadow = false;
         add(bar, label);
       }
     }
-    // The top rail the panels hang from, and the floor track they run in.
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(width, 0.06, 0.06), metal);
-    rail.position.y = height - 0.03;
-    rail.castShadow = true;
-    add(rail, "shower-door-rail");
+    // The floor track the panels run in.
+    //
+    // There used to be a matching overhead header rail here. Tom asked for it gone:
+    // a long horizontal bar across the top of the glass, sticking out past the
+    // surround, made the enclosure look like a shop display case rather than the
+    // frameless doors Pelican actually sells. Removing it is purely visual — it was
+    // never a cart line, a price, or a placement of its own, so the door's SKU and
+    // total are untouched.
     const track = new THREE.Mesh(new THREE.BoxGeometry(width, 0.028, 0.05), metal);
     track.position.y = 0.014;
     add(track, "shower-door-track");
     // A vertical pull handle on the leading edge, as in every reference photo.
     const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, panelHeight * 0.42, 16), metal);
     handle.position.set(-width * 0.02, panelHeight * 0.52, panelDepth * 0.9);
-    handle.castShadow = true;
+    handle.castShadow = false;
     add(handle, "shower-door-handle");
   } else if (profile.kind === "shower-pan") {
     // A pan is the shower floor: a measured envelope with a flat rim, a recessed
@@ -11445,17 +11502,28 @@ function addPelicanBathroomFixture(
     // Valve, lever, riser, head and spout on the wet wall.
     // The system is authored flat on a wall at local x = 0 reaching into +X, so
     // it needs no extra offset: the fixture group is already on its wall.
+    // The heights the shopper actually set (valve 48", head 80" by default, both
+    // editable in the wizard). `mountHeightIn` is where this system was mounted,
+    // which IS the valve height; the arm sits above it. Passing these through is
+    // what makes the riser span valve-to-arm instead of starting at the floor.
+    const valveHeightIn = Math.max(0, furniture.mountHeightIn ?? 48);
+    const headHeightIn = Math.max(valveHeightIn + 12, valveHeightIn + 32);
     for (const { mesh, part } of makeShowerSystemParts(profile, {
       shell,
       // Solid metal in the finish the SKU is sold in, so a matte black system is
       // not drawn as a grey plastic rod.
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
-    })) {
+    }, { valveHeightIn, headHeightIn })) {
       add(mesh, part);
     }
   } else if (profile.kind === "shower-niche" || profile.kind === "soap-tray") {
     // A niche is recessed into a panel wall; a soap tray sits on a wall or pan.
     // Both are wall fittings with no floor footprint.
+    //
+    // The niche mesh is authored standing on y = 0, so the group itself carries the
+    // mounting height. Without this the niche was drawn at floor level and half of
+    // it sat below the pan — the thin slab hanging in Tom's 3D view.
+    group.position.y = Math.max(0, furniture.mountHeightIn ?? 0) * INCH;
     for (const { mesh, part } of makeShowerNicheParts(profile, {
       // A niche is recessed into the wall it sits in, so it takes the surround's
       // finish rather than a separate white box.
@@ -11464,6 +11532,37 @@ function addPelicanBathroomFixture(
     })) {
       add(mesh, part);
     }
+    // An invisible pick box over the niche's whole envelope.
+    //
+    // A niche is a shallow open box: its recess is 3-17/32" deep and the shells
+    // are only 0.12" thick, so in a perspective view a click almost always falls
+    // INSIDE the opening and the ray reaches the wall panel behind it instead of
+    // any niche surface. With no hit there is no selection, and with no selection
+    // Tom cannot delete it.
+    //
+    // This box covers width x height x recess depth, sits exactly on the niche, and
+    // is `visible = false` so it never draws — but `visible === false` still
+    // raycasts, unlike `layers` or `raycast = () => {}`. It carries the same
+    // `furnitureUid` the other parts get, so `inspectFurnitureAtPoint` resolves the
+    // niche from it.
+    const nichePickBox = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        profile.widthIn * INCH,
+        Math.max(profile.heightIn * INCH, 0.12),
+        Math.max(profile.depthIn * INCH, 0.06),
+      ),
+      new THREE.MeshBasicMaterial({ visible: false }),
+    );
+    // The niche body is authored standing on y = 0 with its recess running into
+    // +Z from the wall face, so the box is centred half its height up and half its
+    // depth forward.
+    nichePickBox.position.set(0, Math.max(profile.heightIn * INCH, 0.12) / 2, Math.max(profile.depthIn * INCH, 0.06) / 2);
+    nichePickBox.name = "shower-niche-pick-box";
+    add(nichePickBox, "shower-niche-pick-box");
+    // `add` sets cast/receiveShadow; keep the pick box out of the render entirely.
+    // `visible = false` still raycasts (unlike turning off `layers`), which is what
+    // makes the niche selectable where its thin shells are not.
+    nichePickBox.visible = false;
   } else if (profile.kind === "shower-wall") {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, Math.max(depth, 0.02)), new THREE.MeshStandardMaterial({ color: "#e7e2dc", roughness: 0.72 }));
     panel.position.y = height / 2;
@@ -12413,9 +12512,6 @@ type ThreeDViewerNavigationActions = {
   onShare: () => void | Promise<void>;
   onPhotoRender?: () => void;
   onPan: (direction: "up" | "down" | "left" | "right") => void;
-  /** Current shadow strength as a percentage of full strength, 0–100. */
-  shadowStrength?: number;
-  onShadowStrengthChange?: (percent: number) => void;
 };
 
 /**
@@ -12439,8 +12535,6 @@ export function ThreeDViewerNavigationControls({
   onShare,
   onPhotoRender,
   onPan,
-  shadowStrength,
-  onShadowStrengthChange,
   testId = "three-d-viewer-navigation",
   hidePan = false,
   leading,
@@ -12456,11 +12550,6 @@ export function ThreeDViewerNavigationControls({
   /** Actions that belong at the bottom of the stack, just above the PAN pad. */
   trailing?: ReactNode;
 }) {
-  const [shadowsOpen, setShadowsOpen] = useState(false);
-  const shadowValue = normalizeShadowStrength(shadowStrength);
-  const showShadows = typeof onShadowStrengthChange === "function";
-  const lightingTooltip = `Lighting — shadow strength ${shadowValue}%`;
-
   return (
     <div data-testid={testId} className="contents">
       {leading}
@@ -12477,48 +12566,6 @@ export function ThreeDViewerNavigationControls({
       <FloatingColumnButton data-testid="three-d-share-view" label="Share view" tooltip="Share view — copy a link to this exact camera angle" onClick={() => void onShare()}>
         <Share2 className="h-5 w-5" aria-hidden="true" />
       </FloatingColumnButton>
-      {showShadows && (
-        <div className="relative">
-          <FloatingColumnButton
-            data-testid="three-d-shadows-toggle"
-            label="Lighting"
-            tooltip={lightingTooltip}
-            onClick={() => setShadowsOpen((open) => !open)}
-            aria-expanded={shadowsOpen}
-            aria-pressed={shadowValue > 0}
-            className={shadowsOpen || shadowValue < SHADOW_STRENGTH_MAX ? "border-[#a87f33] bg-[#fffaf1] text-[#765416]" : undefined}
-          >
-            {shadowValue === 0 ? <MoonStar className="h-5 w-5" aria-hidden="true" /> : <Sun className="h-5 w-5" aria-hidden="true" />}
-          </FloatingColumnButton>
-          {shadowsOpen && (
-            <div
-              data-testid="three-d-shadows-panel"
-              className="absolute right-full top-0 z-30 mr-1 w-52 rounded-lg border border-slate-300 bg-white/98 p-2.5 text-[#1a2744] shadow-xl backdrop-blur"
-              onPointerDown={(event) => event.stopPropagation()}
-              onPointerUp={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <label htmlFor="three-d-shadows-slider" className="text-[11px] font-semibold">Lighting</label>
-                <span data-testid="three-d-shadows-value" className="text-[11px] font-bold tabular-nums text-[#765416]">{shadowValue}%</span>
-              </div>
-              <input
-                id="three-d-shadows-slider"
-                data-testid="three-d-shadows-slider"
-                type="range"
-                min={0}
-                max={SHADOW_STRENGTH_MAX}
-                step={1}
-                value={shadowValue}
-                aria-label="Shadow strength"
-                aria-valuetext={shadowStrengthDescription(shadowValue)}
-                onChange={(event) => onShadowStrengthChange?.(normalizeShadowStrength(event.target.value))}
-                className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-[#a87f33]"
-              />
-              <p className="mt-1.5 text-[10px] leading-snug text-slate-500">{shadowStrengthDescription(shadowValue)}</p>
-            </div>
-          )}
-        </div>
-      )}
       {trailing}
       {onPhotoRender && (
         <FloatingColumnButton data-testid="three-d-photo-render" label="Final preview" tooltip="Final preview — create a photo-quality image of this exact 3D view" onClick={onPhotoRender} accent>
@@ -12603,7 +12650,14 @@ function ThreeDFloorMaterialControl({
 // identity in the scene effect's dependencies and rebuilds the whole 3D room.
 const NO_ITEMS: never[] = [];
 
-export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered, onGraphicsPausedChange }: Props) {
+/** The designer opens its 3D view on load when the URL asks for it, so the customer's reload lands back in 3D. */
+function reopenThreeDAfterReload() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("preview", "3d");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered, onGraphicsPausedChange, onWebglBlocked }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -12611,9 +12665,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   // last painted frame stays visible until the new scene renders.
   const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
-  // The one light that casts shadows. Kept in a ref so the slider can change
-  // strength live instead of rebuilding the whole scene.
-  const shadowLightRef = useRef<THREE.DirectionalLight | null>(null);
   // Keep the callback fresh without rebuilding the WebGL scene on every parent render.
   const onGeometryRenderedRef = useRef(onGeometryRendered);
   onGeometryRenderedRef.current = onGeometryRendered;
@@ -12640,32 +12691,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   const suppressContextMenuRef = useRef(false);
   const lastEmittedPresentationRef = useRef<string | null>(null);
 	  const [autoRotate, setAutoRotate] = useState(false);
-	  // Shadow strength for the 3D stage, 0–100% of the renderer's own strength.
-	  // A display preference, so it is remembered per browser rather than saved
-	  // into the plan (see @/lib/shadowStrength).
-	  const [shadowStrength, setShadowStrength] = useState(() => readShadowStrengthPreference());
-	  useEffect(() => { writeShadowStrengthPreference(shadowStrength); }, [shadowStrength]);
-	  // The scene is built once per dependency change, so the live value is
-	  // mirrored into a ref: moving the slider then only retunes the shadow
-	  // intensity on the existing light instead of rebuilding the room.
-	  const shadowStrengthRef = useRef(shadowStrength);
-	  useEffect(() => {
-	    shadowStrengthRef.current = shadowStrength;
-	    const light = shadowLightRef.current;
-	    if (!light) return;
-	    light.shadow.intensity = shadowStrengthScale(shadowStrength);
-	    // Keep castShadow on and drive the strength through shadow.intensity.
-	    // three.js only uploads the shadowIntensity uniform while castShadow is
-	    // true, so toggling the flag off would drop the light out of the shadow
-	    // program entirely instead of fading it — and switching it back on can
-	    // leave the cached material compiled without the shadow path.
-	    light.castShadow = true;
-	    const renderer = rendererRef.current;
-	    if (renderer) {
-	      renderer.shadowMap.enabled = true;
-	      renderer.shadowMap.needsUpdate = true;
-	    }
-	  }, [shadowStrength]);
 	  const [resetKey, setResetKey] = useState(0);
 	  const [cameraReadyKey, setCameraReadyKey] = useState(0);
 	  const [cameraPreset, setCameraPreset] = useState<ThreeDCameraPreset>("presentation");
@@ -12673,50 +12698,22 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	  const [showSolidFrontWalls, setShowSolidFrontWalls] = useState(false);
   const [wallHeightIn, setWallHeightIn] = useState(() => constrainedThreeDWallHeight(roomOverride?.ceilingHeight ?? dimensions(scene.roomShape?.defaultDimensions).ceilingHeight));
   const [wallHeights, setWallHeights] = useState<Record<WallSide, number>>(() => resolvedThreeDWallHeights(roomOverride, wallHeightIn));
-	  const [webglUnavailable, setWebglUnavailable] = useState(false);
-  const [webglSupport, setWebglSupport] = useState<ThreeDWebGLSupport>("webgl2");
-  const [webglContextLost, setWebglContextLost] = useState(false);
-  const [webglContextGeneration, setWebglContextGeneration] = useState(0);
-  const [gpuResetLimitReached, setGpuResetLimitReached] = useState(false);
-  const webglAutoRetriesRef = useRef(0);
+  const threeDStart = useThreeDRendererRecovery(rendererHostRef, {
+    surface: "room",
+    onBlocked: () => {
+      reopenThreeDAfterReload();
+      onWebglBlocked?.();
+    },
+  });
+  const webglUnavailable = threeDStart.status !== "running";
+  const webglContextLost = threeDStart.paused;
+  const webglContextGeneration = threeDStart.generation;
   const onGraphicsPausedChangeRef = useRef(onGraphicsPausedChange);
   onGraphicsPausedChangeRef.current = onGraphicsPausedChange;
   useEffect(() => {
     onGraphicsPausedChangeRef.current?.(webglContextLost);
   }, [webglContextLost]);
   useEffect(() => () => onGraphicsPausedChangeRef.current?.(false), []);
-  /** Past the session's GPU-reset recoveries: drop the context and say why instead of reconnecting again. */
-  const stopAfterGpuResets = () => {
-    rendererHostRef.current?.dispose();
-    webglAutoRetriesRef.current = 2;
-    setGpuResetLimitReached(true);
-    setWebglUnavailable(true);
-  };
-  useEffect(() => {
-    // A GPU reset loses the context. Chrome usually restores it; when it does
-    // not (it blocks WebGL for a page after repeated resets), start over with a
-    // new context instead of leaving a blank canvas.
-    if (!webglContextLost) return;
-    const timer = window.setTimeout(() => {
-      setWebglContextLost(false);
-      rendererHostRef.current?.dispose();
-      webglAutoRetriesRef.current = 0;
-      setWebglUnavailable(true);
-    }, 4000);
-    return () => window.clearTimeout(timer);
-  }, [webglContextLost]);
-  useEffect(() => {
-    // A failed start used to be permanent until a page refresh. Contexts free up a moment
-    // later, so retry automatically (twice) before asking the user to press Retry.
-    if (!webglUnavailable || webglAutoRetriesRef.current >= 2) return;
-    const timer = window.setTimeout(() => {
-      webglAutoRetriesRef.current += 1;
-      // Drop the failed renderer so the next attempt asks the browser for a fresh context.
-      rendererHostRef.current?.dispose();
-      setWebglUnavailable(false);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [webglUnavailable]);
 	  const [cabinetFinish, setCabinetFinish] = useState(initialPresentation?.cabinetFinish ?? "catalog");
 	  const [cabinetPreviewFinishId, setCabinetPreviewFinishId] = useState<string | null>(null);
 	  const [countertopFinish, setCountertopFinish] = useState(() => resolvedThreeDCountertopFinish(initialPresentation, catalogCountertopColor, scene));
@@ -13161,33 +13158,16 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     if (!rendererHostRef.current) rendererHostRef.current = new ThreeDRendererHost();
     const hostRenderer = rendererHostRef.current.ensureMounted(mount);
     if (!hostRenderer) {
-      const support = detectThreeDWebGLSupport();
-      setWebglSupport(support);
-      // Retrying cannot turn WebGL 2 back on; show the browser fix right away.
-      if (support === "webgl1-only") webglAutoRetriesRef.current = 2;
-      setWebglUnavailable(true);
+      threeDStart.startFailed();
       onGeometryRenderedRef.current?.();
       return;
     }
+    threeDStart.started();
     renderer = hostRenderer;
-    // Each reset takes one of the session's recoveries when it happens, however it is then recovered.
-    const onWebglContextLost = () => {
-      if (!claimThreeDGpuRecovery()) {
-        stopAfterGpuResets();
-        return;
-      }
-      setWebglContextLost(true);
-    };
-    const onWebglContextRestored = () => {
-      setWebglContextLost(false);
-      setWebglContextGeneration((generation) => generation + 1);
-    };
-    renderer.domElement.addEventListener("webglcontextlost", onWebglContextLost);
-    renderer.domElement.addEventListener("webglcontextrestored", onWebglContextRestored);
+    const detachContextRecovery = threeDStart.attach(renderer);
     sizeThreeDRenderer(renderer, canvasWidth, canvasHeight, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
 	    renderer.domElement.dataset.renderQuality = renderQuality.tier;
-    renderer.shadowMap.enabled = true;
-	    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.enabled = false;
 	    renderer.outputColorSpace = THREE.SRGBColorSpace;
 	    renderer.toneMapping = THREE.ACESFilmicToneMapping;
 	    renderer.toneMappingExposure = studioLights.exposure;
@@ -13231,19 +13211,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    threeScene.add(new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity));
 	    const keyLight = new THREE.DirectionalLight(studioLights.key.color, studioLights.key.intensity);
 	    keyLight.position.set(maxSpan, maxSpan * 1.8, maxSpan * 0.8);
-	    keyLight.castShadow = true;
-	    keyLight.shadow.mapSize.set(renderQuality.shadowMapSize, renderQuality.shadowMapSize);
-	    keyLight.shadow.camera.near = 0.1;
-	    keyLight.shadow.camera.far = maxSpan * 4;
-	    keyLight.shadow.camera.left = -maxSpan * 1.15;
-	    keyLight.shadow.camera.right = maxSpan * 1.15;
-	    keyLight.shadow.camera.top = maxSpan * 1.15;
-	    keyLight.shadow.camera.bottom = -maxSpan * 1.15;
-	    keyLight.shadow.bias = -0.00018;
-	    keyLight.shadow.normalBias = 0.018;
-	    // Start at the saved strength so the first frame already matches the slider.
-	    keyLight.shadow.intensity = shadowStrengthScale(shadowStrengthRef.current);
-	    shadowLightRef.current = keyLight;
+	    keyLight.castShadow = false;
 	    threeScene.add(keyLight);
 	    const fillLight = new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity);
 	    fillLight.position.set(-maxSpan, maxSpan, maxSpan);
@@ -13495,7 +13463,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.08;
-    floor.receiveShadow = true;
+    floor.receiveShadow = false;
     threeScene.add(floor);
     if (floorSource?.proceduralFallback && catalogFlooringCardImageUrl?.trim()) {
       const cardAsset = resolveDesignerMaterialUrl(catalogFlooringCardImageUrl, typeof window !== "undefined" ? window.location.origin : null);
@@ -13767,40 +13735,18 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 		    );
 	    for (const ponyWall of ponyWalls) addPonyWall(catalogRoot, ponyWall, room, ponyWalls);
     for (const furnitureItem of furniture) addFurniture(catalogRoot, furnitureItem, furnitureItem.uid === selectedFurnitureUid);
-	    catalogRoot.traverse((node) => {
-	      if (!(node instanceof THREE.Mesh)) return;
-	      const material = Array.isArray(node.material) ? node.material[0] : node.material;
-	      const transparent = Boolean(material?.transparent && material.opacity < 0.8);
-	      node.castShadow = !transparent;
-	      node.receiveShadow = !transparent;
-	      node.userData = { ...node.userData, photorealShadowParticipant: !transparent };
-	    });
 	    threeScene.add(catalogRoot);
+	    threeScene.traverse((node) => {
+	      node.castShadow = false;
+	      node.receiveShadow = false;
+	    });
+	    renderer.shadowMap.enabled = false;
     catalogRootRef.current = catalogRoot;
 	    rendererRef.current = renderer;
 	    sceneRef.current = threeScene;
 	    cameraRef.current = camera;
 	    setCameraReadyKey((current) => current + 1);
 
-	    // Ambient occlusion: the soft darkening in corners and under cabinets that the photo render has.
-	    // Opt-in for now: add ?ao=1 to the /design address to preview it.
-	    let composer: EffectComposer | null = null;
-	    try {
-	      const aoParam = new URLSearchParams(window.location.search).get("ao");
-	      const aoWanted = aoParam === "1"; // opt-in until the look is approved; then default to renderQuality.tier === "high"
-	      if (aoWanted) {
-	        composer = new EffectComposer(renderer);
-	        composer.setSize(canvasWidth, canvasHeight);
-	        composer.addPass(new RenderPass(threeScene, camera));
-	        const gtao = new GTAOPass(threeScene, camera, canvasWidth, canvasHeight);
-	        gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1, scale: 1.1 });
-	        gtao.blendIntensity = 0.85;
-	        composer.addPass(gtao);
-	        composer.addPass(new OutputPass());
-	      }
-	    } catch {
-	      composer = null;
-	    }
 	    let frame = 0;
 	    let readyFrame = 0;
 	    let firstFramePainted = false;
@@ -13821,7 +13767,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	          setThreeDDollhouseHidden(child, threeDDollhouseHidesWithWall(child) && mounted.some((side) => hiddenSides.has(side)));
 	        }
 	      }
-	      if (composer) composer.render(); else renderer.render(threeScene, camera);
+	      renderer.render(threeScene, camera);
 	      if (!firstFramePainted) {
 	        firstFramePainted = true;
 	        readyFrame = requestAnimationFrame(() => onGeometryRenderedRef.current?.());
@@ -13833,9 +13779,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       const height = Math.max(280, mount.clientHeight || 420);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      if (sizeThreeDRenderer(renderer, width, height, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap))) {
-        composer?.setSize(width, height);
-      }
+      sizeThreeDRenderer(renderer, width, height, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
     });
     resizeObserver.observe(mount);
 	    return () => {
@@ -13843,8 +13787,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      cancelAnimationFrame(frame);
 	      cancelAnimationFrame(readyFrame);
 	      resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("webglcontextlost", onWebglContextLost);
-      renderer.domElement.removeEventListener("webglcontextrestored", onWebglContextRestored);
+      detachContextRecovery();
       cameraViewRef.current = {
         preset: cameraPreset,
         resetKey,
@@ -13857,7 +13800,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       // its canvas, and the WebGL context are owned by the mount-only effect above,
       // so the frame on screen survives until the rebuilt scene paints over it.
 	      controls.dispose();
-	      composer?.dispose();
 	      disposeObject(threeScene);
 	      environmentTarget.dispose();
 	      pmremGenerator.dispose();
@@ -14162,7 +14104,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     setPathTracePreviewError(null);
     try {
       const canvas = document.createElement("canvas");
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, preserveDrawingBuffer: true });
       if (!renderer.capabilities.isWebGL2) throw new Error("This browser does not support the WebGL2 renderer required for the production-render test.");
       // Path tracing needs float render targets. Not every computer has them, so
       // when they are missing (or the result is black) the same scene is rendered
@@ -14252,8 +14194,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
         denoiseQuad = null;
         renderer.setRenderTarget(null);
         renderer.autoClear = true;
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFShadowMap;
+        renderer.shadowMap.enabled = false;
         renderer.clear();
         renderer.render(pathTraceScene, pathTraceCamera);
         usedStandardRender = true;
@@ -15340,8 +15281,14 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   if (!scene.roomShape && !roomOverride) {
     return <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground">Choose a room layout or open a saved design to generate the deterministic 3D preview.</div>;
   }
-  if (webglUnavailable) {
-    return <div data-testid="webgl-unavailable" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{webglAutoRetriesRef.current < 2 ? "Starting the interactive 3D view…" : gpuResetLimitReached ? THREE_D_GPU_RESET_LIMIT_MESSAGE : threeDWebGLUnavailableMessage(webglSupport)}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={() => { webglAutoRetriesRef.current = 0; rendererHostRef.current?.dispose(); setGpuResetLimitReached(false); setWebglUnavailable(false); }}>Retry 3D view</button></div>;
+  if (threeDStart.status === "starting" || threeDStart.status === "suspended") {
+    return <div data-testid="webgl-starting" role="status" className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground">{THREE_D_STARTING_MESSAGE}</div>;
+  }
+  if (threeDStart.status === "blocked") {
+    return <div data-testid="webgl-unavailable" data-reason="blocked" role="status" className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{THREE_D_BLOCKED_MESSAGE}</p></div>;
+  }
+  if (threeDStart.status === "unavailable") {
+    return <div data-testid="webgl-unavailable" role="status" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{THREE_D_UNAVAILABLE_MESSAGE}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={threeDStart.retryNow}>Try again now</button></div>;
   }
   const fillerNoticeEntries = threeDFillerMeasurementNoticeEntries(placed);
   const fillerNoticePieceCount = fillerNoticeEntries.reduce((total, entry) => total + entry.quantity, 0);
@@ -15457,7 +15404,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 			        <div ref={mountRef} className="h-full w-full" />
 			        {webglContextLost && (
 			          <div data-testid="webgl-context-lost" role="status" className="absolute inset-0 z-30 flex items-center justify-center bg-background/70 px-6 text-center text-sm font-medium text-foreground">
-			            The graphics card reset, so the 3D view paused. Restoring it…
+			            {THREE_D_RECONNECTING_MESSAGE}
 			          </div>
 			        )}
 			        {placedItemMenu && <PlacedItemContextMenu menu={placedItemMenu} onEdit={onOpenCabinetEditor ? (uid) => { setPlacedItemMenu(null); onOpenCabinetEditor(uid); } : undefined} onMove={onMoveCabinet ? (uid) => { setPlacedItemMenu(null); onSelectCabinet?.(uid); setMovePanelOpen(true); } : undefined} onRemove={onRemoveCabinet ? (uid) => { setPlacedItemMenu(null); preserveCurrentCameraView(); onRemoveCabinet(uid); setSelectedCabinet(null); setMovePanelOpen(false); } : undefined} onClose={() => setPlacedItemMenu(null)} />}
@@ -15499,7 +15446,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
         {renderExistingDesign && rangeHoodStatus.needs2DPlacement && <div data-testid="three-d-range-hood-status" className="absolute left-3 top-3 max-w-[calc(100%-1.5rem)] rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs text-amber-900 shadow-sm backdrop-blur"><span>Add a range hood in the catalog to show it above this saved range.</span>{onAddRangeHood && <button type="button" onClick={onAddRangeHood} className="ml-1 font-semibold underline underline-offset-2">Add now</button>}</div>}
 	        {/* One column, one axis. Every floating control on the right edge of
 	            the drawing surface lives here: fullscreen, the canvas controls
-	            menu, zoom, the page's quick adds, reset, share, lighting, the
+	            menu, zoom, the page's quick adds, reset, share, the
 	            final preview, and the PAN pad last at the bottom. */}
 	        <div
 	          data-testid={THREE_D_FLOATING_COLUMN_TEST_ID}
@@ -15515,8 +15462,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	            onShare={shareCurrentView}
 	            onPhotoRender={openPhotoRenderDialog}
 	            onPan={panViewer}
-	            shadowStrength={shadowStrength}
-	            onShadowStrengthChange={setShadowStrength}
 	            hidePan={tabletTier.touch}
 	            {...(tabletOverlay ? { testId: "three-d-tablet-navigation" } : {})}
 	            leading={
@@ -15546,7 +15491,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	          />
 	        </div>
 	        {!tabletOverlay && (
-	          <MobileThreeDViewerNavigation onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} shadowStrength={shadowStrength} onShadowStrengthChange={setShadowStrength} quickActions={floatingQuickActions} trailing={floatingAutoDesignAction} />
+	          <MobileThreeDViewerNavigation onZoom={zoomViewer} onReset={resetViewerNavigation} onShare={shareCurrentView} onPhotoRender={openPhotoRenderDialog} onPan={panViewer} quickActions={floatingQuickActions} trailing={floatingAutoDesignAction} />
 	        )}
 	      </div>
 	      {selectedCabinet && (() => {

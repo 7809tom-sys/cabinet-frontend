@@ -1,9 +1,11 @@
+import { useRef } from "react";
 import { ArrowLeft, Link2, Share2 } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { InteractiveRoom3D, type InteractiveRoomOrderSummary, type InteractiveRoomPresentation, type InteractiveRoomScene } from "@/components/design/InteractiveRoom3D";
 import type { PlacedCabinet, RoomData, SinkFixture, WallOpening } from "@/lib/design";
+import { retainUnchangedValue, sharedDesignAutoRefreshQueryOptions } from "@/lib/designSessionRefresh";
 import { trpc } from "@/lib/trpc";
 
 type SharedConfiguration = {
@@ -18,6 +20,13 @@ type SharedConfiguration = {
   orderSummary?: InteractiveRoomOrderSummary;
 };
 
+function useRetained<T>(value: T | null | undefined): T | null {
+  const retained = useRef<T | null>(null);
+  const next = retainUnchangedValue(retained.current, value ?? null);
+  retained.current = next;
+  return next;
+}
+
 function asSharedConfiguration(value: unknown): SharedConfiguration | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Partial<SharedConfiguration>;
@@ -26,21 +35,31 @@ function asSharedConfiguration(value: unknown): SharedConfiguration | null {
 }
 
 export default function SharedRoom3D({ token }: { token: string }) {
-  const { data: shared, isLoading } = trpc.roomLayouts.sharedConfiguration.useQuery({ token });
+  // Live updates re-read the saved design every 3 seconds. The catalog scene
+  // (room shape and materials) is not on that timer: it is fetched when the
+  // layout, distributor, or style changes, and an unchanged design keeps the
+  // same object so the 3D view does not rebuild its renderer.
+  const { data: shared, isLoading } = trpc.roomLayouts.sharedConfiguration.useQuery(
+    { token },
+    sharedDesignAutoRefreshQueryOptions,
+  );
   const configuration = asSharedConfiguration(shared?.configuration);
+  const stableConfiguration = useRetained(configuration);
   const { data: scene, isLoading: isSceneLoading } = trpc.roomLayouts.scene.useQuery(
     {
-      layoutPresetId: configuration?.layoutPresetId ?? "unavailable",
-      distributorId: configuration?.distributorId ?? 0,
-      styleId: configuration?.styleId ?? 0,
+      layoutPresetId: stableConfiguration?.layoutPresetId ?? "unavailable",
+      distributorId: stableConfiguration?.distributorId ?? 0,
+      styleId: stableConfiguration?.styleId ?? 0,
     },
-    { enabled: Boolean(configuration) },
+    // Catalog geometry is not part of the 3-second design refresh.
+    { enabled: Boolean(stableConfiguration), refetchOnWindowFocus: false, refetchOnReconnect: false },
   );
+  const stableScene = useRetained(scene);
 
   if (isLoading) {
     return <div className="flex min-h-[60vh] items-center justify-center"><Spinner className="h-8 w-8 text-primary" /></div>;
   }
-  if (!configuration || !shared) {
+  if (!stableConfiguration || !shared) {
     return <div className="mx-auto max-w-lg px-4 py-20 text-center"><Link2 className="mx-auto mb-4 h-10 w-10 text-muted-foreground" /><h1 className="text-2xl font-semibold">This 3D room link is unavailable</h1><p className="mt-2 text-sm text-muted-foreground">The share link may be incomplete or no longer available.</p><Button asChild className="mt-6"><Link href="/design">Start a Design</Link></Button></div>;
   }
 
@@ -54,17 +73,17 @@ export default function SharedRoom3D({ token }: { token: string }) {
         </div>
         <Button asChild variant="outline"><Link href="/design"><ArrowLeft className="mr-2 h-4 w-4" />Create your own</Link></Button>
       </div>
-      {isSceneLoading || !scene ? (
+      {isSceneLoading || !stableScene ? (
         <div className="flex h-[480px] items-center justify-center rounded-xl border"><Spinner className="h-7 w-7 text-primary" /></div>
       ) : (
         <InteractiveRoom3D
-          scene={scene as InteractiveRoomScene}
-          placed={configuration.placed}
-          roomOverride={configuration.room}
-          openings={configuration.openings}
-          sinks={configuration.sinks}
-          orderSummary={configuration.orderSummary}
-          initialPresentation={configuration.presentation}
+          scene={stableScene as InteractiveRoomScene}
+          placed={stableConfiguration.placed}
+          roomOverride={stableConfiguration.room}
+          openings={stableConfiguration.openings}
+          sinks={stableConfiguration.sinks}
+          orderSummary={stableConfiguration.orderSummary}
+          initialPresentation={stableConfiguration.presentation}
         />
       )}
       <p className="mt-5 flex items-center gap-2 text-xs text-muted-foreground"><Share2 className="h-3.5 w-3.5" />Shared configuration created {new Date(shared.createdAt).toLocaleDateString()}.</p>

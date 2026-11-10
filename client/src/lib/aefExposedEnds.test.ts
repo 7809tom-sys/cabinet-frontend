@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { wallPlacementAt, type PlacedCabinet, type RoomData, type WallOpening } from "./design";
-import { aefExposedEndRequirements } from "./aefExposedEnds";
+import { aefBillableEndRequirements, aefExposedEndRequirements } from "./aefExposedEnds";
 import { selectAefEndPanel } from "./aefEndPanelStock";
 
 const room: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
@@ -147,6 +147,32 @@ describe("AEF exposed-end panels", () => {
     });
     expect(aefExposedEndRequirements([framed], [], room, panelCatalog)).toEqual([]);
     expect(aefExposedEndRequirements([covered, filler], [], room, panelCatalog).some((requirement) => requirement.cabinetUid === "covered" && requirement.end === "end")).toBe(false);
+  });
+
+  /**
+   * Regression for Tom's cart showing items that were not in his drawing.
+   *
+   * A bill-of-material end panel belongs to a cabinet. When that cabinet is gone
+   * from the plan there is nothing for the panel to cap, so it must not bill. The
+   * filter used to KEEP such orphans, which put phantom end panels in the cart.
+   */
+  it("never bills an end panel whose cabinet has left the drawing", () => {
+    const live = place({ uid: "live", masterCode: "B24", placement: "base", offset: 0, width: 24, depth: 24, height: 34.75, mountBottom: 0 });
+    const requirements = aefExposedEndRequirements([live], [], room, panelCatalog);
+    expect(requirements.length).toBeGreaterThan(0);
+
+    // Simulate the owner being deleted: the requirement still exists, but no
+    // cabinet in `placed` owns it.
+    const orphans = requirements.map((requirement) => ({ ...requirement, cabinetUid: "deleted-cabinet" }));
+    const billable = aefBillableEndRequirements([...requirements, ...orphans], [live], () => true);
+    expect(billable.every((requirement) => requirement.cabinetUid === "live")).toBe(true);
+    expect(billable).toHaveLength(requirements.length);
+  });
+
+  it("still applies the caller's own style rule once an owner exists", () => {
+    const live = place({ uid: "live", masterCode: "B24", placement: "base", offset: 0, width: 24, depth: 24, height: 34.75, mountBottom: 0 });
+    const requirements = aefExposedEndRequirements([live], [], room, panelCatalog);
+    expect(aefBillableEndRequirements(requirements, [live], () => false)).toEqual([]);
   });
 
   it("falls back to a catalog BP9642 only when TEP3096 is absent and the cabinet is no taller than 42 inches", () => {

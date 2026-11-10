@@ -59,6 +59,15 @@ export type ShowerStepDef = {
    * A pan is a floor fixture, so it has no wall; the rest do.
    */
   picksWall: boolean;
+  /**
+   * The shopper MUST choose a wall before this step's part can be placed.
+   *
+   * The valve/head and the niche mount on one of the surround's three panels, and
+   * which panel is a real decision: a niche often goes on a side panel, and the
+   * valve is not always on the back one. There is no default, because guessing is
+   * what put them on the room wall outside the enclosure.
+   */
+  requiresWallPick?: boolean;
   /** Always true in this wizard: every step can be skipped. */
   optional: true;
   /** The step whose wall seeds this step's default, when there is one. */
@@ -88,8 +97,8 @@ export const SHOWER_STEPS: readonly ShowerStepDef[] = [
     blurb: "The valve and shower head. Choose which wall the plumbing is on — often not the back wall.",
     kinds: ["system"],
     picksWall: true,
+    requiresWallPick: true,
     optional: true,
-    defaultWallFrom: "surround",
   },
   {
     id: "niche",
@@ -97,8 +106,8 @@ export const SHOWER_STEPS: readonly ShowerStepDef[] = [
     blurb: "Recessed niches and soap trays. Each goes on a wall you choose.",
     kinds: ["niche", "soap"],
     picksWall: true,
+    requiresWallPick: true,
     optional: true,
-    defaultWallFrom: "surround",
   },
   {
     id: "door",
@@ -354,6 +363,12 @@ export function choosePart(
   }
   if (!(Number.isFinite(part.price) && part.price >= 0)) {
     throw new Error(`${part.code} has no catalog price, so it cannot be offered`);
+  }
+  // A step that requires a wall pick never falls back to a default: placing the
+  // part somewhere the shopper did not choose is exactly what put the valve on the
+  // room wall outside the shower.
+  if (step.requiresWallPick && wall == null) {
+    throw new Error(`${step.id} needs a chosen shower wall before ${part.code} can be placed`);
   }
   const resolvedWall = step.picksWall ? (wall ?? defaultWallForStep(stepId, selection)) : null;
   return { ...selection, [stepId]: { stepId, part, wall: resolvedWall } };

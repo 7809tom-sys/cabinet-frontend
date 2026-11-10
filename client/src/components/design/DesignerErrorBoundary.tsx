@@ -22,6 +22,8 @@ interface Props {
    * surface nested in a designer that stays mounted, such as the 3D view.
    */
   pageReload?: boolean;
+  /** Replaces the default crash title. The shared 3D page uses its own wording. */
+  message?: string;
   children: ReactNode;
 }
 
@@ -224,7 +226,7 @@ export class DesignerErrorBoundary extends Component<Props, State> {
           <div className="flex max-w-sm flex-col items-center gap-3 rounded-lg border border-destructive/40 bg-background p-5 text-center shadow-sm">
             <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden="true" />
             <p className="text-sm font-medium">
-              {staleBuild ? "A newer version of the designer was published" : "The designer hit a problem"}
+              {staleBuild ? "A newer version of the designer was published" : (this.props.message ?? "The designer hit a problem")}
             </p>
             {staleBuild && (
               <p className="text-xs text-muted-foreground">

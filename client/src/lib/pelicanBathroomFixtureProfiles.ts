@@ -108,6 +108,18 @@ export const VERIFIED_PELICAN_BATHROOM_FIXTURE_PROFILES: readonly VerifiedPelica
   // floor-plan plane for moving and viewing the glass; it is not a wall stud,
   // curb, rail setback, or installation opening dimension.
   { id: "pelican-shower-door-pl-03a42s", pelicanCode: "PL-03A42S", name: "PL-03A42S Frameless Double Sliding Shower Door", kind: "shower-door", widthIn: 60, depthIn: 0.5, heightIn: 76, visiblePanelHeightIn: 71 + 5 / 8, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://cdn.accentuate.io/8980582301836/1776111489998/PL-03A42S.pdf?v=1776111489998" },
+  // The single sliders are their own widths, not the 60" double-slider envelope.
+  // PL-03A11S48 used to resolve to PL-03A42S, so a 46-48" door drew 60" wide and
+  // overran the alcove it was fitted to.
+  { id: "pelican-shower-door-pl-03a11s48", pelicanCode: "PL-03A11S48", name: "PL-03A11S48 Frameless Single Sliding Shower Door, 48 in", kind: "shower-door", widthIn: 48, depthIn: 0.5, heightIn: 76, visiblePanelHeightIn: 71 + 5 / 8, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://cdn.accentuate.io/8980582301836/1776111489998/PL-03A42S.pdf?v=1776111489998" },
+  { id: "pelican-shower-door-pl-03a11s60", pelicanCode: "PL-03A11S60", name: "PL-03A11S60 Frameless Single Sliding Shower Door, 60 in", kind: "shower-door", widthIn: 60, depthIn: 0.5, heightIn: 76, visiblePanelHeightIn: 71 + 5 / 8, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://cdn.accentuate.io/8980582301836/1776111489998/PL-03A42S.pdf?v=1776111489998" },
+  // Framed doors: 76" shower doors and 59" tub doors. A framed TUB door used to
+  // resolve through the shower rule and drew 76" tall, standing a foot above the
+  // tub it was meant to sit on.
+  { id: "pelican-shower-door-pl-03b71s", pelicanCode: "PL-03B71S", name: "PL-03B71S Framed Single Sliding Shower Door, 76 in", kind: "shower-door", widthIn: 60, depthIn: 0.5, heightIn: 76, visiblePanelHeightIn: 71 + 5 / 8, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://buildpelican.com/collections/glass-doors" },
+  { id: "pelican-shower-door-pl-03d42s", pelicanCode: "PL-03D42S", name: "PL-03D42S Framed Double Sliding Shower Door, 76 in", kind: "shower-door", widthIn: 60, depthIn: 0.5, heightIn: 76, visiblePanelHeightIn: 71 + 5 / 8, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://buildpelican.com/collections/glass-doors" },
+  { id: "pelican-tub-door-pl-03b71t", pelicanCode: "PL-03B71T", name: "PL-03B71T Framed Single Sliding Tub Door, 59 in", kind: "tub-door", widthIn: 60, depthIn: 0.5, heightIn: 59 + 1 / 6, visiblePanelHeightIn: 54 + 13 / 16, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://buildpelican.com/collections/glass-doors" },
+  { id: "pelican-tub-door-pl-03d42t", pelicanCode: "PL-03D42T", name: "PL-03D42T Framed Double Sliding Tub Door, 59 in", kind: "tub-door", widthIn: 60, depthIn: 0.5, heightIn: 59 + 1 / 6, visiblePanelHeightIn: 54 + 13 / 16, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://buildpelican.com/collections/glass-doors" },
   { id: "pelican-tub-door-pl-03a42t", pelicanCode: "PL-03A42T", name: "PL-03A42T Frameless Double Sliding Tub Door", kind: "tub-door", widthIn: 60, depthIn: 0.5, heightIn: 59 + 1 / 6, visiblePanelHeightIn: 54 + 13 / 16, finish: "clear-tempered-glass", drain: null, planningOnly: true, specificationUrl: "https://cdn.accentuate.io/8980582301836/1776111498496/PL-03A42T.pdf?v=1776111498496" },
   { id: "pelican-shower-wall-pl-603074", pelicanCode: "PL-603074", name: "PL-603074 Pelican Shower Surround", kind: "shower-wall", widthIn: 60, depthIn: 30, heightIn: 74, finish: "shower-panel", drain: null, planningOnly: true, specificationUrl: "https://buildpelican.com/products/pl-603074" },
   // Official PL-8515LD / PL-8522LD drawings publish heights and spout reach,
@@ -297,7 +309,11 @@ const SHOWER_SYSTEM_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_S
  */
 const SHOWER_NICHE_SOURCES = [
   ["PL-SN1614", 16, 14, "Single Shelf"],
-  ["PL-SN1627", 27 + 1 / 16, 16 + 1 / 64, "Double Shelf"],
+  // SKU naming is width x height: SN1614 is 16 W x 14 H and SN1639 is 16 W x 39 H.
+  // PL-SN1627 was entered the other way round, which made a 16" wide niche 27" wide
+  // and only 16" tall — it stood sideways on the wall and its top could not be
+  // clamped against the panel height correctly.
+  ["PL-SN1627", 16 + 1 / 64, 27 + 1 / 16, "Double Shelf"],
   ["PL-SN1639", 16 + 1 / 64, 39 + 1 / 32, "Triple Shelf"],
 ] as const;
 
@@ -417,13 +433,32 @@ export function showerBaseCodeForCatalogRow(normalized: string): string | null {
   const FINISH_SHEET_NAME: Record<string, string> = { CHR: "CHROME", BN: "BRUSHED NICKEL", MB: "MATTE BLACK" };
   const decor = /\s+(BRICK|GREY WOOD|MARBLE|WHITE WOOD)$/i.test(normalized);
 
-  // Sliding and bypass doors: the catalogue code carries a size token and the
-  // finish, and the sheet is the shared PL-03A42S envelope.
-  if (/^PL-03[BD]\d{2}[ST]SO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42S";
+  // Sliding doors resolve to the envelope of their REAL size. Every door the
+  // catalog sells stays on offer; the only rule here is width and height.
+  //
+  //   PL-03A11S48  single slider, 46-48" wide        -> PL-03A11S48 (48")
+  //   PL-03A11S60  single slider, 58-60" wide        -> PL-03A11S60 (60")
+  //   PL-03A42S60  double slider, 58-60" wide        -> PL-03A42S   (60")
+  //   PL-03A11TSO  single sliding TUB door, 59" H    -> PL-03A42T   (tub)
+  //   PL-03A42T60  double sliding TUB door, 59" H    -> PL-03A42T   (tub)
+  //   PL-03B71SSO  framed single shower, 76" H       -> PL-03B71S
+  //   PL-03D42SSO  framed double shower, 76" H       -> PL-03D42S
+  //   PL-03B71TSO  framed single TUB door, 59" H     -> PL-03B71T   (tub)
+  //   PL-03D42TSO  framed double TUB door, 59" H     -> PL-03D42T   (tub)
+  //
+  // A 48" single slider used to borrow the 60" PL-03A42S envelope, and a framed
+  // TUB door fell through the shower rule and drew 76" tall above its tub.
+  if (/^PL-03A11S48\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A11S48";
+  if (/^PL-03A11S60\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A11S60";
+  if (/^PL-03A11TSO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42T";
   if (/^PL-03A42S60\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42S";
   if (/^PL-03A42T60\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42T";
-  if (/^PL-03A11S\d{2}\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42S";
-  if (/^PL-03[ABD]\d{2}TS[OL]?\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03A42T";
+  // Framed families. The TUB variants (TSO) must be checked before the shower
+  // ones, because both carry the same model prefix.
+  if (/^PL-03B71TSO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03B71T";
+  if (/^PL-03D42TSO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03D42T";
+  if (/^PL-03B71SSO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03B71S";
+  if (/^PL-03D42SSO\s+(?:BN|CHR|MB)$/.test(normalized)) return "PL-03D42S";
 
   // A Hydra system: the model plus the catalogue's finish token. "PL-86S22S CHR"
   // is the PL-86S22 sheet in chrome; "PL-86H55T/S BN" is the PL-86H55 sheet.

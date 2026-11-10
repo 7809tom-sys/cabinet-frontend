@@ -13,6 +13,8 @@ import {
 	wallRunJoinAt,
 	insideCornerHoldIn,
 	wallLength,
+	wallPlacementAt,
+	matchInstalledFillerToCabinet,
 	wallCabinetFitMeasure,
   type CabinetWallDragPreview,
   type IslandFace,
@@ -25,6 +27,7 @@ import {
 import { islandFaceFitMeasure, islandOffsetForPlaced } from "@/lib/islandScene";
 import { isWallBlindCornerCabinet } from "@/lib/cabinetGraphics";
 import { isFillableBoundary, seamBoundariesFor } from "@/lib/fillerPlacementRule";
+import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 
 const EDGE_EPSILON_IN = 0.001;
 /**
@@ -597,4 +600,157 @@ export function installedSmallGapFillerEditOpportunity(
   });
   if (matches.length !== 1) return null;
   return { ...matches[0], replacingFillerGroupId: groupId };
+}
+
+function sameFillerLayer(cabinet: PlacedCabinet, item: PlacedCabinet): boolean {
+  if (item.placement === cabinet.placement) return true;
+  if (cabinet.placement === "wall") return false;
+  return item.placement === "tall";
+}
+
+/** A filler already standing in this along-wall interval means the seam is closed. */
+function fillerAlreadyCoversGap(
+  cabinet: PlacedCabinet,
+  gapStart: number,
+  gapWidth: number,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): boolean {
+  const wall = cabinetWall(cabinet, room);
+  const gapEnd = gapStart + gapWidth;
+  return placed.some((item) => {
+    if (!isFillerItem(item) || !sameFillerLayer(cabinet, item)) return false;
+    if (cabinetWall(item, room) !== wall) return false;
+    const start = wallRunOffset(item, wall, room);
+    const end = start + wallRunSpan(item, wall, room);
+    return end > gapStart + EDGE_EPSILON_IN && start < gapEnd - EDGE_EPSILON_IN;
+  });
+}
+
+/**
+ * Filler-sized gap between this cabinet and the wall vertex of a 90° inside
+ * corner, when the adjoining run actually has a cabinet. A 45°/135° corner
+ * keeps the angled miter pair instead of a straight board.
+ */
+function insideCornerFillerGap(
+  cabinet: PlacedCabinet,
+  at: "start" | "end",
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): number | null {
+  const wall = cabinetWall(cabinet, room);
+  const frame = wallRunFrame(wall, room);
+  if (!frame) return null;
+  const join = wallRunJoinAt(frame, at, room);
+  if (!join || join.turnDeg !== 90) return null;
+  const start = wallRunOffset(cabinet, wall, room);
+  const end = start + wallRunSpan(cabinet, wall, room);
+  const gap = at === "start" ? start : Math.max(0, wallLength(wall, room) - end);
+  const width = installableSmallGapRemainder(gap);
+  if (width == null) return null;
+  const vertex = at === "start" ? frame.start : frame.end;
+  const neighborAtStart = Math.hypot(join.frame.start.x - vertex.x, join.frame.start.y - vertex.y) <= 0.05;
+  const neighborWall = join.frame.id;
+  const neighborLength = join.frame.length;
+  const hasNeighbor = placed.some((item) => {
+    if (item.uid === cabinet.uid || isFillerItem(item) || !sameFillerLayer(cabinet, item)) return false;
+    if (cabinetWall(item, room) !== neighborWall) return false;
+    const neighborStart = wallRunOffset(item, neighborWall, room);
+    const neighborEnd = neighborStart + wallRunSpan(item, neighborWall, room);
+    const neighborGap = neighborAtStart ? neighborStart : Math.max(0, neighborLength - neighborEnd);
+    return neighborGap <= Math.max(Number(item.depth) || 0, Number(cabinet.depth) || 0) + effectiveSmallGapFillerMaxIn();
+  });
+  return hasNeighbor ? width : null;
+}
+
+function adjoiningGapStart(cabinet: PlacedCabinet, at: "start" | "end", width: number, room: RoomData): number {
+  const wall = cabinetWall(cabinet, room);
+  const start = wallRunOffset(cabinet, wall, room);
+  const end = start + wallRunSpan(cabinet, wall, room);
+  return at === "start" ? start - width : end;
+}
+
+/**
+ * Closes a filler-sized empty seam between two cabinets, including both the
+ * base and the upper at a 90° inside corner of an L. Run ends that open onto
+ * the floor are left alone. Each board is the line's own filler SKU.
+ */
+export function repairMissingAdjoiningFillers(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  openings: readonly WallOpening[],
+  fillers: readonly CatalogFillerCandidate[],
+  makeUid: () => string,
+  styleId: number | null | ((cabinet: PlacedCabinet) => number | null),
+): { placed: PlacedCabinet[]; added: PlacedCabinet[] } {
+  let working = [...placed];
+  const added: PlacedCabinet[] = [];
+  for (let guard = 0; guard < 48; guard += 1) {
+    let placedOne = false;
+    for (const cabinet of working) {
+      if (isFillerItem(cabinet) || !["base", "wall", "tall"].includes(cabinet.placement)) continue;
+      const seams = seamBoundariesFor({ cabinet, placed: working, room, openings });
+      const candidates: Array<{ at: "start" | "end"; width: number }> = [];
+      for (const boundary of [seams.start, seams.end]) {
+        if (boundary.kind !== "cabinet") continue;
+        const width = installableSmallGapRemainder(boundary.gapIn);
+        if (width == null) continue;
+        candidates.push({ at: boundary.at, width });
+      }
+      for (const at of ["start", "end"] as const) {
+        if (candidates.some((candidate) => candidate.at === at)) continue;
+        const width = insideCornerFillerGap(cabinet, at, working, room);
+        if (width == null) continue;
+        candidates.push({ at, width });
+      }
+      for (const candidate of candidates) {
+        const gapStart = adjoiningGapStart(cabinet, candidate.at, candidate.width, room);
+        if (fillerAlreadyCoversGap(cabinet, gapStart, candidate.width, working, room)) continue;
+        const layer = cabinet.placement === "wall" ? "wall" : cabinet.placement === "tall" ? "tall" : "base";
+        const fillerDef = catalogFillerForGap(fillers, candidate.width, layer);
+        if (!fillerDef) continue;
+        const wall = cabinetWall(cabinet, room);
+        const depth = Math.max(0, Number(cabinet.depth) || (layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH));
+        const spot = wallPlacementAt(gapStart, candidate.width, depth, wall, room);
+        const fillerStyleId = typeof styleId === "function" ? styleId(cabinet) : cabinet.styleId ?? styleId;
+        const draft: PlacedCabinet = {
+          uid: makeUid(),
+          cabinetId: fillerDef.id,
+          masterCode: fillerDef.masterCode,
+          description: fittedCatalogFillerDescription(fillerDef, candidate.width),
+          category: fillerDef.category ?? "Filler",
+          subCategory: fillerDef.subCategory ?? "Filler",
+          placement: layer,
+          x: spot.x,
+          y: spot.y,
+          rotation: spot.rotation,
+          ...(spot.wallId ? { wallId: spot.wallId, wallOffset: spot.wallOffset, peninsulaSide: spot.peninsulaSide } : {}),
+          width: candidate.width,
+          nominalWidth: Number(fillerDef.width) || candidate.width,
+          depth,
+          height: Number(cabinet.height) || (layer === "wall" ? STD.WALL_HEIGHT : STD.BASE_HEIGHT),
+          mountBottom: cabinet.placement === "wall" ? cabinet.mountBottom ?? null : 0,
+          numberOfDoors: 0,
+          numberOfDrawers: 0,
+          catalogImageUrl: fillerDef.catalogImageUrl ?? null,
+          styleId: fillerStyleId,
+          fillerPieceGroupId: `adjoining-filler-${cabinet.uid}-${candidate.at}`,
+          fillerBillingRole: "primary",
+          fillerTotalWidth: candidate.width,
+          fillerPlacementMode: candidate.at === "start" ? "left" : "right",
+          fillerForCabinetUid: cabinet.uid,
+        };
+        const matched = matchInstalledFillerToCabinet(draft, cabinet, room);
+        const accepted = appendCollisionFreePlacements(working, [matched], room);
+        if (!accepted.placed.some((item) => item.uid === matched.uid)) continue;
+        working = accepted.placed;
+        added.push(matched);
+        placedOne = true;
+        break;
+      }
+      if (placedOne) break;
+    }
+    if (!placedOne) break;
+  }
+  return { placed: added.length > 0 ? working : [...placed], added };
 }

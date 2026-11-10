@@ -135,8 +135,8 @@ export function makeShowerPanParts(
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string, material: THREE.Material = materials.shell) => {
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
@@ -203,7 +203,7 @@ export function makeShowerPanParts(
     materials.metal,
   );
   drain.position.set(drainX, basinY + 0.008, 0);
-  drain.receiveShadow = true;
+  drain.receiveShadow = false;
   parts.push({ mesh: drain, part: "shower-pan-drain" });
 
   return parts;
@@ -235,8 +235,8 @@ export function makeShowerSurroundParts(
   const material = materials.panel ?? materials.shell;
   const push = (geometry: THREE.BufferGeometry, part: string) => {
     const mesh = new THREE.Mesh(geometry, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
@@ -299,7 +299,7 @@ export function makeShowerSurroundParts(
 export function makeShowerSystemParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
-  options: { deckHeightIn?: number; wallDepthIn?: number } = {},
+  options: { deckHeightIn?: number; wallDepthIn?: number; valveHeightIn?: number; headHeightIn?: number } = {},
 ): ShowerPart[] {
   const deck = Math.max(0, options.deckHeightIn ?? 0) * INCH;
   const reach = (profile.tubFillerSpoutReachIn ?? 8) * INCH;
@@ -308,15 +308,27 @@ export function makeShowerSystemParts(
   // +Z and the head reaches back toward the room.
   const wallZ = ((profile.depthIn || 8) / 2) * INCH;
 
+  // Heights above the deck. These used to be the constants 42 and 72 with no
+  // deck offset at all, so on a shower whose pan sits on the floor the riser ran
+  // from y = 0 and the valve was wherever 42" landed — never where the shopper
+  // put it. Now the caller passes the real mounted heights and the riser spans
+  // exactly valve-to-arm.
+  const valveHeightIn = Number.isFinite(options.valveHeightIn) && (options.valveHeightIn ?? 0) > 0
+    ? options.valveHeightIn!
+    : 42;
+  const headHeightIn = Number.isFinite(options.headHeightIn) && (options.headHeightIn ?? 0) > 0
+    ? Math.max(options.headHeightIn!, valveHeightIn + 1)
+    : Math.max(72, valveHeightIn + 30);
+
   const parts: ShowerPart[] = [];
   const push = (mesh: THREE.Mesh, part: string) => {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
   // ---- Valve trim plate and lever -------------------------------------------
-  const valveY = deck + 42 * INCH;
+  const valveY = deck + valveHeightIn * INCH;
   const plate = new THREE.Mesh(
     new THREE.CylinderGeometry(3 * INCH, 3 * INCH, 0.5 * INCH, 32),
     materials.metal,
@@ -334,13 +346,28 @@ export function makeShowerSystemParts(
   push(lever, "shower-valve-handle");
 
   // ---- Riser and head -------------------------------------------------------
-  const headY = deck + 72 * INCH;
+  const headY = deck + headHeightIn * INCH;
+  // The riser is the visible pipe from the valve body up to the shower arm. It has
+  // to start at the TOP of the valve trim and end at the arm's centreline, or it
+  // reads as a floating rod with a gap at one end.
+  const riserBottom = valveY + 1.5 * INCH;   // just above the trim plate
+  const riserTop = headY;                    // the arm's centreline
   const riser = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, Math.max(1, headY - valveY), 16),
+    new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, Math.max(0.5 * INCH, riserTop - riserBottom), 16),
     materials.metal,
   );
-  riser.position.set(0, (headY + valveY) / 2, wallZ - 0.4 * INCH);
+  riser.position.set(0, (riserTop + riserBottom) / 2, wallZ - 0.4 * INCH);
   push(riser, "shower-riser");
+
+  // Escutcheon at the wall where the riser meets the panel, so the pipe looks
+  // plumbed into the wall rather than glued on.
+  const escutcheon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55 * INCH, 0.62 * INCH, 0.14 * INCH, 20),
+    materials.metal,
+  );
+  escutcheon.rotation.x = Math.PI / 2;
+  escutcheon.position.set(0, riserBottom, wallZ - 0.07 * INCH);
+  push(escutcheon, "shower-riser-escutcheon");
 
   // Arm out into the room along -Z, then the head face over the pan.
   const arm = new THREE.Mesh(
@@ -389,31 +416,38 @@ export function makeShowerNicheParts(
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string) => {
     const mesh = new THREE.Mesh(geometry, materials.shell);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
 
-  // Open toward -X into the room, recessed along +X.
+  // Authored in the SAME frame as the rest of the shower: the room-facing opening
+  // is the face at z = 0 and the recess runs AWAY from the room into +Z, with the
+  // fixture standing on y = 0 so its bottom sits on the deck it is mounted over.
+  //
+  // It used to be recessed along +X and centred on y = 0. Every fixture group is
+  // positioned at floor level (y = 0) and rotated so its +Z face is the wall, so
+  // that older frame put half the niche below the floor and turned the recess
+  // sideways — a thin slab hanging in the shower at an odd angle (Tom's report).
   const p = new Panel();
-  const back = W / 2 - 0;
-  p.quad([v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(depth, Hp / 2, -W / 2)], v(1, 0, 0));
+  p.quad([v(-W / 2, Hp, depth), v(W / 2, Hp, depth), v(W / 2, 0, depth), v(-W / 2, 0, depth)], v(0, 0, 1));
   // Floor, ceiling and both sides of the recess.
-  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, -Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], UP);
-  p.quad([v(-shell, Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, -1, 0));
-  p.quad([v(-shell, -Hp / 2, -W / 2), v(depth, -Hp / 2, -W / 2), v(depth, Hp / 2, -W / 2), v(-shell, Hp / 2, -W / 2)], v(0, 0, 1));
-  p.quad([v(-shell, -Hp / 2, W / 2), v(depth, -Hp / 2, W / 2), v(depth, Hp / 2, W / 2), v(-shell, Hp / 2, W / 2)], v(0, 0, -1));
+  p.quad([v(-W / 2, 0, -shell), v(W / 2, 0, -shell), v(W / 2, 0, depth), v(-W / 2, 0, depth)], UP);
+  p.quad([v(-W / 2, Hp, -shell), v(W / 2, Hp, -shell), v(W / 2, Hp, depth), v(-W / 2, Hp, depth)], v(0, -1, 0));
+  p.quad([v(-W / 2, 0, -shell), v(-W / 2, 0, depth), v(-W / 2, Hp, depth), v(-W / 2, Hp, -shell)], v(1, 0, 0));
+  p.quad([v(W / 2, 0, -shell), v(W / 2, 0, depth), v(W / 2, Hp, depth), v(W / 2, Hp, -shell)], v(-1, 0, 0));
   push(p.geometry(), "shower-niche-body");
 
-  // Face flange, the visible 1/2" border that laps the wall finish.
+  // Face flange, the visible 1/2" border that laps the wall finish. It lives on the
+  // room-facing plane and is centred on the opening, so it reads as a frame around
+  // the recess instead of a separate sheet.
   const f = new Panel();
   const flange = 0.5 * INCH;
   const outerW = W / 2 + flange;
-  const outerH = Hp / 2 + flange;
-  f.quad([v(-shell, outerH, outerW), v(-shell, outerH, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, Hp / 2, W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -outerH, outerW), v(-shell, -outerH, -outerW), v(-shell, -Hp / 2, -W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -Hp / 2, -outerW), v(-shell, Hp / 2, -outerW), v(-shell, Hp / 2, -W / 2), v(-shell, -Hp / 2, -W / 2)], v(-1, 0, 0));
-  f.quad([v(-shell, -Hp / 2, outerW), v(-shell, Hp / 2, outerW), v(-shell, Hp / 2, W / 2), v(-shell, -Hp / 2, W / 2)], v(-1, 0, 0));
+  f.quad([v(-outerW, Hp + flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(-W / 2, Hp, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, -shell), v(outerW, -flange, -shell), v(W / 2, 0, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, -shell), v(-outerW, Hp + flange, -shell), v(-W / 2, Hp, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(outerW, -flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(W / 2, 0, -shell)], v(0, 0, -1));
   push(f.geometry(), "shower-niche-flange");
 
   // Shelves. Pelican sells these niches as "1 Shelf" / "2 Shelves" / "3 Shelves",
@@ -423,29 +457,28 @@ export function makeShowerNicheParts(
   if (shelfCount > 0) {
     const shelfThickness = 0.4 * INCH;
     for (let index = 1; index <= shelfCount; index += 1) {
-      const y = -Hp / 2 + (Hp * index) / (shelfCount + 1);
+      // Shelves divide the recess evenly, measured up from the niche's own floor.
+      const y = (Hp * index) / (shelfCount + 1);
       const s = new Panel();
       // A shelf spans the opening, sits inside the recess, and is thin.
       s.quad(
-        [v(-shell, y - shelfThickness / 2, -W / 2), v(depth * 0.94, y - shelfThickness / 2, -W / 2),
-          v(depth * 0.94, y - shelfThickness / 2, W / 2), v(-shell, y - shelfThickness / 2, W / 2)],
+        [v(-W / 2, y - shelfThickness / 2, -shell), v(W / 2, y - shelfThickness / 2, -shell),
+          v(W / 2, y - shelfThickness / 2, depth * 0.94), v(-W / 2, y - shelfThickness / 2, depth * 0.94)],
         v(0, -1, 0),
       );
       s.quad(
-        [v(-shell, y + shelfThickness / 2, -W / 2), v(depth * 0.94, y + shelfThickness / 2, -W / 2),
-          v(depth * 0.94, y + shelfThickness / 2, W / 2), v(-shell, y + shelfThickness / 2, W / 2)],
+        [v(-W / 2, y + shelfThickness / 2, -shell), v(W / 2, y + shelfThickness / 2, -shell),
+          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
         UP,
       );
       s.quad(
-        [v(-shell, y - shelfThickness / 2, -W / 2), v(depth * 0.94, y - shelfThickness / 2, -W / 2),
-          v(depth * 0.94, y + shelfThickness / 2, -W / 2), v(-shell, y + shelfThickness / 2, -W / 2)],
+        [v(-W / 2, y - shelfThickness / 2, depth * 0.94), v(W / 2, y - shelfThickness / 2, depth * 0.94),
+          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
         v(0, 0, 1),
       );
       push(s.geometry(), `shower-niche-shelf-${index}`);
     }
   }
-  void back;
-
   return parts;
 }
 

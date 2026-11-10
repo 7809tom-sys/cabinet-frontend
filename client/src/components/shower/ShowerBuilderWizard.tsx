@@ -328,7 +328,17 @@ export function ShowerBuilderWizard({
   const isLastStep = stepIndex === SHOWER_STEPS.length - 1;
   const { parts, droppedUnpriced } = offeredParts(step.id, catalogParts);
   const chosen = selection[step.id] ?? null;
-  const wallForStep: ShowerWall = wallByStep[step.id] ?? chosen?.wall ?? "top";
+  /**
+   * The wall this step is working on.
+   *
+   * A step that requires a pick has NO fallback: until the shopper chooses, this is
+   * null and the part cards are disabled. That is deliberate — a default wall is
+   * how the valve ended up on the room wall outside the enclosure.
+   */
+  const wallForStep: ShowerWall | null = step.requiresWallPick
+    ? (wallByStep[step.id] ?? chosen?.wall ?? null)
+    : (wallByStep[step.id] ?? chosen?.wall ?? "top");
+  const wallMissing = Boolean(step.requiresWallPick) && wallForStep == null;
   const issues = showerPlacementIssues(selection);
   const stepWarnings = warningsByStep?.[step.id] ?? [];
 
@@ -350,6 +360,9 @@ export function ShowerBuilderWizard({
   }, [step.id, step.picksWall, wallForStep]);
 
   const pickPart = (part: ShowerCatalogPart) => {
+    // A required wall must be chosen first; the cards are disabled until then, so
+    // this is a guard rather than a user-facing path.
+    if (wallMissing) return;
     const wall = step.picksWall ? wallForStep : null;
     setSelection((current) => choosePart(current, step.id, part, wall));
     onPlacePart?.({ stepId: step.id, part, wall, heightIn: heightForStep() });
@@ -358,6 +371,8 @@ export function ShowerBuilderWizard({
   const pickWall = (wall: ShowerWall) => {
     setWallByStep((current) => ({ ...current, [step.id]: wall }));
     const pick = selection[step.id];
+    // Choosing the wall is what unlocks this step; if a part was already chosen,
+    // re-place it on the newly chosen panel.
     if (!pick?.part) return;
     setSelection((current) => choosePart(current, step.id, pick.part!, wall));
     // Re-place the chosen part on its new wall.
@@ -385,6 +400,10 @@ export function ShowerBuilderWizard({
   };
 
   const advance = () => {
+    // A required wall must be chosen first. The Next button is disabled, so this
+    // is the guard behind it: the shopper never reaches the next step with a part
+    // that has nowhere to mount.
+    if (wallMissing) return;
     if (isLastStep) {
       onDone?.(selection);
       return;
@@ -451,7 +470,9 @@ export function ShowerBuilderWizard({
 
         {step.picksWall && (
           <div className="mt-3 flex flex-wrap items-center gap-2" data-testid="shower-wall-picker">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Wall</span>
+            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Wall{step.requiresWallPick ? " (required)" : ""}
+            </span>
             {SHOWER_WALLS.map((wall) => (
               <Button
                 key={wall}
@@ -468,7 +489,9 @@ export function ShowerBuilderWizard({
             <span className="text-xs text-muted-foreground" data-testid="shower-wall-hint">
               {step.id === "surround"
                 ? "The back panel goes on this wall; side panels fill in automatically on its left and right."
-                : "Only this step moves. Other steps keep their own wall."}
+                : step.requiresWallPick
+                  ? "Pick the shower panel this goes on. It mounts on the inside face of that panel, inside the enclosure."
+                  : "Only this step moves. Other steps keep their own wall."}
             </span>
           </div>
         )}
@@ -522,6 +545,15 @@ export function ShowerBuilderWizard({
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-56 w-full" />)}
           </div>
+        ) : wallMissing ? (
+          <div
+            className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+            data-testid="shower-wall-required"
+          >
+            <TriangleAlert className="mr-1.5 inline h-4 w-4" />
+            Choose the shower panel for this part — back, left side or right side — then its products appear here.
+            It mounts on the inside face of that panel, inside the enclosure.
+          </div>
         ) : parts.length === 0 ? (
           <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" data-testid="shower-no-products">
             <TriangleAlert className="mr-1.5 inline h-4 w-4" />
@@ -561,7 +593,7 @@ export function ShowerBuilderWizard({
                 </span>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                   {activeDecorGroup.options.map(({ size, part }) => {
-                    const fit = showerSizeFit(size, alcoveWidthsByWall?.[wallForStep]);
+                    const fit = showerSizeFit(size, wallForStep ? alcoveWidthsByWall?.[wallForStep] : null);
                     const selected = chosen?.part?.code === part.code;
                     return (
                       <button
@@ -672,7 +704,9 @@ export function ShowerBuilderWizard({
           <Button
             size="sm"
             onClick={advance}
+            disabled={wallMissing}
             data-testid="shower-next-step"
+            title={wallMissing ? "Choose which shower panel this goes on first" : undefined}
           >
             {isLastStep ? "Finish" : "Next"} <ChevronRight className="ml-1 h-4 w-4" />
           </Button>

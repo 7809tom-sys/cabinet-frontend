@@ -2,8 +2,23 @@
  * Features the product already gates for affiliates, and the rule for whether
  * a distributor or vendor has published one of them.
  *
- * A missing row is not published. Affiliate Literature is not in this list:
- * library documents stay on Settings → Affiliate Literature.
+ * A missing row is not published. Two extra rows in the same table can override
+ * that, with no schema change and no deleted rows:
+ *
+ *   subjectKind "global", subjectId 0, featureKey = the feature, published 0
+ *     turns that feature off for every distributor and vendor.
+ *   featureKey "all" on a distributor or vendor, published 0
+ *     turns every feature off for that one subject.
+ *
+ * published 1 on either row turns that override back off. The other rows stay
+ * as they were. No row at all means today's per-subject switches.
+ *
+ * Check order: an admin is always allowed; otherwise off when the global
+ * feature row is off; otherwise off when that subject's "all" row is off;
+ * otherwise that subject's own feature row decides.
+ *
+ * Affiliate Literature is not in this list: library documents stay on
+ * Settings → Affiliate Literature.
  */
 
 export const AFFILIATE_FEATURE_PUBLISH_KEYS = [
@@ -61,7 +76,16 @@ export const DESIGNER_ROOM_FEATURE = {
   other: "other_room_designer",
 } as const;
 
-export type PublishSubjectKind = "distributor" | "vendor";
+/** One row that turns a feature off for every distributor and vendor. */
+export const GLOBAL_SUBJECT_KIND = "global" as const;
+export const GLOBAL_SUBJECT_ID = 0;
+
+/** One row that turns every feature off for a single distributor or vendor. */
+export const SUBJECT_KILL_FEATURE_KEY = "all";
+
+export type PublishSubjectKind = "distributor" | "vendor" | "global";
+
+export type TerritorySubjectKind = "distributor" | "vendor";
 
 export type AffiliateFeaturePublishRow = {
   subjectKind: PublishSubjectKind;
@@ -72,35 +96,121 @@ export type AffiliateFeaturePublishRow = {
   updatedAt: string | null;
 };
 
+/** Who is asking. Only platform admins skip the publish rows. */
+export type PublishViewer = {
+  role?: string | null;
+};
+
 export function isAffiliateFeatureKey(value: string): value is AffiliateFeatureKey {
   return (AFFILIATE_FEATURE_PUBLISH_KEYS as readonly string[]).includes(value);
 }
 
-/** True only when a stored row for this subject and feature is explicitly on. */
-export function isPublishedForAffiliate(
+/** The table stores 0/1. The admin screen stores false/true. Both mean the same thing. */
+export function publishFlagOn(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
+/** Explicitly off. A missing row is not off. */
+export function publishFlagOff(value: unknown): boolean {
+  return value === false || value === 0;
+}
+
+export function publishViewerIsAdmin(viewer?: PublishViewer | null): boolean {
+  return viewer?.role === "admin";
+}
+
+/** True when the global row for this feature is stored as published 0. */
+export function isOffEverywhere(
   rows: readonly AffiliateFeaturePublishRow[],
-  subject: { kind: PublishSubjectKind; id: number },
   featureKey: string,
 ): boolean {
+  const row = rows.find((item) =>
+    item.subjectKind === GLOBAL_SUBJECT_KIND
+    && item.subjectId === GLOBAL_SUBJECT_ID
+    && item.featureKey === featureKey,
+  );
+  return row != null && publishFlagOff(row.published);
+}
+
+/** True when this subject's featureKey "all" row is stored as published 0. */
+export function isSubjectShutOff(
+  rows: readonly AffiliateFeaturePublishRow[],
+  subject: { kind: string; id: number },
+): boolean {
+  const row = rows.find((item) =>
+    item.subjectKind === subject.kind
+    && item.subjectId === subject.id
+    && item.featureKey === SUBJECT_KILL_FEATURE_KEY,
+  );
+  return row != null && publishFlagOff(row.published);
+}
+
+/**
+ * True only when this subject may offer the feature.
+ * Admin always. Then Off everywhere. Then the subject's kill switch.
+ * Then the subject's own feature row, which stays unpublished until it is on.
+ */
+export function isPublishedForAffiliate(
+  rows: readonly AffiliateFeaturePublishRow[],
+  subject: { kind: TerritorySubjectKind; id: number },
+  featureKey: string,
+  viewer?: PublishViewer | null,
+): boolean {
+  if (publishViewerIsAdmin(viewer)) return true;
+  if (isOffEverywhere(rows, featureKey)) return false;
+  if (isSubjectShutOff(rows, subject)) return false;
   return rows.some((row) =>
-    row.published === true
+    publishFlagOn(row.published)
     && row.featureKey === featureKey
     && row.subjectKind === subject.kind
     && row.subjectId === subject.id,
   );
 }
 
-/** True when any distributor or vendor has explicitly published this feature. */
+/**
+ * True when some distributor or vendor that is not shut off has this feature on.
+ * A global "published 1" row is the Off everywhere switch turned back off.
+ * It does not itself publish the feature.
+ */
 export function anyAffiliateFeaturePublished(
   rows: readonly AffiliateFeaturePublishRow[],
   featureKey: string,
+  viewer?: PublishViewer | null,
 ): boolean {
-  return rows.some((row) => row.published === true && row.featureKey === featureKey);
+  if (publishViewerIsAdmin(viewer)) return true;
+  if (isOffEverywhere(rows, featureKey)) return false;
+  return rows.some((row) =>
+    publishFlagOn(row.published)
+    && row.featureKey === featureKey
+    && (row.subjectKind === "distributor" || row.subjectKind === "vendor")
+    && !isSubjectShutOff(rows, { kind: row.subjectKind, id: row.subjectId }),
+  );
+}
+
+/**
+ * Room tabs in the Designer.
+ * Admins always see the room. Until the publish list has loaded, nothing changes.
+ * Off everywhere hides the room on the public designer and on affiliate stores.
+ * An affiliate store also follows the per-subject rows. The public designer does
+ * not, so a missing global row leaves it as it is today.
+ */
+export function designerRoomOffered(input: {
+  role: string | null | undefined;
+  affiliateStore: boolean;
+  publishReady: boolean;
+  rows: readonly AffiliateFeaturePublishRow[];
+  featureKey: string;
+}): boolean {
+  if (input.role === "admin") return true;
+  if (!input.publishReady) return true;
+  if (isOffEverywhere(input.rows, input.featureKey)) return false;
+  if (!input.affiliateStore) return true;
+  return anyAffiliateFeaturePublished(input.rows, input.featureKey);
 }
 
 export function publishRowFor(
   rows: readonly AffiliateFeaturePublishRow[],
-  subject: { kind: PublishSubjectKind; id: number },
+  subject: { kind: PublishSubjectKind | TerritorySubjectKind; id: number },
   featureKey: string,
 ): AffiliateFeaturePublishRow | null {
   return rows.find((row) =>
@@ -124,11 +234,12 @@ export type CatalogVendorPublishInput = {
 export function catalogVendorPublished(
   rows: readonly AffiliateFeaturePublishRow[],
   vendor: CatalogVendorPublishInput,
+  viewer?: PublishViewer | null,
 ): boolean {
-  if (vendor.kind === "hardware" || vendor.key === "hardware") return anyAffiliateFeaturePublished(rows, "hardware_catalog");
-  if (vendor.kind === "surface" || vendor.key === "pelican") return anyAffiliateFeaturePublished(rows, "pelican_catalog");
-  if (vendor.kind === "closet" || vendor.key === "closet") return anyAffiliateFeaturePublished(rows, "closet_catalog");
+  if (vendor.kind === "hardware" || vendor.key === "hardware") return anyAffiliateFeaturePublished(rows, "hardware_catalog", viewer);
+  if (vendor.kind === "surface" || vendor.key === "pelican") return anyAffiliateFeaturePublished(rows, "pelican_catalog", viewer);
+  if (vendor.kind === "closet" || vendor.key === "closet") return anyAffiliateFeaturePublished(rows, "closet_catalog", viewer);
   const match = /^distributor:(\d+)$/.exec(vendor.key);
   if (!match) return false;
-  return isPublishedForAffiliate(rows, { kind: "distributor", id: Number(match[1]) }, "cabinet_catalog");
+  return isPublishedForAffiliate(rows, { kind: "distributor", id: Number(match[1]) }, "cabinet_catalog", viewer);
 }

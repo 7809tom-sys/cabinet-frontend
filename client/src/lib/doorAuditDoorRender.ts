@@ -281,8 +281,8 @@ export function buildAuditDoor(
     group.add(pane);
   } else {
     const slab = new THREE.Mesh(new THREE.BoxGeometry(width, height, thickness), slabMaterial);
-    slab.castShadow = true;
-    slab.receiveShadow = true;
+    slab.castShadow = false;
+    slab.receiveShadow = false;
     slab.userData = { auditDoorSlab: true };
     group.add(slab);
   }
@@ -330,8 +330,8 @@ export function buildAuditDoor(
       faceMaterial(color, faceTexture, profile.finishSheen, piece, profile.grainDirection),
     );
     mesh.position.set(x, y, 0);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     mesh.userData = { physicalRail: true, grainPiece: piece };
     frame.add(mesh);
   }
@@ -436,8 +436,7 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = DOOR_AUDIT_LIGHTS.exposure;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.enabled = false;
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(DOOR_AUDIT_LIGHTS.background);
@@ -455,18 +454,7 @@ export function createDoorAuditCapture(): DoorAuditCapture {
   scene.add(hemi);
   const key = new THREE.DirectionalLight(DOOR_AUDIT_LIGHTS.key.color, DOOR_AUDIT_LIGHTS.key.intensity);
   key.position.set(...DOOR_AUDIT_LIGHTS.key.position);
-  key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  const shadowCamera = key.shadow.camera as THREE.OrthographicCamera;
-  shadowCamera.near = 0.1;
-  shadowCamera.far = 8;
-  shadowCamera.left = -2;
-  shadowCamera.right = 2;
-  shadowCamera.top = 2;
-  shadowCamera.bottom = -2;
-  shadowCamera.updateProjectionMatrix();
-  key.shadow.bias = -0.00015;
-  key.shadow.normalBias = 0.02;
+  key.castShadow = false;
   scene.add(key);
   const fill = new THREE.DirectionalLight(DOOR_AUDIT_LIGHTS.fill.color, DOOR_AUDIT_LIGHTS.fill.intensity);
   fill.position.set(...DOOR_AUDIT_LIGHTS.fill.position);

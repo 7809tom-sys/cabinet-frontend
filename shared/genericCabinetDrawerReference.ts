@@ -13,10 +13,11 @@ import { stripHandedness } from "./codeMatch";
  *
  * The book also lists single-door variants at 24" — B24S, B24SFH, SB24S,
  * VSB24S, and W2430S. Those codes are real, orderable rows and are never
- * deleted or renamed. They are excluded from this reference deliberately: the
- * reference is what the designer DRAWS and what Auto-Design PICKS, and the
- * owner rule (issue #354 item 4) is that a 24" box is drawn and defaulted as
- * the two-door version. A single-door 24" row stays selectable by hand.
+ * deleted or renamed. They are excluded from this B-code reference because
+ * the S suffix is not a bare B## code. Tom (Nov 9 2026) says there is no
+ * single-door 24" cabinet, so the designer and the catalog still draw and
+ * describe those rows as two-door (see shared/twentyFourDoorFace.ts).
+ * Auto-Design's pick list is a separate rule and is not changed here.
  *
  * B09/B9 is included in the one-door rule. It is the 9-inch tray base, so the
  * empty-layout drawer row stays empty; the existing tray rule already forces

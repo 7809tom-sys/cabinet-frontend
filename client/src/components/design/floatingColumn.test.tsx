@@ -36,8 +36,6 @@ function StageColumn() {
         onReset={noop}
         onShare={noop}
         onPan={noop}
-        shadowStrength={100}
-        onShadowStrengthChange={noop}
         leading={
           <FloatingColumnButton data-testid="three-d-immersive-toggle" label="Fullscreen view">
             <span aria-hidden="true" />
@@ -70,7 +68,6 @@ describe("every floating button is labelled", () => {
       "three-d-floating-auto-design",
       "three-d-reset-view",
       "three-d-share-view",
-      "three-d-shadows-toggle",
       "three-d-pan-up",
       "three-d-pan-right",
       "three-d-pan-down",
@@ -103,7 +100,6 @@ describe("every floating button is labelled", () => {
       ["three-d-floating-auto-design", "Auto-Design"],
       ["three-d-reset-view", "Reset view"],
       ["three-d-share-view", "Share view"],
-      ["three-d-shadows-toggle", "Lighting"],
       ["three-d-pan-up", "Pan up"],
       ["three-d-pan-down", "Pan down"],
       ["three-d-pan-left", "Pan left"],
@@ -124,19 +120,26 @@ describe("every floating button is labelled", () => {
     }
   });
 
-  it("draws the description beside the button, revealed on hover or keyboard focus", () => {
+  /**
+   * The description used to be an absolutely positioned child of the button. That
+   * could never work: the column is `overflow-y-auto` and the 3D stage is
+   * `overflow-hidden`, so the bubble was clipped at the column's edge, and any
+   * z-index inside the stage lost to the pricing panel. It is now portalled to
+   * `document.body` as a fixed layer, which escapes both.
+   */
+  it("describes the button for assistive tech even before any hover", () => {
     render(<FloatingColumnButton label="Zoom in" tooltip="Zoom in — closer to the cabinets"><span /></FloatingColumnButton>);
     const button = screen.getByRole("button", { name: "Zoom in" });
-    const tooltip = screen.getByRole("tooltip");
-    expect(tooltip.textContent).toContain("closer to the cabinets");
-    // Hidden until the button is hovered or focused; the reveal is CSS-only
-    // (floatingColumn.css), so no popover state lives inside the render loop.
-    expect(tooltip.className).toContain("three-d-floating-tooltip");
-    expect(tooltip.parentElement?.className).toContain("three-d-floating-item");
-    // Focusing the button is what makes CSS reveal it for a keyboard user.
+    // The sr-only description is always in the document, so `aria-describedby`
+    // resolves on a touch screen where no bubble can ever be hovered.
+    const description = screen.getByRole("tooltip");
+    expect(description.textContent).toContain("closer to the cabinets");
+    expect(description.className).toContain("sr-only");
+    expect(button.getAttribute("aria-describedby")).toBe(description.id);
+    // The visible bubble only exists while the pointer or focus is on the button.
+    expect(document.querySelector(".three-d-floating-tooltip-portal")).toBeNull();
     button.focus();
     expect(document.activeElement).toBe(button);
-    expect(tooltip.parentElement?.contains(button)).toBe(true);
   });
 
   it("keeps a visible label only where it still fits", () => {

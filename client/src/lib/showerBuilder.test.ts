@@ -136,9 +136,17 @@ describe("a partial shower still makes sense", () => {
   });
 
   it("warns when a tap or niche has no wall panel to mount on", () => {
-    const heads = showerPlacementIssues(choosePart({}, "heads", part("PL-86S22S BN")));
+    // The wall is now REQUIRED for these two steps: they mount on a chosen panel of
+    // the shower, and there is no default (a default is what put the valve on the
+    // room wall outside the enclosure). Placing without a wall is refused outright.
+    expect(() => choosePart({}, "heads", part("PL-86S22S BN"))).toThrow(/needs a chosen shower wall/i);
+    expect(() => choosePart({}, "niche", part("PL-SN1614"))).toThrow(/needs a chosen shower wall/i);
+
+    // With a panel chosen, the placement warning is about the missing SURROUND,
+    // which is still a real thing to tell the shopper.
+    const heads = showerPlacementIssues(choosePart({}, "heads", part("PL-86S22S BN"), "back"));
     expect(heads.some((issue) => issue.stepId === "heads")).toBe(true);
-    const niche = showerPlacementIssues(choosePart({}, "niche", part("PL-SN1614")));
+    const niche = showerPlacementIssues(choosePart({}, "niche", part("PL-SN1614"), "left"));
     expect(niche.some((issue) => issue.stepId === "niche")).toBe(true);
   });
 
@@ -171,9 +179,9 @@ describe("the cart carries each chosen part at its own real price", () => {
   });
 
   it("prices a finish variant by its own row, not a shared model price", () => {
-    const brushed = showerCartLines(choosePart({}, "heads", part("PL-86S22S BN")));
+    const brushed = showerCartLines(choosePart({}, "heads", part("PL-86S22S BN"), "back"));
     expect(brushed[0]!.unitPrice).toBe(179.52);
-    const fancier = showerCartLines(choosePart({}, "heads", part("PL-86A33S BN")));
+    const fancier = showerCartLines(choosePart({}, "heads", part("PL-86A33S BN"), "back"));
     expect(fancier[0]!.unitPrice).toBe(475.87);
   });
 

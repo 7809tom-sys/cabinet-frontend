@@ -32,7 +32,7 @@ import { useCart } from "@/contexts/CartContext";
 import { toast } from "sonner";
 import { affiliateCabinetDetailHref } from "@/lib/affiliateCabinetDetailRoute";
 import { sortStorefrontCategoryTabs, storefrontCategoryTabLabel } from "@/lib/storefrontCategoryTabs";
-import { mergeWallTabRacks, wallTabExtraCategories } from "@/lib/storefrontWallWineRacks";
+import { mergeStorefrontCatalogPages, mergeWallTabRacks, STOREFRONT_CATALOG_PAGE_SIZE, storefrontCatalogOffsets, wallTabExtraCategories } from "@/lib/storefrontWallWineRacks";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { affiliateDesignerPath } from "@/lib/affiliateStorefrontUrl";
@@ -615,12 +615,15 @@ function LockedCatalog({
       category: category ?? undefined,
       subCategory: category === "Accessory" && subGroup ? subGroup : undefined,
       search: debounced || undefined,
-      limit: 60,
+      limit: STOREFRONT_CATALOG_PAGE_SIZE,
       slug: slug || undefined,
     }),
     [family.styleId, category, subGroup, debounced, slug]
   );
   const { data: catalog, isLoading } = trpc.storefront.familyCatalog.useQuery(catalogInput);
+  const catalogUtils = trpc.useUtils();
+  const catalogUtilsRef = useRef(catalogUtils);
+  catalogUtilsRef.current = catalogUtils;
   const { data: promos } = trpc.promotions.activeForStorefront.useQuery();
 
   // The Wall tab is filtered server-side by EXACT category, so a rack the
@@ -637,7 +640,7 @@ function LockedCatalog({
       styleId: family.styleId,
       category: extraCategory,
       search: debounced || undefined,
-      limit: 60,
+      limit: STOREFRONT_CATALOG_PAGE_SIZE,
       slug: slug || undefined,
     },
     { enabled: category === "Wall" },
@@ -645,11 +648,38 @@ function LockedCatalog({
   const extraRackItems = rackQueries.flatMap(
     (query) => ((query.data?.items ?? []) as LockedCatalogItem[]),
   );
+  // SKU order puts WRC / WXR / WWC after the first page. The shop has no
+  // next button, so every later page has to be loaded or those racks never show.
+  const [laterCatalogPages, setLaterCatalogPages] = useState<LockedCatalogItem[]>([]);
+  useEffect(() => {
+    const offsets = storefrontCatalogOffsets(catalog?.total ?? 0);
+    if (offsets.length === 0) {
+      setLaterCatalogPages([]);
+      return;
+    }
+    let cancelled = false;
+    setLaterCatalogPages([]);
+    Promise.all(offsets.map((offset) => catalogUtilsRef.current.storefront.familyCatalog.fetch({ ...catalogInput, offset })))
+      .then((pages) => {
+        if (cancelled) return;
+        setLaterCatalogPages(pages.flatMap((page) => (page.items ?? []) as LockedCatalogItem[]));
+      })
+      .catch(() => {
+        if (!cancelled) setLaterCatalogPages([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [catalog?.total, catalogInput]);
+  const catalogItems = mergeStorefrontCatalogPages([
+    (catalog?.items ?? []) as LockedCatalogItem[],
+    laterCatalogPages,
+  ]);
   // Wall rows as the API returned them, plus every rack found in the other
   // buckets, de-duplicated by record id.
   const tabItems: LockedCatalogItem[] = category === "Wall"
-    ? mergeWallTabRacks((catalog?.items ?? []) as LockedCatalogItem[], extraRackItems)
-    : ((catalog?.items ?? []) as LockedCatalogItem[]);
+    ? mergeWallTabRacks(catalogItems, extraRackItems)
+    : catalogItems;
 
   return (
     <section id="shop" className="py-12 md:py-16">

@@ -3,8 +3,10 @@ import {
   DEFAULT_ROOM,
   countertopSurfaces,
   countertopSurfacePlanPolygon,
+  customWallJoinTurnsFortyFive,
   measuredWallCountertopMiterSurfaces,
   type PlacedCabinet,
+  type RoomData,
   wallPlacementAt,
 } from "./design";
 
@@ -339,5 +341,109 @@ describe("measuredWallCountertopMiterSurfaces", () => {
     ], room);
     expect(asDishwasher.map(countertopSurfacePlanPolygon))
       .toEqual(asCabinet.map(countertopSurfacePlanPolygon));
+  });
+
+  it("joins a 45° corner when the cabinets are a filler seam off the vertex, and does not run past the far end", () => {
+    const diagonalLength = Math.hypot(60, 60);
+    const diagonalBase = baseCabinet("diagonal-seam", "diagonal", diagonalLength - 24 - 6);
+    const straightBase = baseCabinet("straight-seam", "straight", 6);
+    const surfaces = countertopSurfaces([diagonalBase, straightBase], room);
+    const infill = surfaces.find((surface) => surface.customWallCornerInfill);
+    expect(infill).toBeTruthy();
+    expect(countertopSurfacePlanPolygon(infill!)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ x: 60, y: 60 }),
+    ]));
+    const straight = surfaces.find((surface) => surface.customWallId === "straight")!;
+    const polygon = countertopSurfacePlanPolygon(straight);
+    // Straight wall runs from (60, 60) toward (60, 180). The cabinet occupies
+    // along-wall inches 6 through 30. The corner infill closes the pocket back
+    // to the vertex; the cabinet slab stays flush with the box and does not
+    // run past its far end onto open floor.
+    const along = polygon.map((point) => point.y - 60);
+    expect(Math.max(...along)).toBeCloseTo(30, 1);
+    expect(Math.min(...along)).toBeCloseTo(6, 1);
+    const diagonal = surfaces.find((surface) => surface.customWallId === "diagonal")!;
+    const shared = countertopSurfacePlanPolygon(diagonal).some((start, index, points) => {
+      const end = points[(index + 1) % points.length]!;
+      return countertopSurfacePlanPolygon(straight).some((otherStart, otherIndex, otherPoints) => {
+        const otherEnd = otherPoints[(otherIndex + 1) % otherPoints.length]!;
+        return Math.hypot(start.x - otherEnd.x, start.y - otherEnd.y) < 0.05
+          && Math.hypot(end.x - otherStart.x, end.y - otherStart.y) < 0.05;
+      });
+    });
+    expect(shared || Boolean(infill)).toBe(true);
+  });
+
+  it("joins a 135° angled return the same way and keeps a straight run flush with its outer cabinet", () => {
+    const angled: RoomData = {
+      width: 168,
+      depth: 96,
+      ceilingHeight: 96,
+      vertices: [
+        { id: "a", x: 0, y: 0 },
+        { id: "b", x: 120, y: 0 },
+        { id: "c", x: 168, y: 48 },
+        { id: "d", x: 120, y: 96 },
+        { id: "e", x: 0, y: 96 },
+      ],
+      customWalls: [
+        { id: "top", startVertexId: "a", endVertexId: "b" },
+        { id: "wall-45", startVertexId: "b", endVertexId: "c", lockedAngle: 45 },
+        { id: "wall-135", startVertexId: "c", endVertexId: "d", lockedAngle: -45 },
+        { id: "bottom", startVertexId: "d", endVertexId: "e" },
+        { id: "left", startVertexId: "e", endVertexId: "a" },
+      ],
+    };
+    const place = (uid: string, wallId: string, offset: number) => {
+      const spot = wallPlacementAt(offset, 24, 24, wallId as never, angled);
+      return {
+        uid, cabinetId: 10, masterCode: "B24", description: "Base", placement: "base" as const,
+        width: 24, depth: 24, height: 34.5, numberOfDoors: 2, numberOfDrawers: 1, ...spot,
+      };
+    };
+    const wall135 = angled.customWalls!.find((wall) => wall.id === "wall-135")!;
+    const bottom = angled.customWalls!.find((wall) => wall.id === "bottom")!;
+    expect(customWallJoinTurnsFortyFive(wall135, bottom, angled)).toBe(true);
+    const length135 = Math.hypot(168 - 120, 96 - 48);
+    const surfaces = countertopSurfaces([
+      place("on135", "wall-135", length135 - 24 - 6),
+      place("bottom-return", "bottom", 6),
+      place("left-end", "top", 18),
+      place("left-next", "top", 46),
+    ], angled);
+    expect(surfaces.some((surface) => surface.customWallCornerInfill && surface.customWallMiterVertexId === "d")).toBe(true);
+    const top = surfaces.find((surface) => surface.customWallId === "top")!;
+    expect(top.customWallRunStartIn).toBeCloseTo(18, 2);
+    expect((top.customWallRunStartIn ?? 0) + (top.linearInches ?? 0)).toBeCloseTo(70, 2);
+  });
+
+  it("treats a wall half a degree off 45 as the same angled corner", () => {
+    const length = Math.hypot(60, 60);
+    const radians = 44.7 * Math.PI / 180;
+    const offRoom: RoomData = {
+      ...room,
+      vertices: [
+        { id: "v1", x: 0, y: 0 },
+        { id: "v2", x: length * Math.cos(radians), y: length * Math.sin(radians) },
+        { id: "v3", x: length * Math.cos(radians), y: length * Math.sin(radians) + 120 },
+        { id: "v4", x: 0, y: length * Math.sin(radians) + 120 },
+      ],
+    };
+    const diagonal = offRoom.customWalls!.find((wall) => wall.id === "diagonal")!;
+    const straight = offRoom.customWalls!.find((wall) => wall.id === "straight")!;
+    expect(customWallJoinTurnsFortyFive(diagonal, straight, offRoom)).toBe(true);
+    const diagonalLength = Math.hypot(offRoom.vertices![1]!.x, offRoom.vertices![1]!.y);
+    const place = (uid: string, wallId: string, offset: number): PlacedCabinet => {
+      const spot = wallPlacementAt(offset, 24, 24, wallId as never, offRoom);
+      return {
+        uid, cabinetId: 10, masterCode: "B-24", description: "Base", placement: "base",
+        width: 24, depth: 24, height: 34.5, numberOfDoors: 2, numberOfDrawers: 1, ...spot,
+      };
+    };
+    const surfaces = countertopSurfaces([
+      place("off-diagonal", "diagonal", diagonalLength - 24 - 6),
+      place("off-straight", "straight", 6),
+    ], offRoom);
+    expect(surfaces.some((surface) => surface.customWallMiterVertexId === "v2")).toBe(true);
   });
 });
