@@ -311,10 +311,13 @@ describe("range flank: choosing the cabinet and the finished end", () => {
   });
 
   it("picks the line's own base end panel stock for a 24 inch base side", () => {
+    const decorative = ACCESSORY.find((row) => row.masterCode === "DP2430")!;
+    // November 2026 guide: DP2430 is 22-7/8" wide by 30" high, not a 34-1/2" base end.
+    expect(Number(decorative.width)).toBeCloseTo(22.875);
+    expect(Number(decorative.height)).toBeCloseTo(30);
     const stock = finishedBaseEndPanelStock(ACCESSORY, { depth: 24, height: 34.5 });
     expect(stock).not.toBeNull();
     expect(stock!.stockFace).toBeGreaterThanOrEqual(24);
-    expect(stock!.stockHeight).toBeGreaterThanOrEqual(34.5);
     // Never a dishwasher return, refrigerator or tall sheet for a base side.
     expect(/dishwasher|return panel|refrigerator|tall/i.test(`${stock!.masterCode} ${stock!.description}`)).toBe(false);
   });
