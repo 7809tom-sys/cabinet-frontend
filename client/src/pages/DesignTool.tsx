@@ -197,6 +197,7 @@ import {
   installableSmallGapRemainder,
 	optimalSmallGapFillerCut,
   shouldAutoPlaceLeftoverFiller,
+  repairMissingAdjoiningFillers,
 	  removePlacedCabinetGroup,
 	  removedCabinetOwnedFillers,
 	  smallGapFillerOpportunityFromDragPreview,
@@ -5870,24 +5871,39 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		  // cabinet transition or its countertop seam open.
 		  useEffect(() => {
 		    if (catalogFillers.length === 0) return;
-		    const repaired = repairMissingAngledWallFillers(
+		    const styleFor = (cabinet: PlacedCabinet) => cabinet.styleId ?? null;
+		    const angled = repairMissingAngledWallFillers(
 		      placedRef.current,
 		      room,
 		      catalogFillers,
 		      makeUid,
 		      // The repaired pair takes its cabinet's finish; beside an inherited cabinet it inherits too.
-		      (cabinet) => cabinet.styleId ?? null,
+		      styleFor,
 		    );
-	    if (repaired.added.length === 0) return;
-	    placedRef.current = repaired.placed;
-	    setPlaced(() => repaired.placed);
-	    setFillerInsertionTransition({ uids: repaired.added.map((filler) => filler.uid), key: Date.now() });
-	    toast.success("The open 45° cabinet front was closed with two catalog filler boards joined on one continuous miter.");
+		    // Straight seams between two cabinets, and a filler-sized gap at a
+		    // 90° inside corner, close on both the base and the upper. This does
+		    // not add a board at an open run end.
+		    const adjoining = repairMissingAdjoiningFillers(
+		      angled.placed,
+		      room,
+		      openings,
+		      catalogFillers,
+		      makeUid,
+		      styleFor,
+		    );
+		    const added = [...angled.added, ...adjoining.added];
+	    if (added.length === 0) return;
+	    placedRef.current = adjoining.placed;
+	    setPlaced(() => adjoining.placed);
+	    setFillerInsertionTransition({ uids: added.map((filler) => filler.uid), key: Date.now() });
+	    if (angled.added.length > 0) {
+	      toast.success("The open 45° cabinet front was closed with two catalog filler boards joined on one continuous miter.");
+	    }
 		  // Include `placed`: a saved design restores after the accessory query can
 		  // settle, and the repair must then see the restored two cabinet runs instead
 		  // of the empty pre-restore ref. The repair is idempotent because it detects
 		  // its own front-miter-pair records.
-		  }, [catalogFillers, room, placed]);
+		  }, [catalogFillers, room, openings, placed]);
 
   const glassDoorAddonFor = useCallback((p: PlacedCabinet, resolvedStyleId: number) => {
     const linkedGlassDoorCode = glassDoorAddonCodeFor(p);
