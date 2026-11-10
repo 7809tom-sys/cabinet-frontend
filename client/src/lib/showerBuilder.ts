@@ -69,7 +69,7 @@ export const SHOWER_STEPS: readonly ShowerStepDef[] = [
   {
     id: "surround",
     title: "Wall panels & surround",
-    blurb: "The waterproof wall panels. These define the back wall the rest of the shower defaults to.",
+    blurb: "The waterproof wall panels. The back panel goes on the wall you choose, and the two side panels fill in around it, so one choice gives you a full three-wall surround.",
     kinds: ["surround"],
     picksWall: true,
     optional: true,
@@ -180,11 +180,162 @@ function completenessRank(part: ShowerCatalogPart): number {
   return 1;
 }
 
-/** The step was completed by explicitly skipping it. */
+/**
+ * The step was completed by explicitly skipping it.
+ */
 export function skipStep(selection: ShowerSelection, stepId: ShowerStepId): ShowerSelection {
   return { ...selection, [stepId]: { stepId, part: null, wall: null } };
 }
 
+/**
+ * How a surround SKU is decorated.
+ *
+ * Pelican sells the same surround in four décors, so the wizard offers the décor
+ * first and the size second instead of dumping 28 near-identical SKUs at the
+ * shopper. The order is Tom's: Carrara Marble, Grey Wood, White Wood, White Brick.
+ */
+export type ShowerSurroundDecorId = "marble" | "grey-wood" | "white-wood" | "brick";
+
+export type ShowerSurroundDecor = {
+  id: ShowerSurroundDecorId;
+  label: string;
+  /** Face colour, matching the 3D material so the swatch predicts the wall. */
+  swatch: string;
+  /** Vein / grout / grain colour, so the swatch reads as the real décor. */
+  accent: string;
+};
+
+export const SHOWER_SURROUND_DECORS: readonly ShowerSurroundDecor[] = [
+  { id: "marble", label: "Carrara Marble", swatch: "#ddd8d0", accent: "#6f6a62" },
+  { id: "grey-wood", label: "Grey Wood", swatch: "#8b8883", accent: "#54514d" },
+  { id: "white-wood", label: "White Wood", swatch: "#dcd7cf", accent: "#948d84" },
+  { id: "brick", label: "White Brick", swatch: "#d9d4cb", accent: "#8c857c" },
+];
+
+/**
+ * The décor a surround SKU carries, read from the catalog's own description.
+ *
+ * A surround is identified by its décor word, not by its size, so the same test
+ * works for every width and height Pelican sells.
+ */
+export function showerSurroundDecor(
+  part: Pick<ShowerCatalogPart, "code" | "name">,
+): ShowerSurroundDecorId | null {
+  const text = `${part.code} ${part.name}`.toLowerCase();
+  // Marble first: "Carrara Marble" must not be caught by a wood or tile word.
+  if (/carrara|marble/.test(text)) return "marble";
+  if (/grey wood|gray wood|grey grain|gray grain/.test(text)) return "grey-wood";
+  if (/white wood/.test(text)) return "white-wood";
+  if (/brick/.test(text)) return "brick";
+  return null;
+}
+
+/** One physical surround size, parsed from the catalog's `size` field. */
+export type ShowerSurroundSize = {
+  /** The size exactly as the catalog prints it, used as the option label. */
+  label: string;
+  widthIn: number;
+  depthIn: number;
+  heightIn: number;
+  /** A 74" wall set is a tub surround, not a full-height shower surround. */
+  tubHeight: boolean;
+};
+
+/**
+ * Parse `60" x 30" x 96"` (and the `60" x 30"` two-number form) into numbers.
+ *
+ * Returns null for a row whose size cannot be read, so a malformed catalog row is
+ * not offered as a size the shopper cannot reason about.
+ */
+export function showerSurroundSize(part: Pick<ShowerCatalogPart, "size">): ShowerSurroundSize | null {
+  const label = (part.size ?? "").trim();
+  if (!label) return null;
+  const numbers = Array.from(label.matchAll(/(\d+(?:\.\d+)?)/g)).map((match) => Number(match[1]));
+  if (numbers.length < 2) return null;
+  const [widthIn, depthIn, heightIn = 0] = numbers;
+  if (!(widthIn > 0 && depthIn > 0)) return null;
+  return {
+    label,
+    widthIn,
+    depthIn,
+    heightIn,
+    tubHeight: heightIn > 0 && heightIn < 80,
+  };
+}
+
+/** One décor with every size Pelican sells it in, largest fitting room first. */
+export type ShowerSurroundGroup = {
+  decor: ShowerSurroundDecor;
+  options: Array<{ size: ShowerSurroundSize; part: ShowerCatalogPart }>;
+};
+
+/**
+ * Group the surround catalogue into décor → size options.
+ *
+ * A row whose décor or size cannot be read stays out of the two-stage picker but is
+ * still a real product, so it is reported through `unreadable` rather than silently
+ * disappearing.
+ */
+export function showerSurroundGroups(catalog: readonly ShowerCatalogPart[]): {
+  groups: ShowerSurroundGroup[];
+  unreadable: ShowerCatalogPart[];
+} {
+  const byDecor = new Map<ShowerSurroundDecorId, Array<{ size: ShowerSurroundSize; part: ShowerCatalogPart }>>();
+  const unreadable: ShowerCatalogPart[] = [];
+  for (const part of catalog) {
+    if (part.kind !== "surround") continue;
+    const decorId = showerSurroundDecor(part);
+    const size = showerSurroundSize(part);
+    if (!decorId || !size) {
+      unreadable.push(part);
+      continue;
+    }
+    const list = byDecor.get(decorId) ?? [];
+    list.push({ size, part });
+    byDecor.set(decorId, list);
+  }
+  const groups: ShowerSurroundGroup[] = [];
+  for (const decor of SHOWER_SURROUND_DECORS) {
+    const options = byDecor.get(decor.id);
+    if (!options?.length) continue;
+    // Full-height shower surrounds before tub-height sets, then by width so the
+    // sizes read as a ladder rather than in catalog-import order.
+    options.sort((a, b) =>
+      Number(a.size.tubHeight) - Number(b.size.tubHeight)
+      || a.size.widthIn - b.size.widthIn
+      || a.size.depthIn - b.size.depthIn
+      || a.size.heightIn - b.size.heightIn);
+    groups.push({ decor, options });
+  }
+  return { groups, unreadable };
+}
+
+/**
+ * How well a surround size fits an alcove: 0 is exact, and anything over the
+ * tolerance is called out in words rather than hidden.
+ *
+ * The width has to span the alcove because the back panel is the waterproof wall;
+ * the depth is what the pan then has to live inside.
+ */
+export function showerSizeFit(
+  size: ShowerSurroundSize,
+  alcoveWidthIn: number | null | undefined,
+): { ok: boolean; message: string | null } {
+  if (alcoveWidthIn == null || !(alcoveWidthIn > 0)) return { ok: true, message: null };
+  const gap = alcoveWidthIn - size.widthIn;
+  const tolerance = 2;
+  if (Math.abs(gap) <= tolerance) return { ok: true, message: null };
+  return {
+    ok: false,
+    message: gap > 0
+      ? `${size.widthIn}″ panels leave a ${round1(gap)}″ gap in this ${round1(alcoveWidthIn)}″ alcove.`
+      : `${size.widthIn}″ panels overrun this ${round1(alcoveWidthIn)}″ alcove by ${round1(-gap)}″.`,
+  };
+}
+
+function round1(value: number): string {
+  return String(Math.round(value * 10) / 10);
+}
 /**
  * Choose a part in a step, with its own wall.
  *

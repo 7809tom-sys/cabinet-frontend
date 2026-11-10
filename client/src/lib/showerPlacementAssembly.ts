@@ -52,17 +52,34 @@ function definitionFor(pelicanCode: string) {
 /**
  * Pick the bay for a chosen wall.
  *
- * The wizard asks for "the back wall, left wall or right wall", which maps onto the
- * bays the room actually has. `wallIndex` is the order the shopper chose in, so the
- * same three options always mean the same three walls.
+ * The wizard asks for "the back wall, left wall or right wall". `findShowerBays`
+ * walks the room clockwise from the top-left corner, so a rectangular room yields
+ * top, right, bottom, left — indexing that list with `1` gives the RIGHT wall, not
+ * the left one. Matching on the wall's own id keeps "Left wall" on the left wall
+ * instead of putting the shower behind it.
+ *
+ * A room without a bay on the chosen side (a three-walled alcove has only three)
+ * falls back to any bay, because refusing to place a shower the shopper just chose
+ * is worse than seating it on the nearest wall that can hold one.
  */
 export function bayForWall(room: RoomData, wall: ShowerWall): ShowerBay | null {
   const bays = findShowerBays(room);
   if (bays.length === 0) return null;
-  if (wall === "top") return bays[0] ?? null;
-  if (wall === "left") return bays[1] ?? bays[0] ?? null;
-  return bays[bays.length - 1] ?? bays[0] ?? null;
+  const wanted = BAY_ID_FOR_WALL[wall];
+  const match = bays.find((bay) => bay.id === wanted);
+  if (match) return match;
+  // Custom polygons name their walls themselves, so fall back in the same
+  // top/right/bottom/left order the rectangle uses.
+  const index = wall === "top" ? 0 : wall === "left" ? bays.length - 1 : 1;
+  return bays[index] ?? bays[0] ?? null;
 }
+
+/** The rectangle room's own wall id for each wizard wall. */
+const BAY_ID_FOR_WALL: Record<ShowerWall, string> = {
+  top: "top",
+  left: "left",
+  right: "right",
+};
 
 /**
  * Lay a surround into its bay.
