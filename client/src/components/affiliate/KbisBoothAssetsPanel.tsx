@@ -2,6 +2,9 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Copy, Download, ExternalLink, FileText, ImageIcon, Sparkles } from "lucide-react";
+import { DOCUMENT_DOWNLOAD_ENABLED } from "@shared/pptxDocument";
+import { PptxDeckViewer, type PptxDeckSource } from "@/components/documents/PptxDeckViewer";
+import { saveDocumentFromUrl } from "@/components/documents/pptxPreview";
 import type { EducationResource } from "@/components/affiliate/AffiliateResourcesHub";
 import {
   KBIS_BOOTH_COPY_LINES,
@@ -36,6 +39,7 @@ const FILTERS: { id: AssetFilter; label: string }[] = [
 export function KbisBoothAssetsPanel({ resources, query = "" }: { resources: EducationResource[]; query?: string }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [filter, setFilter] = useState<AssetFilter>("all");
+  const [deck, setDeck] = useState<PptxDeckSource | null>(null);
 
   const published = useMemo(
     () => resources.filter((item) => item.category.trim().toLowerCase() === "kbis-2027-booth"),
@@ -243,18 +247,51 @@ export function KbisBoothAssetsPanel({ resources, query = "" }: { resources: Edu
                   <span className="text-xs text-muted-foreground">{formatAssetSize(document.sizeBytes)}</span>
                 ) : null}
               </div>
-              <h4 className="mt-2 text-sm font-medium">{document.title}</h4>
+              <h4 className="mt-2 text-sm font-medium">
+                <button
+                  type="button"
+                  className="text-left hover:underline"
+                  onClick={() => setDeck({
+                    title: document.title,
+                    filename: document.file,
+                    mimeType: document.mimeType,
+                    sourceUrl: document.url,
+                  })}
+                >
+                  {document.title}
+                </button>
+              </h4>
               <p className="mt-1 text-sm text-muted-foreground">{document.description}</p>
-              <div className="mt-3">
-                <FileActions
-                  url={document.url}
-                  download={document.file}
-                  slug={document.slug}
-                  title={document.title}
-                  openLabel="Open deck"
-                  copied={copied}
-                  onCopy={copy}
-                />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setDeck({
+                    title: document.title,
+                    filename: document.file,
+                    mimeType: document.mimeType,
+                    sourceUrl: document.url,
+                  })}
+                  aria-label={`View ${document.title}`}
+                >
+                  <FileText className="h-3.5 w-3.5" /> Open deck
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => copy(new URL(document.url, window.location.origin).toString(), `url-${document.slug}`)}
+                  aria-label={`Copy file address for ${document.title}`}
+                >
+                  <Copy className="h-3.5 w-3.5" /> {copied === `url-${document.slug}` ? "Copied" : "Copy file address"}
+                </Button>
+                {DOCUMENT_DOWNLOAD_ENABLED ? (
+                  <Button type="button" size="sm" variant="ghost" className="gap-1.5" onClick={() => { void saveDocumentFromUrl(document.url, document.file); }}>
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </Button>
+                ) : null}
               </div>
             </article>
           ))}
@@ -285,6 +322,7 @@ export function KbisBoothAssetsPanel({ resources, query = "" }: { resources: Edu
         </section>
       ) : null}
 
+      <PptxDeckViewer open={deck != null} deck={deck} onClose={() => setDeck(null)} />
       <p className="flex items-start gap-2 text-xs text-muted-foreground">
         <ImageIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Files live in the &ldquo;{KBIS_BOOTH_FOLDER}&rdquo; folder — the Marketing Hub tab here, and the admin Media
