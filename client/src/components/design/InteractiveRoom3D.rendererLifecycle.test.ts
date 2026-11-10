@@ -206,15 +206,14 @@ describe("InteractiveRoom3D renderer lifecycle wiring", () => {
     expect(roomSource).toContain("rendererHostRef.current.ensureMounted(mount)");
   });
 
-  it("does not reset the context-loss counter, which would allocate renderers forever", () => {
-    const effect = roomSource.slice(
-      roomSource.indexOf("A GPU reset loses the context"),
-      roomSource.indexOf("A failed start used to be permanent"),
-    );
-    // The manual Retry button may zero the counter. The automatic path must not.
-    expect(effect).not.toContain("webglAutoRetriesRef.current = 0");
-    expect(effect).toContain("threeDContextLossAction(");
-    expect(effect).toContain("contextLossRestartsRef");
+  it("does not restart a lost context from the room, which would allocate renderers forever", () => {
+    // Recovery lives in one hook: silent backoff, and no context while the page
+    // is hidden. The room must not keep its own retry counter.
+    expect(roomSource).toContain("useThreeDRendererRecovery(rendererHostRef,");
+    expect(roomSource).not.toContain("webglAutoRetriesRef");
+    expect(roomSource).not.toContain("contextLossRestartsRef");
+    expect(roomSource).not.toContain("threeDContextLossAction(");
+    expect(roomSource).not.toContain("claimThreeDGpuRecovery(");
   });
 
   it("does not create, mount, dispose, or force-lose a context inside the scene effect", () => {

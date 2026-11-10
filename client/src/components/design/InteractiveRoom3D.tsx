@@ -7,7 +7,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { THREE_D_GPU_RESET_LIMIT_MESSAGE, ThreeDRendererHost, claimThreeDGpuRecovery, detectThreeDWebGLSupport, sizeThreeDRenderer, threeDContextLossAction, threeDWebGLUnavailableMessage, type ThreeDWebGLSupport } from "./threeDRendererHost";
+import { THREE_D_BLOCKED_MESSAGE, THREE_D_RECONNECTING_MESSAGE, THREE_D_STARTING_MESSAGE, THREE_D_UNAVAILABLE_MESSAGE, ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
+import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { DenoiseMaterial, WebGLPathTracer } from "three-gpu-pathtracer";
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
@@ -1112,6 +1113,8 @@ interface Props {
   onGeometryRendered?: () => void;
   /** True while a GPU reset has paused the 3D view, so the page can hold back dialogs that would cover the notice. */
   onGraphicsPausedChange?: (paused: boolean) => void;
+  /** Chrome blocked WebGL for the site; only a reload by the customer brings the 3D view back. */
+  onWebglBlocked?: () => void;
   /** Persists an interactive wall-height adjustment back to the current 2D room. */
   onRoomWallHeightChange?: (heightIn: number) => void;
   /** Persists individual back, left, right, and front wall heights. */
@@ -12647,7 +12650,14 @@ function ThreeDFloorMaterialControl({
 // identity in the scene effect's dependencies and rebuilds the whole 3D room.
 const NO_ITEMS: never[] = [];
 
-export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered, onGraphicsPausedChange }: Props) {
+/** The designer opens its 3D view on load when the URL asks for it, so the customer's reload lands back in 3D. */
+function reopenThreeDAfterReload() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("preview", "3d");
+  window.history.replaceState(window.history.state, "", url);
+}
+
+export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toeKick = false, roomOverride, openings = NO_ITEMS, sinks = NO_ITEMS, potFillers = NO_ITEMS, island = null, islandFocusRequest = null, furniture = NO_ITEMS, selectedFurnitureUid = null, onSelectFurniture, onRemoveFurniture, onRotateFurniture, ponyWalls = NO_ITEMS, orderSummary, orderLines = NO_ITEMS, initialPresentation, catalogFinishOverride, renderExposure = null, colorDeltaEMax = null, doorRenderHex = null, cabinetFinishPreviewOptions = NO_ITEMS, doorStyleChoices = NO_ITEMS, selectedDoorStyleId = null, onDoorStyleChange, cabinetFinishOverrides, cabinetDoorProfiles, cabinetDoorSampleUrls, cabinetDrawerSampleUrls, cabinetFaceSourceKinds, cabinetFaceCrops, catalogFaceCrop, cabinetFrontVisuals, catalogDoorSampleUrl, catalogDrawerSampleUrl, catalogFaceSourceKind, catalogRoomSceneUrl, catalogDoorProfile, windowSceneKind = DEFAULT_WINDOW_SCENE_KIND, windowFrameStyle = "white", hardwareStyleId = "none", hardwareAccent, hardwareFinish, catalogFinishName, catalogFinishProductId, catalogIslandCabinetName, catalogIslandCabinetColor, catalogIslandCabinetProductId, catalogIslandDoorSampleUrl, catalogCountertopName, catalogCountertopProductId, catalogCountertopReferenceUrl, catalogIslandCountertopName, catalogIslandCountertopProductId, catalogIslandCountertopReferenceUrl, catalogFlooringName, catalogFlooringProductId, catalogFlooringReferenceUrl, catalogFlooringCategory, catalogFlooringSubCategory, catalogFlooringSize, catalogBacksplashName, catalogBacksplashProductId, catalogBacksplashReferenceUrl, catalogHardwareReferenceUrl, catalogHardwareName, savedDesignId, savedDesignRevision, canAffiliateGeminiImageTest = false, isCurrentPlanSaved = false, savedPlanFingerprintPayload = null, backsplashHeightMode = "standard", countertopBacksplashHeightIn = 0, catalogCountertopColor, catalogIslandCountertopColor, catalogCountertopImageUrl, catalogIslandCountertopImageUrl, catalogFlooringImageUrl, catalogFlooringCardImageUrl = null, flooringRotationDeg = 0, onFlooringRotationChange, mosaicFloorPattern = null, onMosaicFloorPatternChange, catalogBacksplashImageUrl, catalogBacksplashCardImageUrl = null, catalogBacksplashMaterialImageUrl = null, catalogFlooringMaterialImageUrl = null, catalogBacksplashSize = null, catalogBacksplashCategory = null, catalogBacksplashSubCategory = null, shareContext, catalogItems = NO_ITEMS, catalogDragItem = null, catalogDropWall, onAddCatalogItem, onAddRangeHood, onSaveToAccount, onSyncCart, onPresentationChange, onRoomWallHeightChange, onRoomWallHeightsChange, onMoveCabinet, onMoveCabinetTo, selectedCabinetUid, attributesTargetUid = null, missingPriceUids, onSelectCabinet, onOpenCabinetEditor, onSelectOpening, onOpenWindowEditor, onOpenDoorEditor, onRequestFiller, onSnapGlassCabinetToFront, onRotateCabinet, onRemoveCabinet, showWallLayer, onToggleWallLayer, temporaryPreviewMessage, onClearTemporaryPreview, temporaryPreviewCounter, temporaryPreviewTransitionKey, fillerInsertionTransition, colorTrace = null, cabinetConfigHref, embedded = false, cutawayRoomWalls = true, hybridPlanUnderlay = false, immersive = false, onToggleImmersive, floatingQuickActions, floatingAutoDesignAction, floatingChecklistAction, className, onGeometryRendered, onGraphicsPausedChange, onWebglBlocked }: Props) {
   const previewRootRef = useRef<HTMLElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -12688,63 +12698,22 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	  const [showSolidFrontWalls, setShowSolidFrontWalls] = useState(false);
   const [wallHeightIn, setWallHeightIn] = useState(() => constrainedThreeDWallHeight(roomOverride?.ceilingHeight ?? dimensions(scene.roomShape?.defaultDimensions).ceilingHeight));
   const [wallHeights, setWallHeights] = useState<Record<WallSide, number>>(() => resolvedThreeDWallHeights(roomOverride, wallHeightIn));
-	  const [webglUnavailable, setWebglUnavailable] = useState(false);
-  const [webglSupport, setWebglSupport] = useState<ThreeDWebGLSupport>("webgl2");
-  const [webglContextLost, setWebglContextLost] = useState(false);
-  const [webglContextGeneration, setWebglContextGeneration] = useState(0);
-  const [gpuResetLimitReached, setGpuResetLimitReached] = useState(false);
-  const webglAutoRetriesRef = useRef(0);
-  /** Replacements of a context the browser did not restore. Never reset to zero. */
-  const contextLossRestartsRef = useRef(0);
+  const threeDStart = useThreeDRendererRecovery(rendererHostRef, {
+    surface: "room",
+    onBlocked: () => {
+      reopenThreeDAfterReload();
+      onWebglBlocked?.();
+    },
+  });
+  const webglUnavailable = threeDStart.status !== "running";
+  const webglContextLost = threeDStart.paused;
+  const webglContextGeneration = threeDStart.generation;
   const onGraphicsPausedChangeRef = useRef(onGraphicsPausedChange);
   onGraphicsPausedChangeRef.current = onGraphicsPausedChange;
   useEffect(() => {
     onGraphicsPausedChangeRef.current?.(webglContextLost);
   }, [webglContextLost]);
   useEffect(() => () => onGraphicsPausedChangeRef.current?.(false), []);
-  /** Past the session's GPU-reset recoveries: drop the context and say why instead of reconnecting again. */
-  const stopAfterGpuResets = () => {
-    rendererHostRef.current?.dispose();
-    webglAutoRetriesRef.current = 2;
-    setGpuResetLimitReached(true);
-    setWebglUnavailable(true);
-  };
-  useEffect(() => {
-    // A GPU reset loses the context. Chrome usually restores it; when it does
-    // not (it blocks WebGL for a page after repeated resets), start over with a
-    // new context instead of leaving a blank canvas. The replacement is capped:
-    // zeroing the retry counter here used to allocate a renderer forever.
-    if (!webglContextLost) return;
-    const timer = window.setTimeout(() => {
-      const action = threeDContextLossAction({
-        gpuResetLimitReached,
-        restartsAlreadyUsed: contextLossRestartsRef.current,
-      });
-      setWebglContextLost(false);
-      if (action === "stop") {
-        stopAfterGpuResets();
-        return;
-      }
-      contextLossRestartsRef.current += 1;
-      rendererHostRef.current?.dispose();
-      // One start attempt for this replacement. Do not clear the counter.
-      if (webglAutoRetriesRef.current >= 2) webglAutoRetriesRef.current = 1;
-      setWebglUnavailable(true);
-    }, 4000);
-    return () => window.clearTimeout(timer);
-  }, [gpuResetLimitReached, webglContextLost]);
-  useEffect(() => {
-    // A failed start used to be permanent until a page refresh. Contexts free up a moment
-    // later, so retry automatically (twice) before asking the user to press Retry.
-    if (!webglUnavailable || gpuResetLimitReached || webglAutoRetriesRef.current >= 2) return;
-    const timer = window.setTimeout(() => {
-      webglAutoRetriesRef.current += 1;
-      // Drop the failed renderer so the next attempt asks the browser for a fresh context.
-      rendererHostRef.current?.dispose();
-      setWebglUnavailable(false);
-    }, 1200);
-    return () => window.clearTimeout(timer);
-  }, [gpuResetLimitReached, webglUnavailable]);
 	  const [cabinetFinish, setCabinetFinish] = useState(initialPresentation?.cabinetFinish ?? "catalog");
 	  const [cabinetPreviewFinishId, setCabinetPreviewFinishId] = useState<string | null>(null);
 	  const [countertopFinish, setCountertopFinish] = useState(() => resolvedThreeDCountertopFinish(initialPresentation, catalogCountertopColor, scene));
@@ -13189,29 +13158,13 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     if (!rendererHostRef.current) rendererHostRef.current = new ThreeDRendererHost();
     const hostRenderer = rendererHostRef.current.ensureMounted(mount);
     if (!hostRenderer) {
-      const support = detectThreeDWebGLSupport();
-      setWebglSupport(support);
-      // Retrying cannot turn WebGL 2 back on; show the browser fix right away.
-      if (support === "webgl1-only") webglAutoRetriesRef.current = 2;
-      setWebglUnavailable(true);
+      threeDStart.startFailed();
       onGeometryRenderedRef.current?.();
       return;
     }
+    threeDStart.started();
     renderer = hostRenderer;
-    // Each reset takes one of the session's recoveries when it happens, however it is then recovered.
-    const onWebglContextLost = () => {
-      if (!claimThreeDGpuRecovery()) {
-        stopAfterGpuResets();
-        return;
-      }
-      setWebglContextLost(true);
-    };
-    const onWebglContextRestored = () => {
-      setWebglContextLost(false);
-      setWebglContextGeneration((generation) => generation + 1);
-    };
-    renderer.domElement.addEventListener("webglcontextlost", onWebglContextLost);
-    renderer.domElement.addEventListener("webglcontextrestored", onWebglContextRestored);
+    const detachContextRecovery = threeDStart.attach(renderer);
     sizeThreeDRenderer(renderer, canvasWidth, canvasHeight, Math.min(window.devicePixelRatio, renderQuality.pixelRatioCap));
 	    renderer.domElement.dataset.renderQuality = renderQuality.tier;
     renderer.shadowMap.enabled = false;
@@ -13834,8 +13787,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      cancelAnimationFrame(frame);
 	      cancelAnimationFrame(readyFrame);
 	      resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("webglcontextlost", onWebglContextLost);
-      renderer.domElement.removeEventListener("webglcontextrestored", onWebglContextRestored);
+      detachContextRecovery();
       cameraViewRef.current = {
         preset: cameraPreset,
         resetKey,
@@ -14152,7 +14104,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     setPathTracePreviewError(null);
     try {
       const canvas = document.createElement("canvas");
-      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, preserveDrawingBuffer: true });
       if (!renderer.capabilities.isWebGL2) throw new Error("This browser does not support the WebGL2 renderer required for the production-render test.");
       // Path tracing needs float render targets. Not every computer has them, so
       // when they are missing (or the result is black) the same scene is rendered
@@ -15329,8 +15281,14 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   if (!scene.roomShape && !roomOverride) {
     return <div className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground">Choose a room layout or open a saved design to generate the deterministic 3D preview.</div>;
   }
-  if (webglUnavailable) {
-    return <div data-testid="webgl-unavailable" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{webglAutoRetriesRef.current < 2 ? "Starting the interactive 3D view…" : gpuResetLimitReached ? THREE_D_GPU_RESET_LIMIT_MESSAGE : threeDWebGLUnavailableMessage(webglSupport)}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={() => { webglAutoRetriesRef.current = 0; rendererHostRef.current?.dispose(); setGpuResetLimitReached(false); setWebglUnavailable(false); }}>Retry 3D view</button></div>;
+  if (threeDStart.status === "starting" || threeDStart.status === "suspended") {
+    return <div data-testid="webgl-starting" role="status" className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground">{THREE_D_STARTING_MESSAGE}</div>;
+  }
+  if (threeDStart.status === "blocked") {
+    return <div data-testid="webgl-unavailable" data-reason="blocked" role="status" className="flex min-h-[320px] items-center justify-center rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{THREE_D_BLOCKED_MESSAGE}</p></div>;
+  }
+  if (threeDStart.status === "unavailable") {
+    return <div data-testid="webgl-unavailable" role="status" className="flex min-h-[320px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/30 px-6 text-center text-sm text-muted-foreground"><p>{THREE_D_UNAVAILABLE_MESSAGE}</p><button type="button" className="rounded-md border bg-background px-3 py-1.5 text-sm font-semibold text-foreground" onClick={threeDStart.retryNow}>Try again now</button></div>;
   }
   const fillerNoticeEntries = threeDFillerMeasurementNoticeEntries(placed);
   const fillerNoticePieceCount = fillerNoticeEntries.reduce((total, entry) => total + entry.quantity, 0);
@@ -15446,7 +15404,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 			        <div ref={mountRef} className="h-full w-full" />
 			        {webglContextLost && (
 			          <div data-testid="webgl-context-lost" role="status" className="absolute inset-0 z-30 flex items-center justify-center bg-background/70 px-6 text-center text-sm font-medium text-foreground">
-			            The graphics card reset, so the 3D view paused. Restoring it…
+			            {THREE_D_RECONNECTING_MESSAGE}
 			          </div>
 			        )}
 			        {placedItemMenu && <PlacedItemContextMenu menu={placedItemMenu} onEdit={onOpenCabinetEditor ? (uid) => { setPlacedItemMenu(null); onOpenCabinetEditor(uid); } : undefined} onMove={onMoveCabinet ? (uid) => { setPlacedItemMenu(null); onSelectCabinet?.(uid); setMovePanelOpen(true); } : undefined} onRemove={onRemoveCabinet ? (uid) => { setPlacedItemMenu(null); preserveCurrentCameraView(); onRemoveCabinet(uid); setSelectedCabinet(null); setMovePanelOpen(false); } : undefined} onClose={() => setPlacedItemMenu(null)} />}

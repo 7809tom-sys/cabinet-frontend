@@ -4,6 +4,9 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { masterTracFinishColor, masterTracProduct } from "@/lib/closet";
 import type { PlacedCabinet, WallSide } from "@/lib/design";
 import { CORNER_FOOTPRINT_IN, isMasterTracCornerBoard, type MasterTracCornerBoard } from "@/lib/masterTracTower";
+import { ThreeDRendererHost } from "./threeDRendererHost";
+import { ThreeDStartNotice } from "./ThreeDStartNotice";
+import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 
 const IN = 1 / 12;
 /** Owner-described straight mating edges. The source SKU still supplies the 29.5-inch bounding size. */
@@ -235,15 +238,29 @@ export function MasterTracCornerElevation({ placed, wall, onEdit }: { placed: Pl
 export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCabinet[]; wall: WallSide; onEdit: () => void }) {
   const group = useMemo(() => groupBoards(placed), [placed]);
   const mount = useRef<HTMLDivElement>(null);
+  const rendererHostRef = useRef<ThreeDRendererHost | null>(null);
+  const start = useThreeDRendererRecovery(rendererHostRef, { surface: "mastertrac-corner" });
+  const running = start.status === "running";
   useEffect(() => {
     const element = mount.current;
-    if (!element || !group) return;
+    if (!element || !group || !running) return;
+    rendererHostRef.current ??= new ThreeDRendererHost();
+    const renderer = rendererHostRef.current.ensureMounted(element);
+    if (!renderer) {
+      start.startFailed();
+      return;
+    }
+    start.started();
+    const detachContextRecovery = start.attach(renderer);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#eae7df");
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    // The renderer may come from another 3D view, which sets its own tone mapping.
+    // Shadows stay off: the shared host must not turn them back on.
     renderer.shadowMap.enabled = false;
-    element.appendChild(renderer.domElement);
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.domElement.dataset.testid = "mastertrac-corner-3d-canvas";
     const camera = new THREE.PerspectiveCamera(42, 1, 0.05, 300);
     const span = group.width * IN;
@@ -300,16 +317,22 @@ export function MasterTracCorner3D({ placed, wall, onEdit }: { placed: PlacedCab
       });
       floor.geometry.dispose();
       (floor.material as THREE.Material).dispose();
-      renderer.dispose();
-      // dispose() leaves the browser's WebGL context alive; Chrome caps live contexts.
-      renderer.forceContextLoss();
-      element.removeChild(renderer.domElement);
+      detachContextRecovery();
+      renderer.renderLists.dispose();
     };
-  }, [group]);
+  }, [group, running, start.generation]);
+  // Declared after the scene effect so, on unmount, the scene tears down before the renderer is parked.
+  useEffect(() => () => {
+    rendererHostRef.current?.release();
+    rendererHostRef.current = null;
+  }, []);
   if (!group) return null;
   return <div className="flex h-full flex-col bg-[#eeeae0]" data-testid="mastertrac-corner-3d">
     <Heading placed={placed} wall={wall} view="3D closet assembly" />
-    <div ref={mount} className="min-h-[320px] flex-1 overflow-hidden" aria-label="Rotateable MasterTrac curved-corner shelf and connected tower visualization" />
+    <div className="relative min-h-[320px] flex-1 overflow-hidden">
+      <div ref={mount} className="absolute inset-0" aria-label="Rotateable MasterTrac curved-corner shelf and connected tower visualization" />
+      <ThreeDStartNotice recovery={start} testIdPrefix="mastertrac-corner" className="bg-[#eeeae0] text-stone-700" />
+    </div>
     <div className="flex flex-wrap items-center justify-between gap-2 bg-white px-4 py-2 text-[11px] text-stone-700"><span>Illustrative curve in the real 29.5″ SKU footprint · two 14.5″ mating edges meet actual sourced uprights on perpendicular walls. No complete return bay or cam-lock hole/fastener geometry is modeled. March 2022 List reference only; not an installation drawing.{placed.length > group.boards.length && ` Focused view: ${placed.length - group.boards.length} other placed items not shown.`}</span><button type="button" onClick={onEdit} className="rounded border border-stone-400 px-2 py-1 font-semibold">Edit connected towers</button></div>
   </div>;
 }

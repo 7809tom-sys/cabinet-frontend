@@ -382,6 +382,7 @@ import { AutoDesignTallDialog } from "@/components/design/AutoDesignTallDialog";
 import { AutoDesignRangeDialog } from "@/components/design/AutoDesignRangeDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
+import { handOffDesignerContact, takeDesignerContactHandoff } from "@/lib/designerReloadHandoff";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
 import { DesignActions, type BuildSheetRow } from "@/components/design/DesignActions";
@@ -754,10 +755,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     right: ArrowRight,
   };
   // Contact gate (email required; name + phone optional)
-  const [verified, setVerified] = useState(false);
-  const [verifiedEmail, setVerifiedEmail] = useState("");
-  const [verifiedName, setVerifiedName] = useState("");
-  const [verifiedPhone, setVerifiedPhone] = useState("");
+  const [contactHandoff] = useState(takeDesignerContactHandoff);
+  const [verified, setVerified] = useState(contactHandoff != null);
+  const [verifiedEmail, setVerifiedEmail] = useState(contactHandoff?.email ?? "");
+  const [verifiedName, setVerifiedName] = useState(contactHandoff?.name ?? "");
+  const [verifiedPhone, setVerifiedPhone] = useState(contactHandoff?.phone ?? "");
+  // Chrome lifts a WebGL block only when the customer reloads; that reload must
+  // not ask a guest for their email again before their draft comes back.
+  const threeDBlockedRef = useRef(false);
+  const markThreeDBlocked = useCallback(() => { threeDBlockedRef.current = true; }, []);
+  useEffect(() => {
+    const onPageHide = () => {
+      if (threeDBlockedRef.current && verified && verifiedEmail) handOffDesignerContact({ email: verifiedEmail, name: verifiedName || undefined, phone: verifiedPhone || undefined });
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [verified, verifiedEmail, verifiedName, verifiedPhone]);
   const [showOptionalContactNudge, setShowOptionalContactNudge] = useState(false);
   const [optionalContactDismissed, setOptionalContactDismissed] = useState(false);
   const captureLead = trpc.design.captureLead.useMutation();
@@ -16768,6 +16781,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      placed={deferredCountertopGeometry.threeDPlaced}
 	      onGeometryRendered={() => setPaintedCountertopGeometry(deferredCountertopGeometry)}
 	      onGraphicsPausedChange={setThreeDGraphicsPaused}
+	      onWebglBlocked={markThreeDBlocked}
 	      crown={crown}
 	      toeKick={toeKick}
 	      catalogDropWall={activeWall}
@@ -25420,6 +25434,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               <InteractiveRoom3D
 			      key={`active-surfaces-full-${threeDSurfaceViewKey}`}
 			      onGraphicsPausedChange={setThreeDGraphicsPaused}
+			      onWebglBlocked={markThreeDBlocked}
                 scene={resolvedInteractive3dScene}
                 placed={threeDPlaced}
                 crown={crown}

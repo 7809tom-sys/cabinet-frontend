@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 /**
- * The 3D view in a browser that cannot give it WebGL 2 — Chrome with WebGL 2
- * switched off, or with graphics acceleration off / the GPU blocked for the
- * page. three.js renders only through WebGL 2, so these mount the real
- * component and hold that the customer gets the specific browser fix instead of
- * "close other 3D tabs", and that a lost GPU context is handled instead of
- * leaving a blank canvas.
+ * The 3D view when Chrome will not give it a WebGL context: briefly while its
+ * GPU process restarts after a reset, and for the rest of the page's life once
+ * the page has lost a context to a second reset. These mount the real component
+ * and hold that the customer never has to close tabs, change settings or press
+ * Retry: starts are retried silently, a blocked page reloads into 3D, and the
+ * notice is a last resort that keeps trying on its own.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { pageReloadEnv } from "@/lib/staleChunkReload";
 import { InteractiveRoom3D } from "./InteractiveRoom3D";
+import { THREE_D_CONTEXT_ATTEMPTS, THREE_D_START_RETRY_DELAYS_MS } from "./threeDRendererHost";
 
 const hosts = vi.hoisted(() => ({ created: 0, released: 0 }));
 vi.mock("./threeDRendererHost", async (importOriginal) => {
@@ -86,16 +88,18 @@ const scene = {
 
 type GetContext = HTMLCanvasElement["getContext"];
 let restoreGetContext: (() => void) | null = null;
-let contextRequests: string[] = [];
+let contextRequests: Array<{ type: string; attributes: unknown }> = [];
 
-/** A browser that hands out only the context types listed. */
-function browserOffers(types: string[]) {
+/** A browser that refuses every WebGL context, optionally because it blocked the page. */
+function browserRefuses(statusMessage = "Could not create a WebGL context") {
   const original = HTMLCanvasElement.prototype.getContext;
   contextRequests = [];
-  HTMLCanvasElement.prototype.getContext = function getContext(type: string) {
-    contextRequests.push(type);
-    if (!types.includes(type)) return null;
-    return { getExtension: () => ({ loseContext() {} }) };
+  HTMLCanvasElement.prototype.getContext = function getContext(this: HTMLCanvasElement, type: string, attributes?: unknown) {
+    contextRequests.push({ type, attributes });
+    const event = new Event("webglcontextcreationerror") as Event & { statusMessage: string };
+    event.statusMessage = statusMessage;
+    this.dispatchEvent(event);
+    return null;
   } as unknown as GetContext;
   restoreGetContext = () => {
     HTMLCanvasElement.prototype.getContext = original;
@@ -103,6 +107,7 @@ function browserOffers(types: string[]) {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   if (!window.matchMedia) {
     Object.defineProperty(window, "matchMedia", {
@@ -115,76 +120,88 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   restoreGetContext?.();
   restoreGetContext = null;
   vi.restoreAllMocks();
+  window.history.replaceState(null, "", "/");
 });
 
+const starting = (container: HTMLElement) => container.querySelector('[data-testid="webgl-starting"]');
 const notice = (container: HTMLElement) => container.querySelector('[data-testid="webgl-unavailable"]')?.textContent ?? "";
-const wait = (ms: number) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); });
+const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
-describe("3D view without WebGL 2", () => {
-  it("says WebGL 2 is off and how to turn it on, without pointless retries", async () => {
-    browserOffers(["webgl"]);
+describe("3D view while Chrome refuses a WebGL context", () => {
+  it("retries silently, asking once per attempt, before any notice", async () => {
+    browserRefuses();
     const { container } = render(<InteractiveRoom3D scene={scene} placed={[]} />);
-    await wait(250);
-    expect(notice(container)).toContain("needs WebGL 2, which is turned off");
-    expect(notice(container)).toContain("Use graphics acceleration when available");
-    expect(notice(container)).not.toContain("Close other 3D tabs");
-    expect(notice(container)).toContain("Retry 3D view");
-    // Every renderer attempt asked for WebGL 2 before the notice.
-    expect(contextRequests.filter((type) => type === "webgl2").length).toBeGreaterThanOrEqual(4);
+    await advance(0);
+    expect(starting(container)?.textContent).toBe("Starting the 3D view…");
+    expect(notice(container)).toBe("");
+    for (const delay of THREE_D_START_RETRY_DELAYS_MS.slice(0, -1)) {
+      await advance(delay);
+      expect(notice(container)).toBe("");
+    }
+    // Only WebGL 2 requests with the start's own attributes: no unattributed second request left alive.
+    expect(contextRequests.every((request) => request.type === "webgl2" && request.attributes != null)).toBe(true);
+    expect(contextRequests.length % THREE_D_CONTEXT_ATTEMPTS.length).toBe(0);
   });
 
-  it("says WebGL is blocked after the automatic retries when no WebGL is offered", async () => {
-    browserOffers([]);
+  it("ends on a notice that keeps trying and never sends the customer to tabs or browser settings", async () => {
+    browserRefuses();
     const { container } = render(<InteractiveRoom3D scene={scene} placed={[]} />);
-    await wait(250);
-    expect(notice(container)).toContain("Starting the interactive 3D view");
-    for (let i = 0; i < 16 && notice(container).includes("Starting"); i++) await wait(500);
-    expect(notice(container)).toContain("not letting this page use 3D graphics");
-    expect(notice(container)).toContain("chrome://gpu");
-  }, 20_000);
+    await advance(0);
+    for (const delay of THREE_D_START_RETRY_DELAYS_MS) await advance(delay);
+    expect(notice(container)).toContain("keeps trying on its own");
+    expect(notice(container)).toContain("2D plan and elevation preview stay available");
+    expect(notice(container)).not.toMatch(/close other|tab|setting|chrome|acceleration|press retry/i);
+    const before = contextRequests.length;
+    await advance(15_000);
+    expect(contextRequests.length).toBeGreaterThan(before);
+  });
 
-  it("keeps one renderer host through the automatic retries and releases it on unmount", async () => {
-    browserOffers([]);
+  it("keeps one renderer host through the retries and releases it on unmount", async () => {
+    browserRefuses();
     hosts.created = 0;
     hosts.released = 0;
-    const { container, unmount } = render(<InteractiveRoom3D scene={scene} placed={[]} />);
-    for (let i = 0; i < 16 && !notice(container).includes("not letting this page"); i++) await wait(500);
-    expect(notice(container)).toContain("not letting this page use 3D graphics");
-    // Each retry asked for a fresh context on the same host.
-    expect(contextRequests.filter((type) => type === "webgl2").length).toBeGreaterThanOrEqual(12);
+    const { unmount } = render(<InteractiveRoom3D scene={scene} placed={[]} />);
+    await advance(0);
+    for (const delay of THREE_D_START_RETRY_DELAYS_MS) await advance(delay);
     unmount();
-    expect(hosts.created).toBeGreaterThanOrEqual(1);
+    expect(hosts.created).toBe(1);
     expect(hosts.released).toBe(hosts.created);
-  }, 20_000);
+  });
+
+  it("tells the customer to reload when Chrome has blocked WebGL for the site, and that reload lands back in 3D", async () => {
+    browserRefuses("Web page caused context loss and was blocked");
+    const reload = vi.spyOn(pageReloadEnv, "reload").mockImplementation(() => undefined);
+    const onWebglBlocked = vi.fn();
+    window.history.replaceState(null, "", "/design?room=bathroom");
+    const { container } = render(<InteractiveRoom3D scene={scene} placed={[]} onWebglBlocked={onWebglBlocked} />);
+    await advance(0);
+    expect(notice(container)).toMatch(/Reload this page to bring the 3D view back; your design is kept/);
+    expect(notice(container)).not.toMatch(/close|\btabs?\b|setting|acceleration/i);
+    expect(onWebglBlocked).toHaveBeenCalledTimes(1);
+    expect(new URLSearchParams(window.location.search).get("preview")).toBe("3d");
+    expect(new URLSearchParams(window.location.search).get("room")).toBe("bathroom");
+    // A reload the page starts itself does not lift Chrome's block, so it never tries one.
+    await advance(60_000);
+    expect(reload).not.toHaveBeenCalled();
+  });
 });
 
 describe("3D view after a GPU reset", () => {
   const source = readFileSync(resolve(process.cwd(), "client/src/components/design/InteractiveRoom3D.tsx"), "utf8");
 
-  it("shows a paused notice, rebuilds on restore, and starts a new context when Chrome never restores", () => {
-    expect(source).toContain('renderer.domElement.addEventListener("webglcontextlost", onWebglContextLost);');
-    expect(source).toContain('renderer.domElement.addEventListener("webglcontextrestored", onWebglContextRestored);');
-    expect(source).toContain('renderer.domElement.removeEventListener("webglcontextlost", onWebglContextLost);');
-    expect(source).toContain("setWebglContextGeneration((generation) => generation + 1);");
+  it("follows loss and restore on the renderer and rebuilds the scene on restore", () => {
+    expect(source).toContain("const detachContextRecovery = threeDStart.attach(renderer);");
+    expect(source).toContain("detachContextRecovery();");
     expect(source).toMatch(/\}, \[webglUnavailable, webglContextGeneration, scene,/);
     expect(source).toContain('data-testid="webgl-context-lost"');
-    const timeout = source.slice(source.indexOf("if (!webglContextLost) return;"), source.indexOf("}, [webglContextLost]);", source.indexOf("if (!webglContextLost) return;")));
-    expect(timeout).toContain("rendererHostRef.current?.dispose();");
-    expect(timeout).toContain("setWebglUnavailable(true);");
-  });
-
-  it("caps recoveries per session: each reset counts once, whether Chrome restores the context or a new one is started", () => {
-    const lost = source.slice(source.indexOf("const onWebglContextLost = () => {"), source.indexOf("const onWebglContextRestored = () => {"));
-    expect(lost).toMatch(/if \(!claimThreeDGpuRecovery\(\)\) \{\s*stopAfterGpuResets\(\);\s*return;\s*\}\s*setWebglContextLost\(true\);/);
-    expect(source.match(/claimThreeDGpuRecovery\(\)/g)?.length).toBe(1);
-    expect(source).toContain("gpuResetLimitReached ? THREE_D_GPU_RESET_LIMIT_MESSAGE : threeDWebGLUnavailableMessage(webglSupport)");
+    expect(source).not.toMatch(/claimThreeDGpuRecovery|GPU_RESET_LIMIT/);
   });
 
   it("never swaps in an unreleased host after a recovery", () => {
-    expect(source).not.toContain("rendererHostRef.current = null;\n      setWebglUnavailable");
     const mountEffect = source.slice(source.indexOf("const host = new ThreeDRendererHost();"), source.indexOf("const host = new ThreeDRendererHost();") + 700);
     expect(mountEffect).toContain("if (current && current !== host) current.release();");
   });
