@@ -79,6 +79,23 @@ function isFixedPiece(item: PlacedCabinet, layer: FillerLayer): boolean {
   return false;
 }
 
+/**
+ * Boards the corner rules require. Consolidation must not absorb them into a
+ * wider cabinet or merge them with a run's ordinary seam filler: the angled
+ * miter pair, a provisional corner board, and the filler a corner cabinet owns.
+ */
+function isProtectedCornerFiller(item: PlacedCabinet, placed: readonly PlacedCabinet[]): boolean {
+  if (
+    item.fillerTransitionKind === "front-miter-pair"
+    || item.fillerTransitionKind === "angled-wedge"
+    || item.fillerTransitionKind === "corner-provisional"
+    || item.integratedWallBlindFiller === true
+  ) return true;
+  if (!item.fillerForCabinetUid) return false;
+  const owner = placed.find((candidate) => candidate.uid === item.fillerForCabinetUid);
+  return owner != null && isCornerCabinet(owner.masterCode, owner.description, owner.cornerType ?? null);
+}
+
 function blocksLayer(item: PlacedCabinet, layer: FillerLayer): boolean {
   if (item.placement === "tall") return true;
   if (layer === "base") return item.placement === "base" || item.placement === "appliance";
@@ -99,6 +116,7 @@ export function runStretches(input: {
   const { room, wallId, layer } = input;
   if (!wallRunFrame(wallId, room)) return [];
   const items = input.placed
+    .filter((item) => !isProtectedCornerFiller(item, input.placed))
     .filter((item) => blocksLayer(item, layer) && cabinetWall(item, room) === wallId)
     .map((item) => {
       const start = wallRunOffset(item, wallId, room);

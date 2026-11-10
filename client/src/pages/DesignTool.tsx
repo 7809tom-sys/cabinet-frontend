@@ -315,7 +315,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "@/lib/auto
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { designerReviewLines, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
-import { autoBuildCornerCatalog, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
+import { autoBuildCornerCatalog, autoDesignAngledNeighborWallIds, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
@@ -4755,6 +4755,29 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       selectedCornerCount++;
       seatedCornerIds.set(slot.id, seated.source.id);
       upperCorners.push({ base: corner, point: target });
+    }
+
+    // Same run set as runAutoDesignLayout: both legs of an L, and any 45°/135°
+    // wall that meets a run already in the build. Those walls get straight
+    // cabinets, not a corner cabinet.
+    if (stage.input.layoutType === "l-shape") {
+      const share = autoDesignCornerSlotPoint(
+        { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
+        room, stage.input.originCorner, stage.input.runDirection,
+      );
+      if (share) {
+        for (const label of ["Wall 1", "Wall 2"] as const) {
+          const wall = wallLabelToEngineWallId(label, room, stage.input.originCorner, stage.input.runDirection);
+          if (wall && !excludedWallIds.includes(wall.engineWallId) && !selectedWalls.includes(wall.engineWallId as WallSide)) {
+            selectedWalls.push(wall.engineWallId as WallSide);
+          }
+        }
+      }
+    }
+    if (stage.input.layoutType !== "single-wall") {
+      for (const id of autoDesignAngledNeighborWallIds(selectedWalls, room, excludedWallIds)) {
+        if (!selectedWalls.includes(id as WallSide)) selectedWalls.push(id as WallSide);
+      }
     }
 
     const sinkAnchor = stage.anchors.sink;

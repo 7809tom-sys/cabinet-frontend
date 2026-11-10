@@ -4,10 +4,12 @@ import { wallLabelToEngineWallId } from "./autoDesignAutoBuild";
 import { DEFAULT_ROOM, wallRunCornerPlacement, wallRunFrame, type PlacedCabinet, type RoomData } from "./design";
 import {
   autoBuildCornerCatalog,
+  autoDesignAngledNeighborWallIds,
   autoDesignCornerSlots,
   autoDesignCornerSlotPoint,
   autoDesignMissingCornerWarnings,
   autoDesignRunWallIds,
+  autoDesignWallJoinTurnDeg,
 } from "./autoDesignCornerStage";
 
 /** Open three-wall U: side, back, side. The two front ends have no adjoining wall. */
@@ -244,5 +246,35 @@ describe("Auto-Design appliance-first corner stage", () => {
     ];
 
     expect(autoBuildCornerCatalog(catalog).map((item) => item.masterCode)).toEqual(["BBC39", "LSB36"]);
+  });
+
+  it("does not seat a corner cabinet where two walls meet at 45 degrees", () => {
+    const room = {
+      width: 220,
+      depth: 140,
+      ceilingHeight: 96,
+      openWallPath: true,
+      vertices: [
+        { id: "a", x: 0, y: 0 },
+        { id: "b", x: 144, y: 0 },
+        { id: "c", x: 204, y: 60 },
+      ],
+      customWalls: [
+        { id: "straight", label: "Wall 1", startVertexId: "a", endVertexId: "b" },
+        { id: "angled", label: "Wall 2", startVertexId: "b", endVertexId: "c", lockedAngle: 45 },
+      ],
+    } as typeof DEFAULT_ROOM;
+    const measured = { wallIds: ["straight", "angled"], room, originCorner: "left" as const, runDirection: "right" as const };
+    expect(autoDesignWallJoinTurnDeg("Wall 1", "Wall 2", measured)).toBe(45);
+    expect(autoDesignCornerSlots("l-shape", measured)).toEqual([]);
+    expect(autoDesignCornerSlots("u-shape", measured)).toEqual([]);
+    expect(autoDesignAngledNeighborWallIds(["straight"], room)).toEqual(["angled"]);
+    // A square room still has its real corner.
+    expect(autoDesignWallJoinTurnDeg("Wall 1", "Wall 2", {
+      wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
+    })).toBe(90);
+    expect(autoDesignCornerSlots("l-shape", {
+      wallIds: ["top", "right"], room: DEFAULT_ROOM, originCorner: "left", runDirection: "right",
+    })).toHaveLength(1);
   });
 });

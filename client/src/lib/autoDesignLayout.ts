@@ -18,6 +18,7 @@ import { isPlacedCornerCabinet, sameWidthFamily } from "./autoDesignCornerGuard"
 import {
   AUTO_DESIGN_GALLEY_WALLS,
   autoBuildCornerCatalog,
+  autoDesignAngledNeighborWallIds,
   autoDesignCornerFamily,
   autoDesignCornerSlotPoint,
   autoDesignCornerSlots,
@@ -86,6 +87,7 @@ import {
   type AutoDesignPeninsulaSummary,
 } from "./autoDesignPeninsula";import {
   COLLISION_EPSILON_IN,
+  MAX_FILLER_RUN_WIDTH_IN,
   STD,
   clampPlacedToRefrigeratorPanels,
   formatEighthInches,
@@ -564,11 +566,46 @@ function reviewFillers(
 /** Auto-Design never installs a filler board wider than 3 inches. A wider catalog filler is cut to 3 instead of being flagged over its maximum. */
 export function capAutoDesignFillerWidth(placed: PlacedCabinet[]): PlacedCabinet[] {  return placed.map((item) => {
     const text = `${item.masterCode} ${item.description ?? ""} ${item.subCategory ?? ""}`;
+    if (item.fillerTransitionKind === "front-miter-pair" || item.fillerTransitionKind === "angled-wedge" || item.fillerTransitionKind === "corner-provisional") return item;
     const filler = Boolean(item.fillerPieceGroupId) || /filler|scribe|^OF\d|^FOL/i.test(text);
     const installed = item.fillerTotalWidth ?? item.width;
     if (!filler || installed <= autoDesignFillerMaxIn() + 0.05) return item;
     return { ...item, width: autoDesignFillerMaxIn(), fillerTotalWidth: autoDesignFillerMaxIn() };
   });
+}
+
+/**
+ * The next along-wall inch where some catalog base actually seats. One jump
+ * past an obstruction, instead of a filler for every 3" step that missed.
+ */
+function nextFittingBaseAlong(input: {
+  working: readonly PlacedCabinet[];
+  catalog: readonly DesignCabinet[];
+  along: number;
+  segmentEnd: number;
+  wallId: WallSide;
+  room: RoomData;
+}): number | null {
+  const widths = Array.from(new Set(input.catalog.map((row) => dim(row.width, 0)).filter((width) => width > 0)))
+    .sort((left, right) => right - left);
+  const limit = Math.min(input.segmentEnd - 9, input.along + 96);
+  for (let cursor = input.along + 1; cursor <= limit + 0.05; cursor += 1) {
+    for (const width of widths) {
+      if (cursor + width > input.segmentEnd + 0.05) continue;
+      const source = input.catalog.find((row) => Math.abs(dim(row.width, 0) - width) <= 0.05);
+      if (!source) continue;
+      const depth = footprintDepth(source);
+      const spot = boundedWallPlacementAt(cursor, width, depth, input.wallId, input.room);
+      if (!spot) continue;
+      const candidate: PlacedCabinet = {
+        uid: "probe-base", cabinetId: source.id, masterCode: source.masterCode, description: source.description,
+        category: source.category, subCategory: source.subCategory, placement: "base", ...spot, width, depth,
+        height: dim(source.height, standardHeight("base")),
+      };
+      if (appendCollisionFreePlacements([...input.working], [candidate], input.room).rejected.length === 0) return cursor;
+    }
+  }
+  return null;
 }
 
 /**
@@ -956,6 +993,29 @@ export function runAutoDesignLayout(args: {
     upperCorners.push({ base: seated.corner, point });
   }
 
+  // An L cabinets both legs even when they meet at 45° and therefore have no
+  // corner cabinet. A 45°/135° wall that touches a run already in the build is
+  // a real run too: straight cabinets along it, angled filler at the join.
+  if (input.layoutType === "l-shape") {
+    const share = autoDesignCornerSlotPoint(
+      { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
+      room, input.originCorner, input.runDirection,
+    );
+    if (share) {
+      for (const label of ["Wall 1", "Wall 2"] as const) {
+        const wall = wallLabelToEngineWallId(label, room, input.originCorner, input.runDirection);
+        if (wall && !excludedWallIds.includes(wall.engineWallId) && !runWalls.includes(wall.engineWallId as WallSide)) {
+          runWalls.push(wall.engineWallId as WallSide);
+        }
+      }
+    }
+  }
+  if (input.layoutType !== "single-wall") {
+    for (const id of autoDesignAngledNeighborWallIds(runWalls, room, excludedWallIds)) {
+      if (!runWalls.includes(id as WallSide)) runWalls.push(id as WallSide);
+    }
+  }
+
   const wiggle = applyAutoDesignWiggleRoom({
     placed: working,
     room,
@@ -1105,6 +1165,38 @@ export function runAutoDesignLayout(args: {
             continue;
           }
         }
+        // Lay the solved run in one pass. Re-planning after every single box
+        // is what left a fresh filler in each remainder.
+        const solvedCabinets = fill.items.filter((entry) => !entry.isFiller);
+        if (solvedCabinets.length > 1) {
+          let trial = working;
+          let cursor = along;
+          let pieces = 0;
+          let allPlaced = true;
+          for (const entry of solvedCabinets) {
+            const source = entry.cabinet;
+            const depth = footprintDepth(source);
+            const spot = boundedWallPlacementAt(cursor, entry.width, depth, wallId, room);
+            if (!spot) { allPlaced = false; break; }
+            const piece: PlacedCabinet = {
+              uid: makeUid(), cabinetId: source.id, masterCode: source.masterCode, description: source.description,
+              category: source.category, subCategory: source.subCategory, placement: "base", ...spot, width: entry.width, depth,
+              height: dim(source.height, standardHeight("base")), catalogImageUrl: source.catalogImageUrl ?? null,
+              numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: args.styleId,
+            };
+            const accepted = appendCollisionFreePlacements(trial, [piece], room);
+            if (accepted.rejected.length > 0) { allPlaced = false; break; }
+            trial = accepted.placed;
+            cursor += entry.width;
+            pieces += 1;
+          }
+          if (allPlaced && pieces === solvedCabinets.length) {
+            working = trial;
+            basePieceCount += pieces;
+            along = cursor;
+            continue;
+          }
+        }
         const widths = Array.from(new Set(stage.straightBaseCatalog.map((row) => dim(row.width, 0)).filter((width) => width > 0 && width <= remain + 0.05)))
           .sort((a, b) => b - a);
         const preferred = fill.items.find((item) => !item.isFiller)?.width;
@@ -1132,9 +1224,16 @@ export function runAutoDesignLayout(args: {
             break;
           }
         }
-        // An adjoining run's cabinet projects into this corner. Step past it
-        // instead of abandoning the rest of the wall.
-        if (!placedOne) along += Math.min(3, Math.max(0.125, remain));
+        // An adjoining run's cabinet projects into this corner. Jump to the
+        // next point a real box fits, in one step. Stepping 3" at a time left
+        // a filler in every step.
+        if (!placedOne) {
+          const next = nextFittingBaseAlong({
+            working, catalog: stage.straightBaseCatalog, along, segmentEnd, wallId, room,
+          });
+          if (next == null || next <= along + 0.05) break;
+          along = next;
+        }
       }
     }
   }
@@ -1334,7 +1433,7 @@ export function runAutoDesignLayout(args: {
     wallIds: runWalls,
     catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...stage.wallPool],
     fillers: catalogFillers,
-    maxFillerIn: autoDesignFillerMaxIn(),
+    maxFillerIn: MAX_FILLER_RUN_WIDTH_IN,
     makeUid,
     styleId: args.styleId,
   });

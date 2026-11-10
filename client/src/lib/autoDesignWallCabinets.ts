@@ -485,8 +485,25 @@ export function buildAutoDesignWallCabinets(input: {
                 break;
               }
             }
-            // A corner or hood blocks this spot. Step ahead instead of ending the run.
-            if (!seated) along += Math.min(3, Math.max(0, remain));
+            // A corner or hood blocks this spot. Jump to the next inch a real
+            // upper fits. Stepping 3" at a time left a filler in every step.
+            if (!seated) {
+              let next: number | null = null;
+              const limit = region.end - MIN_UPPER_WIDTH_IN;
+              for (let cursor = along + 1; cursor <= limit + COLLISION_EPSILON_IN && next == null; cursor += 1) {
+                for (const width of widths) {
+                  if (width > region.end - cursor + COLLISION_EPSILON_IN) continue;
+                  if (baysOn(seam.wall).some((bay) => cursor < bay.end - COLLISION_EPSILON_IN && cursor + width > bay.start + COLLISION_EPSILON_IN)) continue;
+                  const source = standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
+                  if (!source) continue;
+                  const candidate = makeCandidate(source);
+                  const spot = wallPlacementAt(cursor, candidate.width, candidate.depth, seam.wall as never, room);
+                  if (spot && upperFits({ ...candidate, ...spot }, working)) { next = cursor; break; }
+                }
+              }
+              if (next == null || next <= along + COLLISION_EPSILON_IN) break;
+              along = next;
+            }
           }
           remainder = Math.max(0, region.end - along);
         }
