@@ -421,6 +421,7 @@ import {
   placeWallFitting,
   clampShowerHeight,
 } from "@/lib/showerPlacementAssembly";
+import { applyShowerMove, isShowerPart, showerGroupMembers } from "@/lib/showerGroupMove";
 import type { ShowerStepId, ShowerWall } from "@/lib/showerBuilder";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { FlooringLayoutPicker } from "@/components/design/FlooringLayoutPicker";
@@ -2871,11 +2872,39 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }));
   }, [layoutLocked, room]);
   const moveFurnitureOnFloor = useCallback((uid: string, x: number, y: number) => {
-    setFurniture((previous) => previous.map((item) => {
-      if (item.uid !== uid) return item;
-      return resolveFurnitureMove(item, x, y, room, previous, placedRef.current) ?? item;
-    }));
+    // A shower is one thing to the shopper even though it is several placements,
+    // so dragging any of its parts moves the whole group. The delta is taken from
+    // the dragged part and applied to every member, which keeps the pan inside its
+    // surround, the door on the curb line and the valve over the pan.
+    setFurniture((previous) => {
+      const target = previous.find((item) => item.uid === uid);
+      if (target && isShowerPart(target)) {
+        return applyShowerMove(previous, uid, x - target.x, y - target.y, room).furniture;
+      }
+      return previous.map((item) => {
+        if (item.uid !== uid) return item;
+        return resolveFurnitureMove(item, x, y, room, previous, placedRef.current) ?? item;
+      });
+    });
   }, [room]);
+
+  /** Nudge the whole shower by a fixed step. Driven by the arrow buttons. */
+  const nudgeShower = useCallback((uid: string, dx: number, dy: number) => {
+    if (layoutLocked) return;
+    setFurniture((previous) => {
+      const result = applyShowerMove(previous, uid, dx, dy, room);
+      if (!result.moved) toast.error("The shower is already against the wall in that direction.");
+      return result.furniture;
+    });
+  }, [layoutLocked, room]);
+  /**
+   * Every part of the shower the selected object belongs to. Selecting any single
+   * part selects the whole shower, so the move controls act on the group.
+   */
+  const selectedShowerGroup = useMemo(
+    () => showerGroupMembers(furniture, selectedFurnUid),
+    [furniture, selectedFurnUid],
+  );
   const selectedBathroomPlanningGuidance = useMemo(() => {
     const selected = selectedFurnUid ? furniture.find((item) => item.uid === selectedFurnUid) ?? null : null;
     const definition = selected ? FURNITURE_CATALOG.find((item) => item.id === selected.defId) ?? null : null;
@@ -20701,6 +20730,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                </div>
 	              </div>
 	            </aside>
+	          )}
+	          {/* Move the whole shower as one unit. A shower is five separate
+	              placements — pan, surround, valve/head, niche, door — but the
+	              shopper thinks of it as one object, so selecting any part selects
+	              the group and these arrows move every part by the same step. The
+	              move is a rigid translation clamped to the room, so the parts stay
+	              aligned and the cart and price are untouched. */}
+	          {viewMode === "plan" && selectedShowerGroup.length > 0 && (
+	            <div
+	              data-testid="shower-group-move-controls"
+	              className="absolute top-16 left-3 z-40 flex w-max flex-col items-center gap-1 rounded-xl border border-slate-300 bg-white/95 p-1.5 shadow-lg backdrop-blur"
+	            >
+	              <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-500">Move shower</span>
+	              <span className="text-[9px] text-slate-500">{selectedShowerGroup.length} parts</span>
+	              <div className="grid grid-cols-3 gap-0.5">
+	                <span />
+	                <Button type="button" size="sm" variant="outline" className="h-7 w-7 p-0" data-testid="shower-move-up" aria-label="Move shower back" onClick={() => nudgeShower(selectedFurnUid!, 0, -6)}>
+	                  <ArrowUp className="h-3.5 w-3.5" />
+	                </Button>
+	                <span />
+	                <Button type="button" size="sm" variant="outline" className="h-7 w-7 p-0" data-testid="shower-move-left" aria-label="Move shower left" onClick={() => nudgeShower(selectedFurnUid!, -6, 0)}>
+	                  <ArrowLeft className="h-3.5 w-3.5" />
+	                </Button>
+	                <span className="grid place-items-center text-[8px] font-semibold text-slate-400">ALL</span>
+	                <Button type="button" size="sm" variant="outline" className="h-7 w-7 p-0" data-testid="shower-move-right" aria-label="Move shower right" onClick={() => nudgeShower(selectedFurnUid!, 6, 0)}>
+	                  <ArrowRight className="h-3.5 w-3.5" />
+	                </Button>
+	                <span />
+	                <Button type="button" size="sm" variant="outline" className="h-7 w-7 p-0" data-testid="shower-move-down" aria-label="Move shower forward" onClick={() => nudgeShower(selectedFurnUid!, 0, 6)}>
+	                  <ArrowDown className="h-3.5 w-3.5" />
+	                </Button>
+	                <span />
+	              </div>
+	            </div>
 	          )}
 	          {/* The bathroom checklist is a BUTTON in the plan's right-edge control
 	              column, not a panel pinned over the drawing surface. It used to sit
