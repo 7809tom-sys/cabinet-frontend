@@ -108,6 +108,7 @@ import VendorOnboardingAdmin from "@/components/admin/VendorOnboardingAdmin";
 import PublishAdmin from "@/components/admin/PublishAdmin";
 import { SampleOrderDesk } from "@/components/samples/SampleOrderDesk";
 import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
+import LegalAdmin from "@/components/admin/LegalAdmin";
 import ContractorAccessAdmin from "@/components/admin/ContractorAccessAdmin";
 import { AdminHelperRequests } from "@/components/admin/AdminHelperRequests";
 import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
@@ -201,6 +202,7 @@ const GROUPS = [
       { value: "api-status", label: "API Status" },
       { value: "analytics", label: "Analytics" },
       { value: "kitchen-rules", label: "Kitchen Rules" },
+      { value: "legal", label: "Legal" },
       { value: "export", label: "Full Export" },
       { value: "affiliate-literature", label: "Affiliate Literature" },
       { value: "affiliate-resources", label: "Affiliate Resources" },
@@ -698,6 +700,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="api-status" className="mt-6"><AdminTabErrorBoundary tabName="API Status"><ApiStatusAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="analytics" className="mt-6"><AdminTabErrorBoundary tabName="Analytics"><AnalyticsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="kitchen-rules" className="mt-6"><AdminTabErrorBoundary tabName="Kitchen Rules"><KitchenRulesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="legal" className="mt-6"><AdminTabErrorBoundary tabName="Legal"><AdminTabHelp tab="legal" /><LegalAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="export" className="mt-6"><AdminTabErrorBoundary tabName="Full Export"><FullDatabaseExport /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="affiliate-literature" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Literature"><AdminTabHelp tab="affiliate-literature" /><AffiliateLiteratureAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="affiliate-resources" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Resources"><AdminTabHelp tab="affiliate-resources" /><AffiliateResourcesAdmin /></AdminTabErrorBoundary></TabsContent>

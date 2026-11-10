@@ -167,6 +167,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Customize the site's branding — update the logo, color scheme, and site-wide display name.",
     zh: "自訂網站品牌——更新標誌、配色方案和全站顯示名稱。",
   },
+  legal: {
+    en: "Distributor shipping terms, return terms, and warranties, copied from each distributor's own page. Cabinet Deals return rules, including the thirty percent (30%) restocking fee, sit underneath and are not merged into the distributor text. Admin only.",
+    zh: "各供應商自己的運送條款、退貨條款與保固，原文照錄。Cabinet Deals 的退貨規則，包括百分之三十（30%）的補貨費，列在下方，不併入供應商原文。僅限管理員。",
+  },
   notifications: {
     en: "Manage push notification settings and review notification history sent to customers and staff.",
     zh: "管理推播通知設定並審查發送給客戶和員工的通知歷史記錄。",

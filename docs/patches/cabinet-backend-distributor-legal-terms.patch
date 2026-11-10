@@ -1,0 +1,251 @@
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 10 Nov 2026 13:40:00 +0000
+Subject: [PATCH] Store admin Legal tab terms per distributor
+
+Admin-only list and save for the Legal tab. One row per distributor
+section (shipping, returns, warranty) plus one shared Cabinet Deals
+return-rules row. Saving null bodyText puts the captured wording back.
+This router does not delete and does not migrate.
+
+Run cabinet-frontend docs/sql/0274_distributor_legal_terms.tidb.sql in
+the TiDB editor before deploy. bodyText stays NULL until an admin pastes.
+
+Apply from the cabinet-backend repository root:
+
+    git apply /path/to/cabinet-backend-distributor-legal-terms.patch
+
+---
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index d753a9d..aa94299 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -4849,3 +4849,22 @@ export const affiliateLegalSignatures = mysqlTable("affiliate_legal_signatures",
+ }));
+ export type AffiliateLegalSignature = typeof affiliateLegalSignatures.$inferSelect;
+ export type InsertAffiliateLegalSignature = typeof affiliateLegalSignatures.$inferInsert;
++
++// Admin Legal tab. One row per distributor section. bodyText NULL means the
++// admin page shows the captured wording shipped with the frontend. This table
++// does not hold customer-facing copy. Created by hand from
++// docs/sql/0274_distributor_legal_terms.tidb.sql in cabinet-frontend.
++export const distributorLegalTerms = mysqlTable("distributor_legal_terms", {
++  id: int("id").autoincrement().primaryKey(),
++  distributorKey: varchar("distributorKey", { length: 64 }).notNull(),
++  sectionKey: varchar("sectionKey", { length: 32 }).notNull(),
++  bodyText: text("bodyText"),
++  sourceUrl: text("sourceUrl"),
++  capturedOn: varchar("capturedOn", { length: 10 }),
++  updatedByName: varchar("updatedByName", { length: 255 }),
++  createdAt: timestamp("createdAt").defaultNow().notNull(),
++  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
++}, (t) => ({
++  keyUnique: uniqueIndex("distributor_legal_terms_key_uq").on(t.distributorKey, t.sectionKey),
++}));
++export type DistributorLegalTerm = typeof distributorLegalTerms.$inferSelect;
+diff --git a/server/lib/distributorLegalTerms.test.ts b/server/lib/distributorLegalTerms.test.ts
+new file mode 100644
+index 0000000..f08fe88
+--- /dev/null
++++ b/server/lib/distributorLegalTerms.test.ts
+@@ -0,0 +1,27 @@
++import { readFileSync } from "node:fs";
++import { resolve } from "node:path";
++import { describe, expect, it } from "vitest";
++import { legalTermSectionAllowed } from "./distributorLegalTerms";
++
++describe("distributor legal terms", () => {
++  it("allows the five distributors and the shared Cabinet Deals row, and nothing else", () => {
++    for (const key of ["us-cabinet-depot", "skyline", "faircrest", "milestone", "pelican"]) {
++      expect(legalTermSectionAllowed(key, "shipping")).toBe(true);
++      expect(legalTermSectionAllowed(key, "returns")).toBe(true);
++      expect(legalTermSectionAllowed(key, "warranty")).toBe(true);
++      expect(legalTermSectionAllowed(key, "return-rules")).toBe(false);
++    }
++    expect(legalTermSectionAllowed("cabinet-deals", "return-rules")).toBe(true);
++    expect(legalTermSectionAllowed("cabinet-deals", "returns")).toBe(false);
++    expect(legalTermSectionAllowed("forevermark", "warranty")).toBe(false);
++  });
++
++  it("keeps list and save admin-only and does not delete rows", () => {
++    const router = readFileSync(resolve(process.cwd(), "server/routers/distributorLegalTerms.ts"), "utf8");
++    expect(router).toContain("list: adminProcedure");
++    expect(router).toContain("save: adminProcedure");
++    expect(router).not.toContain("delete(");
++    expect(router).not.toContain(".delete(");
++    expect(router).toContain("legalTermSectionAllowed");
++  });
++});
+diff --git a/server/lib/distributorLegalTerms.ts b/server/lib/distributorLegalTerms.ts
+new file mode 100644
+index 0000000..9ec5908
+--- /dev/null
++++ b/server/lib/distributorLegalTerms.ts
+@@ -0,0 +1,27 @@
++/**
++ * Which Legal-tab rows an admin may save.
++ *
++ * Distributor sections are shipping, returns, and warranty. The shared
++ * Cabinet Deals return rules are a separate row and cannot be written into a
++ * distributor section. There is no delete.
++ */
++export const DISTRIBUTOR_LEGAL_TERM_KEYS = [
++  "us-cabinet-depot",
++  "skyline",
++  "faircrest",
++  "milestone",
++  "pelican",
++] as const;
++
++export const DISTRIBUTOR_LEGAL_SECTIONS = ["shipping", "returns", "warranty"] as const;
++
++export const CABINET_DEALS_LEGAL_KEY = "cabinet-deals";
++export const CABINET_DEALS_RETURN_SECTION = "return-rules";
++
++export function legalTermSectionAllowed(distributorKey: string, sectionKey: string): boolean {
++  if (distributorKey === CABINET_DEALS_LEGAL_KEY) return sectionKey === CABINET_DEALS_RETURN_SECTION;
++  return (
++    (DISTRIBUTOR_LEGAL_TERM_KEYS as readonly string[]).includes(distributorKey) &&
++    (DISTRIBUTOR_LEGAL_SECTIONS as readonly string[]).includes(sectionKey)
++  );
++}
+diff --git a/server/routers.ts b/server/routers.ts
+index e1e2043..5930370 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -108,6 +108,7 @@ import { contractorAccessRouter } from "./routers/contractorAccess";
+ import { orderTrackingRouter } from "./routers/orderTracking";
+ import { vendorEmailRouter } from "./routers/vendorEmail";
+ import { aiDoorDescriptionRouter } from "./routers/aiDoorDescription";
++import { distributorLegalTermsRouter } from "./routers/distributorLegalTerms";
+ import { loginTestAccount } from "./lib/loginTestAccount";
+ import { testAccountsEnabled } from "./lib/testAccounts";
+ 
+@@ -273,6 +274,7 @@ export const appRouter = router({
+   orderTracking: orderTrackingRouter,
+   vendorEmail: vendorEmailRouter,
+   aiDoorDescription: aiDoorDescriptionRouter,
++  distributorLegalTerms: distributorLegalTermsRouter,
+ });
+ 
+ export type AppRouter = typeof appRouter;
+diff --git a/server/routers/distributorLegalTerms.ts b/server/routers/distributorLegalTerms.ts
+new file mode 100644
+index 0000000..58f8aed
+--- /dev/null
++++ b/server/routers/distributorLegalTerms.ts
+@@ -0,0 +1,115 @@
++/**
++ * Admin Legal tab. The table is created by hand from
++ * cabinet-frontend docs/sql/0274_distributor_legal_terms.tidb.sql.
++ * This router does not migrate and does not delete.
++ *
++ * list and save are admin-only. A missing table returns a precondition error
++ * the admin screen already explains. bodyText NULL means the frontend shows
++ * the captured distributor wording. Saving a string replaces that section
++ * only. Saving null puts the capture back.
++ */
++import { TRPCError } from "@trpc/server";
++import { and, asc, eq } from "drizzle-orm";
++import { z } from "zod";
++import { distributorLegalTerms } from "../../drizzle/schema";
++import { legalTermSectionAllowed } from "../lib/distributorLegalTerms";
++import { adminProcedure, router } from "../_core/trpc";
++import { getDb } from "../db";
++
++const SQL_FILE = "docs/sql/0274_distributor_legal_terms.tidb.sql";
++
++function editorName(user: { name?: string | null }): string {
++  return user.name?.trim() || "admin";
++}
++
++function missingTable(error: unknown): boolean {
++  const message = error instanceof Error ? error.message : String(error);
++  return /ER_NO_SUCH_TABLE|1146|doesn't exist|does not exist|no such table/i.test(message);
++}
++
++function schemaError(): TRPCError {
++  return new TRPCError({
++    code: "PRECONDITION_FAILED",
++    message: `The distributor legal terms table is not on the database yet. Run ${SQL_FILE} in the TiDB editor.`,
++  });
++}
++
++async function database() {
++  const db = await getDb();
++  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++  return db;
++}
++
++function toRow(row: typeof distributorLegalTerms.$inferSelect) {
++  return {
++    distributorKey: row.distributorKey,
++    sectionKey: row.sectionKey,
++    bodyText: row.bodyText,
++    sourceUrl: row.sourceUrl,
++    capturedOn: row.capturedOn,
++    updatedByName: row.updatedByName,
++    updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString() : null,
++  };
++}
++
++export const distributorLegalTermsRouter = router({
++  list: adminProcedure.query(async () => {
++    try {
++      const db = await database();
++      const rows = await db
++        .select()
++        .from(distributorLegalTerms)
++        .orderBy(asc(distributorLegalTerms.distributorKey), asc(distributorLegalTerms.sectionKey));
++      return rows.map(toRow);
++    } catch (error) {
++      if (error instanceof TRPCError) throw error;
++      if (missingTable(error)) throw schemaError();
++      throw error;
++    }
++  }),
++
++  save: adminProcedure.input(z.object({
++    distributorKey: z.string().trim().min(1).max(64),
++    sectionKey: z.string().trim().min(1).max(32),
++    bodyText: z.string().max(200_000).nullable(),
++    sourceUrl: z.string().trim().max(2000).nullable().optional(),
++    capturedOn: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
++  })).mutation(async ({ ctx, input }) => {
++    if (!legalTermSectionAllowed(input.distributorKey, input.sectionKey)) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: "That legal section cannot be saved." });
++    }
++    try {
++      const db = await database();
++      const existing = await db
++        .select()
++        .from(distributorLegalTerms)
++        .where(and(
++          eq(distributorLegalTerms.distributorKey, input.distributorKey),
++          eq(distributorLegalTerms.sectionKey, input.sectionKey),
++        ))
++        .limit(1);
++      const editor = editorName(ctx.user);
++      if (existing[0]) {
++        await db.update(distributorLegalTerms).set({
++          bodyText: input.bodyText,
++          updatedByName: editor,
++          updatedAt: new Date(),
++        }).where(eq(distributorLegalTerms.id, existing[0].id));
++      } else {
++        await db.insert(distributorLegalTerms).values({
++          distributorKey: input.distributorKey,
++          sectionKey: input.sectionKey,
++          bodyText: input.bodyText,
++          sourceUrl: input.sourceUrl ?? null,
++          capturedOn: input.capturedOn ?? null,
++          updatedByName: editor,
++        });
++      }
++      return { ok: true as const, updatedByName: editor };
++    } catch (error) {
++      if (error instanceof TRPCError) throw error;
++      if (missingTable(error)) throw schemaError();
++      throw error;
++    }
++  }),
++});
