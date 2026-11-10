@@ -156,9 +156,9 @@ describe("HardwareOverlay pantry drawer hardware", () => {
     expectPercentagesToMatch(tops, drawerCenters(layout, faceHeightIn));
   });
 
-  it("retains the legacy top drawer band for an ordinary base without a pantry layout", () => {
+  it("centers an ordinary base's drawer pulls on the drawn top drawer row", () => {
     const tops = hardwareTops(renderHardware({ doors: 1, drawers: 2 }), "drawer-pull");
-    expectPercentagesToMatch(tops, [11.25, 33.75]);
+    expectPercentagesToMatch(tops, [10, 10]);
   });
 
   it("renders no tagged handles when pantry door and drawer hardware are both none", () => {

@@ -30,7 +30,9 @@ import {
   doorPullCenterOffsetFromFaceCenterIn,
   FRAMED_STILE_CENTER_IN,
   normalizeDoorHardwareFramePosition,
+  STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
+import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, threeDrawerBaseRowHeights, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { toeKickHeightForElevation } from "@/lib/elevationToeKick";
@@ -605,12 +607,24 @@ export function ElevationView({
       : isLegacyWdcDiagonal
 	        ? { doors: Math.max(2, configuredDisplayCounts.doors), drawers: 0 }
 	        : configuredDisplayCounts;
-    const displayCounts = standardBaseRenderedCounts({
+    const displayCounts = correctTwentyFourSingleDoor({
+      masterCode: p.masterCode,
+      description: p.description,
+      width: sizeAlong,
+      category: p.category,
+      subCategory: p.subCategory,
+      graphicType: customProfile,
+      cornerType: p.cornerType,
+      facePattern: p.facePattern,
+      openingType: p.openingType,
+      turnedSideways: p.turnedSideways,
+      noDoor: p.noDoor,
+    }, standardBaseRenderedCounts({
       masterCode: p.masterCode,
       drawerLayout: p.drawerLayout ?? null,
       doors: rawDisplayCounts.doors,
       drawers: rawDisplayCounts.drawers,
-    });
+    }));
 	    const isGlassDoor = isGlassDoorCabinet(p);
 	    const visibleGlassShelfCount = glassDoorShelfCount(p);
     // DEBUG: log O-code cabinets to diagnose oven-tall rendering
@@ -2370,8 +2384,14 @@ export function HardwareOverlay({
   // present retain the typical base layout unless a source-backed pantry owns its bands.
   const hasDrawers = drawers > 0 && drawerPiece !== "none";
   const hasDoors = doors > 0 && doorPiece !== "none";
-  // Vertical share for the drawer band (rest goes to doors). All-drawer = 100%.
-  const drawerBand = hasDrawers ? (hasDoors ? 45 : 100) : 0;
+  // A base with doors draws one drawer row across the top 20% (DoorFront).
+  // Hardware uses that same row. The old 45% stack centered the drawer pull
+  // in the gap under the drawer, and the door pull was measured on a door
+  // that the face does not draw. Drawer-only faces still fill the cabinet.
+  // A wall that also has drawers (WD18) keeps the previous split.
+  const fixedDoorBandStartEarly = doorBandStartPct != null && doorBandStartPct > 0 && doorBandStartPct < 100 ? doorBandStartPct : null;
+  const sideBySideTopDrawerRow = hasDrawers && hasDoors && !isWall && !pantryLayout && fixedDoorBandStartEarly == null;
+  const drawerBand = !hasDrawers ? 0 : sideBySideTopDrawerRow ? STANDARD_BASE_DRAWER_ROW_PCT : (hasDoors ? 45 : 100);
   const pantryFaceHeight = pantryLayout ? pantryLayout.doorHeight + pantryLayout.drawerHeight : 0;
   const pantryDoorPct = pantryLayout && pantryFaceHeight > 0 ? (pantryLayout.doorHeight / pantryFaceHeight) * 100 : null;
   // Match the generic 3D vertical pull limit (0.12–0.86 feet) for pantry doors.
@@ -2390,9 +2410,12 @@ export function HardwareOverlay({
         }
         rowTop += rowPct;
       });
+    } else if (sideBySideTopDrawerRow) {
+      for (let column = 0; column < drawers; column++) {
+        pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${column}`, drawerBand / 2, false, column, drawers));
+      }
     } else {
       for (let i = 0; i < drawers; i++) {
-        // Ordinary bases keep their existing top drawer band.
         const sliceH = drawerBand / drawers;
         const center = sliceH * i + sliceH / 2;
         pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${i}`, center, false));
@@ -3874,7 +3897,7 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
       // STANDARD BASE: always exactly ONE row of drawers at the top (20% of face),
       // with drawerCount drawers side-by-side in that row.
       // Below that is the door region split into doorCount side-by-side doors.
-      const DRAWER_ROW_PCT = 20; // 6" of 30" face = 20%
+      const DRAWER_ROW_PCT = STANDARD_BASE_DRAWER_ROW_PCT;
       const drawerColW = drawerCount > 0 ? 100 / drawerCount : 100;
       const cols = Math.max(1, doorCount);
       const colW = 100 / cols;

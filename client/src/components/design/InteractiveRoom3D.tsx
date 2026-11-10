@@ -63,6 +63,7 @@ import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPla
 import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
+import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
 import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
@@ -4446,10 +4447,24 @@ export function resolvedThreeDFaceLayout(input: {
   if (isWd18CountertopDrawerCabinet({ masterCode: input.masterCode, placement: input.placementType })) {
     return { hasConfiguredOpening: false, doorCount: 1, drawerCount: 2 };
   }
+  // A stored count of one door on a standard 24" cabinet is drawn as two doors
+  // even when the description never says "door", so each door gets a pull.
+  const correctedFace = correctTwentyFourSingleDoor({
+    masterCode: input.masterCode,
+    description: input.description,
+    width: typeof input.width === "number" || typeof input.width === "string" ? input.width : null,
+    graphicType: input.graphicType ?? input.customProfile,
+    cornerType: input.cornerType,
+    facePattern: input.facePattern,
+    openingType: input.openingType,
+  }, {
+    doors: configuredFaceCounts.doors,
+    drawers: configuredFaceCounts.drawers,
+  });
   return {
     hasConfiguredOpening: Boolean(input.openingType && input.openingType !== "none"),
-    doorCount: configuredFaceCounts.doors,
-    drawerCount: configuredFaceCounts.drawers,
+    doorCount: correctedFace.doors,
+    drawerCount: correctedFace.drawers,
   };
 }
 
