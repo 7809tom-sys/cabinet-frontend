@@ -226,6 +226,24 @@ describe("consolidateAutoDesignFillers", () => {
     expect(result.placed[0]!.width).toBe(30);
   });
 
+  it("replaces two boards past 3 inches with a wider stock cabinet", () => {
+    // 27 + 3 + 27 + 3 = 60. The line sells B33, so both boards are absorbed
+    // instead of staying stacked beside each other.
+    const run = [
+      placedBase("B27", 27, 0, "b1"),
+      placedFiller(3, 27, "f1", "b1"),
+      placedBase("B27", 27, 30, "b2"),
+      placedFiller(3, 57, "f2", "b2"),
+    ];
+    const result = consolidateAutoDesignFillers({
+      placed: run, room: ROOM, openings: [], wallIds: ["top"], catalog: CATALOG, fillers: FILLERS,
+      maxFillerIn: 24, makeUid: uidFactory(), styleId: 1,
+    });
+    expect(result.placed.filter((item) => item.fillerPieceGroupId)).toHaveLength(0);
+    expect(result.placed.map((item) => item.masterCode).sort()).toEqual(["B27", "B33"]);
+    expect(result.placed.reduce((sum, item) => sum + item.width, 0)).toBe(60);
+  });
+
   it("refuses to merge boards whose combined width exceeds the filler maximum", () => {
     const run = [
       placedBase("B27", 27, 0, "b1"),

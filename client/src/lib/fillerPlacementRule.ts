@@ -30,10 +30,12 @@
 import {
   cabinetWall,
   formatEighthInches,
+  insideCornerHoldIn,
   isFillerItem,
   isPanelItem,
   isRefrigeratorEndPanel,
   wallRunFrame,
+  wallRunJoinAt,
   wallRunOffset,
   wallRunSpan,
   type PlacedCabinet,
@@ -194,6 +196,37 @@ export function isFillableBoundary(boundary: SeamBoundary): boolean {
   return boundary.kind === "wall" || boundary.kind === "opening" || boundary.kind === "cabinet" || boundary.kind === "appliance";
 }
 
+/**
+ * The front-face rule does not apply at a corner. A 45°/135° miter pair, a
+ * provisional corner board, a blind corner's own filler, and a board sitting
+ * in the inside-corner hold are required there. A board in the open middle of
+ * a run is unchanged.
+ */
+function isRequiredCornerFiller(filler: PlacedCabinet, room: RoomData): boolean {
+  if (
+    filler.fillerTransitionKind === "front-miter-pair"
+    || filler.fillerTransitionKind === "angled-wedge"
+    || filler.fillerTransitionKind === "corner-provisional"
+    || filler.integratedWallBlindFiller === true
+  ) return true;
+  const wallId = cabinetWall(filler, room);
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return false;
+  const span = runInterval(filler, wallId, room);
+  for (const at of ["start", "end"] as const) {
+    const join = wallRunJoinAt(frame, at, room);
+    if (!join) continue;
+    const angled = Math.abs(join.turnDeg - 45) <= 0.5;
+    const square = Math.abs(join.turnDeg - 90) <= 0.5;
+    if (!angled && !square) continue;
+    const vertexAlong = at === "start" ? Math.max(0, frame.runStart) : frame.runEnd;
+    const edge = at === "start" ? span.start : span.end;
+    const zone = angled ? Math.max(insideCornerHoldIn(join.turnDeg, Number(filler.depth) || 24), 1) : 1;
+    if (Math.abs(edge - vertexAlong) <= zone + FILLER_SEAM_TOLERANCE_IN) return true;
+  }
+  return false;
+}
+
 /** Two boxes on the same run whose along-run spans and depths both overlap. */
 function overlapsInPlan(filler: PlacedCabinet, other: PlacedCabinet, room: RoomData): boolean {
   const wallId = cabinetWall(filler, room);
@@ -250,6 +283,10 @@ export function fillerRuleViolation(input: {
       detail: `${filler.masterCode} is cut against the ${panelBound.item.masterCode} panel. A filler closes a cabinet-to-cabinet, cabinet-to-wall, or cabinet-to-appliance gap, never a panel side.`,
     };
   }
+
+  // Corner and angled-join fillers are required. The open-side check is for a
+  // board on the outside face of a run, not for the board that closes a corner.
+  if (isRequiredCornerFiller(filler, room)) return null;
 
   const open = bounds.find((bound) => bound.kind === "nothing");
   if (open) {
