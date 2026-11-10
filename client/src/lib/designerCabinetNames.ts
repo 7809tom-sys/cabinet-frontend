@@ -27,6 +27,8 @@
  * drawers, which is the other half of the wording mismatch in item 6.
  */
 
+import { twoDoorShopperDescription, type DoorFaceCabinet } from "@shared/twentyFourDoorFace";
+
 /** The dimension block the catalog rows lead with, e.g. `24" W × 34.75" H × 24" D `. */
 const LEADING_DIMENSIONS = /^(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*W\s*[×x]\s*(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*H\s*[×x]\s*(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*D\s*/i;
 
@@ -78,23 +80,28 @@ export function leadingDimensionBlock(description: string | null | undefined): s
 }
 
 /**
- * A name the designer may show. A range base becomes the physical cabinet the
- * book sells; every other description keeps its own words but loses the
- * "range base" phrasing and any leading RB code if a supplier baked one in.
+ * A name the designer and the catalog may show. A range base becomes the
+ * physical cabinet the book sells; every other description keeps its own words
+ * but loses the "range base" phrasing and any leading RB code if a supplier
+ * baked one in. A 24" cabinet described as one door is described as two doors.
+ * The order code is never part of this rewrite.
  */
 export function designerCabinetName(input: {
   masterCode?: string | null;
   description?: string | null;
-}): string {
+} & DoorFaceCabinet): string {
   const family = rangeBaseFamilyForCode(input.masterCode);
   if (family) {
     return `${leadingDimensionBlock(input.description)}${rangeBaseDesignerName(family)}`;
   }
-  const cleaned = (input.description ?? "")
-    .replace(/^\s*RB-?\d+DB-?\d+\s*[—–-]+\s*/i, "")
-    .replace(/\brange[\s-]*base\b/gi, "base")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  const cleaned = twoDoorShopperDescription({
+    ...input,
+    description: (input.description ?? "")
+      .replace(/^\s*RB-?\d+DB-?\d+\s*[—–-]+\s*/i, "")
+      .replace(/\brange[\s-]*base\b/gi, "base")
+      .replace(/\s{2,}/g, " ")
+      .trim(),
+  });
   return cleaned || (input.masterCode ?? "").trim();
 }
 

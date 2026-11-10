@@ -12,6 +12,7 @@ import {
 import { CabinetImage } from "@/components/CabinetImage";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { cabinetTypeLabel, type CabinetLike } from "@/lib/cabinetGraphics";
+import { designerCabinetName } from "@/lib/designerCabinetNames";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
 import {
   cabinetConfigurationSummary,
@@ -92,7 +93,7 @@ export function CabinetQuickViewDialog({
           </div>
 
           <div className="min-w-0">
-            <p className="text-base font-semibold leading-snug text-foreground">{cabinet.description}</p>
+            <p className="text-base font-semibold leading-snug text-foreground">{designerCabinetName(cabinet)}</p>
             <GlassPolicyBadge masterCode={cabinet.masterCode} glassIncluded={cabinet.glassIncluded} className="mt-2" />
 
             <div className="mt-5">

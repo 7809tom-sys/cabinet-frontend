@@ -54,7 +54,9 @@ describe("designer-facing cabinet names (issue #354 item 1)", () => {
     expect(designerCabinetName({ masterCode: "B24", description: '24" W × 34.75" H × 24" D Double Door Single Drawer Base' }))
       .toBe('24" W × 34.75" H × 24" D Double Door Single Drawer Base');
     expect(designerCabinetName({ masterCode: "W2430S", description: '24" W × 30.25" H × 13.5" D Single Door Wall Cabinet' }))
-      .toBe('24" W × 30.25" H × 13.5" D Single Door Wall Cabinet');
+      .toBe('24" W × 30.25" H × 13.5" D Double Door Wall Cabinet');
+    expect(designerCabinetName({ masterCode: "W2130", description: '21" W × 30.25" H × 13.5" D Single Door Wall Cabinet', width: 21 }))
+      .toBe('21" W × 30.25" H × 13.5" D Single Door Wall Cabinet');
     expect(designerCabinetName({ masterCode: "B24", description: null })).toBe("B24");
   });
 

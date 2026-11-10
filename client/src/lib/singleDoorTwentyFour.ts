@@ -25,8 +25,11 @@
  *   - `singleDoorTwentyFourReport` lists where such a row is still selectable,
  *     so the change can be audited without guessing.
  *
- * The rows stay in the catalog and in the palette. Only the default picks and
- * Auto Design prefer the two-door version.
+ * The rows stay in the catalog and in the palette. Auto Design's pick list is
+ * unchanged. Drawing and shopper copy for a placed or displayed 24" single-door
+ * row are corrected in shared/twentyFourDoorFace.ts: Tom later confirmed there
+ * is no single-door 24" cabinet, so those rows are drawn and described as two
+ * doors without renaming the SKU.
  */
 import { COLLISION_EPSILON_IN, dim, type DesignCabinet } from "./design";
 
