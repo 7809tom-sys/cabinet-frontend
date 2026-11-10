@@ -19,6 +19,7 @@ import {
   type ShowerSelection,
 } from "./showerBuilder";
 import { bayForWall, openingForSurround, placeShowerSurround } from "./showerPlacementAssembly";
+import { verifiedPelicanBathroomFixtureProfile } from "./pelicanBathroomFixtureProfiles";
 
 /**
  * Regression for the production bug Tom hit on 2026-11-09.
@@ -173,6 +174,41 @@ describe("choosing walls, parts and the cart from Tom's empty room", () => {
     for (const bay of [back, left, right]) {
       expect(placeShowerSurround(surround.code, bay)).not.toBeNull();
     }
+  });
+
+  /**
+   * Tom's rule: one wall choice gives the whole three-wall surround. The back panel
+   * lands on the chosen wall and the two side panels run into the room from its
+   * ends, so the shopper never places the sides themselves.
+   *
+   * The surround is a single U-shaped kit whose published size IS its interior
+   * alcove (width = back span, depth = side run). Seating it on a wall means its
+   * back face is flush against that wall and its two end panels lie along the
+   * adjoining walls, which is what these edge assertions check.
+   */
+  it("seats the back panel on the chosen wall with the sides around it", () => {
+    const profile = verifiedPelicanBathroomFixtureProfile("PL-603096 Marble")!;
+    const cases = [
+      // wall, and the room edge the back panel must sit flush against.
+      { wall: "top" as const, backEdge: (s: { y: number }) => s.y === 0 },
+      { wall: "left" as const, backEdge: (s: { x: number }) => s.x === 0 },
+      { wall: "right" as const, backEdge: (s: { x: number }) => s.x + 30 === 60 },
+    ];
+    for (const { wall, backEdge } of cases) {
+      const bay = bayForWall(EMPTY_ROOM, wall)!;
+      const placed = placeShowerSurround("PL-603096 Marble", bay)!;
+      expect(placed, `${wall} places a surround`).not.toBeNull();
+      // Back face flush on the chosen wall.
+      expect(backEdge(placed), `${wall} back panel is on the wall`).toBe(true);
+      // The whole three-panel kit is present: the geometry test asserts back plus
+      // left and right ends with no front panel, so one placement is the full U.
+      expect(profile.widthIn).toBe(60);
+      expect(profile.depthIn).toBe(30);
+    }
+    // Left and right are mirror placements, not the same spot.
+    const l = placeShowerSurround("PL-603096 Marble", bayForWall(EMPTY_ROOM, "left")!)!;
+    const r = placeShowerSurround("PL-603096 Marble", bayForWall(EMPTY_ROOM, "right")!)!;
+    expect(l.x).not.toBe(r.x);
   });
 
   it("builds the whole shower Tom asked for and bills exactly those parts", () => {

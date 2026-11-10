@@ -260,7 +260,8 @@ function DecorSwatch({
   );
 }
 
-export type ShowerWizardProps = {  /** Place (or replace) a part in the plan. Called on every choice. */
+export type ShowerWizardProps = {
+  /** Place (or replace) a part in the plan. Called on every choice. */
   onPlacePart?: (input: {
     stepId: ShowerStepId;
     part: ShowerCatalogPart;
@@ -320,7 +321,7 @@ export function ShowerBuilderWizard({
     { category: "Shower & Bath", scope: "catalog", limit: 200, offset: 0 },
     { staleTime: 60_000 },
   );
-  const rows = showerCatalogRows(catalog.data);
+  const rows = useMemo(() => showerCatalogRows(catalog.data), [catalog.data]);
   const catalogParts = useMemo(() => showerCatalogParts(rows), [rows]);
 
   const step = SHOWER_STEPS[stepIndex]!;
@@ -464,7 +465,11 @@ export function ShowerBuilderWizard({
                 {SHOWER_WALL_LABELS[wall]}
               </Button>
             ))}
-            <span className="text-xs text-muted-foreground">Only this step moves. Other steps keep their own wall.</span>
+            <span className="text-xs text-muted-foreground" data-testid="shower-wall-hint">
+              {step.id === "surround"
+                ? "The back panel goes on this wall; side panels fill in automatically on its left and right."
+                : "Only this step moves. Other steps keep their own wall."}
+            </span>
           </div>
         )}
 

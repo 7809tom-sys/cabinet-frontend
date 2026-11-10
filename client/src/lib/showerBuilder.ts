@@ -69,7 +69,7 @@ export const SHOWER_STEPS: readonly ShowerStepDef[] = [
   {
     id: "surround",
     title: "Wall panels & surround",
-    blurb: "The waterproof wall panels. These define the back wall the rest of the shower defaults to.",
+    blurb: "The waterproof wall panels. The back panel goes on the wall you choose, and the two side panels fill in around it, so one choice gives you a full three-wall surround.",
     kinds: ["surround"],
     picksWall: true,
     optional: true,
