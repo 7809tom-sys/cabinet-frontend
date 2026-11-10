@@ -1,8 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactElement } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { affiliateDashboardLinks, affiliateDashboardPath, affiliateDesignerPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
 import { affiliatePortalFallback, resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
+import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
+import type { AffiliateFeatureKey } from "@shared/affiliateFeaturePublish";
 import { AffiliateTierCard } from "@/components/affiliate/AffiliateTierCard";
 import type { AffiliateTierDashboard } from "@shared/affiliatePricingTier";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -413,6 +415,16 @@ export default function AffiliateDashboard() {
   ) as AffiliateSection;
   const [section, setSection] = useState<AffiliateSection>(initialSection);
   const [catalogVendor, setCatalogVendor] = useState<string | null>(null);
+  const affiliatePublish = useAffiliateFeaturePublish();
+  const gateFeature = (feature: AffiliateFeatureKey, label: string, node: ReactElement) => {
+    if (affiliatePublish.status === "error") {
+      return <p role="alert" data-testid="affiliate-feature-error">Could not check whether {label} is published for affiliates.</p>;
+    }
+    if (affiliatePublish.status === "ready" && !affiliatePublish.anyPublished(feature)) {
+      return <p data-testid="affiliate-feature-blocked">{label} is not published for affiliates.</p>;
+    }
+    return node;
+  };
 
   const isAdmin = user?.role === "admin";
   // Incrementing this key causes StorefrontPreviewPanel to reload its iframe.
@@ -616,7 +628,7 @@ export default function AffiliateDashboard() {
           </div>
         );
       case "images":
-        return <AffiliateImageCabinet />;
+        return gateFeature("image_cabinet", "Image Cabinet", <AffiliateImageCabinet />);
       case "overview":
         return (
           <div className="space-y-6 max-w-4xl">
@@ -715,7 +727,7 @@ export default function AffiliateDashboard() {
           <MyCustomersPanel affiliateId={affiliate.id} initialCustomerKey={params.get("customer")} canAssist={access.accessDesigner} />
         );
       case "samples":
-        return <SampleOrderDesk mode="affiliate" affiliateId={affiliate.id} />;
+        return gateFeature("samples", "Sample ordering", <SampleOrderDesk mode="affiliate" affiliateId={affiliate.id} />);
       case "orders":
         return (
           <div className="max-w-4xl space-y-8">
@@ -845,11 +857,11 @@ export default function AffiliateDashboard() {
           </div>
         );
       case "promotions":
-        return (
+        return gateFeature("promotions", "Promotions", (
           <div className="max-w-4xl">
             <AffiliatePromotionsPanel />
           </div>
-        );
+        ));
       case "appointments":
         return (
           <div className="max-w-4xl">
@@ -857,11 +869,11 @@ export default function AffiliateDashboard() {
           </div>
         );
       case "installation":
-        return <InstallationEstimatesPanel affiliateId={affiliate.id} />;
+        return gateFeature("installation_estimates", "Installation estimates", <InstallationEstimatesPanel affiliateId={affiliate.id} />);
       case "marketing":
         return <AffiliateMarketingHub affiliate={affiliate} />;
       case "bundles":
-        return <AffiliateBundleDealsPanel affiliateId={affiliate.id} />;
+        return gateFeature("kitchen_packages", "Kitchen packages", <AffiliateBundleDealsPanel affiliateId={affiliate.id} />);
       case "tax":
         return (
           <div className="max-w-3xl">

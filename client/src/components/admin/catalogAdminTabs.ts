@@ -99,6 +99,20 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
     }],
   },
   {
+    id: "publish",
+    label: "Publish",
+    groups: [{
+      label: "",
+      leaves: [{
+        value: "publish",
+        label: "Publish",
+        editors: ["PublishAdmin"],
+        help: "publish",
+        boundary: "Publish",
+      }],
+    }],
+  },
+  {
     id: "cabinet-config",
     label: "Cabinet Config",
     groups: [{

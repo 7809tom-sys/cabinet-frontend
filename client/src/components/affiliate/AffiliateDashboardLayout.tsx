@@ -40,6 +40,8 @@ import { trpc } from "@/lib/trpc";
 import { affiliateCatalogPath, affiliateDesignerPath, affiliateOrderPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
 import { AffiliateStoreSwitcher } from "./AffiliateStoreSwitcher";
 import { buildAffiliateCatalogVendors, customerLinkVisibility } from "@shared/affiliateStorefrontControls";
+import { catalogVendorPublished, DESIGNER_ROOM_FEATURE } from "@shared/affiliateFeaturePublish";
+import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
 import { contractorPreviewHref } from "@/lib/contractorScope";
 
 export type AffiliateSection =
@@ -186,6 +188,8 @@ function SidebarInner({
   section, onSection, storeName, storeSlug, affiliateId, isAffiliateOwner, canAccessCrm, canAccessDesigner, catalogVendor, onOpenCatalog, setSidebarWidth, user, logout, isMobile, children,
 }: Props & { setSidebarWidth: (w: number) => void; user: { name?: string | null; email?: string | null; role?: string | null } | null; logout: () => void; isMobile: boolean }) {
   const { state, toggleSidebar } = useSidebar();
+  const affiliatePublish = useAffiliateFeaturePublish();
+  const publishReady = affiliatePublish.status === "ready";
   const isCollapsed = state === "collapsed";
   const [customerLinksOpen, setCustomerLinksOpen] = useState(true);
   const [catalogOpen, setCatalogOpen] = useState(true);
@@ -229,6 +233,12 @@ function SidebarInner({
       ? distributorSelections.map((row) => ({ id: row.id, name: row.name, publicName: row.publicName, selected: row.selected }))
       : null,
   );
+  const visibleVendors = publishReady
+    ? vendorNav.vendors.filter((vendor) => catalogVendorPublished(affiliatePublish.rows, vendor))
+    : vendorNav.vendors;
+  const designerPublished = !publishReady || Object.values(DESIGNER_ROOM_FEATURE).some((feature) => affiliatePublish.anyPublished(feature));
+  const closetPublished = !publishReady || affiliatePublish.anyPublished("closet_studio");
+  const quotePublished = !publishReady || affiliatePublish.anyPublished("quote");
   const openCatalog = (vendorKey: string | null) => {
     onOpenCatalog?.(vendorKey);
     onSection("catalog");
@@ -340,13 +350,13 @@ function SidebarInner({
                         {linkAccess.catalog && (
                           <CustomerLink label="Browse my catalog" href={catalogUrl} icon={BookOpen} tooltip="Browse my catalog" />
                         )}
-                        {linkAccess.designer && (
+                        {linkAccess.designer && designerPublished && (
                           <CustomerLink label="Preview Storefront Designer" href={designerUrl} icon={Palette} tooltip="See the 3D designer the way your customers see it. To design for a customer, use Design Workspace." />
                         )}
-                        {linkAccess.closet && (
+                        {linkAccess.closet && closetPublished && (
                           <CustomerLink label="Open Closet Studio" href={`/store/${storeSlug}/closet`} icon={Layers} tooltip="Open Closet Studio" />
                         )}
-                        {linkAccess.quote && (
+                        {linkAccess.quote && quotePublished && (
                           <CustomerLink label="Preview Quote Page" href={quoteUrl} icon={FileText} tooltip="The quote request page your customers see" />
                         )}
                         {linkAccess.storefront && (
@@ -386,7 +396,7 @@ function SidebarInner({
                             </div>
                             <CollapsibleContent>
                               <SidebarMenuSub>
-                                {vendorNav.vendors.map((vendor) => (
+                                {visibleVendors.map((vendor) => (
                                   <SidebarMenuSubItem key={vendor.key}>
                                     <SidebarMenuSubButton
                                       isActive={section === "catalog" && catalogVendor === vendor.key}

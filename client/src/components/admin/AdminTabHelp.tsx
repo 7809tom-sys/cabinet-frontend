@@ -119,6 +119,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Review cabinets or SKUs flagged as conflicting — duplicate entries, mismatched data, or items needing manual resolution.",
     zh: "審查被標記為衝突的櫥櫃或SKU——重複條目、不匹配的資料或需要手動解決的項目。",
   },
+  publish: {
+    en: "Choose which distributor or vendor features affiliates can use. Each switch is Publish for affiliates. Nothing is available to affiliates until that row is on. This is separate from Affiliate Literature.",
+    zh: "選擇聯盟可以使用哪些經銷商或供應商功能。每個開關都是「發布給聯盟」。該列打開之前，聯盟無法使用。此處與聯盟文獻無關。",
+  },
   "vendor-onboarding": {
     en: "Exception-only vendor spreadsheet imports. Completed rows are public cabinet conflict reviews, not verified masters. Open a completed row in Cabinet Conflicts to approve or clear it.",
     zh: "僅例外的供應商試算表匯入。已完成的列是公開的櫥櫃衝突審查，不是已驗證的主檔。在櫥櫃衝突中開啟已完成的列以核准或清除。",
