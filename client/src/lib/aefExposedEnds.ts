@@ -172,3 +172,29 @@ export function aefExposedEndRequirements(
 
   return requirements;
 }
+/**
+ * The end-panel requirements that may actually bill.
+ *
+ * An end panel is a piece OF a cabinet: it caps that cabinet's exposed side. When
+ * the owner is no longer in the drawing there is nothing to cap, so the panel must
+ * not reach the cart. A requirement whose owner has been deleted used to be KEPT
+ * (`if (!owner) return true`), which is how the cart ended up listing end panels
+ * that were nowhere in the design.
+ *
+ * `keepForOwner` lets the caller apply its own style rule once an owner exists.
+ */
+export function aefBillableEndRequirements<
+  T extends { cabinetUid: string },
+  C extends { uid: string },
+>(
+  requirements: readonly T[],
+  placed: readonly C[],
+  keepForOwner: (owner: C) => boolean,
+): T[] {
+  const owners = new Map<string, C>(placed.map((cabinet) => [cabinet.uid, cabinet]));
+  return requirements.filter((requirement) => {
+    const owner = owners.get(requirement.cabinetUid);
+    if (!owner) return false;
+    return keepForOwner(owner);
+  });
+}

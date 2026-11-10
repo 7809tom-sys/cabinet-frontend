@@ -264,7 +264,9 @@ import { buildTrimCartLines,
 import { applyFramelessDoorClearanceFillers } from "@/lib/framelessDoorClearance";
 import { dropIneligibleSkins, isSkinProduct, skinsAreNeeded } from "@shared/canHaveSkins";
 import { hickorySkinSuggestions, type HickorySkinSuggestion } from "@/lib/hickorySkins";
-import { aefExposedEndRequirements } from "@/lib/aefExposedEnds";
+import { aefExposedEndRequirements,
+  aefBillableEndRequirements,
+} from "@/lib/aefExposedEnds";
 import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
@@ -3646,9 +3648,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const byId = new Map(((doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>).map((style) => [style.id, style]));
     // Frameless and Hickory cabinets get placed run-end panels instead of a
     // second, broader bill-of-material line for every exposed side.
-    return requirements.filter((requirement) => {
-      const owner = placed.find((cabinet) => cabinet.uid === requirement.cabinetUid);
-      if (!owner) return true;
+    return aefBillableEndRequirements(requirements, placed, (owner) => {
       const sid = pricingStyleIdFor(owner) ?? designStyleId;
       return !requiresAutoEndPanels(sid != null ? byId.get(sid) ?? null : null);
     });
