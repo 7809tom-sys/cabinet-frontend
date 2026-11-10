@@ -37,7 +37,9 @@ import {
   doorPullCenterOffsetFromFaceCenterIn,
   FRAMED_STILE_CENTER_IN,
   normalizeDoorHardwareFramePosition,
+  STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
+import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { useRef, useEffect, useState } from "react";
@@ -257,7 +259,7 @@ export function IslandHardwareOverlay({
   const metal = `linear-gradient(135deg, color-mix(in srgb, ${accent} 55%, #ffffff) 0%, ${accent} 38%, color-mix(in srgb, ${accent} 70%, #000000) 72%, color-mix(in srgb, ${accent} 88%, #ffffff) 100%)`;
   const metalShadow = "0 1px 1.5px rgba(0,0,0,0.35), inset 0 0.5px 0 rgba(255,255,255,0.55)";
   const normalizedDoorPosition = normalizeDoorHardwareFramePosition(hardwarePosition);
-  const piece = (kind: "knob" | "pull" | "cup", key: string, topPct: number, isDoor?: boolean, index = 0) => {
+  const piece = (kind: "knob" | "pull" | "cup", key: string, topPct: number, isDoor?: boolean, index = 0, drawerColumns = 1) => {
     const requestedSide = isDoor ? normalizedDoorPosition : null;
     const topCenteredDoorPull = Boolean(isDoor && requestedSide === "top-center");
     const raisedWallDoorPull = Boolean(isDoor && raisedDoorPullOnRail);
@@ -301,6 +303,8 @@ export function IslandHardwareOverlay({
         ? { left: "30%", right: "30%", top: `${topPct}%`, height: 3, marginTop: -1.5, background: metal, boxShadow: metalShadow, zIndex: 8 }
         : isDoor
         ? { left: leftPos, top: `${topPct}%`, width: 3, height: "24%", marginLeft: -1.5, transform: "translateY(-50%)", background: metal, boxShadow: metalShadow, zIndex: 8, borderRadius: 2 }
+        : drawerColumns > 1
+        ? { left: `${((index + 0.2) / drawerColumns) * 100}%`, width: `${60 / drawerColumns}%`, top: `${topPct}%`, height: 3, background: metal, boxShadow: metalShadow, zIndex: 8 }
         : { left: "30%", right: "30%", top: `${topPct}%`, height: 3, background: metal, boxShadow: metalShadow, zIndex: 8 };
       return <div key={key} className="absolute" data-cabinet-hardware={isDoor ? "door-pull" : "drawer-pull"} data-hardware-orientation={horizontalTopRailPull ? "horizontal" : isDoor ? "vertical" : "horizontal"} data-hardware-position={raisedWallDoorPull ? "raised-door-rail" : topCenteredDoorPull ? "top-center" : hSide ?? "center"} {...measuredHardwareData} style={pullStyle} />;
     }
@@ -316,12 +320,14 @@ export function IslandHardwareOverlay({
   const items: React.ReactNode[] = [];
   if (doors > 0 && doorPiece !== "none") {
     const bandStart = doorBandStartPct != null && doorBandStartPct > 0 && doorBandStartPct < 100 ? doorBandStartPct : 0;
-    const sharesFaceWithDrawers = drawers > 0;
-    const regionTop = sharesFaceWithDrawers ? 0 : bandStart;
-    const regionHeight = sharesFaceWithDrawers ? 100 / (drawers + 1) : 100 - bandStart;
+    // DoorFront puts the base drawer row on top and the doors underneath.
+    // Measuring the pull on an equal top slice dropped it onto that drawer.
+    const standardTopDrawerRow = drawers > 0 && !isWall && bandStart === 0;
+    const regionTop = standardTopDrawerRow ? STANDARD_BASE_DRAWER_ROW_PCT : bandStart;
+    const regionHeight = standardTopDrawerRow ? 100 - STANDARD_BASE_DRAWER_ROW_PCT : 100 - bandStart;
     const verticalAnchor = raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
     const resolvedFaceHeight = Number(faceHeightIn);
-    const inchPlacedTop = !sharesFaceWithDrawers && Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight > 0 && regionHeight > 0
+    const inchPlacedTop = Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight > 0 && regionHeight > 0
       ? regionTop + regionHeight / 2 - (doorPullCenterOffsetFromFaceCenterIn({
         faceHeightIn: resolvedFaceHeight * regionHeight / 100,
         pullLengthIn: resolvedFaceHeight * 0.28,
@@ -340,10 +346,17 @@ export function IslandHardwareOverlay({
     }
   }
   if (drawers > 0 && drawerPiece !== "none") {
-    const drawerH = 100 / (drawers + (doors > 0 ? 1 : 0));
-    for (let i = 0; i < drawers; i++) {
-      const topPct = (doors > 0 ? drawerH : 0) + drawerH * i + drawerH / 2;
-      items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${i}`, topPct));
+    const standardTopDrawerRow = doors > 0 && !isWall && !(doorBandStartPct != null && doorBandStartPct > 0 && doorBandStartPct < 100);
+    if (standardTopDrawerRow) {
+      for (let column = 0; column < drawers; column++) {
+        items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${column}`, STANDARD_BASE_DRAWER_ROW_PCT / 2, false, column, drawers));
+      }
+    } else {
+      const drawerH = 100 / (drawers + (doors > 0 ? 1 : 0));
+      for (let i = 0; i < drawers; i++) {
+        const topPct = (doors > 0 ? drawerH : 0) + drawerH * i + drawerH / 2;
+        items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${i}`, topPct));
+      }
     }
   }
   return <>{items}</>;
@@ -502,12 +515,24 @@ export function IslandElevationView({
     const rawDisplayCounts = farmhouseFace
       ? { doors: farmhouseFace.doorCount, drawers: 0 }
       : configuredDisplayCounts;
-    const displayCounts = standardBaseRenderedCounts({
+    const displayCounts = correctTwentyFourSingleDoor({
+      masterCode: p.masterCode,
+      description: p.description,
+      width: cabSizeAlong,
+      category: p.category,
+      subCategory: p.subCategory,
+      graphicType: p.customProfile,
+      cornerType: p.cornerType,
+      facePattern: p.facePattern,
+      openingType: p.openingType,
+      turnedSideways: p.turnedSideways,
+      noDoor: p.noDoor,
+    }, standardBaseRenderedCounts({
       masterCode: p.masterCode,
       drawerLayout: p.drawerLayout ?? null,
       doors: rawDisplayCounts.doors,
       drawers: rawDisplayCounts.drawers,
-    });
+    }));
     const isBlind = isBlindCorner(p.masterCode, p.description);
     const islandDoorSide = isBlind ? blindCornerSwingForView(p, room, cabinets) : null;
     const blindLeft = isBlind

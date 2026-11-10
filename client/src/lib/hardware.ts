@@ -526,6 +526,12 @@ export function doorHardwareOffsetFromFaceCenterIn(
  */
 export const DOOR_PULL_EDGE_CLEARANCE_IN = 2.75;
 /**
+ * DoorFront draws one drawer row across the top of a base that also has doors.
+ * Hardware has to use this same band. A 45% stack puts the drawer pull in the
+ * gap under that row and, on an island, drops the door pull onto the drawer.
+ */
+export const STANDARD_BASE_DRAWER_ROW_PCT = 20;
+/**
  * Floor height for a full-height tall/pantry door pull. It sits in the open
  * band between the counter (34½") and the usual wall-cabinet bottom (54"),
  * where a standing person can reach it.
