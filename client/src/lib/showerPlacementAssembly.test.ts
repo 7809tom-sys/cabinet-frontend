@@ -332,3 +332,87 @@ describe("wall fittings stay inside their panel height", () => {
     expect(niche.mountHeightIn + (39 + 1 / 32)).toBeLessThanOrEqual(opening.panelHeightIn + 0.01);
   });
 });
+
+/**
+ * Regression: the niche on the LEFT panel rendered on the OUTSIDE face of the
+ * wall, sticking out of the shower rather than recessed into it.
+ *
+ * Both side panels used to take a +90 quarter turn, which pointed the left
+ * panel's fitting the wrong way — its recess opened toward +X, i.e. out through
+ * the wall. The turn now depends on the side: left takes -90, right takes +90.
+ *
+ * A niche is authored opening toward -Z with its body running into +Z, so after
+ * placement its opening must face the shower centre and its body must sit behind
+ * the panel it is mounted on. These assertions pin that for all three panels.
+ */
+describe("wall fittings open toward the shower, never out through the wall", () => {
+  const room = { width: 96, depth: 120, ceilingHeight: 96 } as any;
+  const bay = bayForWall(room, "top")!;
+  const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bay)!, room)!;
+
+  /**
+   * Unit vector the fitting's opening faces, in plan space.
+   *
+   * A fitting is authored opening toward local -Z. The scene applies the placement
+   * rotation as `-rotation` on the Y axis (see `bathroomFurnitureTransform`), which
+   * maps local (0,0,-1) to (-sin r, -cos r) in plan coordinates for rotation `r`.
+   */
+  const openingDirection = (rotationDeg: number) => {
+    const radians = ((-rotationDeg) * Math.PI) / 180;
+    return { x: -Math.sin(radians), y: -Math.cos(radians) };
+  };
+
+  const showerCentre = { x: bay.start.x + bay.tangent.x * (bay.spanIn / 2) + bay.inward.x * (opening.insideDepthIn / 2),
+    y: bay.start.y + bay.tangent.y * (bay.spanIn / 2) + bay.inward.y * (opening.insideDepthIn / 2) };
+
+  for (const side of ["back", "left", "right"] as const) {
+    it(`turns the ${side} panel's niche toward the shower centre`, () => {
+      const niche = placeWallFittingOnPanel("PL-SN1639", side, opening, 44)!;
+      expect(niche).not.toBeNull();
+
+      const face = openingDirection(niche.rotation);
+      // Vector from the fitting to the middle of the shower floor.
+      const toCentre = { x: showerCentre.x - niche.x, y: showerCentre.y - niche.y };
+      const length = Math.hypot(toCentre.x, toCentre.y) || 1;
+      const dot = (face.x * toCentre.x + face.y * toCentre.y) / length;
+
+      // The opening must point into the shower, not out through its wall.
+      expect(dot, `${side} opening faces the shower (dot ${dot.toFixed(2)})`).toBeGreaterThan(0.5);
+    });
+
+    it(`keeps the ${side} panel's niche body inside the panel thickness`, () => {
+      const niche = placeWallFittingOnPanel("PL-SN1639", side, opening, 44)!;
+      const face = openingDirection(niche.rotation);
+      const recessIn = verifiedPelicanBathroomFixtureProfile("PL-SN1639")!.depthIn;
+
+      // The body runs the opposite way from the opening: from the panel face,
+      // `recessIn` INTO the panel. So the body's far end, measured from the panel
+      // face, must not pass the panel's outer face.
+      const bodyEnd = { x: niche.x - face.x * recessIn, y: niche.y - face.y * recessIn };
+      const distanceToCentre = Math.hypot(bodyEnd.x - showerCentre.x, bodyEnd.y - showerCentre.y);
+      const faceDistanceToCentre = Math.hypot(niche.x - showerCentre.x, niche.y - showerCentre.y);
+      // Going into the wall means moving AWAY from the shower, so the body's far
+      // end is further from the centre than its face is.
+      expect(distanceToCentre).toBeGreaterThan(faceDistanceToCentre - 0.01);
+    });
+  }
+
+  it("gives left and right panels mirror-image rotations", () => {
+    const left = placeWallFittingOnPanel("PL-SN1639", "left", opening, 44)!;
+    const right = placeWallFittingOnPanel("PL-SN1639", "right", opening, 44)!;
+    const back = placeWallFittingOnPanel("PL-SN1639", "back", opening, 44)!;
+    // Left and right turn opposite ways from the back panel.
+    const norm = (r: number) => ((r % 360) + 360) % 360;
+    expect(norm(left.rotation)).not.toBe(norm(right.rotation));
+    expect(norm(back.rotation)).not.toBe(norm(left.rotation));
+  });
+
+  it("applies the same orientation rule to the valve and head", () => {
+    for (const side of ["back", "left", "right"] as const) {
+      const valve = placeWallFittingOnPanel("PL-86S22S MB", side, opening, 48)!;
+      const niche = placeWallFittingOnPanel("PL-SN1639", side, opening, 44)!;
+      // The valve and the niche mount the same way on the same panel.
+      expect(valve.rotation, side).toBe(niche.rotation);
+    }
+  });
+});

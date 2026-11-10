@@ -68,7 +68,7 @@ import { colorTraceToText } from "@/lib/colorTrace";
 import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
-import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
+import { isShowerSystemTubCombo, verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup, pelicanChinaMaterial } from "@/lib/pelicanToiletMesh";
 import { doorOpeningAppearance, roomDoorSwing } from "@/lib/doorOpeningAppearance";
@@ -11299,6 +11299,34 @@ export function showerSurroundPanelFinish(code: string | null | undefined): {
   return { color: "#efedea", roughness: 0.5, clearcoat: 0.2 };
 }
 
+/**
+ * The panel height of the surround this shower system is mounted on.
+ *
+ * The arm and head must stay below the top of the walls, so the system needs to
+ * know how tall they are. It finds the surround placed in the same shower — the
+ * nearest shower-surround profile with a panel height — and returns that. A system
+ * with no surround yet returns null, and the caller then leaves the head at the
+ * shopper's chosen height.
+ */
+function showerPanelHeightForSystem(
+  root: THREE.Group,
+  systemProfile: VerifiedPelicanBathroomFixtureProfile,
+): number | undefined {
+  // Siblings of this fixture in the scene are enough: the surround has already
+  // been added by the time its system is drawn, because the wizard places panels
+  // before heads.
+  let height: number | undefined;
+  root.traverse((node) => {
+    if (!node.userData?.pelicanBathroomFixture) return;
+    if (node.userData.pelicanCode === systemProfile.pelicanCode) return;
+    const candidate = verifiedPelicanBathroomFixtureProfile(node.userData.pelicanCode);
+    if (candidate?.kind === "shower-surround" && candidate.heightIn > 0) {
+      height = Math.max(height ?? 0, candidate.heightIn);
+    }
+  });
+  return height;
+}
+
 function addPelicanBathroomFixture(
   root: THREE.Group,
   furniture: PlacedFurniture,
@@ -11450,16 +11478,26 @@ function addPelicanBathroomFixture(
     // it needs no extra offset: the fixture group is already on its wall.
     // The heights the shopper actually set (valve 48", head 80" by default, both
     // editable in the wizard). `mountHeightIn` is where this system was mounted,
-    // which IS the valve height; the arm sits above it. Passing these through is
-    // what makes the riser span valve-to-arm instead of starting at the floor.
+    // which IS the valve height; the arm sits above it.
     const valveHeightIn = Math.max(0, furniture.mountHeightIn ?? 48);
     const headHeightIn = Math.max(valveHeightIn + 12, valveHeightIn + 32);
+    // The surround this system is mounted on, so the head can be held below its
+    // top edge. A system can exist before a surround does, in which case there is
+    // no panel to clamp against.
+    const panelHeightIn = showerPanelHeightForSystem(root, profile);
     for (const { mesh, part } of makeShowerSystemParts(profile, {
       shell,
       // Solid metal in the finish the SKU is sold in, so a matte black system is
       // not drawn as a grey plastic rod.
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
-    }, { valveHeightIn, headHeightIn })) {
+    }, {
+      valveHeightIn,
+      headHeightIn,
+      panelHeightIn: panelHeightIn ?? undefined,
+      // Only a "...T/S" tub/shower combo has a spout. A shower-only set over a pan
+      // must never draw one.
+      hasTubSpout: isShowerSystemTubCombo(profile.pelicanCode),
+    })) {
       add(mesh, part);
     }
   } else if (profile.kind === "shower-niche" || profile.kind === "soap-tray") {

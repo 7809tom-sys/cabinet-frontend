@@ -299,7 +299,23 @@ export function makeShowerSurroundParts(
 export function makeShowerSystemParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
-  options: { deckHeightIn?: number; wallDepthIn?: number; valveHeightIn?: number; headHeightIn?: number } = {},
+  options: {
+    deckHeightIn?: number;
+    wallDepthIn?: number;
+    valveHeightIn?: number;
+    headHeightIn?: number;
+    /**
+     * The top of the surround panel this system is mounted on, inches above the
+     * deck. The arm and head are clamped below it: nothing may poke above or
+     * outside the panels.
+     */
+    panelHeightIn?: number;
+    /**
+     * Whether this set has a tub spout. Only the "...T/S" tub/shower combo does;
+     * a shower-only set must never draw one.
+     */
+    hasTubSpout?: boolean;
+  } = {},
 ): ShowerPart[] {
   const deck = Math.max(0, options.deckHeightIn ?? 0) * INCH;
   const reach = (profile.tubFillerSpoutReachIn ?? 8) * INCH;
@@ -316,9 +332,28 @@ export function makeShowerSystemParts(
   const valveHeightIn = Number.isFinite(options.valveHeightIn) && (options.valveHeightIn ?? 0) > 0
     ? options.valveHeightIn!
     : 42;
-  const headHeightIn = Number.isFinite(options.headHeightIn) && (options.headHeightIn ?? 0) > 0
+  // Keep a clearance below the panel top so the arm and head never break the
+  // silhouette of the surround. Without this the head was placed at the shopper's
+  // chosen height whatever the panel did, so an 80" head on a 74" tub surround —
+  // or a 96" panel asked for a 110" head — left the arm and head hanging in the
+  // air above the walls.
+  const HEAD_CLEARANCE_IN = 3;
+  const panelHeightIn = Number.isFinite(options.panelHeightIn) && (options.panelHeightIn ?? 0) > 0
+    ? options.panelHeightIn!
+    : null;
+  const requestedHeadIn = Number.isFinite(options.headHeightIn) && (options.headHeightIn ?? 0) > 0
     ? Math.max(options.headHeightIn!, valveHeightIn + 1)
     : Math.max(72, valveHeightIn + 30);
+  // The head's DISK reaches 0.4" above the arm's centreline, so the arm has to sit
+  // a little lower than the clearance alone would allow. Without this the arm is
+  // inside the panel while the head's rim still breaks the top edge.
+  const HEAD_DISK_ABOVE_ARM_IN = 0.4;
+  const headHeightIn = panelHeightIn == null
+    ? requestedHeadIn
+    : Math.min(
+      requestedHeadIn,
+      Math.max(valveHeightIn + 6, panelHeightIn - HEAD_CLEARANCE_IN - HEAD_DISK_ABOVE_ARM_IN),
+    );
 
   const parts: ShowerPart[] = [];
   const push = (mesh: THREE.Mesh, part: string) => {
@@ -347,20 +382,18 @@ export function makeShowerSystemParts(
 
   // ---- Riser and head -------------------------------------------------------
   const headY = deck + headHeightIn * INCH;
-  // The riser is the visible pipe from the valve body up to the shower arm. It has
-  // to start at the TOP of the valve trim and end at the arm's centreline, or it
-  // reads as a floating rod with a gap at one end.
+  // The valve-to-head riser runs INSIDE the wall.
+  //
+  // It used to be a visible cylinder on the room side of the panel, which is not
+  // how a Hydra set is installed — the pipe is buried and only the valve trim and
+  // the arm come through the wall. Rendered as it was, the pipe ran up the
+  // outside of the panel and bent over its top edge, which is exactly the leak Tom
+  // saw. Nothing is drawn for the riser now; the trim and arm already read as one
+  // connected fixture because the arm starts at the wall face.
+  //
+  // The escutcheon stays: it is the visible cover plate where the pipe meets the
+  // finished face of the panel, and it belongs on the inside.
   const riserBottom = valveY + 1.5 * INCH;   // just above the trim plate
-  const riserTop = headY;                    // the arm's centreline
-  const riser = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.3 * INCH, 0.3 * INCH, Math.max(0.5 * INCH, riserTop - riserBottom), 16),
-    materials.metal,
-  );
-  riser.position.set(0, (riserTop + riserBottom) / 2, wallZ - 0.4 * INCH);
-  push(riser, "shower-riser");
-
-  // Escutcheon at the wall where the riser meets the panel, so the pipe looks
-  // plumbed into the wall rather than glued on.
   const escutcheon = new THREE.Mesh(
     new THREE.CylinderGeometry(0.55 * INCH, 0.62 * INCH, 0.14 * INCH, 20),
     materials.metal,
@@ -386,7 +419,10 @@ export function makeShowerSystemParts(
   push(head, "shower-head");
 
   // ---- Tub spout ------------------------------------------------------------
-  if ((profile.tubFillerSpoutReachIn ?? 0) >= 6) {
+  // Only a tub/shower combo has one. A shower-only build sits over a low pan with
+  // nothing for a spout to fill, so drawing one put a nonsensical tap by the
+  // shower floor.
+  if (options.hasTubSpout && (profile.tubFillerSpoutReachIn ?? 0) >= 6) {
     const spout = new THREE.Mesh(
       new THREE.CylinderGeometry(0.5 * INCH, 0.5 * INCH, 4 * INCH, 20),
       materials.metal,

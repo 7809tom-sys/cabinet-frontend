@@ -10,6 +10,7 @@ import {
 import {
   ALL_PELICAN_BATHROOM_FIXTURE_PROFILES,
   verifiedPelicanBathroomFixtureProfile,
+  isShowerSystemTubCombo,
 } from "@/lib/pelicanBathroomFixtureProfiles";
 
 const materials = {
@@ -166,7 +167,9 @@ describe("Shower surround, system and niche geometry", () => {
       const names = parts.map((entry) => entry.part);
       expect(names).toContain("shower-valve-trim");
       expect(names).toContain("shower-head");
-      expect(names).toContain("shower-riser");
+      // The riser is buried in the wall; only the trim, escutcheon and arm show.
+      expect(names).not.toContain("shower-riser");
+      expect(names).toContain("shower-riser-escutcheon");
       // The head sits above the valve.
       const valve = parts.find((entry) => entry.part === "shower-valve-trim")!.mesh;
       const head = parts.find((entry) => entry.part === "shower-head")!.mesh;
@@ -248,47 +251,29 @@ describe("Shower surround, system and niche geometry", () => {
    * chosen heights were ignored entirely. It must start at the valve trim and end
    * at the arm's centreline, at whatever heights were actually set.
    */
-  it("runs the riser from the valve up to the shower arm at the real heights", () => {
+  it("keeps the pipe inside the wall, leaving the trim and arm to read as one fixture", () => {
     const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
-    const heights = { valveHeightIn: 48, headHeightIn: 80 };
-    const parts = makeShowerSystemParts(profile, materials, heights);
+    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96 });
     const byName = (name: string) => parts.find((entry) => entry.part === name)!.mesh;
 
-    const riser = byName("shower-riser");
+    // No pipe geometry at all: a riser drawn on the room side of the panel was the
+    // leak Tom photographed running up the outside of the wall.
+    expect(parts.some((entry) => entry.part === "shower-riser")).toBe(false);
+
+    // The visible parts are still there, and still in the right order up the wall.
     const valve = byName("shower-valve-trim");
-    const head = byName("shower-head");
-
-    riser.geometry.computeBoundingBox();
-    const riserBox = riser.geometry.boundingBox!.clone().translate(riser.position);
-    const valveTop = valve.position.y + 0.25 * (1 / 12);
-    expect(head.position.y).toBeLessThan(byName("shower-head-arm").position.y);
-
-    // The pipe reaches the valve at the bottom...
-    expect(riserBox.min.y).toBeGreaterThan(valveTop);
-    // Riser starts 1.5" above the valve centre, just clear of the 0.5"-thick trim.
-    expect(riserBox.min.y).toBeCloseTo(valve.position.y + 1.5 * (1 / 12), 3);
-    // ...and the shower arm at the top, so there is no gap at either end. The arm
-    // sits on the riser's centreline; the head hangs 0.4" below it.
+    const escutcheon = byName("shower-riser-escutcheon");
     const arm = byName("shower-head-arm");
-    expect(riserBox.max.y).toBeCloseTo(arm.position.y, 3);
-    // And it is a real, visible pipe, not a sliver.
-    expect(riserBox.max.y - riserBox.min.y).toBeGreaterThan((80 - 48) * (1 / 12) * 0.5);
-  });
+    expect(escutcheon.position.y).toBeGreaterThan(valve.position.y);
+    expect(arm.position.y).toBeGreaterThan(escutcheon.position.y);
 
-  it("follows the heights the shopper sets, not the old constants", () => {
-    const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
-    const low = makeShowerSystemParts(profile, materials, { valveHeightIn: 36, headHeightIn: 66 });
-    const high = makeShowerSystemParts(profile, materials, { valveHeightIn: 60, headHeightIn: 92 });
-    const valveY = (parts: ReturnType<typeof makeShowerSystemParts>) =>
-      parts.find((entry) => entry.part === "shower-valve-trim")!.mesh.position.y;
-    const riserY = (parts: ReturnType<typeof makeShowerSystemParts>) =>
-      parts.find((entry) => entry.part === "shower-riser")!.mesh.position.y;
-    // A taller valve setting really moves the valve, and the riser with it.
-    expect(high.length).toBe(low.length);
-    expect(valveY(high)).toBeGreaterThan(valveY(low));
-    expect(riserY(high)).toBeGreaterThan(riserY(low));
-    // 60" - 36" = 24" of extra height, in scene units.
-    expect(valveY(high) - valveY(low)).toBeCloseTo(24 * (1 / 12), 2);
+    // Everything is on the ROOM side of the panel plane or at it: nothing sits
+    // behind the finished face where it would be hidden by, or poke through, the
+    // panel.
+    const wallZ = (profile.depthIn || 8) / 2 * (1 / 12);
+    for (const mesh of [valve, escutcheon, arm, byName("shower-head")]) {
+      expect(mesh.position.z).toBeLessThanOrEqual(wallZ + 0.01);
+    }
   });
 
   it("seats the riser escutcheon at the valve, plumbed into the wall", () => {
@@ -348,5 +333,100 @@ describe("Shower surround, system and niche geometry", () => {
       expect(profile.depthIn).toBeGreaterThanOrEqual(0);
       expect(profile.heightIn).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * Three faults Tom photographed on a built shower.
+ *
+ * The system was drawn without reference to the surround it sat on, so the arm
+ * and head rose above the tops of the panels, a visible riser pipe ran up the
+ * OUTSIDE of the wall, and a tub spout appeared on a shower-only build that has
+ * nothing for it to fill.
+ */
+describe("a shower system stays inside its surround", () => {
+  const profile = verifiedPelicanBathroomFixtureProfile("PL-86S22S MB")!;
+  const byName = (parts: ReturnType<typeof makeShowerSystemParts>, name: string) =>
+    parts.find((entry) => entry.part === name);
+
+  /** World-space top of a part, from its geometry box and its position. */
+  const partTop = (parts: ReturnType<typeof makeShowerSystemParts>, name: string): number | null => {
+    const part = byName(parts, name);
+    if (!part) return null;
+    part.mesh.geometry.computeBoundingBox();
+    return part.mesh.geometry.boundingBox!.max.y + part.mesh.position.y;
+  };
+
+  it("clamps the arm and head below the top of the surround panel", () => {
+    // A shopper asking for an 80" head under a 74" tub surround.
+    const parts = makeShowerSystemParts(profile, materials, {
+      valveHeightIn: 48,
+      headHeightIn: 80,
+      panelHeightIn: 74,
+    });
+    const headTop = partTop(parts, "shower-head")!;
+    const armTop = partTop(parts, "shower-head-arm")!;
+    const IN = 1 / 12;
+    // Nothing pokes above the panel.
+    expect(headTop / IN).toBeLessThan(74);
+    expect(armTop / IN).toBeLessThan(74);
+    // And it keeps a real clearance, not a hairline.
+    expect(74 - headTop / IN).toBeGreaterThanOrEqual(2.5);
+  });
+
+  it("still uses the requested height when it already fits", () => {
+    const parts = makeShowerSystemParts(profile, materials, {
+      valveHeightIn: 48,
+      headHeightIn: 80,
+      panelHeightIn: 96,
+    });
+    // 80" head in a 96" panel is well clear, so the number is honoured.
+    const arm = byName(parts, "shower-head-arm")!;
+    expect(arm.mesh.position.y / (1 / 12)).toBeCloseTo(80, 1);
+  });
+
+  it("never puts the head below the valve, however short the panel is", () => {
+    const parts = makeShowerSystemParts(profile, materials, {
+      valveHeightIn: 60,
+      headHeightIn: 80,
+      panelHeightIn: 62,
+    });
+    const arm = byName(parts, "shower-head-arm")!;
+    const valve = byName(parts, "shower-valve-trim")!;
+    expect(arm.mesh.position.y).toBeGreaterThan(valve.mesh.position.y);
+  });
+
+  it("draws no visible riser pipe", () => {
+    const parts = makeShowerSystemParts(profile, materials, { valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96 });
+    // The pipe is buried in the wall; only the trim and the arm come through.
+    expect(byName(parts, "shower-riser")).toBeUndefined();
+    // The visible parts that SHOULD be there still are.
+    expect(byName(parts, "shower-valve-trim")).toBeDefined();
+    expect(byName(parts, "shower-riser-escutcheon")).toBeDefined();
+    expect(byName(parts, "shower-head-arm")).toBeDefined();
+    expect(byName(parts, "shower-head")).toBeDefined();
+  });
+
+  it("shows no tub spout on a shower-only build", () => {
+    const showerOnly = makeShowerSystemParts(profile, materials, {
+      valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96, hasTubSpout: false,
+    });
+    expect(byName(showerOnly, "shower-spout")).toBeUndefined();
+  });
+
+  it("still shows the spout on a tub/shower combo", () => {
+    const combo = makeShowerSystemParts(profile, materials, {
+      valveHeightIn: 48, headHeightIn: 80, panelHeightIn: 96, hasTubSpout: true,
+    });
+    expect(byName(combo, "shower-spout")).toBeDefined();
+  });
+
+  it("tells a shower-only SKU from a tub/shower combo SKU", () => {
+    // "...S" is shower-only; "...T/S" is the tub/shower combo.
+    expect(isShowerSystemTubCombo("PL-86S22S MB")).toBe(false);
+    expect(isShowerSystemTubCombo("PL-86A23S CHR")).toBe(false);
+    expect(isShowerSystemTubCombo("PL-86S22T/S MB")).toBe(true);
+    expect(isShowerSystemTubCombo("PL-86A23T/S CHR")).toBe(true);
+    expect(isShowerSystemTubCombo(null)).toBe(false);
   });
 });

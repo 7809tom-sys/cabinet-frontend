@@ -284,6 +284,18 @@ const SHOWER_SYSTEM_SOURCES = [
   ["PL-86S22 MATTE BLACK", "PL-86S22", "matte-black", 6 + 5 / 8],
 ] as const;
 
+/**
+ * Does this Hydra model include a tub spout?
+ *
+ * The catalog sells each family twice: "...S" is the shower-only set and
+ * "...T/S" is the tub/shower combo, which is the only one with a spout. Both
+ * resolve to the same sheet code, so the combo flag has to travel on the code
+ * itself — otherwise a shower-only build drew a spout it does not have.
+ */
+export function isShowerSystemTubCombo(code: string | null | undefined): boolean {
+  return /T\/S\s+(?:BN|CHR|MB)$/i.test((code ?? "").trim());
+}
+
 const SHOWER_SYSTEM_PROFILES: VerifiedPelicanBathroomFixtureProfile[] = SHOWER_SYSTEM_SOURCES.map(
   ([code, model, finish, reach]) => ({
     id: `pelican-shower-system-${model.toLowerCase()}-${finish}`,
