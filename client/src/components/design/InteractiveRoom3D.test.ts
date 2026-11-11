@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { dlcPhotoLightCompensation } from "@shared/dlcFr26Textures";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { readFileSync } from "node:fs";
+import { ALL_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import * as THREE from "three";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import { wallAngleEndPlan } from "@/lib/wallAngleEndLayout";
@@ -9987,5 +9988,106 @@ describe("shower niche is pickable so it can be selected and deleted", () => {
     addFurniture(root, nicheFurniture({ mountHeightIn: 44 }));
     const group = root.children.find((child) => child.userData.pelicanBathroomFixture) as THREE.Group;
     expect(group.position.y).toBeCloseTo(44 / 12, 3);
+  });
+});
+
+/**
+ * Tom's rule: the valve-to-head pipe lives INSIDE the wall and is never drawn.
+ *
+ * Not on the outside of a panel, not up and over the top, not at any panel height
+ * and not from any camera. Only the valve trim/handle and the arm + head are
+ * visible where they leave the wall plane.
+ *
+ * This asserts on a BUILT shower scene rather than on the geometry builder alone,
+ * because the builder is only half the story: something else could add a pipe.
+ */
+describe("a built shower never renders a riser pipe", () => {
+  const base = {
+    uid: "",
+    x: 0,
+    y: 0,
+    rotation: 180,
+  } as const;
+
+  const partsOf = (root: THREE.Group): string[] => {
+    const names: string[] = [];
+    root.traverse((node) => {
+      const part = (node.userData as { pelicanBathroomFixturePart?: string }).pelicanBathroomFixturePart;
+      if (part) names.push(part);
+    });
+    return names;
+  };
+
+  const buildShower = (surroundCode: string) => {
+    const root = new THREE.Group();
+    // Real catalog definition ids: `addFurniture` looks the definition up by id and
+    // skips anything it cannot resolve, so a made-up id would silently add nothing.
+    const surround = verifiedPelicanBathroomFixtureProfile(surroundCode)!;
+    const pan = verifiedPelicanBathroomFixtureProfile("PL-SMC6036C")!;
+    const heads = verifiedPelicanBathroomFixtureProfile("PL-86S22S CHR")!;
+    const place = (uid: string, profile: typeof surround, showerStepId: PlacedFurniture["showerStepId"], extra = {}) =>
+      addFurniture(root, {
+        ...base, uid, defId: profile.id, pelicanCode: profile.pelicanCode, showerStepId, ...extra,
+      } as PlacedFurniture);
+    place("surround", surround, "surround");
+    place("pan", pan, "pan");
+    place("heads", heads, "heads", { mountHeightIn: 48 });
+    return root;
+  };
+
+  /** Every surround the catalog sells, so no panel height can introduce a pipe. */
+  const surrounds = ALL_PELICAN_BATHROOM_FIXTURE_PROFILES.filter((entry) => entry.kind === "shower-surround");
+
+  it("has surrounds to test against", () => {
+    expect(surrounds.length).toBeGreaterThan(10);
+  });
+
+  it("draws no riser on any surround size, tall or short", () => {
+    const heights = new Set<number>();
+    for (const surround of surrounds) {
+      const parts = partsOf(buildShower(surround.pelicanCode));
+      heights.add(surround.heightIn);
+      expect(parts, `${surround.pelicanCode} (${surround.heightIn}" panel)`).not.toContain("shower-riser");
+      // The parts that ARE visible where they exit the wall.
+      expect(parts, surround.pelicanCode).toContain("shower-valve-trim");
+      expect(parts, surround.pelicanCode).toContain("shower-head-arm");
+      expect(parts, surround.pelicanCode).toContain("shower-head");
+    }
+    // The set really did span short and tall panels, so the loop above is meaningful.
+    expect(Math.min(...heights)).toBeLessThan(80);
+    expect(Math.max(...heights)).toBeGreaterThan(80);
+  });
+
+  it("has no mesh whose name mentions a riser, anywhere in the scene", () => {
+    const root = buildShower("PL-603096 Brick");
+    const riserNamed: string[] = [];
+    root.traverse((node) => {
+      if (node.name && /riser/i.test(node.name)) riserNamed.push(node.name);
+      const part = (node.userData as { pelicanBathroomFixturePart?: string }).pelicanBathroomFixturePart;
+      // The escutcheon is the visible cover plate, not the pipe.
+      if (part && /riser/i.test(part) && part !== "shower-riser-escutcheon") riserNamed.push(part);
+    });
+    expect(riserNamed).toEqual([]);
+  });
+
+  it("keeps the head centre at 80 inches and the valve at 48 in the built scene", () => {
+    const root = buildShower("PL-603096 Brick");
+    let headY = 0;
+    let valveY = 0;
+    root.traverse((node) => {
+      const part = (node.userData as { pelicanBathroomFixturePart?: string }).pelicanBathroomFixturePart;
+      if (!node.isMesh) return;
+      node.updateWorldMatrix(true, false);
+      if (part === "shower-head") {
+        const box = new THREE.Box3().setFromObject(node);
+        headY = (box.min.y + box.max.y) / 2;
+      }
+      if (part === "shower-valve-trim") {
+        const box = new THREE.Box3().setFromObject(node);
+        valveY = (box.min.y + box.max.y) / 2;
+      }
+    });
+    expect(headY * 12).toBeCloseTo(80, 0);
+    expect(valveY * 12).toBeCloseTo(48, 0);
   });
 });

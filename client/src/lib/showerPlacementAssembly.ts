@@ -284,6 +284,29 @@ export const SHOWER_PANEL_LABELS: Record<ShowerPanelSide, string> = {
  * moves the surround, and re-placing the fittings from the moved opening puts them
  * back on its panels.
  */
+/**
+ * The placement rotation that makes a fitting's opening face a point.
+ *
+ * A fitting is authored opening toward local -Z and recessed into +Z. The scene
+ * turns a placement by `rotation` degrees in plan space (see
+ * `bathroomFurnitureTransform`), so this returns the quarter turn whose -Z axis
+ * points from the fitting toward `target`.
+ *
+ * Deriving it this way — instead of assuming which way each panel turns — is what
+ * keeps the left panel from opening out through its own wall.
+ */
+export function rotationFacingShower(
+  from: { x: number; y: number },
+  target: { x: number; y: number },
+): 0 | 90 | 180 | 270 {
+  const dx = target.x - from.x;
+  const dy = target.y - from.y;
+  // Plan +Y is "into the room" from the back wall, and the scene's Y rotation maps
+  // local -Z to (-sin r, -cos r) in plan space for rotation r degrees.
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 90 : 270;
+  return dy >= 0 ? 180 : 0;
+}
+
 export function placeWallFittingOnPanel(
   pelicanCode: string,
   side: ShowerPanelSide,
@@ -299,6 +322,12 @@ export function placeWallFittingOnPanel(
   // into the room from it.
   const halfWidth = opening.insideWidthIn / 2;
   const halfDepth = opening.insideDepthIn / 2;
+
+  // The middle of the shower floor: half the opening inward from the back panel.
+  const showerCentre = {
+    x: bay.start.x + bay.tangent.x * (bay.spanIn / 2) + bay.inward.x * halfDepth,
+    y: bay.start.y + bay.tangent.y * (bay.spanIn / 2) + bay.inward.y * halfDepth,
+  };
 
   // Start at the middle of the back panel, on its inside face.
   const backCentre = {
@@ -350,9 +379,15 @@ export function placeWallFittingOnPanel(
     pelicanCode: entry.profile.pelicanCode,
     x: centre.x - footprint.w / 2,
     y: centre.y - footprint.d / 2,
-    // A side panel is perpendicular to the back panel, so its fitting turns a
-    // quarter turn with it.
-    rotation: side === "back" ? bay.rotation : (((bay.rotation + 90) % 360) + 360) % 360,
+    // A fitting is authored opening toward local -Z, with its recess running into
+    // +Z. Its placement rotation must therefore turn that -Z axis to point from
+    // the fitting toward the inside of the shower.
+    //
+    // This is DERIVED from the geometry rather than reasoned about as a sign: the
+    // left panel used to take the same +90 turn as the right, which pointed its
+    // recess through the wall onto the exterior face and left the niche sticking
+    // out of the outside of the shower.
+    rotation: rotationFacingShower(centre, showerCentre),
     mountHeightIn: mounted,
   };
 }

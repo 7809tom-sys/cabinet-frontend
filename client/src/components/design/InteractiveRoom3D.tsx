@@ -66,7 +66,7 @@ import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawe
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
-import { verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
+import { isShowerSystemTubCombo, verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
 import { makePelicanToiletGroup, pelicanChinaMaterial } from "@/lib/pelicanToiletMesh";
 import { doorOpeningAppearance, roomDoorSwing } from "@/lib/doorOpeningAppearance";
@@ -11517,18 +11517,20 @@ function addPelicanBathroomFixture(
     // Valve, lever, riser, head and spout on the wet wall.
     // The system is authored flat on a wall at local x = 0 reaching into +X, so
     // it needs no extra offset: the fixture group is already on its wall.
-    // The heights the shopper actually set (valve 48", head 80" by default, both
-    // editable in the wizard). `mountHeightIn` is where this system was mounted,
-    // which IS the valve height; the arm sits above it. Passing these through is
-    // what makes the riser span valve-to-arm instead of starting at the floor.
-    const valveHeightIn = Math.max(0, furniture.mountHeightIn ?? 48);
-    const headHeightIn = Math.max(valveHeightIn + 12, valveHeightIn + 32);
+    // No height options: the valve sits at 48" and the head centre at 80" above
+    // the finished floor, fixed, whatever size surround is fitted. The arm comes
+    // straight out of the wall plane at the head height, so there is nothing to
+    // clamp and no need to look up the panel.
     for (const { mesh, part } of makeShowerSystemParts(profile, {
       shell,
       // Solid metal in the finish the SKU is sold in, so a matte black system is
       // not drawn as a grey plastic rod.
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
-    }, { valveHeightIn, headHeightIn })) {
+    }, {
+      // Only a "...T/S" tub/shower combo has a spout. A shower-only set over a pan
+      // must never draw one.
+      hasTubSpout: isShowerSystemTubCombo(profile.pelicanCode),
+    })) {
       add(mesh, part);
     }
   } else if (profile.kind === "shower-niche" || profile.kind === "soap-tray") {
