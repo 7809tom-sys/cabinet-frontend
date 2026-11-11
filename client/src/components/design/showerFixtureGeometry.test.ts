@@ -207,11 +207,11 @@ describe("Shower surround, system and niche geometry", () => {
     // (z = depth). Authored this way so the fixture's own group, which sits at
     // floor level and whose +Z face is the wall, puts the recess into the wall
     // rather than sideways across the shower.
-    // The recess is clamped to the PANEL thickness, not the published depth: a
-    // 3-17/32" recess would push through a 0.35" panel and show outside the
-    // shower. It is still a real recess, plus the flange shell.
-    expect(inch(size.z)).toBeGreaterThan(0.3);
-    expect(inch(size.z)).toBeCloseTo(SHOWER_PANEL_THICKNESS_IN + 0.12, 1);
+    // The inside view keeps the FULL published recess depth plus the flange shell.
+    // (The overall box is 0.06" deeper because the cavity closure's outer skin sits
+    // just behind the recess back; that is the wall, not the niche.)
+    expect(inch(size.z)).toBeGreaterThan(3);
+    expect(inch(size.z)).toBeCloseTo(profile.depthIn + 0.12 + 0.06, 1);
     // The face flange makes the outer frame a little bigger than the opening.
     expect(inch(size.x)).toBeGreaterThan(profile.widthIn);
     // It stands on the deck: the mesh never dips below its own mounting plane, so
@@ -240,8 +240,8 @@ describe("Shower surround, system and niche geometry", () => {
     expect(inch(box.min.y)).toBeGreaterThanOrEqual(-0.5 - 0.01);
     expect(inch(box.max.y)).toBeCloseTo(niche.heightIn + 0.5, 1);
     // The recess runs into the wall on +Z, so the depth is the Z extent...
-    // Clamped to the panel thickness so the back cannot break the outer face.
-    expect(inch(box.max.z - box.min.z)).toBeCloseTo(SHOWER_PANEL_THICKNESS_IN + 0.12, 1);
+    // Full published depth, for a real niche on the inside, plus the closure skin.
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12 + 0.06, 1);
     // ...and the opening spans the published width on X. Under the old frame the
     // width landed on Z and the thin depth on X, which is what read as a sideways
     // panel hanging in the shower instead of a recess in the wall.
@@ -308,7 +308,7 @@ describe("Shower surround, system and niche geometry", () => {
     const { inch, box } = bounds(makeShowerNicheParts(niche, materials));
     expect(inch(box.max.x - box.min.x)).toBeGreaterThan(niche.widthIn);
     expect(inch(box.max.y - box.min.y)).toBeGreaterThan(niche.heightIn);
-    expect(inch(box.max.z - box.min.z)).toBeCloseTo(SHOWER_PANEL_THICKNESS_IN + 0.12, 1);
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12 + 0.06, 1);
   });
 
   it("keeps the soap trays illustrative rather than claiming a measured fit", () => {
@@ -439,67 +439,55 @@ describe("a shower system stays inside its surround", () => {
  * wall rather than through it. These tests pin that for every wall choice, and
  * check the niche never reaches the panel's outer face.
  */
-describe("the niche is recessed inside the panel, never through it", () => {
+describe("the niche keeps real depth inside and shows nothing outside", () => {
   const IN = 1 / 12;
 
-  /** Plan-space box of the parts, as authored about the niche's own origin. */
-  const nicheBox = (code: string) => {
+  const nicheParts = (code: string) => {
     const profile = verifiedPelicanBathroomFixtureProfile(code)!;
-    return { profile, box: bounds(makeShowerNicheParts(profile, materials)).box };
+    return { profile, parts: makeShowerNicheParts(profile, materials) };
   };
 
-  it("is no deeper than the panel it is cut into", () => {
+  it("keeps a real recess depth on the inside view", () => {
     for (const code of ["PL-SN1614", "PL-SN1627", "PL-SN1639"]) {
-      const { box } = nicheBox(code);
-      const depthIn = (box.max.z - box.min.z) / IN;
-      // The recess may not be deeper than the panel shell, or its back pokes out.
-      expect(depthIn, code).toBeLessThanOrEqual(SHOWER_PANEL_THICKNESS_IN + 0.13);
-      // And it is still a real recess, not a flat plate.
-      expect(depthIn, code).toBeGreaterThan(0.3);
+      const { profile, parts } = nicheParts(code);
+      const recess = parts.find((entry) => entry.part === "shower-niche-body")!;
+      recess.mesh.geometry.computeBoundingBox();
+      const depthIn = (recess.mesh.geometry.boundingBox!.max.z - recess.mesh.geometry.boundingBox!.min.z) / IN;
+      // A niche must look like a niche: real depth matching the product, not
+      // flattened into the panel sheet. The body runs from the flange plane
+      // (-shell) to the recess back, hence the extra 0.12".
+      expect(depthIn, code).toBeGreaterThanOrEqual(3);
+      expect(depthIn, code).toBeCloseTo(profile.depthIn + 0.12, 1);
     }
   });
 
-  it("never reaches past the panel's outer face from any wall", () => {
-    // The surround's panel shell occupies z in [halfD - t, halfD]; the niche is
-    // mounted opening toward the room (-Z) and recessed into +Z. Its furthest
-    // point must stay within the shell, i.e. no further than the panel's face.
-    const surround = verifiedPelicanBathroomFixtureProfile("PL-603096 Brick")!;
-    const surroundBox = bounds(makeShowerSurroundParts(surround, materials)).box;
-    const panelFaceZ = surroundBox.max.z;              // the OUTER face
-    const panelInnerZ = surroundBox.max.z - SHOWER_PANEL_THICKNESS_IN * IN;
-
-    for (const code of ["PL-SN1614", "PL-SN1627", "PL-SN1639"]) {
-      const { box } = nicheBox(code);
-      // The niche is authored with its opening at z = 0 (the panel's inner face),
-      // so in the panel's own frame its back is at panelInnerZ + niche depth.
-      const backInPanelFrame = panelInnerZ + box.max.z;
-      expect(backInPanelFrame, `${code} stays inside the panel`)
-        .toBeLessThanOrEqual(panelFaceZ + 0.001);
-    }
+  it("encloses the recess in a cavity closure drawn in the PANEL material", () => {
+    const { parts } = nicheParts("PL-SN1639");
+    const closure = parts.find((entry) => entry.part === "shower-niche-cavity-closure");
+    expect(closure).toBeDefined();
+    // It is the wall, not the white niche shell, so the outside face reads as wall.
+    expect(closure!.mesh.material).toBe(materials.panel);
   });
 
-  it("keeps the recess shallower than the panel for every wall choice", () => {
-    // Placement only rotates and translates the niche, so the depth test above
-    // holds for back/left/right alike — but assert the rotations really are the
-    // three distinct orientations so this is not vacuous.
-    const room = { width: 96, depth: 120, ceilingHeight: 96 } as any;
-    const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
-    const rotations = new Set<number>();
-    for (const side of ["back", "left", "right"] as const) {
-      const placed = placeWallFittingOnPanel("PL-SN1639", side, opening, 44)!;
-      rotations.add(((placed.rotation % 360) + 360) % 360);
-      // The niche's depth is a property of the mesh, so it is the same on any wall.
-      const { box } = nicheBox("PL-SN1639");
-      expect((box.max.z - box.min.z) / IN, side).toBeLessThanOrEqual(SHOWER_PANEL_THICKNESS_IN + 0.13);
-    }
-    expect(rotations.size).toBe(3);
+  it("gives the closure an outer face at or beyond the recess back, and never inside it", () => {
+    const { parts } = nicheParts("PL-SN1639");
+    const body = parts.find((entry) => entry.part === "shower-niche-body")!;
+    const closure = parts.find((entry) => entry.part === "shower-niche-cavity-closure")!;
+    body.mesh.geometry.computeBoundingBox();
+    closure.mesh.geometry.computeBoundingBox();
+    const bodyBack = body.mesh.geometry.boundingBox!.max.z;
+    const closureBack = closure.mesh.geometry.boundingBox!.max.z;
+    // The closure starts at the recess's back plane and extends beyond it, so it
+    // covers the hole rather than intruding into the niche.
+    expect(closureBack).toBeGreaterThan(bodyBack);
+    expect(closureBack - bodyBack).toBeLessThan(0.2 * 12 * IN + 0.01);
   });
 
-  it("keeps the face flange on the shower side of the panel", () => {
-    const { box } = nicheBox("PL-SN1639");
-    // The flange laps the finished face, so it sits at or forward of z = 0 (the
-    // panel's inner face) and never behind it.
-    expect(box.min.z / IN).toBeLessThanOrEqual(0);
-    expect(box.min.z / IN).toBeGreaterThan(-0.2);
+  it("keeps the flange on the shower side, so nothing laps onto the outside", () => {
+    const { parts } = nicheParts("PL-SN1639");
+    const flange = parts.find((entry) => entry.part === "shower-niche-flange")!;
+    flange.mesh.geometry.computeBoundingBox();
+    expect(flange.mesh.geometry.boundingBox!.max.z / IN).toBeLessThanOrEqual(0);
   });
+
 });

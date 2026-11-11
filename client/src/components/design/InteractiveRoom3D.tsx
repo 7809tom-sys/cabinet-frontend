@@ -11563,10 +11563,10 @@ function addPelicanBathroomFixture(
     // raycasts, unlike `layers` or `raycast = () => {}`. It carries the same
     // `furnitureUid` the other parts get, so `inspectFurnitureAtPoint` resolves the
     // niche from it.
-    // The box is clamped to the panel thickness, exactly like the niche's own
-    // recess. Left at the published 3-17/32" depth it pushed through the 0.35"
-    // panel, so the selection envelope reached outside the wall.
-    const pickDepth = Math.max(Math.min(profile.depthIn, SHOWER_PANEL_THICKNESS_IN) * INCH, 0.06);
+    // The box follows the niche's real depth. The niche keeps its full recess and
+    // is enclosed by a cavity closure, so the selection envelope matching that
+    // depth is correct — and it is invisible either way.
+    const pickDepth = Math.max(profile.depthIn * INCH, 0.06);
     const pickHeight = Math.max(profile.heightIn * INCH, 0.12);
     const nichePickBox = new THREE.Mesh(
       new THREE.BoxGeometry(profile.widthIn * INCH, pickHeight, pickDepth),

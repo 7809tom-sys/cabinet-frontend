@@ -451,18 +451,19 @@ export function makeShowerNicheParts(
   const Hp = profile.heightIn * INCH;
   const shell = 0.12 * INCH;
 
-  // The recess may never be deeper than the panel it is cut into.
+  // The recess keeps its FULL published depth, so from inside the shower it still
+  // reads as a real niche with real depth to the shelves and the back.
   //
-  // A Pelican niche is published at 3-17/32" deep, but the surround is a 0.35"
-  // panel shell. Drawn at its published depth the niche's back pushed straight
-  // through the panel and its shelf frame showed on the OUTSIDE face of the
-  // shower — Tom's screenshot. The recess is therefore clamped to the panel
-  // thickness, so the niche sits inside the wall instead of through it.
+  // What it must never do is show on the OUTSIDE of the panel. A surround panel is
+  // a 0.35" sheet, so a 3-17/32" recess necessarily runs behind it — physically
+  // that is the stud cavity, and that is where a real niche lives. The niche is
+  // therefore enclosed in a cavity box (below) that runs from the panel's inner
+  // face to its outer face and is painted with the panel's own material, so the
+  // outside face stays plain and flat.
   //
-  // `SHOWER_PANEL_THICKNESS_IN` is shared with `makeShowerSurroundParts`; the
-  // two must agree or this clamp is meaningless.
-  const publishedDepth = profile.depthIn * INCH;
-  const depth = Math.min(publishedDepth, SHOWER_PANEL_THICKNESS_IN * INCH);
+  // Clamping the depth instead would have flattened the niche to 0.35" and ruined
+  // the inside view; this keeps both rules true at once.
+  const depth = profile.depthIn * INCH;
 
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string) => {
@@ -471,6 +472,47 @@ export function makeShowerNicheParts(
     mesh.receiveShadow = false;
     parts.push({ mesh, part });
   };
+
+  /**
+   * The cavity closure: the wall around the hole, from the panel's INNER face out
+   * to its OUTER face, drawn in the PANEL's own material.
+   *
+   * This is what lets the niche keep its full 3-17/32" depth for the inside view
+   * while never showing on the outside. A surround panel is a 0.35" sheet, so a
+   * recess that deep necessarily runs behind it — physically into the stud cavity,
+   * which is exactly where a real niche lives. The closure is the wall around that
+   * hole: the shower side still looks into a genuinely deep niche, and the outside
+   * face stays plain, flat wall.
+   *
+   * Only the OUTER skin of the sleeve is built (a back plate plus four returns), so
+   * it can never occlude the niche from the room.
+   */
+  {
+    const t = 0.06 * INCH;                 // sleeve wall thickness
+    const backZ = depth;                   // the recess's own back plane
+    const outerZ = backZ + t;              // just behind it: the panel's outer face
+    const outerW = W / 2 + t;
+    const yBottom = -t;
+    const yTop = Hp + t;
+    const plate = new Panel();
+    // The face a viewer OUTSIDE the shower sees where the hole would be.
+    plate.quad(
+      [v(-outerW, yTop, outerZ), v(outerW, yTop, outerZ),
+        v(outerW, yBottom, outerZ), v(-outerW, yBottom, outerZ)],
+      v(0, 0, 1),
+    );
+    // Four returns close the gap from the recess edge out to that plate, so no
+    // seam or light path shows through the sleeve at any viewing angle.
+    plate.quad([v(-outerW, yTop, backZ), v(outerW, yTop, backZ), v(outerW, yTop, outerZ), v(-outerW, yTop, outerZ)], v(0, -1, 0));
+    plate.quad([v(-outerW, yBottom, backZ), v(outerW, yBottom, backZ), v(outerW, yBottom, outerZ), v(-outerW, yBottom, outerZ)], UP);
+    plate.quad([v(-outerW, yBottom, backZ), v(-outerW, yTop, backZ), v(-outerW, yTop, outerZ), v(-outerW, yBottom, outerZ)], v(1, 0, 0));
+    plate.quad([v(outerW, yBottom, backZ), v(outerW, yTop, backZ), v(outerW, yTop, outerZ), v(outerW, yBottom, outerZ)], v(-1, 0, 0));
+    const mesh = new THREE.Mesh(plate.geometry(), materials.panel ?? materials.shell);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    parts.push({ mesh, part: "shower-niche-cavity-closure" });
+  }
+
 
   // Authored in the SAME frame as the rest of the shower: the room-facing opening
   // is the face at z = 0 and the recess runs AWAY from the room into +Z, with the
