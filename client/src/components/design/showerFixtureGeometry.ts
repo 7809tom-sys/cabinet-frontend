@@ -499,8 +499,17 @@ export function makeShowerWetWallParts(
   // It is built in the same local frame as the niche (`z` runs into the wall), so
   // placing it with the niche's own group puts it behind the correct panel on every
   // wall choice, and it follows the niche when the shower is moved.
+  // The niche's own geometry runs from -shell to `depth` about its local origin,
+  // but its placement group is positioned at the fixture's CENTRE. A slab placed at
+  // `t .. t + thickness` in that same frame therefore lands half a depth behind
+  // where it belongs. Shift it by half the niche depth so the two agree.
+  const centreOffset = (nicheDepthIn * INCH) / 2;
   const slab = new THREE.Mesh(new THREE.BoxGeometry(W, H, Math.max(thickness, 0.02)), material);
-  slab.position.set(0, Math.max(0, options.mountHeightIn ?? 0) * INCH + H / 2, t + thickness / 2);
+  slab.position.set(
+    0,
+    Math.max(0, options.mountHeightIn ?? 0) * INCH + H / 2,
+    centreOffset + t + thickness / 2,
+  );
   slab.castShadow = false;
   slab.receiveShadow = false;
   return [{ mesh: slab, part: "shower-wet-wall" }];

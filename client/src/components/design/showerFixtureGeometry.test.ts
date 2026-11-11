@@ -565,6 +565,45 @@ describe("the niche keeps real depth inside and shows nothing outside", () => {
       expect(heightIn, code).toBeGreaterThanOrEqual(panel.heightIn);
     }
   });
+
+  /**
+   * World-space check, because the local one passed while the render was wrong.
+   *
+   * The niche's placement group is positioned at the fixture's CENTRE, so a slab
+   * placed at `t .. t + thickness` in the niche's local frame landed half a depth
+   * behind where it belonged and left the recess sticking out of the back. These
+   * assertions use the same positions the renderer uses, not the raw geometry.
+   */
+  it("puts the wet wall fully behind the panel and past the niche back", () => {
+    for (const code of ["PL-SN1614", "PL-SN1627", "PL-SN1639"]) {
+      const niche = verifiedPelicanBathroomFixtureProfile(code)!;
+      const nicheParts = makeShowerNicheParts(niche, materials, { availableDepthIn: 4 });
+      const wallParts = makeShowerWetWallParts(niche, materials, {
+        thicknessIn: SHOWER_WET_WALL_THICKNESS_IN,
+        nicheDepthIn: niche.depthIn,
+        widthIn: 60,
+        heightIn: 96,
+      });
+
+      const boxOf = (parts: ReturnType<typeof makeShowerNicheParts>) => {
+        const box = new THREE.Box3();
+        for (const { mesh } of parts) {
+          mesh.geometry.computeBoundingBox();
+          box.union(mesh.geometry.boundingBox!.clone().translate(mesh.position));
+        }
+        return box;
+      };
+      const nicheBox = boxOf(nicheParts);
+      const wallBox = boxOf(wallParts);
+
+      // The wall begins behind the niche's opening, so it never covers the front.
+      expect(wallBox.min.z / IN, `${code} wall starts behind the opening`).toBeGreaterThanOrEqual(-0.01);
+      // And finishes at least half an inch past the recess back, so no faces are
+      // coincident and the wall always wins from outside.
+      expect(wallBox.max.z / IN, `${code} wall clears the recess back`)
+        .toBeGreaterThanOrEqual(nicheBox.max.z / IN + 0.5 - 0.01);
+    }
+  });
   it("keeps the flange on the shower side, so nothing laps onto the outside", () => {
     const { parts } = nicheParts("PL-SN1639");
     const flange = parts.find((entry) => entry.part === "shower-niche-flange")!;
