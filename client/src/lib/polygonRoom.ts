@@ -26,6 +26,20 @@ export interface CustomWall {
   lockedAngle?: 45 | -45;
   /** Optional finished height for this selected wall segment in inches. */
   height?: number;
+  /**
+   * Which side of this wall receives cabinets. Set only when a wall is added
+   * onto an existing room and must face the room; omitted walls keep the
+   * shared room-wide side.
+   */
+  cabinetSide?: "left" | "right";
+  /** Host wall this run is locked to. The run projects out of that wall's face. */
+  hostWallId?: string;
+  /** Distance, in inches, from the host start to this run's attachment point. */
+  hostOffset?: number;
+  /** 90° sticks straight out from the host face. 45° leans left or right of that. */
+  hostAngle?: 45 | 90;
+  /** Which way a 45° run leans, as seen facing the host wall. Unused at 90°. */
+  hostTurn?: "left" | "right";
 }
 
 export type WallBuilderTurn = "start" | "straight" | "left45" | "right45" | "left90" | "right90";
@@ -790,6 +804,487 @@ export function deleteCustomWallSegment(
     depth: Math.max(36, Math.round(bounds.height * 1000) / 1000),
     openWallPath: true,
   };
+}
+
+// ─── Add a wall that projects from a wall face ────────────────────────────────
+
+export type AttachedWallTurn = "left" | "right";
+export type AttachedWallAngle = 45 | 90;
+
+/** The directed run a new wall locks onto. Cardinal, drawn, and peninsula runs all fit. */
+export interface WallAttachmentFrame {
+  id: string;
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  /** Radians from this run's start toward its end. Screen Y grows downward. */
+  angle: number;
+  /** Unit normal pointing into the room, straight out from the wall face. */
+  inward: { x: number; y: number };
+  length: number;
+}
+
+export type PlanPoint = { x: number; y: number };
+export type PlanInterval = { min: number; max: number };
+
+const ATTACHED_WALL_MIN_IN = 6;
+/** Touching is allowed. Overlap has to be thicker than this to count. */
+const ATTACHED_WALL_OVERLAP_EPSILON = 0.05;
+
+function roundAttachedPlan(value: number): number {
+  const rounded = Math.round(value * 10000) / 10000;
+  return Math.abs(rounded) < 0.0001 ? 0 : rounded;
+}
+
+function roundAttachedEighth(value: number): number {
+  return Math.round(value * 8) / 8;
+}
+
+function frameTangent(frame: WallAttachmentFrame): PlanPoint {
+  return { x: Math.cos(frame.angle), y: Math.sin(frame.angle) };
+}
+
+function addPoint(a: PlanPoint, b: PlanPoint): PlanPoint {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+
+function scalePoint(point: PlanPoint, scale: number): PlanPoint {
+  return { x: point.x * scale, y: point.y * scale };
+}
+
+function dotPoint(a: PlanPoint, b: PlanPoint): number {
+  return a.x * b.x + a.y * b.y;
+}
+
+/**
+ * Direction the new wall leaves the host face.
+ * 90° is straight out. 45° leans left or right of that, as seen by someone
+ * standing in the room and facing the host wall.
+ */
+export function faceProjectionDirection(
+  frame: WallAttachmentFrame,
+  angle: AttachedWallAngle,
+  turn: AttachedWallTurn = "right",
+): PlanPoint {
+  if (angle === 90) return { ...frame.inward };
+  const tangent = frameTangent(frame);
+  const side = turn === "right" ? tangent : { x: -tangent.x, y: -tangent.y };
+  const lean = Math.sin(Math.PI / 4);
+  const straight = Math.cos(Math.PI / 4);
+  return {
+    x: frame.inward.x * straight + side.x * lean,
+    y: frame.inward.y * straight + side.y * lean,
+  };
+}
+
+/** Attachment point on the host face, measured from the host start. */
+export function hostPointAtOffset(frame: WallAttachmentFrame, offset: number): PlanPoint {
+  const tangent = frameTangent(frame);
+  return {
+    x: roundAttachedPlan(frame.start.x + tangent.x * offset),
+    y: roundAttachedPlan(frame.start.y + tangent.y * offset),
+  };
+}
+
+/** Projects a room point onto the host and returns the along-wall distance. */
+export function hostOffsetAtPoint(frame: WallAttachmentFrame, point: PlanPoint): number {
+  const tangent = frameTangent(frame);
+  return dotPoint({ x: point.x - frame.start.x, y: point.y - frame.start.y }, tangent);
+}
+
+/**
+ * Rectangle of the new wall's body. One edge lies on the host face and the
+ * body extends into the room, so it meets the host without crossing it.
+ */
+export function faceWallFootprint(
+  frame: WallAttachmentFrame,
+  offset: number,
+  lengthIn: number,
+  angle: AttachedWallAngle,
+  turn: AttachedWallTurn = "right",
+  thickness = ROOM_WALL_THICKNESS_IN,
+): PlanPoint[] {
+  const direction = faceProjectionDirection(frame, angle, turn);
+  const perp = { x: -direction.y, y: direction.x };
+  const half = Math.max(0, thickness) / 2;
+  const origin = hostPointAtOffset(frame, offset);
+  const nearA = addPoint(origin, scalePoint(perp, half));
+  const nearB = addPoint(origin, scalePoint(perp, -half));
+  const inwardA = dotPoint({ x: nearA.x - origin.x, y: nearA.y - origin.y }, frame.inward);
+  const inwardB = dotPoint({ x: nearB.x - origin.x, y: nearB.y - origin.y }, frame.inward);
+  const shift = Math.max(0, -Math.min(inwardA, inwardB));
+  const base = addPoint(origin, scalePoint(frame.inward, shift));
+  const startA = addPoint(base, scalePoint(perp, half));
+  const startB = addPoint(base, scalePoint(perp, -half));
+  const endA = addPoint(startA, scalePoint(direction, lengthIn));
+  const endB = addPoint(startB, scalePoint(direction, lengthIn));
+  return [startA, endA, endB, startB].map((point) => ({ x: roundAttachedPlan(point.x), y: roundAttachedPlan(point.y) }));
+}
+
+function polygonNormals(polygon: PlanPoint[]): PlanPoint[] {
+  return polygon.map((point, index) => {
+    const next = polygon[(index + 1) % polygon.length]!;
+    const edge = { x: next.x - point.x, y: next.y - point.y };
+    const length = Math.hypot(edge.x, edge.y) || 1;
+    return { x: -edge.y / length, y: edge.x / length };
+  });
+}
+
+function projectPolygon(polygon: PlanPoint[], axis: PlanPoint): PlanInterval {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const point of polygon) {
+    const projected = dotPoint(point, axis);
+    min = Math.min(min, projected);
+    max = Math.max(max, projected);
+  }
+  return { min, max };
+}
+
+/** True when two convex polygons overlap by more than a shared edge. */
+export function convexPolygonsOverlap(left: PlanPoint[], right: PlanPoint[], epsilon = ATTACHED_WALL_OVERLAP_EPSILON): boolean {
+  if (left.length < 3 || right.length < 3) return false;
+  for (const axis of [...polygonNormals(left), ...polygonNormals(right)]) {
+    const a = projectPolygon(left, axis);
+    const b = projectPolygon(right, axis);
+    if (a.max <= b.min + epsilon || b.max <= a.min + epsilon) return false;
+  }
+  return true;
+}
+
+/**
+ * Values of `s` where `polygon`, slid by `tangent * s`, overlaps `obstacle`.
+ * The polygon is the wall body at host offset 0, so `s` is the host offset.
+ */
+export function translationOverlapInterval(
+  polygon: PlanPoint[],
+  tangent: PlanPoint,
+  obstacle: PlanPoint[],
+  epsilon = ATTACHED_WALL_OVERLAP_EPSILON,
+): PlanInterval | null {
+  if (polygon.length < 3 || obstacle.length < 3) return null;
+  let minS = -Infinity;
+  let maxS = Infinity;
+  for (const axis of [...polygonNormals(polygon), ...polygonNormals(obstacle)]) {
+    const moving = projectPolygon(polygon, axis);
+    const fixed = projectPolygon(obstacle, axis);
+    const delta = dotPoint(tangent, axis);
+    if (Math.abs(delta) < 1e-9) {
+      if (moving.max <= fixed.min + epsilon || fixed.max <= moving.min + epsilon) return null;
+      continue;
+    }
+    const lower = (fixed.min + epsilon - moving.max) / delta;
+    const upper = (fixed.max - epsilon - moving.min) / delta;
+    const nextMin = Math.min(lower, upper);
+    const nextMax = Math.max(lower, upper);
+    minS = Math.max(minS, nextMin);
+    maxS = Math.min(maxS, nextMax);
+    if (minS > maxS) return null;
+  }
+  if (!Number.isFinite(minS) || !Number.isFinite(maxS)) return null;
+  return { min: minS, max: maxS };
+}
+
+function hostContactLimits(footprintAtZero: PlanPoint[], frame: WallAttachmentFrame): PlanInterval | null {
+  const tangent = frameTangent(frame);
+  const along = (point: PlanPoint) => dotPoint({ x: point.x - frame.start.x, y: point.y - frame.start.y }, tangent);
+  const inwardDistance = (point: PlanPoint) => dotPoint({ x: point.x - frame.start.x, y: point.y - frame.start.y }, frame.inward);
+  const contacts = footprintAtZero.filter((point) => inwardDistance(point) <= 0.08);
+  const points = contacts.length > 0 ? contacts : footprintAtZero;
+  if (points.length === 0) return null;
+  const alongs = points.map(along);
+  const minAlong = Math.min(...alongs);
+  const maxAlong = Math.max(...alongs);
+  const min = -minAlong;
+  const max = frame.length - maxAlong;
+  if (max < min) return null;
+  return { min, max };
+}
+
+function subtractInterval(free: PlanInterval[], block: PlanInterval): PlanInterval[] {
+  const next: PlanInterval[] = [];
+  for (const span of free) {
+    if (block.max <= span.min || block.min >= span.max) {
+      next.push(span);
+      continue;
+    }
+    if (block.min > span.min + 1e-6) next.push({ min: span.min, max: Math.min(block.min, span.max) });
+    if (block.max < span.max - 1e-6) next.push({ min: Math.max(block.max, span.min), max: span.max });
+  }
+  return next.filter((span) => span.max - span.min >= ATTACHED_WALL_OVERLAP_EPSILON);
+}
+
+export function hostedWallFreeOffsets(
+  frame: WallAttachmentFrame,
+  lengthIn: number,
+  angle: AttachedWallAngle,
+  turn: AttachedWallTurn,
+  obstacles: PlanPoint[][],
+): PlanInterval[] {
+  const length = roundAttachedEighth(lengthIn);
+  if (length < ATTACHED_WALL_MIN_IN) return [];
+  const footprint = faceWallFootprint(frame, 0, length, angle, turn);
+  const limits = hostContactLimits(footprint, frame);
+  if (!limits) return [];
+  let free: PlanInterval[] = [limits];
+  const tangent = frameTangent(frame);
+  for (const obstacle of obstacles) {
+    const blocked = translationOverlapInterval(footprint, tangent, obstacle);
+    if (blocked) free = subtractInterval(free, blocked);
+  }
+  return free;
+}
+
+/**
+ * Picks a host offset. A drag stays inside the free stretch it started in, so
+ * the wall stops against an item instead of jumping over it. A first placement
+ * uses the nearest open spot to the click.
+ */
+export function resolveHostedWallOffset(
+  desired: number,
+  free: PlanInterval[],
+  approachFrom?: number,
+): number | null {
+  if (free.length === 0) return null;
+  if (approachFrom != null) {
+    const containing = free.find((span) => approachFrom >= span.min - 1e-6 && approachFrom <= span.max + 1e-6);
+    if (containing) {
+      const clamped = Math.min(containing.max, Math.max(containing.min, desired));
+      return roundAttachedEighth(Math.min(containing.max, Math.max(containing.min, clamped)));
+    }
+  }
+  let best = free[0]!.min;
+  let bestDistance = Infinity;
+  for (const span of free) {
+    const candidate = Math.min(span.max, Math.max(span.min, desired));
+    const distance = Math.abs(candidate - desired);
+    if (distance < bestDistance - 1e-6) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  const span = free.find((candidate) => best >= candidate.min - 1e-6 && best <= candidate.max + 1e-6) ?? free[0]!;
+  return roundAttachedEighth(Math.min(span.max, Math.max(span.min, best)));
+}
+
+export interface AppendAttachedWallInput {
+  width: number;
+  depth: number;
+  vertices: RoomVertex[];
+  customWalls: CustomWall[];
+  preserveCardinalWalls?: boolean;
+  /** Room-space point of the click. Its projection on the host is the preferred spot. */
+  clickPoint: PlanPoint;
+  frame: WallAttachmentFrame;
+  /** Convex obstacle footprints. The host wall itself is not an obstacle. */
+  obstacles?: PlanPoint[][];
+  turn?: AttachedWallTurn;
+  angle: AttachedWallAngle;
+  lengthIn: number;
+  heightIn: number;
+  label?: string;
+  ceilingIn?: number;
+}
+
+export interface AppendAttachedWallResult {
+  vertices: RoomVertex[];
+  customWalls: CustomWall[];
+  newWallId: string;
+  width: number;
+  depth: number;
+  preserveCardinalWalls: boolean;
+  /** Non-zero only when a measured room had to shift out of negative space. */
+  translation: { x: number; y: number };
+  offset: number;
+  /** How far the chosen spot moved from the click so it would not overlap. */
+  snapped: boolean;
+}
+
+export const ATTACHED_WALL_NO_ROOM_MESSAGE = "This wall would overlap something already in the drawing, and there is no open spot left along this wall. Move or remove that item, or choose a shorter wall.";
+
+/**
+ * Adds one wall locked to the host face. It sticks straight out at 90°, or
+ * leans 45° left or right. Existing vertices are not moved unless the whole
+ * measured plan has to shift by `translation`.
+ */
+export function appendAttachedWall(input: AppendAttachedWallInput): AppendAttachedWallResult | { error: string } | null {
+  const length = roundAttachedEighth(Number(input.lengthIn) || 0);
+  if (!Number.isFinite(length) || length < ATTACHED_WALL_MIN_IN) return null;
+  const angle = input.angle === 45 ? 45 : 90;
+  const turn: AttachedWallTurn = input.turn === "left" ? "left" : "right";
+  const free = hostedWallFreeOffsets(input.frame, length, angle, turn, input.obstacles ?? []);
+  const desired = hostOffsetAtPoint(input.frame, input.clickPoint);
+  const offset = resolveHostedWallOffset(desired, free);
+  if (offset == null) return { error: ATTACHED_WALL_NO_ROOM_MESSAGE };
+
+  const lineStart = hostPointAtOffset(input.frame, offset);
+  const direction = faceProjectionDirection(input.frame, angle, turn);
+  const lineEnd = {
+    x: roundAttachedPlan(lineStart.x + direction.x * length),
+    y: roundAttachedPlan(lineStart.y + direction.y * length),
+  };
+  const anchorVertex: RoomVertex = { id: genVertexId(), x: lineStart.x, y: lineStart.y };
+  const farVertex: RoomVertex = { id: genVertexId(), x: lineEnd.x, y: lineEnd.y };
+  const nextVertices = [...input.vertices, anchorVertex, farVertex];
+  const leftNormal = { x: -direction.y, y: direction.x };
+  const cabinetSide: "left" | "right" = dotPoint(leftNormal, input.frame.inward) >= 0 ? "right" : "left";
+  const ceiling = Math.max(34.5, Number(input.ceilingIn) || 96);
+  const height = Math.max(34.5, Math.min(ceiling, roundAttachedEighth(Number(input.heightIn) || ceiling)));
+  const newWall: CustomWall = {
+    id: genWallId(),
+    startVertexId: anchorVertex.id,
+    endVertexId: farVertex.id,
+    label: input.label?.trim() || (angle === 90 ? "90° wall" : `45° ${turn} wall`),
+    height,
+    cabinetSide,
+    hostWallId: input.frame.id,
+    hostOffset: offset,
+    hostAngle: angle,
+    ...(angle === 45 ? { hostTurn: turn, lockedAngle: (direction.x * direction.y >= 0 ? 45 : -45) as 45 | -45 } : {}),
+  };
+
+  const preserveCardinalWalls = Boolean(input.preserveCardinalWalls) || (input.customWalls.length === 0 && !input.preserveCardinalWalls);
+  let translated = nextVertices;
+  let translation = { x: 0, y: 0 };
+  if (!preserveCardinalWalls && input.customWalls.length > 0) {
+    const bounds = polygonBounds(nextVertices);
+    translation = {
+      x: bounds.minX < -0.001 ? -bounds.minX : 0,
+      y: bounds.minY < -0.001 ? -bounds.minY : 0,
+    };
+    if (translation.x !== 0 || translation.y !== 0) {
+      translated = nextVertices.map((vertex) => ({
+        ...vertex,
+        x: roundAttachedPlan(vertex.x + translation.x),
+        y: roundAttachedPlan(vertex.y + translation.y),
+      }));
+    }
+  }
+  const bounds = polygonBounds(translated.length > 0 ? translated : [{ id: "bounds", x: 0, y: 0 }, { id: "bounds-2", x: input.width, y: input.depth }]);
+  return {
+    vertices: translated,
+    customWalls: [...input.customWalls, newWall],
+    newWallId: newWall.id,
+    width: preserveCardinalWalls || input.customWalls.length === 0 ? input.width : Math.max(input.width, 36, Math.round(bounds.width * 1000) / 1000),
+    depth: preserveCardinalWalls || input.customWalls.length === 0 ? input.depth : Math.max(input.depth, 36, Math.round(bounds.height * 1000) / 1000),
+    preserveCardinalWalls: preserveCardinalWalls || input.customWalls.length === 0,
+    translation,
+    offset,
+    snapped: Math.abs(offset - desired) > 0.2,
+  };
+}
+
+export interface SlideHostedWallResult {
+  vertices: RoomVertex[];
+  customWalls: CustomWall[];
+  offset: number;
+  delta: PlanPoint;
+}
+
+/** Lengthens or shortens a hosted wall without moving its attachment or any other vertex. */
+export function resizeHostedWall(
+  vertices: RoomVertex[],
+  customWalls: CustomWall[],
+  wallId: string,
+  frame: WallAttachmentFrame,
+  lengthIn: number,
+  heightIn: number,
+  obstacles: PlanPoint[][],
+  ceilingIn = 96,
+): { vertices: RoomVertex[]; customWalls: CustomWall[] } | { error: string } | null {
+  const wall = customWalls.find((candidate) => candidate.id === wallId);
+  const start = wall ? vertices.find((vertex) => vertex.id === wall.startVertexId) : null;
+  const end = wall ? vertices.find((vertex) => vertex.id === wall.endVertexId) : null;
+  if (!wall?.hostWallId || wall.hostOffset == null || !start || !end) return null;
+  const length = roundAttachedEighth(lengthIn);
+  if (length < ATTACHED_WALL_MIN_IN) return null;
+  const angle: AttachedWallAngle = wall.hostAngle === 45 ? 45 : 90;
+  const turn: AttachedWallTurn = wall.hostTurn === "left" ? "left" : "right";
+  const free = hostedWallFreeOffsets(frame, length, angle, turn, obstacles);
+  const fits = free.some((span) => wall.hostOffset! >= span.min - ATTACHED_WALL_OVERLAP_EPSILON && wall.hostOffset! <= span.max + ATTACHED_WALL_OVERLAP_EPSILON);
+  if (!fits) return { error: ATTACHED_WALL_NO_ROOM_MESSAGE };
+  const current = Math.hypot(end.x - start.x, end.y - start.y) || 1;
+  const ceiling = Math.max(34.5, ceilingIn);
+  const height = Math.max(34.5, Math.min(ceiling, roundAttachedEighth(heightIn)));
+  const nextEnd = {
+    x: roundAttachedPlan(start.x + ((end.x - start.x) / current) * length),
+    y: roundAttachedPlan(start.y + ((end.y - start.y) / current) * length),
+  };
+  return {
+    vertices: vertices.map((vertex) => vertex.id === end.id ? { ...vertex, ...nextEnd } : vertex),
+    customWalls: customWalls.map((candidate) => candidate.id === wall.id ? { ...candidate, height } : candidate),
+  };
+}
+
+/** Slides a hosted wall along its host. The wall's length and angle stay put. */
+export function slideHostedWall(
+  vertices: RoomVertex[],
+  customWalls: CustomWall[],
+  wallId: string,
+  frame: WallAttachmentFrame,
+  desiredOffset: number,
+  obstacles: PlanPoint[][],
+): SlideHostedWallResult | null {
+  const wall = customWalls.find((candidate) => candidate.id === wallId);
+  const start = wall ? vertices.find((vertex) => vertex.id === wall.startVertexId) : null;
+  const end = wall ? vertices.find((vertex) => vertex.id === wall.endVertexId) : null;
+  if (!wall?.hostWallId || wall.hostOffset == null || !start || !end) return null;
+  const length = Math.max(ATTACHED_WALL_MIN_IN, Math.hypot(end.x - start.x, end.y - start.y));
+  const angle: AttachedWallAngle = wall.hostAngle === 45 ? 45 : 90;
+  const turn: AttachedWallTurn = wall.hostTurn === "left" ? "left" : "right";
+  const free = hostedWallFreeOffsets(frame, length, angle, turn, obstacles);
+  const offset = resolveHostedWallOffset(desiredOffset, free, wall.hostOffset);
+  if (offset == null) return null;
+  const tangent = frameTangent(frame);
+  const delta = {
+    x: roundAttachedPlan(tangent.x * (offset - wall.hostOffset)),
+    y: roundAttachedPlan(tangent.y * (offset - wall.hostOffset)),
+  };
+  const moved = new Set([wall.startVertexId, wall.endVertexId]);
+  return {
+    offset,
+    delta,
+    vertices: vertices.map((vertex) => moved.has(vertex.id)
+      ? { ...vertex, x: roundAttachedPlan(vertex.x + delta.x), y: roundAttachedPlan(vertex.y + delta.y) }
+      : vertex),
+    customWalls: customWalls.map((candidate) => candidate.id === wall.id ? { ...candidate, hostOffset: offset } : candidate),
+  };
+}
+
+/**
+ * Closed-room floor outline. A wall added onto a corner is a spur: it shares
+ * one vertex and must not become part of the floor polygon. Rooms with no
+ * spur return the vertex list unchanged.
+ */
+export function roomShellVertices(vertices: RoomVertex[], walls: CustomWall[]): RoomVertex[] {
+  if (vertices.length < 3 || walls.length < 3) return vertices;
+  const degree = new Map<string, number>();
+  for (const wall of walls) {
+    degree.set(wall.startVertexId, (degree.get(wall.startVertexId) ?? 0) + 1);
+    degree.set(wall.endVertexId, (degree.get(wall.endVertexId) ?? 0) + 1);
+  }
+  if (!Array.from(degree.values()).some((count) => count <= 1)) return vertices;
+  const shellWalls = walls.filter((wall) => (degree.get(wall.startVertexId) ?? 0) >= 2 && (degree.get(wall.endVertexId) ?? 0) >= 2);
+  if (shellWalls.length < 3) return vertices;
+  const outgoing = new Map<string, CustomWall>();
+  for (const wall of shellWalls) {
+    if (outgoing.has(wall.startVertexId)) return vertices;
+    outgoing.set(wall.startVertexId, wall);
+  }
+  const startId = shellWalls[0]?.startVertexId;
+  if (!startId) return vertices;
+  const ordered: RoomVertex[] = [];
+  const seen = new Set<string>();
+  let current: string | undefined = startId;
+  while (current && !seen.has(current) && ordered.length <= vertices.length) {
+    seen.add(current);
+    const vertex = vertices.find((candidate) => candidate.id === current);
+    const next = outgoing.get(current);
+    if (!vertex || !next) return vertices;
+    ordered.push(vertex);
+    current = next.endVertexId;
+  }
+  if (current !== startId || ordered.length < 3) return vertices;
+  return ordered;
 }
 
 // ─── Split Tool ─────────────────────────────────────────────────────────────────

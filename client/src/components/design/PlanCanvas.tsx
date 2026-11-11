@@ -1,5 +1,6 @@
 import { FlooringRotationControl } from "@/components/design/FlooringLayoutPicker";
 import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "@/components/design/PlacedItemContextMenu";
+import { WallActionsMenu } from "@/components/design/WallActionsMenu";
 import { doorOpeningAppearance, roomDoorSwing, supportsRoomDoorSwing } from "@/lib/doorOpeningAppearance";
 import { flooringPlanPatternStyle, flooringPlanRotationLayerStyle, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { MosaicFloorField, type MosaicFloorFieldInput } from "./MosaicFloorField";
@@ -35,7 +36,7 @@ import { catalogFillerSuggestion, type CatalogFillerCandidate } from "@/lib/cata
 import { layoutFillerLabels, shortFillerLabel, type FillerLabelInput } from "@/lib/fillerLabelLayout";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { islandCountertopVisibleRects, islandFaceCapacity, islandRaisedBarRects } from "@/lib/islandScene";
-import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN } from "@/lib/polygonRoom";
+import { hostOffsetAtPoint, miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN } from "@/lib/polygonRoom";
 import { crownTopRuns, formatCrownTop } from "@/lib/crownTopRuns";
 import { verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import type { AutoDesignWallGuide } from "@/lib/autoDesignAutoBuild";
@@ -444,6 +445,12 @@ interface Props {
   onPeninsulaAttachmentChange?: (runId: string, startOffset: number) => void;
   /** Opens the explicit Wall settings editor for the chosen wall. */
   onOpenWallSettings?: (side: WallSide) => void;
+  /** Opens the Add wall dialog for the wall under the pointer. Nothing is drawn until that dialog is confirmed. */
+  onAddWall?: (side: WallSide, point: { x: number; y: number }) => void;
+  /** Slides a wall that is locked to a host face along that host. */
+  onSlideHostedWall?: (wallId: string, point: { x: number; y: number }, grabAlong: number) => void;
+  /** Called when a hosted-wall drag ends so the plan can record one undo step. */
+  onSlideHostedWallEnd?: () => void;
   // Uids of items that are in a conflict (e.g. appliance running into a cabinet).
   conflictUids?: Set<string>;
   /** Part 1: placed cabinets with no price on the active line (red flag). */
@@ -618,7 +625,7 @@ export function PlanCanvas({
   openings = [], selectedOpeningUid = null, openingMeasurementReference = null, sinkWindowSnap = null, onSelectOpening, onOpenWindowAttributes, onOpenDoorAttributes, onOpeningChange, onDeleteOpening,
 	  finish = DEFAULT_FINISH_COLORS,
 	  drawMode = false, onDrawRoom,
-	  activeWall, onSelectWall, wallCompassStartIn = null, wallCompassVisible = false, onWallCompassDrop, onRotateDrawing, drawingRotationDisabled = false, peninsulaDraft = null, onPeninsulaDraftLengthChange, onPeninsulaAttachmentChange, onOpenWallSettings, conflictUids, missingPriceUids,
+	  activeWall, onSelectWall, wallCompassStartIn = null, wallCompassVisible = false, onWallCompassDrop, onRotateDrawing, drawingRotationDisabled = false, peninsulaDraft = null, onPeninsulaDraftLengthChange, onPeninsulaAttachmentChange, onOpenWallSettings, onAddWall, onSlideHostedWall, onSlideHostedWallEnd, conflictUids, missingPriceUids,
   layoutLocked = false, lockedWalls,
   countertopMaterialId = null, islandCountertopMaterialId = null, sinks = [], potFillers = [], selectedSinkUid = null, onSelectSink, onAutoDesignFaucetClick, onMoveSink,
   finishFor,
@@ -838,6 +845,7 @@ export function PlanCanvas({
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [wallMenu, setWallMenu] = useState<null | { x: number; y: number; side: WallSide; point: { x: number; y: number }; label: string }>(null);
   const [fitPpi, setFitPpi] = useState(4);
   const [floorPlanZoom, setFloorPlanZoom] = useState(1);
   const [floorPlanPan, setFloorPlanPan] = useState({ x: 0, y: 0 });
@@ -1000,14 +1008,28 @@ export function PlanCanvas({
     const fit = () => {
       const availW = el.clientWidth - PADDING * 2;
       const availH = el.clientHeight - PADDING * 2;
-      const fitPpi = Math.min(availW / room.width, availH / room.depth);
+      let minX = 0;
+      let minY = 0;
+      let maxX = room.width;
+      let maxY = room.depth;
+      for (const vertex of room.vertices ?? []) {
+        minX = Math.min(minX, vertex.x);
+        minY = Math.min(minY, vertex.y);
+        maxX = Math.max(maxX, vertex.x);
+        maxY = Math.max(maxY, vertex.y);
+      }
+      const overflowX = Math.max(0, -minX, maxX - room.width);
+      const overflowY = Math.max(0, -minY, maxY - room.depth);
+      const spanW = room.width + overflowX * 2 + (overflowX > 0 ? 12 : 0);
+      const spanH = room.depth + overflowY * 2 + (overflowY > 0 ? 12 : 0);
+      const fitPpi = Math.min(availW / spanW, availH / spanH);
       setFitPpi(Math.max(1.5, Math.min(fitPpi, 8)));
     };
     fit();
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [room.width, room.depth, autoDimensions]);
+  }, [room.width, room.depth, room.vertices, autoDimensions]);
 
   const setZoom = useCallback((next: number) => {
     setFloorPlanZoom(clampFloorPlanZoom(next));
@@ -1038,7 +1060,7 @@ export function PlanCanvas({
 
   const roomPxW = room.width * ppi;
   const roomPxH = room.depth * ppi;
-  const hasCustomWallShell = Boolean(room.vertices?.length && room.customWalls?.length);
+  const hasCustomWallShell = Boolean(!room.preserveCardinalWalls && room.vertices?.length && room.customWalls?.length);
   // Auto-Design labels are projected from the same physical wall frames used by
   // anchor placement. They sit just inside the room, are not clickable, and are
   // discarded as soon as setup closes; they never affect a room or wall record.
@@ -1076,6 +1098,22 @@ export function PlanCanvas({
         !room.openWallPath,
       )
 	    : [];
+  const supplementalWallOutlines = room.preserveCardinalWalls && room.vertices?.length && room.customWalls?.length
+    ? miteredWallOutlinesFromInteriorFaces(
+        room.customWalls.flatMap((wall) => {
+          const start = room.vertices!.find((vertex) => vertex.id === wall.startVertexId);
+          const end = room.vertices!.find((vertex) => vertex.id === wall.endVertexId);
+          return start && end ? [{
+            id: wall.id,
+            start,
+            end,
+            interiorOnLeft: customWallCabinetSide(room, wall.id) === "left",
+          }] : [];
+        }),
+        ROOM_WALL_THICKNESS_IN,
+        false,
+      )
+    : [];
 	  // The Auto-Design form docks at the right on wide screens. Move only this
 	  // rendered room viewport left while its numbered guide is active so its
 	  // right-side Wall 4–6 labels remain readable. Saved coordinates, panning,
@@ -1194,11 +1232,77 @@ export function PlanCanvas({
     onSelectWall?.(side);
   };
 
+  const wallPointFromEvent = (event: React.MouseEvent) => {
+    const roomEl = containerRef.current?.querySelector("[data-room]") as HTMLElement | null;
+    if (!roomEl) return { x: room.width / 2, y: room.depth / 2 };
+    const rect = roomEl.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) / ppiRef.current,
+      y: (event.clientY - rect.top) / ppiRef.current,
+    };
+  };
+
+  const wallMenuLabel = (side: WallSide) => {
+    const custom = room.customWalls?.find((wall) => wall.id === side);
+    if (custom?.label?.trim()) return custom.label.trim();
+    if (side === "top" || side === "bottom" || side === "left" || side === "right") return wallLabel[side];
+    const peninsula = room.peninsulaRuns?.find((run) => run.id === side);
+    return peninsula?.label?.trim() || "Selected wall";
+  };
+
   const onWallContextMenu = (event: React.MouseEvent, side: WallSide) => {
     event.preventDefault();
     event.stopPropagation();
     onSelectWall?.(side);
+    if (!onAddWall) {
+      onOpenWallSettings?.(side);
+      return;
+    }
+    setWallMenu({
+      x: event.clientX,
+      y: event.clientY,
+      side,
+      point: wallPointFromEvent(event),
+      label: wallMenuLabel(side),
+    });
+  };
+
+  const onWallDoubleClick = (event: React.MouseEvent, side: WallSide) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectWall?.(side);
     onOpenWallSettings?.(side);
+  };
+
+  const hostedWallDrag = useRef<null | { wallId: string; grabAlong: number }>(null);
+  const beginHostedWallPointer = (event: React.PointerEvent, wallId: string) => {
+    const wall = room.customWalls?.find((candidate) => candidate.id === wallId);
+    const host = wall?.hostWallId ? wallRunFrame(wall.hostWallId, room) : null;
+    if (!wall?.hostWallId || !host || !onSlideHostedWall || layoutLocked || event.button !== 0) {
+      onWallPointerDown(event, wallId as WallSide);
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    onSelectWall?.(wallId as WallSide);
+    const point = wallPointFromEvent(event);
+    hostedWallDrag.current = {
+      wallId,
+      grabAlong: hostOffsetAtPoint(host, point) - (wall.hostOffset ?? hostOffsetAtPoint(host, point)),
+    };
+    try { (event.currentTarget as Element).setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  };
+  const moveHostedWallPointer = (event: React.PointerEvent) => {
+    const drag = hostedWallDrag.current;
+    if (!drag) return;
+    onSlideHostedWall?.(drag.wallId, wallPointFromEvent(event), drag.grabAlong);
+  };
+  const endHostedWallPointer = (event: React.PointerEvent) => {
+    if (!hostedWallDrag.current) return;
+    moveHostedWallPointer(event);
+    hostedWallDrag.current = null;
+    try { (event.currentTarget as Element).releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+    onSlideHostedWallEnd?.();
   };
 
   const compassStartForWall = useCallback((side: WallSide) => {
@@ -1594,6 +1698,14 @@ export function PlanCanvas({
           onClose={() => setPlanItemMenu(null)}
         />
       )}
+      {wallMenu && (
+        <WallActionsMenu
+          menu={wallMenu}
+          onEdit={() => onOpenWallSettings?.(wallMenu.side)}
+          onAdd={() => onAddWall?.(wallMenu.side, wallMenu.point)}
+          onClose={() => setWallMenu(null)}
+        />
+      )}
 	      {lowSillWindows.length > 0 && (
 	        <div
 	          role="alert"
@@ -1737,11 +1849,13 @@ export function PlanCanvas({
                   stroke="transparent"
                   strokeWidth={32}
 	                  strokeLinecap="butt"
-                  className="pointer-events-auto cursor-pointer"
+                  className={`pointer-events-auto ${room.customWalls?.some((candidate) => candidate.id === wall.id && candidate.hostWallId) ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}`}
                   aria-label={`Right-click ${wall.label ?? "wall"} for Attributes`}
-                  onPointerDown={(event) => onWallPointerDown(event, wall.id as WallSide)}
+                  onPointerDown={(event) => beginHostedWallPointer(event, wall.id)}
+                  onPointerMove={moveHostedWallPointer}
+                  onPointerUp={endHostedWallPointer}
                   onContextMenu={(event) => onWallContextMenu(event, wall.id as WallSide)}
-                  onDoubleClick={(event) => onWallContextMenu(event, wall.id as WallSide)}
+                  onDoubleClick={(event) => onWallDoubleClick(event, wall.id as WallSide)}
                 >
                   <title>{`Right-click ${wall.label ?? "wall"} for Attributes`}</title>
                 </line>
@@ -1931,12 +2045,7 @@ export function PlanCanvas({
 	              }}
 	              onPointerMove={run.parentRunId || runLocked ? undefined : onPeninsulaAttachmentPointerMove}
 	              onPointerUp={run.parentRunId || runLocked ? undefined : onPeninsulaAttachmentPointerUp}
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onSelectWall?.(run.id as WallSide);
-                onOpenWallSettings?.(run.id as WallSide);
-              }}
+              onContextMenu={(event) => onWallContextMenu(event, run.id as WallSide)}
 	              className={`absolute z-[3] h-3 rounded-full border-2 shadow-sm ${runLocked ? "cursor-default" : "cursor-pointer"} ${active ? "border-[#d4a75a] bg-[#1a2744]" : "border-[#1a2744] bg-[#d4a75a]/80"}`}
 	              style={{
 	                left: start.x * ppi,
@@ -2035,7 +2144,7 @@ export function PlanCanvas({
               key={`wall-${side}`}
               onPointerDown={(e) => onWallPointerDown(e, side)}
               onContextMenu={(event) => onWallContextMenu(event, side)}
-              onDoubleClick={(event) => onWallContextMenu(event, side)}
+              onDoubleClick={(event) => onWallDoubleClick(event, side)}
               className="absolute z-[5] flex items-center justify-center transition-colors"
               style={{
                 ...wstyle,
@@ -2115,6 +2224,49 @@ export function PlanCanvas({
             </div>
           );
         })}
+        {supplementalWallOutlines.length > 0 && (
+          <svg className="pointer-events-none absolute inset-0 z-[6] overflow-visible" width={roomPxW} height={roomPxH} aria-label="Added walls">
+            {supplementalWallOutlines.map((outline) => {
+              const wall = room.customWalls!.find((candidate) => candidate.id === outline.id);
+              if (!wall) return null;
+              const start = room.vertices!.find((vertex) => vertex.id === wall.startVertexId);
+              const end = room.vertices!.find((vertex) => vertex.id === wall.endVertexId);
+              if (!start || !end) return null;
+              const active = activeWall === wall.id;
+              const outlinePoints = outline.corners.map((corner) => `${corner.x * ppi},${corner.y * ppi}`).join(" ");
+              return (
+                <g key={wall.id} data-testid="added-wall-segment" data-wall-id={wall.id}>
+                  <polygon
+                    points={outlinePoints}
+                    fill={active ? "#d4a75a" : "#1a2744"}
+                    fillOpacity={active ? 0.9 : 0.78}
+                    stroke={active ? "#b98632" : "#1a2744"}
+                    strokeWidth={1}
+                    strokeLinejoin="miter"
+                    className="pointer-events-none"
+                  />
+                  <line
+                    x1={start.x * ppi}
+                    y1={start.y * ppi}
+                    x2={end.x * ppi}
+                    y2={end.y * ppi}
+                    stroke="transparent"
+                    strokeWidth={32}
+                    className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                    aria-label={`Drag ${wall.label ?? "wall"} along its wall, or right-click for Attributes`}
+                    onPointerDown={(event) => beginHostedWallPointer(event, wall.id)}
+                    onPointerMove={moveHostedWallPointer}
+                    onPointerUp={endHostedWallPointer}
+                    onContextMenu={(event) => onWallContextMenu(event, wall.id as WallSide)}
+                    onDoubleClick={(event) => onWallDoubleClick(event, wall.id as WallSide)}
+                  >
+                    <title>{`Right-click ${wall.label ?? "wall"} for Attributes`}</title>
+                  </line>
+                </g>
+              );
+            })}
+          </svg>
+        )}
         {/* Countertop slab layer — visible material over base cabinets + island.
             Sits above the floor but below cabinet faces so faces read on top. */}
         {countertopMaterialId && (() => {

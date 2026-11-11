@@ -103,7 +103,7 @@ function polygonWalls(room: RoomData): WallSegment[] {
 }
 
 function wallsOf(room: RoomData): WallSegment[] {
-  if (room.vertices?.length && room.customWalls?.length) return polygonWalls(room);
+  if (!room.preserveCardinalWalls && room.vertices?.length && room.customWalls?.length) return polygonWalls(room);
   return rectangleWalls(room);
 }
 

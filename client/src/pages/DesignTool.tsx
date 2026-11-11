@@ -367,7 +367,8 @@ import { normalizeDesignPricingTier, type DesignPricingTier } from "@/lib/design
 import { AIChatBox, type Message as AIMessage } from "@/components/AIChatBox";
 import { PlanCanvas } from "@/components/design/PlanCanvas";
 import { PolygonRoomEditor } from "@/components/design/PolygonRoomEditor";
-import { applyCompassWallEdit, closestWall, deleteCustomWallSegment, polygonBounds, positionAlongWall, type CompassWallAngle, type WallBuilderRoomGeometry } from "@/lib/polygonRoom";
+import { applyCompassWallEdit, closestWall, deleteCustomWallSegment, polygonBounds, positionAlongWall, resizeHostedWall, type CompassWallAngle, type WallBuilderRoomGeometry } from "@/lib/polygonRoom";
+import { attachedWallObstacles, placeAttachedWall, slideAttachedWall } from "@/lib/attachedWall";
 import { ElevationView } from "@/components/design/ElevationView";
 import { CornerView, type CornerId } from "@/components/design/CornerView";
 import { IslandElevationView } from "@/components/design/IslandElevationView";
@@ -1079,7 +1080,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
   }, []);
   const [polygonEditMode, setPolygonEditMode] = useState(false);
-  const isPolygonRoom = Boolean(room.vertices?.length && room.vertices.length >= 2 && room.customWalls?.length);
+  const isPolygonRoom = Boolean(!room.preserveCardinalWalls && room.vertices?.length && room.vertices.length >= 2 && room.customWalls?.length);
   const [placed, setPlacedState] = useState<PlacedCabinet[]>([]);
   const placedRef = useRef<PlacedCabinet[]>(placed);
   /** Mirrors `autoDesignControl.enabled` so the early-declared opener shares the button's rule. */
@@ -2511,6 +2512,27 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         toast.error("Move or remove cabinets on this wall before changing its locked angle or length. Height may be edited without moving cabinets.");
         return;
       }
+      if (custom.hostWallId) {
+        const host = wallRunFrame(custom.hostWallId, room);
+        if (!host) return;
+        const resized = resizeHostedWall(room.vertices, room.customWalls, custom.id, host, length, height, attachedWallObstacles({ room, placed, openings, sinks, island, ignoreWallId: custom.id }, host.id), roomCeiling(room));
+        if (!resized) return;
+        if ("error" in resized) {
+          toast.error(resized.error);
+          return;
+        }
+        const bounds = polygonBounds(resized.vertices);
+        commitRoomWallTops({
+          ...room,
+          vertices: resized.vertices,
+          customWalls: resized.customWalls,
+          width: room.preserveCardinalWalls ? room.width : Math.max(36, bounds.width),
+          depth: room.preserveCardinalWalls ? room.depth : Math.max(36, bounds.height),
+        });
+        setWallSettingsOpen(false);
+        toast.success(`Updated ${draft.label}.`);
+        return;
+      }
       const updated = applyCompassWallEdit(custom.id, { angleStartIn: 0, lengthIn: length, angle: draft.angle, heightIn: height }, room.vertices, room.customWalls);
       if (!updated) {
         toast.error("This wall could not be updated while preserving the connected wall path.");
@@ -2542,7 +2564,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     setWallSettingsOpen(false);
     toast.success(`Updated ${draft.label}.`);
-	  }, [commitRoomWallTops, island, openings.length, placed, room, sinks.length, wallSettingsDraft]);
+	  }, [commitRoomWallTops, island, openings, placed, room, sinks, wallSettingsDraft]);
 	const requestPeninsulaDeletion = useCallback(() => {
 	  const draft = wallSettingsDraft;
 	  if (!draft || draft.kind !== "peninsula") return;
@@ -2598,7 +2620,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const requestCustomWallDeletion = useCallback(() => {
     const draft = wallSettingsDraft;
     if (!draft || draft.kind !== "custom") return;
-    if ((room.customWalls?.length ?? 0) <= 1) {
+    if ((room.customWalls?.length ?? 0) <= 1 && !room.preserveCardinalWalls) {
       toast.error("The last remaining wall cannot be deleted. Start a new room layout instead.");
       return;
     }
@@ -2612,6 +2634,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const confirmCustomWallDeletion = useCallback(() => {
     const prompt = customWallDeletePrompt;
     if (!prompt || prompt.cabinetCount > 0 || !room.vertices || !room.customWalls) return;
+    if (room.preserveCardinalWalls && room.customWalls.length <= 1) {
+      setRoom((previous) => {
+        const { vertices: _vertices, customWalls: _customWalls, preserveCardinalWalls: _preserve, ...rest } = previous;
+        return rest;
+      });
+      setOpenings((previous) => previous.filter((opening) => opening.side !== prompt.wallId));
+      setSelectedOpeningUid(null);
+      setSelectedUid(null);
+      setActiveWall("top");
+      setPlacementTarget("wall");
+      setWallSettingsOpen(false);
+      setCustomWallDeletePrompt(null);
+      toast.success(`Deleted ${prompt.label}.`);
+      return;
+    }
     const updated = deleteCustomWallSegment(prompt.wallId, room.vertices, room.customWalls);
     if (!updated) {
       toast.error("This wall could not be deleted while preserving the other measured walls.");
@@ -3010,6 +3047,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	  // Active-wall selection is retained with a physical mutation, but choosing a
 	  // different wall by itself must not consume an undo step.
 	  }), [annotations, furniture, island, openings, placed, ponyWalls, room, sinks]);
+	  const historySnapshotRef = useRef(historySnapshot);
+	  historySnapshotRef.current = historySnapshot;
+	  const hostedWallDraggingRef = useRef(false);
 	  const applyHistorySnapshot = useCallback((snapshot: DesignerHistorySnapshot) => {
 	    historyRestoringRef.current = true;
 	    roomRef.current = snapshot.room;
@@ -3042,11 +3082,129 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      historyRebaseRequestedRef.current = false;
 	      undoRedoRef.current.clear();
 	    }
+	    if (hostedWallDraggingRef.current) return;
 	    if (lastPushedRef.current === historySnapshot) return;
 	    lastPushedRef.current = historySnapshot;
 	    undoRedoRef.current.push(historySnapshot);
 	    setHistoryRevision((revision) => revision + 1);
 	  }, [historySnapshot]);
+  const [addWallOpen, setAddWallOpen] = useState(false);
+  const [addWallDraft, setAddWallDraft] = useState<null | {
+    wallId: WallSide;
+    label: string;
+    clickPoint: { x: number; y: number };
+    length: number | "";
+    height: number | "";
+    angle: 45 | 90;
+    turn: "left" | "right";
+  }>(null);
+  const attachedScene = useCallback((ignoreWallId?: string) => ({
+    room,
+    placed,
+    openings,
+    furniture,
+    sinks,
+    ponyWalls,
+    island,
+    ignoreWallId,
+  }), [furniture, island, openings, placed, ponyWalls, room, sinks]);
+  const openAddWallDialog = useCallback((wallId: WallSide, clickPoint: { x: number; y: number }) => {
+    if (layoutLocked) {
+      toast.info("Unlock the room layout before adding a wall.");
+      return;
+    }
+    const frame = wallRunFrame(wallId, room);
+    if (!frame) {
+      toast.error("Choose a wall before adding another wall.");
+      return;
+    }
+    const hostLength = Math.round(wallLength(wallId, room) * 8) / 8;
+    const roomAhead = Math.abs(frame.inward.x) >= Math.abs(frame.inward.y) ? room.width : room.depth;
+    const lengthThatFits = Math.max(24, Math.min(hostLength, Math.round((roomAhead - 12) * 8) / 8));
+    setAddWallDraft({
+      wallId,
+      label: wallNameFor(wallId, room),
+      clickPoint,
+      length: lengthThatFits,
+      height: Math.round(frame.height * 8) / 8,
+      angle: 90,
+      turn: "right",
+    });
+    setAddWallOpen(true);
+    setActiveWall(wallId);
+    setPlacementTarget("wall");
+  }, [layoutLocked, room, setPlacementTarget]);
+  const confirmAddWall = useCallback(() => {
+    const draft = addWallDraft;
+    if (!draft) return;
+    const frame = wallRunFrame(draft.wallId, room);
+    if (!frame) return;
+    const length = Math.round((Number(draft.length) || 0) * 8) / 8;
+    const height = Math.max(MIN_WALL_HEIGHT, Math.min(roomCeiling(room), Math.round((Number(draft.height) || roomCeiling(room)) * 8) / 8));
+    const placedWall = placeAttachedWall({
+      scene: attachedScene(),
+      frame,
+      clickPoint: draft.clickPoint,
+      lengthIn: length,
+      heightIn: height,
+      angle: draft.angle,
+      turn: draft.angle === 45 ? draft.turn : "right",
+      ceilingIn: roomCeiling(room),
+      label: draft.angle === 90 ? "90° wall" : `45° ${draft.turn} wall`,
+    });
+    if (!placedWall) {
+      toast.error("Enter a wall length of at least 6 inches.");
+      return;
+    }
+    if ("error" in placedWall) {
+      toast.error(placedWall.error);
+      return;
+    }
+    const translation = placedWall.translation;
+    setRoom({
+      ...room,
+      vertices: placedWall.vertices,
+      customWalls: placedWall.customWalls,
+      width: placedWall.width,
+      depth: placedWall.depth,
+      preserveCardinalWalls: placedWall.preserveCardinalWalls || undefined,
+    });
+    if (translation.x !== 0 || translation.y !== 0) {
+      const shift = <T extends { x: number; y: number }>(item: T): T => ({ ...item, x: item.x + translation.x, y: item.y + translation.y });
+      setPlaced((current) => current.map(shift));
+      setFurniture((current) => current.map(shift));
+      setSinks((current) => current.map(shift));
+      setPonyWalls((current) => current.map(shift));
+      setAnnotations((current) => current.map(shift));
+      setIsland((current) => current ? shift(current) : current);
+    }
+    setActiveWall(placedWall.newWallId as WallSide);
+    setPlacementTarget("wall");
+    setAddWallOpen(false);
+    const angleLabel = draft.angle === 90 ? "90°" : `45° ${draft.turn}`;
+    toast.success(placedWall.snapped
+      ? `Added a ${angleLabel} wall in the nearest open spot on ${draft.label}.`
+      : `Added a ${angleLabel} wall on ${draft.label}. Drag it along that wall to reposition it.`);
+  }, [addWallDraft, attachedScene, room, setPlacementTarget]);
+  const slideHostedWall = useCallback((wallId: string, point: { x: number; y: number }, grabAlong: number) => {
+    if (layoutLocked) return;
+    hostedWallDraggingRef.current = true;
+    const moved = slideAttachedWall({ scene: attachedScene(wallId), wallId, point, grabAlong });
+    if (!moved || (Math.abs(moved.delta.x) < 0.001 && Math.abs(moved.delta.y) < 0.001)) return;
+    setRoom((current) => ({ ...current, vertices: moved.vertices, customWalls: moved.customWalls }));
+    setPlaced((current) => current.map((cabinet) => cabinet.wallId === wallId
+      ? { ...cabinet, x: cabinet.x + moved.delta.x, y: cabinet.y + moved.delta.y }
+      : cabinet));
+  }, [attachedScene, layoutLocked]);
+  const finishHostedWallSlide = useCallback(() => {
+    if (!hostedWallDraggingRef.current) return;
+    hostedWallDraggingRef.current = false;
+    const snapshot = historySnapshotRef.current;
+    if (lastPushedRef.current === snapshot) return;
+    lastPushedRef.current = snapshot;
+    undoRedoRef.current.push(snapshot);
+    setHistoryRevision((revision) => revision + 1);
+  }, []);
 	  const handleUndo = useCallback(() => {
 	    const previous = undoRedoRef.current.undo();
 	    if (!previous) return;
@@ -3750,7 +3908,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ], peninsulaWizardBaseCabinets).missingIds;
   }, [peninsulaWizardBaseCabinets, peninsulaWizardDraft]);
   const peninsulaWizardAttachmentWalls = useMemo(() => {
-	    const ids = room.customWalls?.length
+	    const ids = room.preserveCardinalWalls
+	      ? ["top", "bottom", "left", "right", ...(room.customWalls ?? []).map((wall) => wall.id)]
+	      : room.customWalls?.length
 	      ? room.customWalls.map((wall) => wall.id)
 	      : ["top", "bottom", "left", "right"];
 	    return ids.map((id) => {
@@ -17445,6 +17605,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                )) : (["top", "right", "bottom", "left"] as WallSide[]).map((wall) => (
 		                  <option key={wall} value={wall}>{wallLabel[wall]}</option>
 		                ))}
+		                {room.preserveCardinalWalls && room.customWalls?.map((wall) => (
+		                  <option key={wall.id} value={wall.id}>{wall.label || "Added wall"}</option>
+		                ))}
 		                {(room.peninsulaRuns ?? []).map((run) => (
 		                  <option key={run.id} value={run.id}>Peninsula · {run.turn}° {run.direction}</option>
 		                ))}
@@ -17811,6 +17974,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                     })
 	                  )}
 	                </div>
+	                {room.preserveCardinalWalls && room.customWalls && room.customWalls.length > 0 && (
+	                  <div className="flex flex-wrap gap-1 px-3 pb-2">
+	                    {room.customWalls.map((wall) => (
+	                      <button key={wall.id} type="button" onClick={() => { setActiveWall(wall.id as WallSide); setPlacementTarget("wall"); setDrawMode(false); }} className={`rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors ${activeWall === wall.id ? "bg-[#d4a75a] text-[#1a2744]" : "bg-muted/60 text-muted-foreground hover:bg-muted"}`}>
+	                        {wall.label || "Added wall"}
+	                      </button>
+	                    ))}
+	                  </div>
+	                )}
 	                {isPolygonRoom && (
 	                  <div className="px-3 pb-3">
 	                    <Button
@@ -20750,6 +20922,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 showCanvasEditor={polygonEditMode}
                 onDone={() => setPolygonEditMode(false)}
                 locked={layoutLocked}
+                onAddWall={(wallId, point) => openAddWallDialog(wallId as WallSide, point)}
               />
             </div>
           )}
@@ -20813,6 +20986,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               onPeninsulaDraftLengthChange={(length) => setPeninsulaDraft((draft) => draft ? { ...draft, length } : draft)}
               onPeninsulaAttachmentChange={movePeninsulaAttachment}
               onOpenWallSettings={openWallSettings}
+              onAddWall={openAddWallDialog}
+              onSlideHostedWall={slideHostedWall}
+              onSlideHostedWallEnd={finishHostedWallSlide}
               conflictUids={conflictUids}
               missingPriceUids={missingPriceUids}
               layoutLocked={layoutLocked}
@@ -21140,6 +21316,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                  onPeninsulaDraftLengthChange={(length) => setPeninsulaDraft((draft) => draft ? { ...draft, length } : draft)}
 		                  onPeninsulaAttachmentChange={movePeninsulaAttachment}
 		                  onOpenWallSettings={openWallSettings}
+              onAddWall={openAddWallDialog}
+              onSlideHostedWall={slideHostedWall}
+              onSlideHostedWallEnd={finishHostedWallSlide}
 		                  conflictUids={conflictUids}
 		                  missingPriceUids={missingPriceUids}
 	                  layoutLocked={layoutLocked}
@@ -21555,6 +21734,49 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                )}
 	                <Button type="button" variant="outline" onClick={() => setWallSettingsOpen(false)}>Cancel</Button>
 	                <Button type="button" onClick={saveWallSettings}>Save wall</Button>
+	              </DialogFooter>
+	            </DialogContent>
+	          </Dialog>
+	          <Dialog open={addWallOpen} onOpenChange={setAddWallOpen}>
+	            <DialogContent data-testid="add-wall-dialog" className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-md flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+	              <DialogHeader className="shrink-0 border-b px-4 py-3">
+	                <DialogTitle>Add wall</DialogTitle>
+	                <DialogDescription>Enter the length, height, and angle before anything is drawn. The new wall locks onto the face of {addWallDraft?.label ?? "the selected wall"} and sticks out from that face. Cancel adds nothing.</DialogDescription>
+	              </DialogHeader>
+	              {addWallDraft && (
+	                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
+	                  <div className="grid gap-3">
+	                    <div className="grid grid-cols-2 gap-2">
+	                      <label className="grid gap-1 text-xs font-semibold text-muted-foreground">Length (in)
+	                        <Input data-testid="add-wall-length" type="number" min="6" step="0.125" value={addWallDraft.length} onChange={(event) => setAddWallDraft((draft) => draft ? { ...draft, length: event.target.value === "" ? "" : Number(event.target.value) } : draft)} />
+	                      </label>
+	                      <label className="grid gap-1 text-xs font-semibold text-muted-foreground">Height (in)
+	                        <Input data-testid="add-wall-height" type="number" min={MIN_WALL_HEIGHT} max={roomCeiling(room)} step="0.125" value={addWallDraft.height} onChange={(event) => setAddWallDraft((draft) => draft ? { ...draft, height: event.target.value === "" ? "" : Number(event.target.value) } : draft)} />
+	                      </label>
+	                    </div>
+	                    <label className="grid gap-1 text-xs font-semibold text-muted-foreground">Angle
+	                      <select data-testid="add-wall-angle" value={addWallDraft.angle} onChange={(event) => setAddWallDraft((draft) => draft ? { ...draft, angle: Number(event.target.value) === 45 ? 45 : 90 } : draft)} className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground">
+	                        <option value={90}>90° — straight out from the wall</option>
+	                        <option value={45}>45°</option>
+	                      </select>
+	                    </label>
+	                    {addWallDraft.angle === 45 && (
+	                      <div data-testid="add-wall-turn" className="grid gap-1.5">
+	                        <p className="text-xs font-semibold text-muted-foreground">Left or right</p>
+	                        <div className="grid grid-cols-2 gap-2">
+	                          <Button type="button" variant={addWallDraft.turn === "left" ? "default" : "outline"} data-testid="add-wall-turn-left" onClick={() => setAddWallDraft((draft) => draft ? { ...draft, turn: "left" } : draft)}>Left</Button>
+	                          <Button type="button" variant={addWallDraft.turn === "right" ? "default" : "outline"} data-testid="add-wall-turn-right" onClick={() => setAddWallDraft((draft) => draft ? { ...draft, turn: "right" } : draft)}>Right</Button>
+	                        </div>
+	                        <p className="text-[11px] leading-4 text-muted-foreground">Which way the 45° wall angles, as you face {addWallDraft.label}.</p>
+	                      </div>
+	                    )}
+	                    <p className="text-xs leading-5 text-muted-foreground">The wall sticks out from the face of {addWallDraft.label} and stays locked to it. Drag it along that wall to move it. It cannot overlap cabinets, appliances, openings, or other walls — if the clicked spot is taken, it sits in the nearest open spot.</p>
+	                  </div>
+	                </div>
+	              )}
+	              <DialogFooter className="shrink-0 border-t bg-background px-4 py-3">
+	                <Button type="button" variant="outline" data-testid="add-wall-cancel" onClick={() => setAddWallOpen(false)}>Cancel</Button>
+	                <Button type="button" data-testid="add-wall-confirm" onClick={confirmAddWall}>Add wall</Button>
 	              </DialogFooter>
 	            </DialogContent>
 	          </Dialog>
@@ -23052,7 +23274,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          onDishwasherSideChange={setDishwasherSidePreference}
 	          onBuild={buildAutoDesignLayout}
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
-	          wallCount={Math.min(6, Math.max(1, room.customWalls?.length ?? 4))}
+	          wallCount={Math.min(6, Math.max(1, room.preserveCardinalWalls ? 4 : (room.customWalls?.length ?? 4)))}
 	          room={room}
 	          onOpenSinkPicker={() => openAutoDesignSinkPicker("replace")}
 	          selectedSinkName={autoDesignSinkPicks[0]?.name ?? null}

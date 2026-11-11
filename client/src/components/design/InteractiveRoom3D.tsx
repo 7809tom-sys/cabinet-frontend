@@ -58,7 +58,7 @@ import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRec
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
-import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
+import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShellVertices, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
 import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
@@ -4003,8 +4003,8 @@ function roomPolygon(geometryTemplate: unknown, width: number, depth: number) {
  * geometry template they must never be multiplied by room width/depth again.
  */
 export function threeDMeasuredRoomPolygon(room: RoomData | undefined, fallbackWidth: number, fallbackDepth: number) {
-  const vertices = room?.vertices ?? [];
-  if (vertices.length >= 3 && !room?.openWallPath) {
+  const vertices = roomShellVertices(room?.vertices ?? [], room?.customWalls ?? []);
+  if (vertices.length >= 3 && !room?.openWallPath && !room?.preserveCardinalWalls) {
     return vertices.map((vertex) => new THREE.Vector2(vertex.x * INCH, -vertex.y * INCH));
   }
   return [
@@ -13524,33 +13524,45 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     // screens over cabinetry when a mobile orbit moves the camera through them.
 	    const wallMaterial = new THREE.MeshStandardMaterial({ color: hasRoomWallAppearance ? resolvedRoomWallAppearance.color : materialDefaults.wall, roughness: hasRoomWallAppearance ? resolvedRoomWallAppearance.roughness : 0.82, side: THREE.DoubleSide, transparent: true, opacity: showRoomContext ? (cutawayRoomWalls && !showSolidFrontWalls ? THREE_D_DESIGNER_WALL_OPACITY : THREE_D_WALL_OPACITY) : 0, depthWrite: THREE_D_WALL_DEPTH_WRITE });
 	    const measuredWallSegments = threeDMeasuredWallSegments(roomOverride);
-	    const explicitWallSegments = measuredWallSegments.length
-	      ? measuredWallSegments.map((segment) => ({
-	          id: segment.id,
-	          start: segment.start,
-	          end: segment.end,
-	          customWall: roomOverride?.customWalls?.find((wall) => wall.id === segment.id),
-              interiorOnLeft: customWallCabinetSide(roomOverride!, segment.id) === "left",
-	          length: segment.length,
-	          rotationY: segment.rotationY,
-	          heightIn: segment.heightIn,
-        }))
-	      : polygon.map((start, index) => ({
-	          id: `room-wall-${index}`,
-	          start,
-	          end: polygon[(index + 1) % polygon.length],
-          customWall: undefined,
-          interiorOnLeft: true,
-          length: start.distanceTo(polygon[(index + 1) % polygon.length]),
-          rotationY: Math.atan2(polygon[(index + 1) % polygon.length].y - start.y, polygon[(index + 1) % polygon.length].x - start.x),
-          heightIn: undefined,
-	        }));
-	    const miteredRoomWallOutlines = threeDMiteredRoomWallOutlines(explicitWallSegments, !roomOverride?.openWallPath);
+	    const rectangleWallSegments = polygon.map((start, index) => ({
+	      id: `room-wall-${index}`,
+	      start,
+	      end: polygon[(index + 1) % polygon.length],
+	      customWall: undefined,
+	      interiorOnLeft: true,
+	      length: start.distanceTo(polygon[(index + 1) % polygon.length]),
+	      rotationY: Math.atan2(polygon[(index + 1) % polygon.length].y - start.y, polygon[(index + 1) % polygon.length].x - start.x),
+	      heightIn: undefined as number | undefined,
+	    }));
+	    const measuredExplicitSegments = measuredWallSegments.map((segment) => ({
+	      id: segment.id,
+	      start: segment.start,
+	      end: segment.end,
+	      customWall: roomOverride?.customWalls?.find((wall) => wall.id === segment.id),
+	      interiorOnLeft: customWallCabinetSide(roomOverride!, segment.id) === "left",
+	      length: segment.length,
+	      rotationY: segment.rotationY,
+	      heightIn: segment.heightIn,
+	    }));
+	    const addedOntoRectangle = Boolean(roomOverride?.preserveCardinalWalls && measuredExplicitSegments.length);
+	    const explicitWallSegments = addedOntoRectangle
+	      ? [...rectangleWallSegments, ...measuredExplicitSegments]
+	      : measuredExplicitSegments.length ? measuredExplicitSegments : rectangleWallSegments;
+	    const miteredRoomWallOutlines = addedOntoRectangle
+	      ? [
+	          ...threeDMiteredRoomWallOutlines(rectangleWallSegments, true),
+	          ...threeDMiteredRoomWallOutlines(measuredExplicitSegments, false),
+	        ]
+	      : threeDMiteredRoomWallOutlines(explicitWallSegments, !roomOverride?.openWallPath);
 	    const roomWallMeshes: Array<{ mesh: THREE.Mesh; start: THREE.Vector2; end: THREE.Vector2 }> = [];
 	    explicitWallSegments.forEach(({ start, end, customWall, heightIn }, index) => {
 	      const outline = miteredRoomWallOutlines[index];
 	      if (!outline) return;
-	      const side = threeDWallSideForPolygonEdge(index, explicitWallSegments.length, start, end, room);
+	      const side = addedOntoRectangle
+	        ? (index < rectangleWallSegments.length
+	          ? threeDWallSideForPolygonEdge(index, rectangleWallSegments.length, start, end, room)
+	          : (customWall?.id as WallSide) ?? threeDWallSideForEdge(start, end, room))
+	        : threeDWallSideForPolygonEdge(index, explicitWallSegments.length, start, end, room);
 	      const customWallHeight = heightIn ?? customWall?.height;
 	      const sideWallHeight = (typeof customWallHeight === "number" ? customWallHeight : wallHeights[side]) * INCH;
 	      const wallHoles = threeDWallOpeningHoles(openings, {

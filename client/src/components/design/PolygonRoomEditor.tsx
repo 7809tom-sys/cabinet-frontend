@@ -13,6 +13,7 @@
  * - Haptic-style visual feedback on interactions.
  */
 import { useState, useRef, useCallback, useEffect } from "react";
+import { WallActionsMenu } from "@/components/design/WallActionsMenu";
 import { Scissors, Move, Info, CornerDownLeft, CornerDownRight, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +59,8 @@ interface Props {
   onDone?: () => void;
   /** When true, editing is disabled (view only). */
   locked?: boolean;
+  /** Right-click Add wall. The point is in room inches. Nothing is drawn here. */
+  onAddWall?: (wallId: string, point: { x: number; y: number }) => void;
 }
 
 type Mode = "select" | "split";
@@ -75,6 +78,7 @@ export function PolygonRoomEditor({
   showCanvasEditor = true,
   onDone,
   locked = false,
+  onAddWall,
 }: Props) {
   const { t } = useLanguage();
   const [mode, setMode] = useState<Mode>("select"); // Tapping a wall reveals its Compass edit control by default.
@@ -87,6 +91,7 @@ export function PolygonRoomEditor({
   const [compassHeight, setCompassHeight] = useState("96");
   const [compassLength, setCompassLength] = useState("");
   const svgRef = useRef<SVGSVGElement>(null);
+  const [wallMenu, setWallMenu] = useState<null | { x: number; y: number; wallId: string; label: string; point: { x: number; y: number } }>(null);
 
   // Compute bounding box for SVG viewBox.
   const bounds = polygonBounds(vertices);
@@ -471,6 +476,26 @@ export function PolygonRoomEditor({
                   onClick={() => handleWallClick(wall.id)}
                   onPointerEnter={() => setHoveredWallId(wall.id)}
                   onPointerLeave={() => setHoveredWallId(null)}
+                  onContextMenu={(event) => {
+                    if (!onAddWall) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const svg = svgRef.current;
+                    const matrix = svg?.getScreenCTM();
+                    if (!svg || !matrix) return;
+                    const svgPoint = svg.createSVGPoint();
+                    svgPoint.x = event.clientX;
+                    svgPoint.y = event.clientY;
+                    const local = svgPoint.matrixTransform(matrix.inverse());
+                    onSelectWall?.(wall.id);
+                    setWallMenu({
+                      x: event.clientX,
+                      y: event.clientY,
+                      wallId: wall.id,
+                      label: wall.label?.trim() || "Wall",
+                      point: { x: (local.x - offsetX) / ppi, y: (local.y - offsetY) / ppi },
+                    });
+                  }}
                 />
 
                 {/* Visible wall line */}
@@ -633,6 +658,14 @@ export function PolygonRoomEditor({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {wallMenu && (
+        <WallActionsMenu
+          menu={wallMenu}
+          onEdit={() => { onSelectWall?.(wallMenu.wallId); openCompass(); }}
+          onAdd={() => onAddWall?.(wallMenu.wallId, wallMenu.point)}
+          onClose={() => setWallMenu(null)}
+        />
+      )}
     </>
   );
 }
