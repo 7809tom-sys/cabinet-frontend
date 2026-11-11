@@ -538,6 +538,33 @@ describe("the niche keeps real depth inside and shows nothing outside", () => {
     }
   });
 
+
+  /**
+   * The wet wall must be the WHOLE panel, not a patch around the niche.
+   *
+   * Sized to the niche it read as a slab standing off the outside of the wall —
+   * the same bump Tom reported, in a different material. Sized to the panel with
+   * the panel's own finish, the outside is one continuous wall.
+   */
+  it("spans the full panel width and height, so the outside is one wall", () => {
+    for (const code of ["PL-603096 Brick", "PL-483696 Marble", "PL-603696 White Wood"]) {
+      const panel = verifiedPelicanBathroomFixtureProfile(code)!;
+      expect(panel.kind).toBe("shower-surround");
+      const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1639")!;
+      const wall = makeShowerWetWallParts(niche, materials, {
+        thicknessIn: SHOWER_WET_WALL_THICKNESS_IN,
+        widthIn: panel.widthIn + 2 * SHOWER_PANEL_THICKNESS_IN,
+        heightIn: panel.heightIn,
+      });
+      const box = new THREE.Box3().setFromObject(wall[0]!.mesh);
+      const widthIn = (box.max.x - box.min.x) / IN;
+      const heightIn = (box.max.y - box.min.y) / IN;
+      // At least the panel's own width and height, so no part of the panel is left
+      // without wall behind it and the edge cannot read as a slab.
+      expect(widthIn, code).toBeGreaterThanOrEqual(panel.widthIn);
+      expect(heightIn, code).toBeGreaterThanOrEqual(panel.heightIn);
+    }
+  });
   it("keeps the flange on the shower side, so nothing laps onto the outside", () => {
     const { parts } = nicheParts("PL-SN1639");
     const flange = parts.find((entry) => entry.part === "shower-niche-flange")!;

@@ -11380,14 +11380,27 @@ export function showerSurroundPanelFinish(code: string | null | undefined): {
  * can be drawn before its surround in an arbitrary order.
  */
 function showerSurroundProfileForFixture(
+  furniture: PlacedFurniture,
   designFurniture?: readonly PlacedFurniture[],
 ): VerifiedPelicanBathroomFixtureProfile | null {
-  for (const item of designFurniture ?? []) {
-    const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? "");
-    if (profile?.kind === "shower-surround") return profile;
+  // A saved plan may carry only a defId, so try the code, then the def id, then the
+  // catalog row's own code. Falling back to just the niche itself keeps a shower
+  // without a surround rendering instead of throwing.
+  const list = designFurniture?.length ? designFurniture : [furniture];
+  for (const item of list) {
+    const fromCode = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? "");
+    if (fromCode?.kind === "shower-surround") return fromCode;
+    const fromDef = verifiedPelicanBathroomFixtureProfile(item.defId ?? "");
+    if (fromDef?.kind === "shower-surround") return fromDef;
+    const def = FURNITURE_CATALOG.find((entry) => entry.id === item.defId);
+    if (def?.pelicanCode) {
+      const fromCatalog = verifiedPelicanBathroomFixtureProfile(def.pelicanCode);
+      if (fromCatalog?.kind === "shower-surround") return fromCatalog;
+    }
   }
   return null;
 }
+
 
 function addPelicanBathroomFixture(
   root: THREE.Group,
@@ -11578,7 +11591,10 @@ function addPelicanBathroomFixture(
     // Built in the NICHE's local frame (z runs into the wall) and added to this
     // group, so it sits behind whichever panel the niche was mounted on — back, left
     // or right — turns with it, and follows Move shower.
-    const surroundPanel = showerSurroundProfileForFixture(designFurniture);
+    const surroundPanel = showerSurroundProfileForFixture(furniture, designFurniture);
+    if (typeof window !== "undefined" && (window as any).__cdProbe) {
+      (window as any).__cdProbe.push({ haveList: !!designFurniture, n: designFurniture?.length ?? -1, codes: (designFurniture ?? []).map((f)=>f.pelicanCode), found: !!surroundPanel, w: surroundPanel?.widthIn ?? null });
+    }
     const wetWallWidth = (surroundPanel?.widthIn ?? profile.widthIn) + 2 * SHOWER_PANEL_THICKNESS_IN;
     const wetWallHeight = surroundPanel?.heightIn ?? (furniture.mountHeightIn ?? 0) + profile.heightIn;
     const wetWallFinish = showerSurroundFinish(surroundPanel?.pelicanCode ?? profile.pelicanCode);
@@ -13845,11 +13861,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    rendererRef.current = renderer;
 	    sceneRef.current = threeScene;
 	    cameraRef.current = camera;
-	    // Dev-only: a screenshot harness needs to aim the camera at a known fixture.
-	    // Guarded by import.meta.env.DEV so it is stripped from the production bundle.
-	    if (import.meta.env.DEV) {
-	      (window as any).__cdScene = { root: catalogRoot, camera, controlsRef, THREE, orbitTarget: null };
-	    }
 	    setCameraReadyKey((current) => current + 1);
 
 	    let frame = 0;
