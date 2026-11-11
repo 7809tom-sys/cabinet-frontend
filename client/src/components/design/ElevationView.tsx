@@ -41,6 +41,7 @@ import { isCustomCabinetProfile } from "@/lib/customCabinetProfiles";
 import { resolveCustomCabinetRender } from "@/lib/customCabinetRender";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
+import { subtractRunIntervals } from "@/lib/farmSinkCountertopNotch";
 import { createContext, useContext, useRef, useEffect, useState, useCallback } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { masterTracFinishColor, masterTracProduct } from "@/lib/closet";
@@ -71,6 +72,8 @@ interface Props {
   backsplashProductName?: string | null;
   backsplashProductSize?: string | null;
   openings?: WallOpening[];
+  /** Installed sinks. An apron-front sink opens the counter band across its front. */
+  sinks?: readonly { cabinetUid?: string | null; type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number }[];
   finish?: FinishColors;
   crown?: boolean;
   toeKick?: boolean;
@@ -272,7 +275,7 @@ export function farmhouseSinkElevationGeometry(cabinetWidthIn: number) {
 }
 
 export function ElevationView({
-  room, cabinets, selectedUid, attributesTargetUid = null, onSelect, wall, onSelectWall, countertopMaterialId = null, backsplashMaterialId = null, backsplashImageUrl = null, backsplashProductName = null, backsplashProductSize = null, openings = [],
+  room, cabinets, selectedUid, attributesTargetUid = null, onSelect, wall, onSelectWall, countertopMaterialId = null, backsplashMaterialId = null, backsplashImageUrl = null, backsplashProductName = null, backsplashProductSize = null, openings = [], sinks = [],
   finish = DEFAULT_FINISH_COLORS, crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", mirror = false, hideSwitcher = false,
   hardwareStyleId = null, hardwareAccent = "#1a2744",
@@ -1393,18 +1396,38 @@ export function ElevationView({
             const hi = Math.max(edge, far);
             return refrigeratorPanels.some((panel) => lo < panel.end - 1e-6 && hi > panel.start + 1e-6);
           };
+          const horizontalRun = side === "top" || side === "bottom";
+          const farmSinkGaps = sorted.filter((cabinet) => isFarmerSinkBase(cabinet)).map((cabinet) => {
+            const pos = wallRunOffset(cabinet, side, room);
+            const span = wallRunSpan(cabinet, side, room);
+            const face = farmhouseSinkBaseFaceLayout(span, cabinet.height || STD.BASE_HEIGHT);
+            let start = pos + face.sideInsetIn;
+            let end = start + face.apronWidthIn;
+            const sink = sinks.find((item) => item.cabinetUid === cabinet.uid && (item.apronFront || item.type === "farmhouse"));
+            if (sink) {
+              const sinkStart = horizontalRun ? sink.x : sink.y;
+              const sinkEnd = sinkStart + (horizontalRun ? sink.width : sink.depth);
+              start = Math.min(start, sinkStart);
+              end = Math.max(end, sinkEnd);
+            }
+            return { start, end };
+          });
           return (
             <>
-              {runs.map((r, i) => {
+              {runs.flatMap((r, i) => {
                 const leftOverhang = overhangCrossesPanel(r.start, -1) ? 0 : OVERHANG_IN;
                 const rightOverhang = overhangCrossesPanel(r.end, 1) ? 0 : OVERHANG_IN;
+                return subtractRunIntervals([r], farmSinkGaps).map((piece, pieceIndex) => {
+                const pieceLeft = Math.abs(piece.start - r.start) < 0.05 ? leftOverhang : 0;
+                const pieceRight = Math.abs(piece.end - r.end) < 0.05 ? rightOverhang : 0;
                 return (
                 <div
-                  key={`ct${i}`}
+                  key={`ct${i}-${pieceIndex}`}
+                  data-countertop-run={`${piece.start.toFixed(3)}:${piece.end.toFixed(3)}`}
                   className="absolute z-20 pointer-events-none rounded-[1px]"
                   style={{
-                    left: (r.start - leftOverhang) * ppi,
-                    width: (r.end - r.start + leftOverhang + rightOverhang) * ppi,
+                    left: (piece.start - pieceLeft) * ppi,
+                    width: (piece.end - piece.start + pieceLeft + pieceRight) * ppi,
                     bottom: Math.ceil(STD.BASE_HEIGHT * ppi),
                     height: THICKNESS_IN * ppi,
                     ...(realistic ? {
@@ -1425,7 +1448,7 @@ export function ElevationView({
                   }}
                   title={t("dt_ev_countertop", { material: mat.name })}
                 />
-              );})}
+              );});})}
             </>
           );
         })()}

@@ -1,23 +1,20 @@
 // @vitest-environment jsdom
 /**
- * The owner's item 1: a farmhouse / apron-front sink must sit with its apron
- * flush with the cabinet door faces, not standing proud of the countertop.
- *
- * The sink is built exactly the way the Designer builds it — a real FSB sink
- * base plus `makeSinkForCabinet` — and then the rendered apron is measured
- * against the finished door plane. A real apron sink is flush with the doors
- * below it, so anything past the door plane is the bug.
+ * A farmhouse apron stands 1/2" proud of the door faces. It must not sit back
+ * inside the face frame, and it must not jump out by half the sink width
+ * (the old 6" bug).
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addSinkFixture, farmhouseApronEdgeInsetIn } from "./InteractiveRoom3D";
+import { addCabinet, addSinkFixture, existingCabinetSku, existingCabinetTransform, farmhouseApronEdgeInsetIn } from "./InteractiveRoom3D";
 import { makeSinkForCabinet, type PlacedCabinet, type RoomData } from "@/lib/design";
+import { FARMHOUSE_SINK_APRON_PROUD_IN } from "@/lib/farmhouseSinkBaseFace";
 
-const INCH = 0.08333333333333333;
+const INCH = 1 / 12;
 
 const room = { width: 144, depth: 120, ceilingHeight: 96, openWallPath: false } as RoomData;
 
-function farmBase(width: number): PlacedCabinet {
+function farmBase(width: number, overrides: Partial<PlacedCabinet> = {}): PlacedCabinet {
   return {
     uid: `fsb-${width}`,
     cabinetId: 11,
@@ -34,84 +31,119 @@ function farmBase(width: number): PlacedCabinet {
     rotation: 0,
     wallId: "top",
     wallOffset: 12,
+    numberOfDoors: 2,
+    numberOfDrawers: 0,
+    ...overrides,
   } as PlacedCabinet;
 }
 
-/** The Designer's own farmhouse fixture for a base on the top wall. */
 function mountedFarmSink(baseWidth = 36, sinkWidth = 33, sinkDepth = 21) {
   const base = farmBase(baseWidth);
   const sink = {
     ...makeSinkForCabinet("farmhouse", base, room, { width: sinkWidth, depth: sinkDepth }),
-    // `buildPelicanSinkOnCabinet` stamps this from the verified profile; the
-    // generic helper only decides the box type.
     apronFront: true,
   };
   return { base, sink };
 }
 
-function apronBounds(sink: ReturnType<typeof mountedFarmSink>["sink"]) {
-  const root = new THREE.Group();
-  addSinkFixture(root, sink);
-  let apron: THREE.Object3D | null = null;
-  root.traverse((node) => {
-    if (node.userData.sinkApronFront) apron = node;
-  });
-  expect(apron).not.toBeNull();
-  return new THREE.Box3().setFromObject(apron!);
+function worldFront(node: THREE.Object3D, side: "max" | "min" = "max") {
+  const box = new THREE.Box3().setFromObject(node);
+  return (side === "max" ? box.max.z : box.min.z) / INCH;
 }
 
-describe("farmhouse apron sits flush with the cabinet door faces", () => {
-  it("puts the apron's front face on the sink base's door plane, not past it", () => {
+describe("farmhouse apron stands proud of the cabinet doors", () => {
+  it("puts the apron half an inch in front of the door slab, not back inside the frame", () => {
     const { base, sink } = mountedFarmSink();
-    const doorPlaneIn = base.y + base.depth; // 24" — the finished door face
-    const apron = apronBounds(sink);
-    const apronFrontIn = apron.max.z / INCH;
-    // Flush: within a hair of the door face, and never past it.
-    expect(apronFrontIn).toBeLessThanOrEqual(doorPlaneIn + 0.02);
-    expect(apronFrontIn).toBeGreaterThan(doorPlaneIn - 0.5);
+    const root = new THREE.Group();
+    addCabinet(
+      root,
+      existingCabinetSku(base),
+      null,
+      {},
+      room.width,
+      room.depth,
+      "#6d7580",
+      "#f4f1ea",
+      undefined,
+      existingCabinetTransform(base, room),
+      undefined,
+      undefined,
+      { suppressFarmhouseSinkPlaceholder: true },
+    );
+    addSinkFixture(root, sink);
+    root.updateMatrixWorld(true);
+    let door: THREE.Object3D | null = null;
+    let apron: THREE.Object3D | null = null;
+    root.traverse((node) => {
+      if (node.userData.farmhouseBaseDoor === 1) door = node;
+      if (node.userData.sinkApronFront) apron = node;
+    });
+    expect(door).not.toBeNull();
+    expect(apron).not.toBeNull();
+    const doorFrontIn = worldFront(door!);
+    const apronFrontIn = worldFront(apron!);
+    expect(apronFrontIn - doorFrontIn).toBeCloseTo(FARMHOUSE_SINK_APRON_PROUD_IN, 2);
   });
 
-  it("never stands proud of the countertop front, which was the 6 inch bug", () => {
+  it("stays within an inch of the counter front instead of standing 6 inches proud", () => {
     const countertopFrontIn = 25.5;
     const { sink } = mountedFarmSink();
-    expect(apronBounds(sink).max.z / INCH).toBeLessThanOrEqual(countertopFrontIn + 0.01);
+    const root = new THREE.Group();
+    addSinkFixture(root, sink);
+    let apron: THREE.Object3D | null = null;
+    root.traverse((node) => {
+      if (node.userData.sinkApronFront) apron = node;
+    });
+    const apronFrontIn = worldFront(apron!);
+    expect(apronFrontIn).toBeLessThan(countertopFrontIn + 1);
+    expect(apronFrontIn).toBeGreaterThan(24);
   });
 
-  it("reports no protrusion for a 30, 33, and 36 inch apron sink", () => {
+  it("keeps a 30, 33, and 36 inch apron the same small distance past the cabinet box", () => {
     for (const [baseWidth, sinkWidth] of [[30, 30], [36, 33], [36, 36]] as const) {
       const { base, sink } = mountedFarmSink(baseWidth, sinkWidth);
-      const doorPlaneIn = base.y + base.depth;
-      expect(apronBounds(sink).max.z / INCH).toBeLessThanOrEqual(doorPlaneIn + 0.02);
+      const root = new THREE.Group();
+      addSinkFixture(root, sink);
+      let apron: THREE.Object3D | null = null;
+      root.traverse((node) => {
+        if (node.userData.sinkApronFront) apron = node;
+      });
+      const carcassFrontIn = base.y + base.depth;
+      expect(worldFront(apron!)).toBeCloseTo(carcassFrontIn + 1.13, 2);
     }
   });
 
-  it("stays flush on a bottom wall as well, mirrored", () => {
-    const base = { ...farmBase(36), wallId: "bottom", y: 120 - 24, wallOffset: 12 } as PlacedCabinet;
+  it("stands proud on a bottom wall as well, mirrored", () => {
+    const base = farmBase(36, { wallId: "bottom", y: 120 - 24, wallOffset: 12 });
     const sink = {
       ...makeSinkForCabinet("farmhouse", base, room, { width: 33, depth: 21 }),
       apronFront: true,
     };
-    const apron = apronBounds(sink);
-    const doorPlaneIn = base.y; // the room-facing face on a bottom wall
-    expect(apron.min.z / INCH).toBeGreaterThanOrEqual(doorPlaneIn - 0.02);
-    expect(apron.min.z / INCH).toBeLessThanOrEqual(doorPlaneIn + 0.5);
+    const root = new THREE.Group();
+    addSinkFixture(root, sink);
+    let apron: THREE.Object3D | null = null;
+    root.traverse((node) => {
+      if (node.userData.sinkApronFront) apron = node;
+    });
+    const carcassFrontIn = base.y;
+    expect(worldFront(apron!, "min")).toBeCloseTo(carcassFrontIn - 1.13, 2);
   });
 
-  it("keeps the apron inside the sink's own footprint, so it cannot hang off the run", () => {
+  it("keeps the apron on the sink's room-facing edge", () => {
     const { sink } = mountedFarmSink();
-    const sinkFrontIn = sink.y + sink.depth;
-    expect(apronBounds(sink).max.z / INCH).toBeLessThanOrEqual(sinkFrontIn + 0.02);
+    const root = new THREE.Group();
+    addSinkFixture(root, sink);
+    let apron: THREE.Object3D | null = null;
+    root.traverse((node) => {
+      if (node.userData.sinkApronFront) apron = node;
+    });
+    expect(worldFront(apron!)).toBeCloseTo(sink.y + sink.depth, 2);
   });
 
   it("measures the inset on the into-the-room axis, not the lateral span", () => {
-    // Regression for the exact bug: the slab sits half the DEPTH in from center
-    // plus half its own thickness. The old code used the WIDTH, which is 6"
-    // further out for a 33 x 21 sink on a top wall.
     const inset = farmhouseApronEdgeInsetIn({ planWidthIn: 33, planDepthIn: 21, apronThicknessIn: 1.2, side: "top" });
     expect(inset).toBeCloseTo(21 / 2 - 1.2 / 2, 5);
-    // Width never enters the top-wall answer.
     expect(farmhouseApronEdgeInsetIn({ planWidthIn: 60, planDepthIn: 21, apronThicknessIn: 1.2, side: "top" })).toBeCloseTo(inset, 5);
-    // The into-the-room axis swaps on a left/right wall.
     expect(farmhouseApronEdgeInsetIn({ planWidthIn: 21, planDepthIn: 33, apronThicknessIn: 1.2, side: "left" })).toBeCloseTo(21 / 2 - 1.2 / 2, 5);
   });
 });

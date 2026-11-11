@@ -8,6 +8,7 @@
  * backsplash height when none was chosen, an unselected material) stays blank
  * and is listed under `unknowns` instead of being filled with a shop default.
  */
+import { applyApronFrontCountertopNotches } from "@/lib/farmSinkCountertopNotch";
 import {
   COUNTERTOP_DEPTH_IN,
   STD,
@@ -646,12 +647,18 @@ export function buildCountertopFabricationSheet(input: CountertopFabricationInpu
     generatedAt: (input.now ?? new Date()).toISOString(),
   };
 
-  const perimeterSurfaces = countertopSurfaces(placed, room, island, input.ponyWalls ?? [])
-    .filter((surface) => surface.kind !== "island" && surface.width > TOL && surface.depth > TOL);
+  const perimeterSurfaces = applyApronFrontCountertopNotches(
+    countertopSurfaces(placed, room, island, input.ponyWalls ?? [])
+      .filter((surface) => surface.kind !== "island" && surface.width > TOL && surface.depth > TOL),
+    sinks,
+  );
   const islandSurfaces: CountertopSurface[] = island
-    ? islandCountertopRects(island, placed)
-      .filter((rect) => rect.width > TOL && rect.depth > TOL)
-      .map((rect) => ({ ...rect, kind: "island" as const }))
+    ? applyApronFrontCountertopNotches(
+      islandCountertopRects(island, placed)
+        .filter((rect) => rect.width > TOL && rect.depth > TOL)
+        .map((rect) => ({ ...rect, kind: "island" as const })),
+      sinks,
+    )
     : [];
 
   type Piece = {

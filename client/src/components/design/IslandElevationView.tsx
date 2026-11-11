@@ -27,6 +27,7 @@ import {
 } from "@/lib/design";
 import { inferredIslandFace, islandCountertopRect, islandFaceLength, islandOffsetForPlaced } from "@/lib/islandScene";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
+import { subtractRunIntervals } from "@/lib/farmSinkCountertopNotch";
 import {
   type HardwareStyleId,
   hardwareStyle as resolveHardwareStyle,
@@ -375,6 +376,8 @@ interface Props {
   attributesTargetUid?: string | null;
   onSelect: (uid: string | null) => void;
   countertopMaterialId?: string | null;
+  /** Installed sinks. An apron-front sink opens the counter band across its front. */
+  sinks?: readonly { cabinetUid?: string | null; type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number }[];
   finish?: FinishColors;
   crown?: boolean;
   toeKick?: boolean;
@@ -406,6 +409,7 @@ const TOL = 2;
 export function IslandElevationView({
   room, cabinets, island, face = "front", selectedUid, attributesTargetUid = null, onSelect,
   countertopMaterialId = null,
+  sinks = [],
   finish = DEFAULT_FINISH_COLORS,
   crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", hardwareStyleId = null, hardwareAccent = "#1a2744",
@@ -763,15 +767,34 @@ export function IslandElevationView({
                 runs.push({ start: s.start, end: s.end });
               }
             }
+            const farmSinkGaps = sorted.filter((cabinet) => isFarmerSinkBase(cabinet)).map((cabinet) => {
+              const geometry = islandFarmhouseSinkElevationGeometry(sizeAlong(cabinet));
+              const origin = posAlong(cabinet);
+              let start = origin + geometry.sideInsetIn;
+              let end = start + geometry.apronWidthIn;
+              const sink = sinks.find((item) => item.cabinetUid === cabinet.uid && (item.apronFront || item.type === "farmhouse"));
+              if (sink && (face === "front" || face === "back")) {
+                const sinkStart = reverseFace
+                  ? planSpan - (sink.x - island.x) - sink.width
+                  : sink.x - island.x;
+                start = Math.min(start, sinkStart);
+                end = Math.max(end, sinkStart + sink.width);
+              }
+              return { start, end };
+            });
             return (
               <>
-                {runs.map((r, i) => (
+                {runs.flatMap((r, i) => subtractRunIntervals([r], farmSinkGaps).map((piece, pieceIndex) => {
+                  const pieceLeft = Math.abs(piece.start - r.start) < 0.05 ? OVERHANG_IN : 0;
+                  const pieceRight = Math.abs(piece.end - r.end) < 0.05 ? OVERHANG_IN : 0;
+                  return (
                   <div
-                    key={`ctr${i}`}
+                    key={`ctr${i}-${pieceIndex}`}
+                    data-countertop-run={`${piece.start.toFixed(3)}:${piece.end.toFixed(3)}`}
                     className="absolute z-20 pointer-events-none rounded-[1px]"
                     style={{
-                      left: (r.start - OVERHANG_IN) * ppi,
-                      width: (r.end - r.start + OVERHANG_IN * 2) * ppi,
+                      left: (piece.start - pieceLeft) * ppi,
+                      width: (piece.end - piece.start + pieceLeft + pieceRight) * ppi,
                       // Flush on top of 34.5" base cabinets; slab extends up 1.5" to 36".
                       bottom: STD.BASE_HEIGHT * ppi,
                       height: THICKNESS_IN * ppi,
@@ -783,7 +806,8 @@ export function IslandElevationView({
                       boxShadow: "0 2px 4px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.55)",
                     }}
                   />
-                ))}
+                  );
+                }))}
               </>
             );
 	          })()}

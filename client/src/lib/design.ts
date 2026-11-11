@@ -3,6 +3,8 @@
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
+import { apronFrontRemovedArea, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
+import { farmhouseSinkApronPastCarcassIn } from "@/lib/farmhouseSinkBaseFace";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
   REFRIGERATOR_PANEL_LIMIT_EPSILON_IN,
@@ -7772,6 +7774,7 @@ export function countertopArea(
   island?: IslandZone | null,
   islandSlabs?: readonly CountertopSlabMeasurement[] | null,
   room?: RoomData | null,
+  sinks?: readonly { type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number; wallSide?: string | null }[] | null,
 ): CountertopMeasurement {
   const hasExplicitIslandFaces = island ? placed.some((item) => item.islandFace != null) : false;
   const isIslandMember = (item: PlacedCabinet) => island != null && (
@@ -7783,13 +7786,13 @@ export function countertopArea(
     .filter((p) => bearsCountertop(p) && !peninsulaRunIds.has(cabinetWall(p, room ?? DEFAULT_ROOM)));
   const straightRunInches = straightBases
     .reduce((sum, p) => sum + rotatedSize(p).w, 0);
-  const straightCountertopSquareIn = straightBases
+  let straightCountertopSquareIn = straightBases
     .reduce((sum, p) => sum + rotatedSize(p).w * (room ? countertopDepthForRunItem(p, perimeterPlaced, room) : countertopDepthForCabinet(p)), 0);
   const peninsulaSurfaces = room
     ? countertopSurfaces(perimeterPlaced, room).filter((surface) => Boolean(surface.peninsulaRunId))
     : [];
   const peninsulaRunInches = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.runLinearInches ?? surface.linearInches ?? 0), 0);
-  const peninsulaSquareIn = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.areaInches ?? 0), 0);
+  let peninsulaSquareIn = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.areaInches ?? 0), 0);
   const runInches = straightRunInches + peninsulaRunInches;
   let squareIn = straightCountertopSquareIn + peninsulaSquareIn;
   let islandSquareIn = 0;
@@ -7847,7 +7850,13 @@ export function countertopArea(
       waterfallSqIn += STD.BASE_HEIGHT * terminalDepth;
     }
   }
-  squareIn += waterfallSqIn;
+  if (room && sinks?.some(isApronFrontSink)) {
+    const removed = apronFrontRemovedArea(countertopSurfaces(placed, room, island), sinks);
+    straightCountertopSquareIn = Math.max(0, straightCountertopSquareIn - removed.straight);
+    peninsulaSquareIn = Math.max(0, peninsulaSquareIn - removed.peninsula);
+    islandSquareIn = Math.max(0, islandSquareIn - removed.island);
+  }
+  squareIn = straightCountertopSquareIn + peninsulaSquareIn + islandSquareIn + waterfallSqIn;
   const waterfallSqFt = Math.ceil((waterfallSqIn / 144) * 10) / 10;
   const perimeterSquareFeet = Math.ceil(((straightCountertopSquareIn + peninsulaSquareIn + waterfallSqIn) / 144) * 10) / 10;
   const islandSquareFeet = Math.ceil((islandSquareIn / 144) * 10) / 10;
@@ -15688,23 +15697,30 @@ export function makeSinkForCabinet(
   const footprint = placedFootprint(cabinet);
   const centeredX = Math.max(cabinet.x, Math.min(cabinet.x + footprint.w - plan.width, cabinet.x + footprint.w / 2 - plan.width / 2));
   const centeredY = Math.max(cabinet.y, Math.min(cabinet.y + footprint.d - plan.depth, cabinet.y + footprint.d / 2 - plan.depth / 2));
-  // Farmhouse sinks are countertop-mounted but their apron is flush with the
-  // room-facing cabinet front. Keep the run axis centered while moving only the
-  // wall-normal axis to that front edge.
-  const x = type === "farmhouse"
+  // A farmhouse apron is the front of the run. Keep the sink centered along the
+  // run, then move only the wall-normal axis until the apron face is proud of
+  // the doors. The countertop notch, not this box, keeps stone off that front.
+  const apronPastCarcassIn = type === "farmhouse" ? farmhouseSinkApronPastCarcassIn() : 0;
+  let x = type === "farmhouse"
     ? side === "left"
       ? cabinet.x + footprint.w - plan.width
       : side === "right"
         ? cabinet.x
         : centeredX
     : centeredX;
-  const y = type === "farmhouse"
+  let y = type === "farmhouse"
     ? side === "top"
       ? cabinet.y + footprint.d - plan.depth
       : side === "bottom"
         ? cabinet.y
         : centeredY
     : centeredY;
+  if (apronPastCarcassIn > 0) {
+    if (side === "top") y += apronPastCarcassIn;
+    else if (side === "bottom") y -= apronPastCarcassIn;
+    else if (side === "left") x += apronPastCarcassIn;
+    else if (side === "right") x -= apronPastCarcassIn;
+  }
 	  const deckPlacement = type === "farmhouse"
 	    ? null
 	    : nonApronSinkDeckPlacement(cabinet, room, { width: rawWidth, depth: rawDepth }, options?.frontSetbackIn);
