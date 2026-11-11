@@ -1032,6 +1032,9 @@ function Footer() {
                   </Link>
                 </li>
               ))}
+              <li>
+                <a href="/careers" className="hover:text-white transition-colors">Career Opportunities</a>
+              </li>
             </ul>
           </div>
         </div>
