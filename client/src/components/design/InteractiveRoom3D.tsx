@@ -8474,7 +8474,14 @@ export function threeDRoomFacingRotation(
   const intendedWall = usesVerticalRun ? sideWall : horizontalWall;
   const intendedWallDistance = usesVerticalRun ? Math.min(leftDistance, rightDistance) : Math.min(backDistance, frontDistance);
   const wall = intendedWallDistance <= 6 ? intendedWall : defaultWall;
-  return wall ? facing[wall] : fallbackRotation;
+  if (wall) return facing[wall];
+  // Left and right walls both store plan rotation 90°. The raw angle faces
+  // the left wall. A pulled-forward over-fridge cabinet that has lost its wall
+  // id still belongs to the nearer side wall, and the right wall faces -90°.
+  if (usesVerticalRun && (cabinet.depthPositionAdjusted || cabinet.refrigeratorAssemblyRole === "bridge")) {
+    return facing[sideWall];
+  }
+  return fallbackRotation;
 }
 
 export function threeDBlindCornerFrontLayout(bodyWidth: number, doorSide: "left" | "right", openingWidthIn?: number | null) {
@@ -8568,6 +8575,11 @@ export function existingCabinetTransform(
 	  isStacker(cabinet) &&
 	  isGlassDoorCabinet(cabinet),
 	);
+  // An over-fridge cabinet (and any wall box pulled forward on purpose) keeps
+  // that front. Snapping it back to the wall is what recessed it behind the panels.
+  const preserveAdjustedWallDepth = Boolean(
+    cabinet.placement === "wall" && cabinet.depthPositionAdjusted,
+  );
   // A Continuous Wall Builder run is an explicit measured segment, not a
   // legacy rectangular-room edge. A 45-degree base or appliance can happen to
   // be near the rectangular room's front/left boundary; re-seating it to that
@@ -8580,6 +8592,7 @@ export function existingCabinetTransform(
 	    && !isMeasuredWallCabinet
 	    && !cabinet.islandFace
 	    && !preserveGlassStackerFrontDepth
+	    && !preserveAdjustedWallDepth
 	    && cabinet.placement === "wall"
     ? cabinetWall(cabinet, room as RoomData)
     : hasPlacedRoom

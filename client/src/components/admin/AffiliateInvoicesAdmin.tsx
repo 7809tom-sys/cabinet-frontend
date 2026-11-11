@@ -30,6 +30,7 @@ import {
 import { toast } from "sonner";
 import { FileText, Check, Plus } from "lucide-react";
 import StripeInvoicesAdmin from "@/components/admin/StripeInvoicesAdmin";
+import { membershipOptionsLabel, membershipPriceLabel } from "@shared/affiliate";
 
 function money(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -118,9 +119,9 @@ export default function AffiliateInvoicesAdmin() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <p className="text-sm text-muted-foreground">Annual fee</p>
-            <p className="text-2xl font-bold">$1,195</p>
-            <p className="text-xs text-muted-foreground mt-1">per affiliate / year</p>
+            <p className="text-sm text-muted-foreground">Membership prices</p>
+            <p className="text-lg font-bold">{membershipOptionsLabel()}</p>
+            <p className="text-xs text-muted-foreground mt-1">Annual invoices default to {membershipPriceLabel()}</p>
           </CardContent>
         </Card>
       </div>
@@ -143,8 +144,9 @@ export default function AffiliateInvoicesAdmin() {
               </SelectContent>
             </Select>
             <p className="mt-2 text-xs text-muted-foreground">
-              The table below is the internal $1,195 membership ledger. Stripe charges for that affiliate, including
+              The table below is the internal membership ledger ({membershipOptionsLabel()}). Stripe charges for that affiliate, including
               customer orders and any membership payment recorded with a Stripe id, are in the payment history under it.
+              Card checkout writes paid, active, past-due, and canceled status from Stripe. Manual entry is still available.
             </p>
           </div>
         </CardContent>
@@ -172,7 +174,7 @@ export default function AffiliateInvoicesAdmin() {
             disabled={!createForId || createInvoice.isPending}
             onClick={() => createInvoice.mutate({ affiliateId: Number(createForId) })}
           >
-            <Plus className="h-4 w-4" /> Create $1,195 invoice
+            <Plus className="h-4 w-4" /> Create {membershipPriceLabel()} invoice
           </Button>
         </CardContent>
       </Card>

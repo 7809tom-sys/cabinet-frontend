@@ -52,6 +52,8 @@ import DoorCorrectionsAdmin from "@/components/admin/DoorCorrectionsAdmin";
 import DoorRenderingAuditAdmin from "@/components/admin/DoorRenderingAuditAdmin";
 import ConsultationsAdmin from "@/components/admin/ConsultationsAdmin";
 import SalesCommissionsAdmin from "@/components/admin/SalesCommissionsAdmin";
+import SalesRepsAdmin from "@/components/admin/SalesRepsAdmin";
+import LegalPagesOperationsAdmin from "@/components/admin/LegalPagesOperationsAdmin";
 import AffiliateInvoicesAdmin from "@/components/admin/AffiliateInvoicesAdmin";
 import CabinetSpreadsheetAdmin from "@/components/admin/CabinetSpreadsheetAdmin";
 import CabinetLineDownload from "@/components/admin/CabinetLineDownload";
@@ -147,6 +149,7 @@ const GROUPS = [
       { value: "affiliate-invoices", label: "Affiliate Invoices" },
       { value: "payouts", label: "Payouts" },
       { value: "commissions", label: "Sales Commissions" },
+      { value: "sales-reps", label: "Sales Reps" },
       { value: "pros", label: "Pro Applications" },
       { value: "contractor-access", label: "Contractor Access" },
       { value: "vendors", label: "Vendors" },
@@ -185,6 +188,7 @@ const GROUPS = [
       { value: "elevenlabs-operations", label: "ElevenLabs Audio" },
       { value: "manual-ai-renders", label: "Manual AI Renders" },
       { value: "team-notes", label: "Team Notes" },
+      { value: "legal-pages", label: "Warranties & Legal" },
     ],
   },
   {
@@ -616,6 +620,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="roles" className="mt-6"><AdminTabErrorBoundary tabName="Roles"><AdminTabHelp tab="roles" /><RolesAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="affiliates" className="mt-6"><AdminTabErrorBoundary tabName="Affiliates"><AdminTabHelp tab="affiliates" /><AffiliatesAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="affiliate-invoices" className="mt-6"><AdminTabErrorBoundary tabName="Affiliate Invoices"><AdminTabHelp tab="affiliate-invoices" /><AffiliateInvoicesAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="sales-reps" className="mt-6"><AdminTabErrorBoundary tabName="Sales Reps"><SalesRepsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="payouts" className="mt-6"><AdminTabErrorBoundary tabName="Payouts"><AdminTabHelp tab="payouts" /><PayoutsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="commissions" className="mt-6"><AdminTabErrorBoundary tabName="Sales Commissions"><AdminTabHelp tab="commissions" /><SalesCommissionsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="pros" className="mt-6"><AdminTabErrorBoundary tabName="Pro Applications"><AdminTabHelp tab="pros" /><ProApplications /></AdminTabErrorBoundary></TabsContent>
@@ -687,6 +692,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="elevenlabs-operations" className="mt-6"><AdminTabErrorBoundary tabName="ElevenLabs Audio"><ElevenLabsOperationsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="manual-ai-renders" className="mt-6"><AdminTabErrorBoundary tabName="Manual AI Renders"><ManualAiRenderQueueAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="team-notes" className="mt-6"><AdminTabErrorBoundary tabName="Team Notes"><AdminStickyNotes /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="legal-pages" className="mt-6"><AdminTabErrorBoundary tabName="Warranties & Legal"><LegalPagesOperationsAdmin /></AdminTabErrorBoundary></TabsContent>
 
         {/* Settings */}
         <TabsContent value="banners" className="mt-6"><AdminTabErrorBoundary tabName="Banner Management"><BannerAdmin /></AdminTabErrorBoundary></TabsContent>

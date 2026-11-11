@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { DollarSign, Check, RotateCcw } from "lucide-react";
+import SalesRepCommissionSettings from "@/components/admin/SalesRepCommissionSettings";
 
 function money(cents: number) {
   return (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
@@ -56,6 +57,7 @@ export default function SalesCommissionsAdmin() {
 
   return (
     <div className="space-y-6">
+      <SalesRepCommissionSettings />
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="pt-6">

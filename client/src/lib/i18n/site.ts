@@ -130,8 +130,8 @@ export const SITE_STRINGS = {
     home_aud_affiliates_d: "Run your own branded storefront on top of the platform catalog and earn on every order you bring in.",
     home_aud_affiliates_cta: "Affiliate Program",
     home_aff_title: "Become a CabinetDealz Affiliate",
-    home_aff_sub: "Launch a branded kitchen and bath storefront on the CabinetDealz catalog, with trade pricing and fulfillment included. One annual membership. No inventory to stock.",
-    home_aff_note: "{price}/year membership. Free to apply.",
+    home_aff_sub: "Launch a branded kitchen and bath storefront on the CabinetDealz catalog, with trade pricing and fulfillment included. Annual or monthly membership. No inventory to stock.",
+    home_aff_note: "{price}. Free to apply.",
     home_aff_earn: "Every kitchen or bath order through your storefront earns a commission. No inventory to stock.",
 
     // --- Home: platform features ---
@@ -1480,8 +1480,8 @@ export const SITE_STRINGS = {
     home_aud_affiliates_d: "Maneja tu propia tienda con tu marca sobre el catálogo de la plataforma y gana en cada pedido que generes.",
     home_aud_affiliates_cta: "Programa de Afiliados",
     home_aff_title: "Conviértete en afiliado de CabinetDealz",
-    home_aff_sub: "Lanza una tienda de cocina y baño con tu marca sobre el catálogo de CabinetDealz, con precios comerciales y envío incluidos. Una membresía anual. Sin inventario que almacenar.",
-    home_aff_note: "Membresía de {price} al año. Solicitar es gratis.",
+    home_aff_sub: "Lanza una tienda de cocina y baño con tu marca sobre el catálogo de CabinetDealz, con precios comerciales y envío incluidos. Membresía anual o mensual. Sin inventario que almacenar.",
+    home_aff_note: "{price}. Solicitar es gratis.",
     home_aff_earn: "Cada pedido de cocina o baño en tu tienda genera una comisión. Sin inventario que almacenar.",
 
     // --- Inicio: funciones de la plataforma ---
@@ -2754,8 +2754,8 @@ export const SITE_STRINGS = {
     home_aud_affiliates_t: "联盟",
     home_aud_affiliates_cta: "联盟计划",
     home_aff_title: "成为 CabinetDealz 联盟伙伴",
-    home_aff_sub: "在 CabinetDealz 产品目录上开设自有品牌的厨卫店面，含批发价与履约配送。每年一次会员费。无需囤货。",
-    home_aff_note: "{price}/年会员费。申请免费。",
+    home_aff_sub: "在 CabinetDealz 产品目录上开设自有品牌的厨卫店面，含批发价与履约配送。年付或月付会员费。无需囤货。",
+    home_aff_note: "{price}。申请免费。",
     home_aff_earn: "通过您的店面成交的每笔厨卫订单都可获得佣金。无需囤货。",
     home_feat_eyebrow: "平台功能",
     home_feat_ocr_t: "照片转购物车（OCR）",

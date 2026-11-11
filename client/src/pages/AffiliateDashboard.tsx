@@ -60,7 +60,10 @@ import { MyCustomersPanel } from "@/components/affiliate/MyCustomersPanel";
 import {
   AFFILIATE_MEMBERSHIP,
   formatMembershipPrice,
+  membershipOptionsLabel,
+  monthlyMembershipPriceLabel,
 } from "@shared/affiliate";
+import AffiliateOperatorNotice from "@/components/affiliate/AffiliateOperatorNotice";
 import {
   AFFILIATE_STOREFRONT_TEMPLATES,
   type AffiliateStorefrontTemplate,
@@ -87,6 +90,7 @@ function AffiliateLanding() {
       <nav aria-label="Portal sign in" className="border-b border-border bg-background">
         <div className="container flex flex-wrap items-center justify-end gap-x-6 gap-y-2 py-3">
           <Link href={affiliateHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Affiliate sign in</Link>
+          <Link href="/sales-rep/apply" className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Sales rep application</Link>
           <Link href={contractorHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Contractor sign in</Link>
         </div>
       </nav>
@@ -104,24 +108,39 @@ function AffiliateLanding() {
               — Without the Overhead
             </h1>
             <p className="text-white/80 text-lg md:text-xl mt-6 leading-relaxed">
-              One annual membership gives you a fully branded storefront, the 3D Kitchen Designer,
+              An annual or monthly membership gives you a fully branded storefront, the 3D Kitchen Designer,
               access to thousands of cabinets and surfaces at trade pricing, and we handle all the fulfillment.
               A single completed kitchen order typically returns more than the membership costs.
             </p>
             <div className="mt-10 flex flex-wrap items-end gap-6">
               <div>
-                <span className="font-serif text-5xl md:text-6xl font-bold text-[var(--color-gold)]">
-                  {formatMembershipPrice()}
-                </span>
-                <span className="text-white/70 text-lg ml-2">
-                  per {AFFILIATE_MEMBERSHIP.billingPeriod}
-                </span>
+                <div className="font-serif text-4xl md:text-5xl font-bold text-[var(--color-gold)]">
+                  {monthlyMembershipPriceLabel()}
+                </div>
+                <div className="text-white/70 text-sm mt-1">{AFFILIATE_MEMBERSHIP.monthlyMinimumMonths}-month minimum, then month to month</div>
+                <div className="font-serif text-3xl font-bold text-white mt-3">
+                  or {formatMembershipPrice()}
+                  <span className="text-white/70 text-lg ml-2">per {AFFILIATE_MEMBERSHIP.billingPeriod}</span>
+                </div>
               </div>
-              <Link href="/pro-network">
-                <Button size="lg" className="bg-[var(--color-gold)] text-[var(--color-navy)] hover:bg-[var(--color-gold)]/90 font-bold text-base px-8 gap-2">
-                  Apply Now <ArrowRight className="h-5 w-5" />
-                </Button>
-              </Link>
+              <div className="flex flex-col gap-3">
+                <Link href="/pro-network">
+                  <Button size="lg" className="bg-[var(--color-gold)] text-[var(--color-navy)] hover:bg-[var(--color-gold)]/90 font-bold text-base px-8 gap-2">
+                    Apply Now <ArrowRight className="h-5 w-5" />
+                  </Button>
+                </Link>
+                <Link href="/affiliate/membership">
+                  <Button size="lg" variant="outline" className="border-white/40 bg-transparent text-white hover:bg-white/10 font-bold text-base px-8">
+                    Pay membership
+                  </Button>
+                </Link>
+              </div>
+            </div>
+            <div className="mt-8 max-w-xl text-white">
+              <AffiliateOperatorNotice />
+              <p className="mt-3 text-sm text-white/70">
+                Read the <a href="/affiliate-agreement" className="underline underline-offset-4">Affiliate Agreement</a> before you pay. Applying stays free.
+              </p>
             </div>
           </div>
         </div>
@@ -135,7 +154,7 @@ function AffiliateLanding() {
           </h2>
           <p className="text-muted-foreground text-lg mt-4">
             Built independently, this is a multi-thousand-dollar project plus a developer on retainer.
-            With CabinetDealz, you get it all for one annual fee.
+            With CabinetDealz, you get it all for an annual or monthly membership.
           </p>
         </div>
 
@@ -191,16 +210,16 @@ function AffiliateLanding() {
               The Math Works in Your Favor
             </h2>
             <p className="text-muted-foreground text-lg mt-4">
-              One kitchen order can return more than your annual membership. Every order after that is profit.
+              One kitchen order can return more than your membership. Every order after that is profit.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
             <div className="text-center">
-              <div className="font-serif text-4xl md:text-5xl font-bold text-[var(--color-navy)]">
-                {formatMembershipPrice()}
+              <div className="font-serif text-3xl md:text-4xl font-bold text-[var(--color-navy)]">
+                {membershipOptionsLabel()}
               </div>
-              <div className="text-sm text-muted-foreground mt-2">Annual membership</div>
+              <div className="text-sm text-muted-foreground mt-2">Membership options</div>
             </div>
             <div className="text-center">
               <div className="font-serif text-4xl md:text-5xl font-bold text-emerald-600">
@@ -322,7 +341,7 @@ function AffiliateLanding() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-6">
-            {formatMembershipPrice()}/{AFFILIATE_MEMBERSHIP.billingPeriod} · Free to apply · No inventory required
+            {membershipOptionsLabel()} · Free to apply · No inventory required
           </p>
         </div>
       </section>
@@ -641,6 +660,12 @@ export default function AffiliateDashboard() {
                 {(commissionRate * 100).toFixed(1)}% commission on confirmed orders
               </p>
             </div>
+            <AffiliateOperatorNotice compact />
+            <p className="text-sm">
+              <a href="/affiliate/membership" className="font-semibold underline underline-offset-4">Pay or review membership</a>
+              {" · "}
+              <a href="/affiliate-agreement" className="underline underline-offset-4">Affiliate Agreement</a>
+            </p>
             <AffiliateTierCard tier={(activeQuery.data as { pricingTier?: AffiliateTierDashboard | null }).pricingTier} />
             {access.isOwner && <ContractorPreviewCard role={user?.role} storeSlug={affiliate.slug} />}
             {/* KPI cards */}
@@ -2492,6 +2517,7 @@ function EarningsPanel() {
 
   return (
     <div className="space-y-6">
+      <AffiliateOperatorNotice compact />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-border p-4">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

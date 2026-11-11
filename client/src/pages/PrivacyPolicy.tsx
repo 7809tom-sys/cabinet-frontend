@@ -1,5 +1,8 @@
+import { PublishedLegalSlot } from "@/components/legal/PublishedLegalSlot";
+
 export default function PrivacyPolicy() {
   return (
+    <PublishedLegalSlot slug="privacy">
     <div className="max-w-3xl mx-auto px-4 py-16">
       <h1 className="text-3xl font-bold text-foreground mb-2">Privacy Policy</h1>
       <p className="text-sm text-muted-foreground mb-10">Last updated: July 2025</p>
@@ -113,5 +116,6 @@ export default function PrivacyPolicy() {
         </section>
       </div>
     </div>
+    </PublishedLegalSlot>
   );
 }

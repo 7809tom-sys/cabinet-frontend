@@ -11349,6 +11349,17 @@ export function wallRunSpan(p: PlacedCabinet, side: string, room: RoomData): num
 const WALL_RUN_SEAT_TOLERANCE_IN = 0.125;
 
 /**
+ * The over-fridge cabinet is pulled forward on purpose so its face meets the
+ * refrigerator panels. That offset is not a stale seat: the wall id and the
+ * along-wall offset stay, on every wall.
+ */
+function refrigeratorBridgeKeepsForwardSeat(p: PlacedCabinet, room: RoomData): boolean {
+  if (p.placement !== "wall" || p.refrigeratorAssemblyRole !== "bridge" || !p.wallId) return false;
+  if (p.depthPositionAdjusted) return true;
+  return cabinetFrontOffsetIn(p, p.wallId, room) > WALL_RUN_SEAT_TOLERANCE_IN;
+}
+
+/**
  * Re-derives a cabinet's run metadata from its plan body on ANY wall kind.
  * - No wallId, island faces and true corner boxes (which own their vertex
  *   snap) are returned unchanged.
@@ -11370,6 +11381,10 @@ export function reseatOnWallRun(p: PlacedCabinet, room: RoomData): PlacedCabinet
     const { wallId: _wallId, wallOffset: _wallOffset, ...rest } = p;
     return rest as PlacedCabinet;
   };
+  // A refrigerator bridge pulled forward to its panel face is still on this
+  // run. Clearing wallId here is what made the 3D view shove it back to the
+  // wall and, on the right wall, turn it around.
+  if (refrigeratorBridgeKeepsForwardSeat(p, room)) return p;
   const span = alongRunSpan(p);
   const depth = Number(p.depth) || (p.placement === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH);
   const center = placedPlanCenter(p);

@@ -1,0 +1,2549 @@
+From d116c7de626d635a7dbf159f1bcaf43fec39d2cd Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 15:51:26 +0000
+Subject: [PATCH 1/4] Record affiliate membership checkout, rep commissions,
+ and legal page versions.
+
+Membership checkout stays in Stripe test mode. A monthly cancel before the three-month commitment is pushed to the commitment date so the remaining months still bill. Commission rates are admin settings and are copied onto each earned commission. Legal pages keep a version history.
+---
+ ...278_affiliate_membership_checkout.tidb.sql |  43 +++
+ server/lib/affiliateMembershipCheckout.ts     |  21 ++
+ server/lib/affiliateMembershipWebhook.ts      |  79 ++++-
+ server/lib/membershipProgramStore.ts          | 318 ++++++++++++++++++
+ server/routers.ts                             |   4 +
+ .../routers/affiliateMembership.plans.test.ts |  14 +-
+ server/routers/affiliateMembership.ts         |  37 +-
+ server/routers/legalPages.ts                  | 167 +++++++++
+ server/routers/salesRepProgram.ts             | 181 ++++++++++
+ server/stripeWebhook.ts                       |   3 +-
+ shared/affiliate.ts                           |  15 +-
+ shared/affiliateAgreement.ts                  | 106 ++++++
+ shared/affiliateMembershipPlans.ts            |  33 +-
+ shared/affiliateOperatorNotice.ts             |  18 +
+ shared/legalPages.ts                          | 285 ++++++++++++++++
+ shared/salesRepAgreement.ts                   |  32 ++
+ shared/salesRepCommission.ts                  | 152 +++++++++
+ 17 files changed, 1488 insertions(+), 20 deletions(-)
+ create mode 100644 docs/sql/0278_affiliate_membership_checkout.tidb.sql
+ create mode 100644 server/lib/membershipProgramStore.ts
+ create mode 100644 server/routers/legalPages.ts
+ create mode 100644 server/routers/salesRepProgram.ts
+ create mode 100644 shared/affiliateAgreement.ts
+ create mode 100644 shared/affiliateOperatorNotice.ts
+ create mode 100644 shared/legalPages.ts
+ create mode 100644 shared/salesRepAgreement.ts
+ create mode 100644 shared/salesRepCommission.ts
+
+diff --git a/docs/sql/0278_affiliate_membership_checkout.tidb.sql b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+new file mode 100644
+index 0000000..319978a
+--- /dev/null
++++ b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+@@ -0,0 +1,43 @@
++-- TiDB SQL editor version. Numbered 0278. Run after 0272.
++-- One statement per line. Every table is cabinet_dealz.<table>.
++-- Do not run this from the application. Tom pastes it by hand.
++-- A duplicate-table error on a re-run is safe: skip that line.
++--
++-- This adds sales-rep applications, editable commission settings, the rate
++-- snapshot on each earned commission, checkout acknowledgements, and versioned
++-- legal pages. It does not change order checkout, the cart, or quotes.
++-- The seeded commission settings are $400 flat and 0.5% (50 basis points) of
++-- confirmed order sales. The rep signup fee is left null on purpose.
++
++-- 1
++CREATE TABLE cabinet_dealz.sales_rep_applications (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, fullName VARCHAR(256) NOT NULL, email VARCHAR(320) NOT NULL, phone VARCHAR(32) NULL, state VARCHAR(64) NULL, businessName VARCHAR(256) NULL, status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending', agreementVersion VARCHAR(80) NOT NULL, agreementAcceptedAt DATETIME NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, KEY sales_rep_applications_status_idx (status));
++
++-- 2
++CREATE TABLE cabinet_dealz.sales_rep_commission_settings (id INT NOT NULL PRIMARY KEY, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, repFeeCents INT NULL, repFeeCheckoutEnabled TINYINT(1) NOT NULL DEFAULT 0, updatedByUserId INT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
++
++-- 3
++INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_order_gross', NULL, 0);
++
++-- 4
++CREATE TABLE cabinet_dealz.sales_rep_affiliate_credits (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, salesRepApplicationId INT NOT NULL, affiliateId INT NOT NULL, paymentRef VARCHAR(255) NULL, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, capturedAt DATETIME NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY sales_rep_affiliate_credits_affiliate_uq (affiliateId), KEY sales_rep_affiliate_credits_rep_idx (salesRepApplicationId));
++
++-- 5
++CREATE TABLE cabinet_dealz.sales_rep_commission_entries (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, salesRepApplicationId INT NOT NULL, affiliateId INT NOT NULL, kind ENUM('flat','residual') NOT NULL, sourceKey VARCHAR(128) NOT NULL, amountCents INT NOT NULL, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, orderId INT NULL, status ENUM('pending','paid','void') NOT NULL DEFAULT 'pending', earnedAt DATETIME NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY sales_rep_commission_entries_source_uq (sourceKey), KEY sales_rep_commission_entries_rep_idx (salesRepApplicationId));
++
++-- 6
++CREATE TABLE cabinet_dealz.affiliate_checkout_acknowledgements (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, affiliateId INT NOT NULL, userId INT NOT NULL, plan ENUM('annual','monthly') NOT NULL, salesRepApplicationId INT NULL, operatorNoticeAcceptedAt DATETIME NOT NULL, agreementVersion VARCHAR(80) NOT NULL, agreementAcceptedAt DATETIME NOT NULL, stripeSessionId VARCHAR(255) NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, KEY affiliate_checkout_ack_affiliate_idx (affiliateId));
++
++-- 7
++CREATE TABLE cabinet_dealz.legal_page_slots (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slug VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, publicPath VARCHAR(255) NOT NULL, publishedVersion INT NOT NULL DEFAULT 1, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_slots_slug_uq (slug), UNIQUE KEY legal_page_slots_path_uq (publicPath));
++
++-- 8
++CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
++
++-- 9
++INSERT INTO cabinet_dealz.legal_page_slots (slug, title, publicPath, publishedVersion) VALUES ('warranty', 'Warranty', '/warranty', 1), ('terms', 'Terms of Service / Terms and Conditions', '/terms', 1), ('affiliate-agreement', 'Affiliate Agreement', '/affiliate-agreement', 1), ('privacy', 'Privacy', '/privacy-policy', 1), ('sales-rep-agreement', 'Sales Rep Agreement', '/sales-rep-agreement', 1);
++
++-- 10
++INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy) SELECT id, 1, 'migration', NULL, 'Site page' FROM cabinet_dealz.legal_page_slots;
++
++-- 11. Which approved rep is credited for an affiliate. The flat fee is written only after the membership payment.
++CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT NULL PRIMARY KEY, salesRepApplicationId INT NOT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+diff --git a/server/lib/affiliateMembershipCheckout.ts b/server/lib/affiliateMembershipCheckout.ts
+index d4cc148..905bebb 100644
+--- a/server/lib/affiliateMembershipCheckout.ts
++++ b/server/lib/affiliateMembershipCheckout.ts
+@@ -19,6 +19,7 @@
+ 
+ import type Stripe from "stripe";
+ import { getStripe } from "../stripe";
++import { resolveStripeCredentials } from "../stripeConfig";
+ import {
+   membershipPlanOption,
+   normalizeMembershipPlan,
+@@ -35,10 +36,21 @@ export interface MembershipCheckoutInput {
+   customerEmail?: string | null;
+   customerName?: string | null;
+   invoiceId?: number | null;
++  salesRepApplicationId?: number | null;
++  operatorNoticeAcceptedAt?: string | null;
++  agreementVersion?: string | null;
++  agreementAcceptedAt?: string | null;
+   successUrl: string;
+   cancelUrl: string;
+ }
+ 
++/** Membership checkout refuses live keys. The error never includes the key. */
++export function assertMembershipCheckoutTestMode(environment: string): void {
++  if (environment !== "test") {
++    throw new Error("Affiliate membership checkout runs in Stripe test mode only.");
++  }
++}
++
+ export interface MembershipCheckoutResult {
+   url: string;
+   sessionId: string;
+@@ -57,6 +69,10 @@ export function membershipCheckoutMetadata(input: {
+   invoiceId?: number | null;
+   customerEmail?: string | null;
+   customerName?: string | null;
++  salesRepApplicationId?: number | null;
++  operatorNoticeAcceptedAt?: string | null;
++  agreementVersion?: string | null;
++  agreementAcceptedAt?: string | null;
+ }): Record<string, string> {
+   return {
+     purpose: MEMBERSHIP_CHECKOUT_PURPOSE,
+@@ -66,6 +82,10 @@ export function membershipCheckoutMetadata(input: {
+     affiliate_invoice_id: input.invoiceId != null ? String(input.invoiceId) : "",
+     customer_email: input.customerEmail ?? "",
+     customer_name: input.customerName ?? "",
++    sales_rep_application_id: input.salesRepApplicationId != null ? String(input.salesRepApplicationId) : "",
++    operator_notice_accepted_at: input.operatorNoticeAcceptedAt ?? "",
++    agreement_version: input.agreementVersion ?? "",
++    agreement_accepted_at: input.agreementAcceptedAt ?? "",
+   };
+ }
+ 
+@@ -76,6 +96,7 @@ export function isMembershipCheckoutMetadata(metadata: Record<string, string> |
+ export async function createMembershipCheckoutSession(
+   input: MembershipCheckoutInput,
+ ): Promise<MembershipCheckoutResult> {
++  assertMembershipCheckoutTestMode(resolveStripeCredentials().environment);
+   const stripe = getStripe();
+   const plan = normalizeMembershipPlan(input.plan);
+   const option = membershipPlanOption(plan);
+diff --git a/server/lib/affiliateMembershipWebhook.ts b/server/lib/affiliateMembershipWebhook.ts
+index 4cc1a80..0faff59 100644
+--- a/server/lib/affiliateMembershipWebhook.ts
++++ b/server/lib/affiliateMembershipWebhook.ts
+@@ -22,7 +22,7 @@
+ 
+ import type Stripe from "stripe";
+ import { getDb } from "../db";
+-import { normalizeMembershipPlan, type MembershipPlan } from "@shared/affiliateMembershipPlans";
++import { monthlyMinimumStripeGuard, normalizeMembershipPlan, type MembershipPlan } from "@shared/affiliateMembershipPlans";
+ import {
+   findAffiliateIdBySubscriptionId,
+   markMembershipPastDue,
+@@ -114,6 +114,7 @@ async function handleCheckoutSession(session: Stripe.Checkout.Session): Promise<
+     stripeSubscriptionId: subscriptionId,
+     invoiceId: positiveInt(metadata.affiliate_invoice_id),
+   });
++  if (result.applied) await creditRepForPaidMembership(db, affiliateId, metadata, reference);
+ 
+   return {
+     handled: true,
+@@ -152,19 +153,23 @@ async function handleInvoicePaid(invoice: Stripe.Invoice): Promise<MembershipWeb
+   const firstMonthOfSubscription = subscriptionId != null && invoice.billing_reason === "subscription_create";
+ 
+   const plan = resolvePlan(metadata, subscriptionMetadata);
++  const paymentRef = firstMonthOfSubscription
++    ? `${subscriptionId}:first`
++    : subscriptionId
++      ? `${subscriptionId}:${invoice.id}`
++      : invoice.id;
+   const result = await recordStripeMembershipPayment(db, {
+     affiliateId,
+     plan,
+     paidAtMs: unixMs(invoice.status_transitions?.paid_at ?? invoice.created),
+-    paymentRef: firstMonthOfSubscription
+-      ? `${subscriptionId}:first`
+-      : subscriptionId
+-        ? `${subscriptionId}:${invoice.id}`
+-        : invoice.id,
++    paymentRef,
+     amountCents: invoice.amount_paid || undefined,
+     description: plan === "annual" ? "Annual affiliate membership" : "Monthly affiliate membership",
+     stripeSubscriptionId: subscriptionId,
+   });
++  if (result.applied) {
++    await creditRepForPaidMembership(db, affiliateId, { ...subscriptionMetadata, ...metadata }, paymentRef);
++  }
+ 
+   return {
+     handled: true,
+@@ -214,11 +219,61 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
+   return { handled: true, action: "membership_past_due", affiliateId };
+ }
+ 
+-/**
+- * Entry point the webhook calls for every event. Returns handled:false for
+- * anything that is not a membership payment so the order path keeps working
+- * exactly as before.
+- */
++async function creditRepForPaidMembership(
++  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
++  affiliateId: number,
++  metadata: Record<string, string>,
++  paymentRef: string,
++): Promise<void> {
++  try {
++    const { assignedRepId, recordFlatCommission } = await import("./membershipProgramStore");
++    const fromMetadata = positiveInt(metadata.sales_rep_application_id);
++    const repId = fromMetadata ?? (await assignedRepId(db, affiliateId));
++    if (!repId) return;
++    await recordFlatCommission(db, {
++      affiliateId,
++      salesRepApplicationId: repId,
++      paymentRef,
++      earnedAt: new Date().toISOString(),
++    });
++  } catch (error) {
++    const { isMissingSchema } = await import("./membershipProgramStore");
++    if (!isMissingSchema(error)) {
++      console.error("[Affiliate membership] sales rep commission was not recorded:", error instanceof Error ? error.message : "unknown");
++    }
++  }
++}
++
++async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<MembershipWebhookOutcome> {
++  const db = await getDb();
++  if (!db) throw new Error("Database not available");
++  const metadata = metadataOf(subscription.metadata);
++  const affiliateId =
++    positiveInt(metadata.affiliate_id) ?? (await findAffiliateIdBySubscriptionId(db, subscription.id));
++  if (!affiliateId) return { handled: false, reason: "unknown_affiliate" };
++  const snapshot = await loadMembershipSnapshot(db, affiliateId);
++  const requestedCancelAtMs = subscription.cancel_at ? subscription.cancel_at * 1000 : null;
++  const decision = monthlyMinimumStripeGuard({
++    plan: snapshot?.plan ?? metadata.membership_plan,
++    nowMs: Date.now(),
++    commitmentEndsAtMs: snapshot?.committedUntil?.getTime() ?? null,
++    cancelRequested: subscription.cancel_at_period_end || subscription.cancel_at != null,
++    requestedCancelAtMs,
++  });
++  if (decision.action === "allow") return { handled: true, action: "membership_cancel_allowed", affiliateId };
++  const { resolveStripeCredentials } = await import("../stripeConfig");
++  if (resolveStripeCredentials().environment !== "test") {
++    console.error("[Affiliate membership] left an early cancel unchanged because membership billing is test mode only.");
++    return { handled: true, action: "membership_minimum_skipped_outside_test_mode", affiliateId };
++  }
++  const { getStripe } = await import("../stripe");
++  await getStripe().subscriptions.update(subscription.id, {
++    cancel_at_period_end: false,
++    cancel_at: Math.floor(decision.cancelAtMs / 1000),
++  });
++  return { handled: true, action: "membership_minimum_billed_through", affiliateId };
++}
++
+ export async function handleMembershipStripeEvent(event: Stripe.Event): Promise<MembershipWebhookOutcome> {
+   switch (event.type) {
+     case "checkout.session.completed":
+@@ -235,6 +290,8 @@ export async function handleMembershipStripeEvent(event: Stripe.Event): Promise<
+       return handleInvoiceFailed(event.data.object as Stripe.Invoice);
+     case "customer.subscription.deleted":
+       return handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
++    case "customer.subscription.updated":
++      return handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+     default:
+       return { handled: false, reason: "event_not_membership_related" };
+   }
+diff --git a/server/lib/membershipProgramStore.ts b/server/lib/membershipProgramStore.ts
+new file mode 100644
+index 0000000..11801aa
+--- /dev/null
++++ b/server/lib/membershipProgramStore.ts
+@@ -0,0 +1,318 @@
++import { sql } from "drizzle-orm";
++import { getDb } from "../db";
++import {
++  defaultCommissionSettings,
++  residualLines,
++  snapshotRates,
++  type ConfirmedOrder,
++  type SalesRepCommissionSettings,
++} from "@shared/salesRepCommission";
++import { LEGAL_PAGE_SEED_SLOTS, type LegalSheet } from "@shared/legalPages";
++
++type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++export function isMissingSchema(error: unknown): boolean {
++  const message = error instanceof Error ? error.message : String(error);
++  return /doesn't exist|does not exist|unknown table|no such table|ER_NO_SUCH_TABLE/i.test(message);
++}
++
++export function rowsFrom(result: unknown): Record<string, unknown>[] {
++  if (Array.isArray(result)) {
++    const first = result[0];
++    if (Array.isArray(first)) return first as Record<string, unknown>[];
++    if (first && typeof first === "object" && !("affectedRows" in (first as object))) {
++      return result as Record<string, unknown>[];
++    }
++    return [];
++  }
++  if (result && typeof result === "object" && Array.isArray((result as { rows?: unknown }).rows)) {
++    return (result as { rows: Record<string, unknown>[] }).rows;
++  }
++  return [];
++}
++
++async function run(db: Database, query: ReturnType<typeof sql>): Promise<Record<string, unknown>[]> {
++  const result = await (db as unknown as { execute: (query: unknown) => Promise<unknown> }).execute(query);
++  return rowsFrom(result);
++}
++
++function text(value: unknown): string {
++  return value == null ? "" : String(value);
++}
++
++function nullableNumber(value: unknown): number | null {
++  if (value == null || value === "") return null;
++  const parsed = Number(value);
++  return Number.isFinite(parsed) ? parsed : null;
++}
++
++export function settingsFromRow(row: Record<string, unknown> | undefined): SalesRepCommissionSettings {
++  if (!row) return defaultCommissionSettings();
++  const repFeeCents = nullableNumber(row.repFeeCents);
++  return {
++    flatFeeUsd: (nullableNumber(row.flatFeeCents) ?? 40000) / 100,
++    residualRate: (nullableNumber(row.residualRateBps) ?? 50) / 10000,
++    residualBase: "confirmed_order_gross",
++    repFeeUsd: repFeeCents == null ? null : repFeeCents / 100,
++    repFeeCheckoutEnabled: Number(row.repFeeCheckoutEnabled) === 1 && repFeeCents != null && repFeeCents > 0,
++  };
++}
++
++export async function loadCommissionSettings(db: Database): Promise<{ settings: SalesRepCommissionSettings; schemaMissing: boolean }> {
++  try {
++    const rows = await run(db, sql`SELECT flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled FROM cabinet_dealz.sales_rep_commission_settings WHERE id = 1 LIMIT 1`);
++    return { settings: settingsFromRow(rows[0]), schemaMissing: false };
++  } catch (error) {
++    if (isMissingSchema(error)) return { settings: defaultCommissionSettings(), schemaMissing: true };
++    throw error;
++  }
++}
++
++export async function saveCommissionSettings(db: Database, settings: SalesRepCommissionSettings, userId: number | null): Promise<void> {
++  const snap = snapshotRates(settings, new Date().toISOString());
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled, updatedByUserId)
++    VALUES (1, ${snap.flatFeeCents}, ${snap.residualRateBps}, ${snap.residualBase}, ${settings.repFeeUsd == null ? null : Math.round(settings.repFeeUsd * 100)}, ${settings.repFeeCheckoutEnabled ? 1 : 0}, ${userId})
++    ON DUPLICATE KEY UPDATE flatFeeCents = VALUES(flatFeeCents), residualRateBps = VALUES(residualRateBps), residualBase = VALUES(residualBase), repFeeCents = VALUES(repFeeCents), repFeeCheckoutEnabled = VALUES(repFeeCheckoutEnabled), updatedByUserId = VALUES(updatedByUserId)
++  `);
++}
++
++export async function insertApplication(db: Database, input: {
++  fullName: string;
++  email: string;
++  phone: string | null;
++  state: string | null;
++  businessName: string | null;
++  agreementVersion: string;
++  agreementAcceptedAt: string;
++}): Promise<void> {
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.sales_rep_applications (fullName, email, phone, state, businessName, status, agreementVersion, agreementAcceptedAt)
++    VALUES (${input.fullName}, ${input.email}, ${input.phone}, ${input.state}, ${input.businessName}, 'pending', ${input.agreementVersion}, ${input.agreementAcceptedAt.slice(0, 19).replace("T", " ")})
++  `);
++}
++
++export async function listApplications(db: Database): Promise<Record<string, unknown>[]> {
++  return run(db, sql`SELECT id, fullName, email, phone, state, businessName, status, createdAt FROM cabinet_dealz.sales_rep_applications ORDER BY id DESC`);
++}
++
++export async function setApplicationStatus(db: Database, id: number, status: "approved" | "rejected"): Promise<void> {
++  await run(db, sql`UPDATE cabinet_dealz.sales_rep_applications SET status = ${status} WHERE id = ${id}`);
++}
++
++export async function listApprovedReps(db: Database): Promise<{ userId: number; name: string; email: string | null; state: string | null }[]> {
++  const rows = await run(db, sql`SELECT id, fullName, email, state FROM cabinet_dealz.sales_rep_applications WHERE status = 'approved' ORDER BY fullName`);
++  return rows.map((row) => ({
++    userId: Number(row.id),
++    name: text(row.fullName),
++    email: row.email == null ? null : text(row.email),
++    state: row.state == null ? null : text(row.state),
++  }));
++}
++
++export async function assignRepToAffiliate(db: Database, affiliateId: number, salesRepApplicationId: number | null): Promise<void> {
++  if (salesRepApplicationId == null) {
++    await run(db, sql`DELETE FROM cabinet_dealz.sales_rep_affiliate_assignments WHERE affiliateId = ${affiliateId}`);
++    return;
++  }
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.sales_rep_affiliate_assignments (affiliateId, salesRepApplicationId)
++    VALUES (${affiliateId}, ${salesRepApplicationId})
++    ON DUPLICATE KEY UPDATE salesRepApplicationId = VALUES(salesRepApplicationId)
++  `);
++}
++
++export async function assignedRepId(db: Database, affiliateId: number): Promise<number | null> {
++  const rows = await run(db, sql`SELECT salesRepApplicationId FROM cabinet_dealz.sales_rep_affiliate_assignments WHERE affiliateId = ${affiliateId} LIMIT 1`);
++  const id = rows[0]?.salesRepApplicationId;
++  return id == null ? null : Number(id);
++}
++
++export async function approvedRepExists(db: Database, id: number): Promise<boolean> {
++  const rows = await run(db, sql`SELECT id FROM cabinet_dealz.sales_rep_applications WHERE id = ${id} AND status = 'approved' LIMIT 1`);
++  return rows.length > 0;
++}
++
++export async function saveAcknowledgement(db: Database, input: {
++  affiliateId: number;
++  userId: number;
++  plan: "annual" | "monthly";
++  salesRepApplicationId: number | null;
++  operatorNoticeAcceptedAt: string;
++  agreementVersion: string;
++  agreementAcceptedAt: string;
++  stripeSessionId: string | null;
++}): Promise<void> {
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.affiliate_checkout_acknowledgements
++      (affiliateId, userId, plan, salesRepApplicationId, operatorNoticeAcceptedAt, agreementVersion, agreementAcceptedAt, stripeSessionId)
++    VALUES (
++      ${input.affiliateId},
++      ${input.userId},
++      ${input.plan},
++      ${input.salesRepApplicationId},
++      ${input.operatorNoticeAcceptedAt.slice(0, 19).replace("T", " ")},
++      ${input.agreementVersion},
++      ${input.agreementAcceptedAt.slice(0, 19).replace("T", " ")},
++      ${input.stripeSessionId}
++    )
++  `);
++}
++
++export async function recordFlatCommission(db: Database, input: {
++  affiliateId: number;
++  salesRepApplicationId: number;
++  paymentRef: string;
++  earnedAt: string;
++}): Promise<void> {
++  const { settings } = await loadCommissionSettings(db);
++  const snap = snapshotRates(settings, input.earnedAt);
++  const earned = input.earnedAt.slice(0, 19).replace("T", " ");
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.sales_rep_affiliate_credits
++      (salesRepApplicationId, affiliateId, paymentRef, flatFeeCents, residualRateBps, residualBase, capturedAt)
++    VALUES (${input.salesRepApplicationId}, ${input.affiliateId}, ${input.paymentRef}, ${snap.flatFeeCents}, ${snap.residualRateBps}, ${snap.residualBase}, ${earned})
++    ON DUPLICATE KEY UPDATE affiliateId = affiliateId
++  `);
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.sales_rep_commission_entries
++      (salesRepApplicationId, affiliateId, kind, sourceKey, amountCents, flatFeeCents, residualRateBps, residualBase, status, earnedAt)
++    VALUES (
++      ${input.salesRepApplicationId}, ${input.affiliateId}, 'flat', ${`flat:affiliate:${input.affiliateId}`},
++      ${snap.flatFeeCents}, ${snap.flatFeeCents}, ${snap.residualRateBps}, ${snap.residualBase}, 'pending', ${earned}
++    )
++    ON DUPLICATE KEY UPDATE sourceKey = sourceKey
++  `);
++}
++
++export async function listAffiliateSaleCommissions(db: Database): Promise<Record<string, unknown>[]> {
++  const credits = await run(db, sql`
++    SELECT c.salesRepApplicationId, c.affiliateId, c.flatFeeCents, c.residualRateBps, c.residualBase, c.capturedAt,
++           a.fullName AS repName, af.storeName AS affiliateName
++    FROM cabinet_dealz.sales_rep_affiliate_credits c
++    JOIN cabinet_dealz.sales_rep_applications a ON a.id = c.salesRepApplicationId
++    JOIN cabinet_dealz.affiliates af ON af.id = c.affiliateId
++  `);
++  const entries = await run(db, sql`
++    SELECT e.id, e.salesRepApplicationId, e.affiliateId, e.kind, e.amountCents, e.flatFeeCents, e.residualRateBps, e.residualBase, e.status, e.earnedAt,
++           a.fullName AS repName, af.storeName AS affiliateName
++    FROM cabinet_dealz.sales_rep_commission_entries e
++    JOIN cabinet_dealz.sales_rep_applications a ON a.id = e.salesRepApplicationId
++    JOIN cabinet_dealz.affiliates af ON af.id = e.affiliateId
++    WHERE e.kind = 'flat'
++    ORDER BY e.id DESC
++  `);
++  const residualRows: Record<string, unknown>[] = [];
++  for (const credit of credits) {
++    const affiliateId = Number(credit.affiliateId);
++    const orders = await run(db, sql`SELECT id, totalAmount, status FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
++    const confirmed: ConfirmedOrder[] = orders.map((order) => ({
++      id: Number(order.id),
++      totalAmount: order.totalAmount == null ? null : Number(order.totalAmount),
++      status: text(order.status),
++    }));
++    const lines = residualLines(confirmed, {
++      flatFeeCents: Number(credit.flatFeeCents),
++      residualRateBps: Number(credit.residualRateBps),
++      residualBase: "confirmed_order_gross",
++      capturedAt: text(credit.capturedAt),
++    });
++    lines.forEach((line, index) => {
++      residualRows.push({
++        id: Number(`${affiliateId}${index + 1}`),
++        salesRepApplicationId: Number(credit.salesRepApplicationId),
++        affiliateId,
++        kind: "residual",
++        amountCents: line.amountCents,
++        flatFeeCents: Number(credit.flatFeeCents),
++        residualRateBps: line.residualRateBps,
++        residualBase: line.residualBase,
++        status: "pending",
++        earnedAt: text(credit.capturedAt),
++        repName: text(credit.repName),
++        affiliateName: text(credit.affiliateName),
++      });
++    });
++  }
++  return [...entries, ...residualRows];
++}
++
++function parseSheet(value: unknown): LegalSheet | null {
++  if (typeof value !== "string" || !value.trim()) return null;
++  try {
++    const parsed = JSON.parse(value) as LegalSheet;
++    if (!parsed || !Array.isArray(parsed.headers) || !Array.isArray(parsed.rows)) return null;
++    return parsed;
++  } catch {
++    return null;
++  }
++}
++
++export async function listLegalSlots(db: Database): Promise<Record<string, unknown>[]> {
++  const slots = await run(db, sql`SELECT id, slug, title, publicPath, publishedVersion FROM cabinet_dealz.legal_page_slots ORDER BY id`);
++  if (slots.length === 0) {
++    for (const seed of LEGAL_PAGE_SEED_SLOTS) {
++      await run(db, sql`INSERT INTO cabinet_dealz.legal_page_slots (slug, title, publicPath, publishedVersion) VALUES (${seed.slug}, ${seed.title}, ${seed.publicPath}, 1)`);
++      const inserted = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${seed.slug} LIMIT 1`);
++      const slotId = Number(inserted[0]?.id);
++      if (slotId) {
++        await run(db, sql`INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy) VALUES (${slotId}, 1, 'migration', NULL, 'Site page')`);
++      }
++    }
++    return run(db, sql`SELECT id, slug, title, publicPath, publishedVersion FROM cabinet_dealz.legal_page_slots ORDER BY id`);
++  }
++  return slots;
++}
++
++export async function versionsForSlot(db: Database, slotId: number): Promise<Record<string, unknown>[]> {
++  return run(db, sql`SELECT version, source, bodyText, fileName, mimeType, fileBase64, sheetJson, uploadedBy, createdAt FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId} ORDER BY version`);
++}
++
++export async function publishLegalVersion(db: Database, input: {
++  slug: string;
++  bodyText: string | null;
++  fileName: string | null;
++  mimeType: string | null;
++  fileBase64: string | null;
++  sheet: LegalSheet | null;
++  uploadedBy: string;
++  source: "text" | "file" | "sheet";
++}): Promise<void> {
++  const slots = await run(db, sql`SELECT id, publishedVersion FROM cabinet_dealz.legal_page_slots WHERE slug = ${input.slug} LIMIT 1`);
++  const slot = slots[0];
++  if (!slot) throw new Error("That legal page does not exist.");
++  const slotId = Number(slot.id);
++  const current = await run(db, sql`SELECT bodyText, fileName, mimeType, fileBase64, sheetJson FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId} AND version = ${Number(slot.publishedVersion)} LIMIT 1`);
++  const previous = current[0];
++  const keepSheet = input.sheet ? JSON.stringify(input.sheet) : (previous ? text(previous.sheetJson) || null : null);
++  const body = input.source === "sheet" ? (previous?.bodyText == null ? null : text(previous.bodyText) || null) : input.bodyText;
++  const nextVersion = Number(slot.publishedVersion) + 1;
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, fileName, mimeType, fileBase64, sheetJson, uploadedBy)
++    VALUES (
++      ${slotId}, ${nextVersion}, ${input.source}, ${body},
++      ${input.fileName ?? (previous ? text(previous.fileName) || null : null)},
++      ${input.mimeType ?? (previous ? text(previous.mimeType) || null : null)},
++      ${input.fileBase64 ?? (input.source === "sheet" && previous ? text(previous.fileBase64) || null : null)},
++      ${keepSheet}, ${input.uploadedBy}
++    )
++  `);
++  await run(db, sql`UPDATE cabinet_dealz.legal_page_slots SET publishedVersion = ${nextVersion} WHERE id = ${slotId}`);
++}
++
++export async function rollbackLegalVersion(db: Database, slug: string, version: number): Promise<void> {
++  const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
++  const slotId = Number(slots[0]?.id);
++  if (!slotId) throw new Error("That legal page does not exist.");
++  const found = await run(db, sql`SELECT version FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId} AND version = ${version} LIMIT 1`);
++  if (!found[0]) throw new Error("That version is not in the history.");
++  await run(db, sql`UPDATE cabinet_dealz.legal_page_slots SET publishedVersion = ${version} WHERE id = ${slotId}`);
++}
++
++export async function addLegalSlotRow(db: Database, title: string, publicPath: string, slug: string): Promise<void> {
++  await run(db, sql`INSERT INTO cabinet_dealz.legal_page_slots (slug, title, publicPath, publishedVersion) VALUES (${slug}, ${title}, ${publicPath}, 1)`);
++  const rows = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
++  await run(db, sql`INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, uploadedBy) VALUES (${Number(rows[0]?.id)}, 1, 'migration', 'Admin')`);
++}
++
++export { parseSheet };
+diff --git a/server/routers.ts b/server/routers.ts
+index e1e2043..1bf1e8d 100644
+--- a/server/routers.ts
++++ b/server/routers.ts
+@@ -50,6 +50,8 @@ import { pantryRouter } from "./routers/pantry";
+ import { paymentsRouter } from "./routers/payments";
+ import { consultationsRouter } from "./routers/consultations";
+ import { affiliateMembershipRouter } from "./routers/affiliateMembership";
++import { legalPagesRouter } from "./routers/legalPages";
++import { salesRepProgramRouter } from "./routers/salesRepProgram";
+ import { affiliateStorefrontNameRouter } from "./routers/affiliateStorefrontName";
+ import { siteSettingsRouter } from "./routers/siteSettings";
+ import { skuAdminRouter } from "./routers/skuAdmin";
+@@ -213,6 +215,8 @@ export const appRouter = router({
+   payments: paymentsRouter,
+   consultations: consultationsRouter,
+   affiliateMembership: affiliateMembershipRouter,
++  legalPages: legalPagesRouter,
++  salesRepProgram: salesRepProgramRouter,
+   // Final onboarding step: the affiliate claims the website name that publishes
+   // their storefront at /store/<slug>. Backend for the frontend onboarding wizard.
+   affiliateStorefrontName: affiliateStorefrontNameRouter,
+diff --git a/server/routers/affiliateMembership.plans.test.ts b/server/routers/affiliateMembership.plans.test.ts
+index 7ee988e..aa69dd8 100644
+--- a/server/routers/affiliateMembership.plans.test.ts
++++ b/server/routers/affiliateMembership.plans.test.ts
+@@ -191,7 +191,12 @@ describe("affiliateMembership.startCheckout", () => {
+       sessionId: "cs_test_1",
+       mode: "subscription",
+     });
+-    const result = await caller(owner).startCheckout({ plan: "monthly" });
++    const result = await caller(owner).startCheckout({
++      plan: "monthly",
++      operatorNoticeAcceptedAt: "2026-11-11T15:00:00.000Z",
++      agreementVersion: "affiliate-agreement@draft-2026-11-11",
++      agreementAcceptedAt: "2026-11-11T15:00:00.000Z",
++    });
+     expect(result.mode).toBe("subscription");
+     expect(result.amountCents).toBe(16900);
+     expect(stripeMock.createMembershipCheckoutSession).toHaveBeenCalledWith(
+@@ -202,7 +207,12 @@ describe("affiliateMembership.startCheckout", () => {
+   it("surfaces a Stripe failure as a gateway error instead of a crash", async () => {
+     getDbMock.mockResolvedValue(fakeDbFor({}));
+     stripeMock.createMembershipCheckoutSession.mockRejectedValue(new Error("No such price"));
+-    await expect(caller(owner).startCheckout({ plan: "annual" })).rejects.toMatchObject({ code: "BAD_GATEWAY" });
++    await expect(caller(owner).startCheckout({
++      plan: "annual",
++      operatorNoticeAcceptedAt: "2026-11-11T15:00:00.000Z",
++      agreementVersion: "affiliate-agreement@draft-2026-11-11",
++      agreementAcceptedAt: "2026-11-11T15:00:00.000Z",
++    })).rejects.toMatchObject({ code: "BAD_GATEWAY" });
+   });
+ });
+ 
+diff --git a/server/routers/affiliateMembership.ts b/server/routers/affiliateMembership.ts
+index 46f48a8..b0f3d1b 100644
+--- a/server/routers/affiliateMembership.ts
++++ b/server/routers/affiliateMembership.ts
+@@ -107,7 +107,13 @@ export const affiliateMembershipRouter = router({
+    * back to the success URL.
+    */
+   startCheckout: protectedProcedure
+-    .input(z.object({ plan: planSchema.default("annual") }).optional())
++    .input(z.object({
++      plan: planSchema.default("annual"),
++      salesRepUserId: z.number().int().positive().nullable().optional(),
++      operatorNoticeAcceptedAt: z.string().min(1),
++      agreementVersion: z.string().min(1).max(80),
++      agreementAcceptedAt: z.string().min(1),
++    }))
+     .mutation(async ({ ctx, input }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+@@ -128,6 +134,10 @@ export const affiliateMembershipRouter = router({
+           customerEmail: ctx.user.email ?? null,
+           customerName: ctx.user.name ?? null,
+           invoiceId: open?.id ?? null,
++          salesRepApplicationId: input?.salesRepUserId ?? null,
++          operatorNoticeAcceptedAt: input?.operatorNoticeAcceptedAt ?? null,
++          agreementVersion: input?.agreementVersion ?? null,
++          agreementAcceptedAt: input?.agreementAcceptedAt ?? null,
+           successUrl: `${requestOrigin(ctx)}/affiliate?membership=success&plan=${plan}&session_id={CHECKOUT_SESSION_ID}`,
+           cancelUrl: `${requestOrigin(ctx)}/affiliate?membership=cancelled&plan=${plan}`,
+         });
+@@ -138,6 +148,31 @@ export const affiliateMembershipRouter = router({
+         });
+       }
+ 
++      try {
++        const { saveAcknowledgement, assignRepToAffiliate, approvedRepExists } = await import("../lib/membershipProgramStore");
++        const repId = input?.salesRepUserId ?? null;
++        if (repId != null && !(await approvedRepExists(db, repId))) {
++          throw new TRPCError({ code: "BAD_REQUEST", message: "That sales rep is not approved." });
++        }
++        if (repId != null) await assignRepToAffiliate(db, affiliateId, repId);
++        await saveAcknowledgement(db, {
++          affiliateId,
++          userId: ctx.user.id,
++          plan,
++          salesRepApplicationId: repId,
++          operatorNoticeAcceptedAt: input.operatorNoticeAcceptedAt,
++          agreementVersion: input.agreementVersion,
++          agreementAcceptedAt: input.agreementAcceptedAt,
++          stripeSessionId: checkout.sessionId,
++        });
++      } catch (error) {
++        const { isMissingSchema } = await import("../lib/membershipProgramStore");
++        if (error instanceof TRPCError) throw error;
++        if (!isMissingSchema(error) && !(error instanceof TypeError)) {
++          console.error("[Affiliate membership] acknowledgement was not stored:", error instanceof Error ? error.message : "unknown");
++        }
++      }
++
+       return {
+         ...checkout,
+         plan,
+diff --git a/server/routers/legalPages.ts b/server/routers/legalPages.ts
+new file mode 100644
+index 0000000..810c79d
+--- /dev/null
++++ b/server/routers/legalPages.ts
+@@ -0,0 +1,167 @@
++import { z } from "zod";
++import { TRPCError } from "@trpc/server";
++import { adminProcedure, publicProcedure, router } from "../_core/trpc";
++import { getDb } from "../db";
++import { presentLegalSlot, slugifyLegalSlot, type LegalSheet, type LegalSlot, type LegalVersion } from "@shared/legalPages";
++import {
++  addLegalSlotRow,
++  isMissingSchema,
++  listLegalSlots,
++  parseSheet,
++  publishLegalVersion,
++  rollbackLegalVersion,
++  versionsForSlot,
++} from "../lib/membershipProgramStore";
++
++const sheetSchema = z.object({
++  headers: z.array(z.string()),
++  rows: z.array(z.array(z.string())),
++});
++
++function versionOf(row: Record<string, unknown>): LegalVersion {
++  return {
++    version: Number(row.version),
++    source: (row.source as LegalVersion["source"]) ?? "migration",
++    bodyText: row.bodyText == null ? null : String(row.bodyText),
++    file: row.fileName ? { fileName: String(row.fileName), mimeType: String(row.mimeType ?? "application/octet-stream") } : null,
++    sheet: parseSheet(row.sheetJson),
++    uploadedAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
++    uploadedBy: String(row.uploadedBy ?? ""),
++  };
++}
++
++function slotView(slot: Record<string, unknown>, versions: Record<string, unknown>[]) {
++  const legal: LegalSlot = {
++    slug: String(slot.slug),
++    title: String(slot.title),
++    publicPath: String(slot.publicPath),
++    publishedVersion: Number(slot.publishedVersion),
++    versions: versions.map(versionOf),
++  };
++  const published = legal.versions.find((version) => version.version === legal.publishedVersion);
++  const presentation = presentLegalSlot(legal);
++  const fileDataUrl = published?.source === "file" && typeof versions.find((row) => Number(row.version) === legal.publishedVersion)?.fileBase64 === "string"
++    ? `data:${published.file?.mimeType ?? "application/octet-stream"};base64,${String(versions.find((row) => Number(row.version) === legal.publishedVersion)?.fileBase64)}`
++    : null;
++  return {
++    slug: legal.slug,
++    title: legal.title,
++    publicPath: legal.publicPath,
++    publishedVersion: legal.publishedVersion,
++    versions: legal.versions.map((version) => ({
++      version: version.version,
++      source: version.source,
++      bodyText: version.bodyText,
++      fileName: version.file?.fileName ?? null,
++      uploadedAt: version.uploadedAt,
++      uploadedBy: version.uploadedBy,
++      hasSheet: Boolean(version.sheet),
++    })),
++    presentation: { ...presentation, fileDataUrl },
++  };
++}
++
++export const legalPagesRouter = router({
++  published: publicProcedure.input(z.object({ slug: z.string().min(1).max(64) })).query(async ({ input }) => {
++    const db = await getDb();
++    if (!db) return { render: "site-page" as const, bodyText: null, file: null, sheet: null, version: null, versionLabel: null, schemaMissing: true };
++    try {
++      const slots = await listLegalSlots(db);
++      const slot = slots.find((row) => row.slug === input.slug);
++      if (!slot) return { render: "site-page" as const, bodyText: null, file: null, sheet: null, version: null, versionLabel: null };
++      const versions = await versionsForSlot(db, Number(slot.id));
++      return slotView(slot, versions).presentation;
++    } catch (error) {
++      if (isMissingSchema(error)) {
++        return { render: "site-page" as const, bodyText: null, file: null, sheet: null, version: null, versionLabel: null, schemaMissing: true };
++      }
++      throw error;
++    }
++  }),
++
++  list: adminProcedure.query(async () => {
++    const db = await getDb();
++    if (!db) return { slots: [], schemaMissing: true };
++    try {
++      const slots = await listLegalSlots(db);
++      const views = [];
++      for (const slot of slots) {
++        const versions = await versionsForSlot(db, Number(slot.id));
++        views.push(slotView(slot, versions));
++      }
++      return { slots: views, schemaMissing: false };
++    } catch (error) {
++      if (isMissingSchema(error)) return { slots: [], schemaMissing: true };
++      throw error;
++    }
++  }),
++
++  publish: adminProcedure.input(z.object({
++    slug: z.string().min(1).max(64),
++    bodyText: z.string().max(200000).nullable().optional(),
++    fileName: z.string().max(255).nullable().optional(),
++    mimeType: z.string().max(128).nullable().optional(),
++    fileBase64: z.string().max(6_000_000).nullable().optional(),
++    sheet: sheetSchema.nullable().optional(),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    const text = (input.bodyText ?? "").trim();
++    const sheet = (input.sheet ?? null) as LegalSheet | null;
++    const fileBase64 = input.fileBase64 ?? null;
++    if (!text && !sheet && !fileBase64) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: "Add text, a document, or a spreadsheet before saving." });
++    }
++    const source = input.slug === "warranty" && sheet && !text && !fileBase64 ? "sheet" : fileBase64 && !text ? "file" : sheet && !text ? "sheet" : "text";
++    try {
++      await publishLegalVersion(db, {
++        slug: input.slug,
++        bodyText: text || null,
++        fileName: input.fileName ?? null,
++        mimeType: input.mimeType ?? null,
++        fileBase64,
++        sheet,
++        uploadedBy: ctx.user.name || ctx.user.email || `User ${ctx.user.id}`,
++        source,
++      });
++      return { ok: true };
++    } catch (error) {
++      if (isMissingSchema(error)) {
++        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legal page tables are missing. Run docs/sql/0278_affiliate_membership_checkout.tidb.sql." });
++      }
++      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Could not publish." });
++    }
++  }),
++
++  rollback: adminProcedure.input(z.object({ slug: z.string(), version: z.number().int().positive() })).mutation(async ({ input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await rollbackLegalVersion(db, input.slug, input.version);
++      return { ok: true };
++    } catch (error) {
++      if (isMissingSchema(error)) {
++        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legal page tables are missing. Run docs/sql/0278_affiliate_membership_checkout.tidb.sql." });
++      }
++      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Could not roll back." });
++    }
++  }),
++
++  addSlot: adminProcedure.input(z.object({ title: z.string().min(1).max(255), publicPath: z.string().min(2).max(255) })).mutation(async ({ input }) => {
++    const slug = slugifyLegalSlot(input.title);
++    if (!slug || !input.publicPath.startsWith("/")) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: "Enter a name and a public address that starts with /." });
++    }
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await addLegalSlotRow(db, input.title.trim(), input.publicPath.trim(), slug);
++      return { ok: true, slug };
++    } catch (error) {
++      if (isMissingSchema(error)) {
++        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legal page tables are missing. Run docs/sql/0278_affiliate_membership_checkout.tidb.sql." });
++      }
++      throw new TRPCError({ code: "BAD_REQUEST", message: "That page already exists." });
++    }
++  }),
++});
+diff --git a/server/routers/salesRepProgram.ts b/server/routers/salesRepProgram.ts
+new file mode 100644
+index 0000000..2660072
+--- /dev/null
++++ b/server/routers/salesRepProgram.ts
+@@ -0,0 +1,181 @@
++import { z } from "zod";
++import { TRPCError } from "@trpc/server";
++import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
++import { getDb } from "../db";
++import { normalizeCommissionSettings } from "@shared/salesRepCommission";
++import {
++  insertApplication,
++  isMissingSchema,
++  listAffiliateSaleCommissions,
++  listApplications,
++  listApprovedReps,
++  loadCommissionSettings,
++  saveCommissionSettings,
++  setApplicationStatus,
++  approvedRepExists,
++} from "../lib/membershipProgramStore";
++
++function missing(error: unknown): never {
++  if (isMissingSchema(error)) {
++    throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Sales rep tables are missing. Run docs/sql/0278_affiliate_membership_checkout.tidb.sql." });
++  }
++  throw error;
++}
++
++export const salesRepProgramRouter = router({
++  approvedReps: publicProcedure.query(async () => {
++    const db = await getDb();
++    if (!db) return [];
++    try {
++      return await listApprovedReps(db);
++    } catch (error) {
++      if (isMissingSchema(error)) return [];
++      throw error;
++    }
++  }),
++
++  apply: publicProcedure.input(z.object({
++    fullName: z.string().min(1).max(256),
++    email: z.string().email().max(320),
++    phone: z.string().max(32).optional(),
++    state: z.string().max(64).optional(),
++    businessName: z.string().max(256).optional(),
++    agreementVersion: z.string().min(1).max(80),
++    agreementAcceptedAt: z.string().min(1),
++  })).mutation(async ({ input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await insertApplication(db, {
++        fullName: input.fullName.trim(),
++        email: input.email.trim(),
++        phone: input.phone?.trim() || null,
++        state: input.state?.trim() || null,
++        businessName: input.businessName?.trim() || null,
++        agreementVersion: input.agreementVersion,
++        agreementAcceptedAt: input.agreementAcceptedAt,
++      });
++      return { ok: true };
++    } catch (error) {
++      missing(error);
++    }
++  }),
++
++  listApplications: adminProcedure.query(async () => {
++    const db = await getDb();
++    if (!db) return { rows: [], schemaMissing: true };
++    try {
++      const rows = await listApplications(db);
++      return {
++        schemaMissing: false,
++        rows: rows.map((row) => ({
++          id: Number(row.id),
++          fullName: String(row.fullName),
++          email: String(row.email),
++          phone: row.phone == null ? null : String(row.phone),
++          state: row.state == null ? null : String(row.state),
++          businessName: row.businessName == null ? null : String(row.businessName),
++          status: String(row.status) as "pending" | "approved" | "rejected",
++          userId: Number(row.id),
++          createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt ?? ""),
++        })),
++      };
++    } catch (error) {
++      if (isMissingSchema(error)) return { rows: [], schemaMissing: true };
++      throw error;
++    }
++  }),
++
++  setApplicationStatus: adminProcedure.input(z.object({
++    id: z.number().int().positive(),
++    status: z.enum(["approved", "rejected"]),
++  })).mutation(async ({ input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await setApplicationStatus(db, input.id, input.status);
++      return { ok: true };
++    } catch (error) {
++      missing(error);
++    }
++  }),
++
++  assignRep: adminProcedure.input(z.object({
++    affiliateId: z.number().int().positive(),
++    salesRepUserId: z.number().int().positive().nullable(),
++  })).mutation(async ({ input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    if (input.salesRepUserId != null && !(await approvedRepExists(db, input.salesRepUserId))) {
++      throw new TRPCError({ code: "BAD_REQUEST", message: "That sales rep is not approved." });
++    }
++    try {
++      const { assignRepToAffiliate } = await import("../lib/membershipProgramStore");
++      await assignRepToAffiliate(db, input.affiliateId, input.salesRepUserId);
++      return { ok: true };
++    } catch (error) {
++      missing(error);
++    }
++  }),
++
++  commissionSettings: protectedProcedure.query(async () => {
++    const db = await getDb();
++    if (!db) return { ...normalizeOrDefault(null), schemaMissing: true };
++    try {
++      const loaded = await loadCommissionSettings(db);
++      return { ...loaded.settings, schemaMissing: loaded.schemaMissing };
++    } catch (error) {
++      if (isMissingSchema(error)) return { ...normalizeOrDefault(null), schemaMissing: true };
++      throw error;
++    }
++  }),
++
++  saveCommissionSettings: adminProcedure.input(z.object({
++    flatFeeUsd: z.number().min(0),
++    residualRate: z.number().min(0).max(1),
++    residualBase: z.literal("confirmed_order_gross"),
++    repFeeUsd: z.number().positive().nullable(),
++    repFeeCheckoutEnabled: z.boolean(),
++  })).mutation(async ({ ctx, input }) => {
++    const normalized = normalizeCommissionSettings(input);
++    if (!normalized.ok) throw new TRPCError({ code: "BAD_REQUEST", message: normalized.message });
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await saveCommissionSettings(db, normalized.settings, ctx.user.id);
++      return normalized.settings;
++    } catch (error) {
++      missing(error);
++    }
++  }),
++
++  listAffiliateSaleCommissions: protectedProcedure.query(async () => {
++    const db = await getDb();
++    if (!db) return [];
++    try {
++      const rows = await listAffiliateSaleCommissions(db);
++      return rows.map((row) => ({
++        id: Number(row.id),
++        repName: String(row.repName ?? ""),
++        repUserId: Number(row.salesRepApplicationId),
++        affiliateName: String(row.affiliateName ?? ""),
++        kind: String(row.kind) as "flat" | "residual",
++        amountCents: Number(row.amountCents),
++        flatFeeCents: Number(row.flatFeeCents),
++        residualRateBps: Number(row.residualRateBps),
++        residualBase: String(row.residualBase),
++        status: String(row.status),
++        earnedAt: row.earnedAt instanceof Date ? row.earnedAt.toISOString() : String(row.earnedAt ?? ""),
++      }));
++    } catch (error) {
++      if (isMissingSchema(error)) return [];
++      throw error;
++    }
++  }),
++});
++
++function normalizeOrDefault(value: null) {
++  const normalized = normalizeCommissionSettings(value);
++  if (!normalized.ok) throw new Error(normalized.message);
++  return normalized.settings;
++}
+diff --git a/server/stripeWebhook.ts b/server/stripeWebhook.ts
+index 21cd70c..d90cd07 100644
+--- a/server/stripeWebhook.ts
++++ b/server/stripeWebhook.ts
+@@ -168,7 +168,8 @@ export function registerStripeWebhook(app: Express): void {
+           // untouched (handled: false).
+           case "invoice.paid":
+           case "invoice.payment_failed":
+-          case "customer.subscription.deleted": {
++          case "customer.subscription.deleted":
++          case "customer.subscription.updated": {
+             const membership = await handleMembershipStripeEvent(event);
+             if (membership.handled) {
+               console.log(
+diff --git a/shared/affiliate.ts b/shared/affiliate.ts
+index 7032b27..a2657c0 100644
+--- a/shared/affiliate.ts
++++ b/shared/affiliate.ts
+@@ -61,11 +61,14 @@ export function sumCommission(
+ // fee and gets: access to the kitchen design software, their own (white-labeled)
+ // website/storefront, and membership in the buying group (trade pricing).
+ // Surface these constants anywhere the offer/price is shown so copy and pricing
+-// never drift. The two prices themselves live in
+-// shared/affiliateMembershipPlans.ts, which the server also bills from.
++// never drift. Both dollar amounts live here. Cent amounts in
++// shared/affiliateMembershipPlans.ts are derived from these dollars.
+ export const AFFILIATE_MEMBERSHIP = {
+   priceUsd: 1195,
+   billingPeriod: "year" as const,
++  monthlyPriceUsd: 169,
++  monthlyBillingPeriod: "month" as const,
++  monthlyMinimumMonths: 3,
+   // Both plans, in the order a pricing page should show them: the cheaper
+   // up-front commitment first, then the annual one.
+   planIds: ["monthly", "annual"] as const,
+@@ -97,3 +100,11 @@ export function formatMembershipPrice(
+ export function membershipPriceLabel(): string {
+   return `${formatMembershipPrice()}/${AFFILIATE_MEMBERSHIP.billingPeriod}`;
+ }
++
++export function monthlyMembershipPriceLabel(): string {
++  return `${formatMembershipPrice(AFFILIATE_MEMBERSHIP.monthlyPriceUsd)}/${AFFILIATE_MEMBERSHIP.monthlyBillingPeriod}`;
++}
++
++export function membershipOptionsLabel(): string {
++  return `${monthlyMembershipPriceLabel()} (${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths}-month minimum) or ${membershipPriceLabel()}`;
++}
+diff --git a/shared/affiliateAgreement.ts b/shared/affiliateAgreement.ts
+new file mode 100644
+index 0000000..8ffb70c
+--- /dev/null
++++ b/shared/affiliateAgreement.ts
+@@ -0,0 +1,106 @@
++// Draft Affiliate Agreement. Admin can replace the published text from the
++// Operations legal-page slot. Checkout records the version the affiliate accepted.
++// This document is separate from the website Terms & Conditions and from warranties.
++
++import { AFFILIATE_MEMBERSHIP, membershipOptionsLabel } from "./affiliate";
++
++export const AFFILIATE_AGREEMENT_SLUG = "affiliate-agreement";
++export const AFFILIATE_AGREEMENT_VERSION = "draft-2026-11-11";
++
++export const AFFILIATE_AGREEMENT_DRAFT_BANNER =
++  "DRAFT — for Tom and his attorney to review before anyone relies on it. This is not the website Terms & Conditions and it is not a warranty.";
++
++export function affiliateAgreementVersionLabel(version: string = AFFILIATE_AGREEMENT_VERSION): string {
++  return `${AFFILIATE_AGREEMENT_SLUG}@${version}`;
++}
++
++export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMENT_VERSION): string {
++  const prices = membershipOptionsLabel();
++  return [
++    AFFILIATE_AGREEMENT_DRAFT_BANNER,
++    "",
++    "Affiliate Agreement",
++    `Version: ${affiliateAgreementVersionLabel(version)}`,
++    "",
++    "1. Independent operator",
++    "You are an independent operator. You are not an employee of Cabinet Dealz. You are responsible for your own taxes. You have no authority to bind Cabinet Dealz, to sign contracts for Cabinet Dealz, or to speak for Cabinet Dealz.",
++    "",
++    "2. Payment on completion of an order",
++    "You get paid on completion of an order. In this program, completion means the order status is confirmed. An order that is not confirmed does not earn commission.",
++    "",
++    "3. Membership fee",
++    `The membership fee is ${prices}.`,
++    `The annual amount is $${AFFILIATE_MEMBERSHIP.priceUsd.toLocaleString("en-US")} per year. It covers one year. It renews only when you pay for another year. Cancelling does not refund the year already paid. Access runs through the end of the paid year.`,
++    `The monthly amount is $${AFFILIATE_MEMBERSHIP.monthlyPriceUsd} per month. It is billed every month. The first ${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months are a minimum. A cancel before those ${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months is blocked in your account, and if billing is stopped early in Stripe the remaining months of the minimum are still billed through the commitment date. After the minimum, you may cancel and billing stops at the end of the month already paid.`,
++    "",
++    "4. Sales rep credit",
++    "If you select an approved sales rep when you pay, that rep is credited with selling your affiliate account. The rep's flat fee and residual are the amounts Cabinet Dealz has saved in its commission settings at the time you pay. That saved rate stays on your account. A later change to the settings does not rewrite it.",
++    "",
++    "5. Brand and storefront",
++    "Cabinet Dealz lets you use a storefront under your own name, and the Cabinet Dealz name only as this program describes. You may not copy the software, present yourself as Cabinet Dealz, or promise terms Cabinet Dealz did not approve.",
++    "",
++    "6. Conduct",
++    "You will not make false claims about products, prices, or delivery dates. You will follow this agreement. You will not bind Cabinet Dealz to a promise.",
++    "",
++    "7. Fulfillment",
++    "You sell through your storefront. Cabinet Dealz and its suppliers fulfill the order and ship it to the customer. You do not ship the order yourself.",
++    "",
++    "8. Termination",
++    "Cabinet Dealz may end this agreement if you break it, and may turn off the storefront. You may stop after the membership commitment in section 3. Pay already earned, and the limit on liability, stay in effect after the agreement ends.",
++    "",
++    "9. Limitation of liability",
++    "To the extent the law allows, Cabinet Dealz is not liable for indirect or consequential losses from your use of the storefront. Cabinet Dealz's liability to you for the membership is limited to the membership fees you paid in the three months before the claim.",
++    "",
++    "10. Governing law",
++    "TODO: Tom and his attorney will choose the governing law and the venue. This draft does not choose a state.",
++    "",
++    "11. Separate document",
++    "This agreement is only between Cabinet Dealz and the affiliate. It does not replace the website Terms & Conditions, the privacy policy, or any manufacturer warranty.",
++  ].join("\n");
++}
++
++export function agreementMentionsForbiddenWords(text: string): string[] {
++  const found: string[] = [];
++  if (/\binventory\b/i.test(text)) found.push("inventory");
++  if (/\bstock\b/i.test(text)) found.push("stock");
++  return found;
++}
++
++export type CheckoutAcknowledgementInput = {
++  operatorNoticeAccepted: boolean;
++  operatorNoticeAcceptedAt: string | null;
++  agreementAccepted: boolean;
++  agreementAcceptedAt: string | null;
++  agreementVersion: string | null;
++};
++
++export function checkoutAcknowledgementsValid(
++  input: CheckoutAcknowledgementInput,
++): { ok: true; operatorNoticeAcceptedAt: string; agreementAcceptedAt: string; agreementVersion: string } | { ok: false; message: string } {
++  if (!input.operatorNoticeAccepted) {
++    return { ok: false, message: "Check the box that you are an independent operator and that you are paid on completion of an order." };
++  }
++  if (!input.agreementAccepted) {
++    return { ok: false, message: "Check the box that you agree to the Affiliate Agreement." };
++  }
++  const operatorNoticeAcceptedAt = parseTimestamp(input.operatorNoticeAcceptedAt);
++  if (!operatorNoticeAcceptedAt) {
++    return { ok: false, message: "The independent-operator acknowledgement needs a time." };
++  }
++  const agreementAcceptedAt = parseTimestamp(input.agreementAcceptedAt);
++  if (!agreementAcceptedAt) {
++    return { ok: false, message: "The agreement acknowledgement needs a time." };
++  }
++  const agreementVersion = (input.agreementVersion ?? "").trim();
++  if (!agreementVersion) {
++    return { ok: false, message: "The agreement version is missing." };
++  }
++  return { ok: true, operatorNoticeAcceptedAt, agreementAcceptedAt, agreementVersion };
++}
++
++function parseTimestamp(value: string | null): string | null {
++  if (!value) return null;
++  const time = Date.parse(value);
++  if (!Number.isFinite(time)) return null;
++  return new Date(time).toISOString();
++}
+diff --git a/shared/affiliateMembershipPlans.ts b/shared/affiliateMembershipPlans.ts
+index 5097f48..049a7a7 100644
+--- a/shared/affiliateMembershipPlans.ts
++++ b/shared/affiliateMembershipPlans.ts
+@@ -3,15 +3,16 @@
+ // the unit tests all use one definition of "which plan", "when does this period
+ // end", and "may this member cancel yet". No database, no Stripe, no clock.
+ 
++import { AFFILIATE_MEMBERSHIP } from "./affiliate";
+ import { computeMembershipPeriodEnd } from "./salesPrograms";
+ 
+ export const MEMBERSHIP_PLAN_IDS = ["annual", "monthly"] as const;
+ export type MembershipPlan = (typeof MEMBERSHIP_PLAN_IDS)[number];
+ 
+-export const ANNUAL_MEMBERSHIP_FEE_CENTS = 119500; // $1,195.00
+-export const MONTHLY_MEMBERSHIP_FEE_CENTS = 16900; // $169.00
++export const ANNUAL_MEMBERSHIP_FEE_CENTS = AFFILIATE_MEMBERSHIP.priceUsd * 100;
++export const MONTHLY_MEMBERSHIP_FEE_CENTS = AFFILIATE_MEMBERSHIP.monthlyPriceUsd * 100;
+ export const ANNUAL_TERM_MONTHS = 12;
+-export const MONTHLY_MINIMUM_MONTHS = 3;
++export const MONTHLY_MINIMUM_MONTHS = AFFILIATE_MEMBERSHIP.monthlyMinimumMonths;
+ 
+ export interface MembershipPlanOption {
+   id: MembershipPlan;
+@@ -217,3 +218,29 @@ export function assessMembershipCancellation(input: CancellationAssessmentInput)
+ export function canCancelMembership(input: CancellationAssessmentInput): boolean {
+   return assessMembershipCancellation(input).allowed;
+ }
++
++export type MonthlyMinimumStripeGuard =
++  | { action: "allow" }
++  | { action: "bill_remaining_months"; cancelAtMs: number };
++
++/**
++ * If Stripe is asked to stop a monthly membership before the three-month
++ * commitment, move cancel_at to that commitment date so the remaining months
++ * are still invoiced. A cancel_at already on or after the commitment is left
++ * alone, which keeps the webhook from looping on its own update.
++ */
++export function monthlyMinimumStripeGuard(input: {
++  plan: MembershipPlan | null | undefined;
++  nowMs: number;
++  commitmentEndsAtMs: number | null | undefined;
++  cancelRequested: boolean;
++  requestedCancelAtMs: number | null | undefined;
++}): MonthlyMinimumStripeGuard {
++  if (normalizeMembershipPlan(input.plan) !== "monthly") return { action: "allow" };
++  if (!input.cancelRequested) return { action: "allow" };
++  const commitmentEndsAtMs = input.commitmentEndsAtMs ?? null;
++  if (commitmentEndsAtMs == null || input.nowMs >= commitmentEndsAtMs) return { action: "allow" };
++  const requested = input.requestedCancelAtMs ?? null;
++  if (requested != null && requested >= commitmentEndsAtMs) return { action: "allow" };
++  return { action: "bill_remaining_months", cancelAtMs: commitmentEndsAtMs };
++}
+diff --git a/shared/affiliateOperatorNotice.ts b/shared/affiliateOperatorNotice.ts
+new file mode 100644
+index 0000000..8a2bd38
+--- /dev/null
++++ b/shared/affiliateOperatorNotice.ts
+@@ -0,0 +1,18 @@
++// Plain notice shown before an affiliate pays, and anywhere payment or
++// commission terms are shown. This is its own notice. It is not the website
++// Terms & Conditions and it is not a warranty.
++
++export const AFFILIATE_OPERATOR_NOTICE = {
++  independent:
++    "You are an independent operator. You are not an employee of Cabinet Dealz.",
++  paidOnCompletion: "You get paid on completion of an order.",
++} as const;
++
++export const AFFILIATE_OPERATOR_NOTICE_LINES = [
++  AFFILIATE_OPERATOR_NOTICE.independent,
++  AFFILIATE_OPERATOR_NOTICE.paidOnCompletion,
++] as const;
++
++export function affiliateOperatorNoticeText(): string {
++  return AFFILIATE_OPERATOR_NOTICE_LINES.join(" ");
++}
+diff --git a/shared/legalPages.ts b/shared/legalPages.ts
+new file mode 100644
+index 0000000..c35acf4
+--- /dev/null
++++ b/shared/legalPages.ts
+@@ -0,0 +1,285 @@
++// Site legal pages an admin publishes from Operations.
++// Each slot has its own history. Saving adds a version and publishes it.
++// Rolling back republishes an older version. It does not delete history.
++//
++// A version whose source is "migration" means "keep the existing site page".
++// That is how Terms, Privacy, and the warranty wording stay verbatim until
++// Tom uploads a replacement. A warranty spreadsheet is extra: it never
++// replaces the warranty prose.
++
++export type LegalVersionSource = "migration" | "text" | "file" | "sheet";
++
++export type LegalSheet = {
++  headers: string[];
++  rows: string[][];
++};
++
++export type LegalFile = {
++  fileName: string;
++  mimeType: string;
++};
++
++export type LegalVersion = {
++  version: number;
++  source: LegalVersionSource;
++  bodyText: string | null;
++  file: LegalFile | null;
++  sheet: LegalSheet | null;
++  uploadedAt: string;
++  uploadedBy: string;
++};
++
++export type LegalSlot = {
++  slug: string;
++  title: string;
++  publicPath: string;
++  publishedVersion: number;
++  versions: LegalVersion[];
++};
++
++export type LegalUpload = {
++  bodyText?: string | null;
++  file?: LegalFile | null;
++  sheet?: LegalSheet | null;
++};
++
++export const LEGAL_PAGE_SEED_SLOTS: readonly { slug: string; title: string; publicPath: string }[] = [
++  { slug: "warranty", title: "Warranty", publicPath: "/warranty" },
++  { slug: "terms", title: "Terms of Service / Terms and Conditions", publicPath: "/terms" },
++  { slug: "affiliate-agreement", title: "Affiliate Agreement", publicPath: "/affiliate-agreement" },
++  { slug: "privacy", title: "Privacy", publicPath: "/privacy-policy" },
++  { slug: "sales-rep-agreement", title: "Sales Rep Agreement", publicPath: "/sales-rep-agreement" },
++];
++
++export function seedLegalSlots(uploadedAt: string, uploadedBy: string): LegalSlot[] {
++  return LEGAL_PAGE_SEED_SLOTS.map((slot) => ({
++    ...slot,
++    publishedVersion: 1,
++    versions: [
++      {
++        version: 1,
++        source: "migration",
++        bodyText: null,
++        file: null,
++        sheet: null,
++        uploadedAt,
++        uploadedBy,
++      },
++    ],
++  }));
++}
++
++export function publishedVersion(slot: LegalSlot): LegalVersion | null {
++  return slot.versions.find((version) => version.version === slot.publishedVersion) ?? null;
++}
++
++export function slugifyLegalSlot(raw: string): string {
++  return raw
++    .trim()
++    .toLowerCase()
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/^-+|-+$/g, "")
++    .slice(0, 64);
++}
++
++export function addLegalSlot(
++  slots: LegalSlot[],
++  input: { title: string; publicPath: string },
++  uploadedAt: string,
++  uploadedBy: string,
++): { ok: true; slots: LegalSlot[] } | { ok: false; message: string } {
++  const title = input.title.trim();
++  const publicPath = input.publicPath.trim();
++  const slug = slugifyLegalSlot(title);
++  if (!title || !slug) return { ok: false, message: "Enter a name for the new legal page." };
++  if (!publicPath.startsWith("/")) return { ok: false, message: "The public address must start with /." };
++  if (slots.some((slot) => slot.slug === slug || slot.publicPath === publicPath)) {
++    return { ok: false, message: "That page already exists." };
++  }
++  const slot: LegalSlot = {
++    slug,
++    title,
++    publicPath,
++    publishedVersion: 1,
++    versions: [
++      {
++        version: 1,
++        source: "migration",
++        bodyText: null,
++        file: null,
++        sheet: null,
++        uploadedAt,
++        uploadedBy,
++      },
++    ],
++  };
++  return { ok: true, slots: [...slots, slot] };
++}
++
++/**
++ * Publish a new version. A warranty sheet is added on top of the current
++ * prose. It does not clear bodyText. A text or file upload becomes the page.
++ */
++export function publishLegalUpload(
++  slot: LegalSlot,
++  upload: LegalUpload,
++  meta: { uploadedAt: string; uploadedBy: string },
++): { ok: true; slot: LegalSlot } | { ok: false; message: string } {
++  const current = publishedVersion(slot);
++  const text = (upload.bodyText ?? "").trim();
++  const file = upload.file ?? null;
++  const sheet = upload.sheet ?? null;
++  if (!text && !file && !sheet) {
++    return { ok: false, message: "Add text, a document, or a spreadsheet before saving." };
++  }
++  const warrantySheetOnly = slot.slug === "warranty" && sheet != null && !text && !file;
++  let source: LegalVersionSource = "text";
++  if (file && !text) source = "file";
++  else if (warrantySheetOnly) source = "sheet";
++  else if (sheet && !text && !file) source = "sheet";
++
++  const next: LegalVersion = {
++    version: Math.max(0, ...slot.versions.map((version) => version.version)) + 1,
++    source,
++    bodyText: text ? text : warrantySheetOnly ? current?.bodyText ?? null : text ? text : null,
++    file: file ?? (warrantySheetOnly ? current?.file ?? null : null),
++    sheet: sheet ?? (text || file ? current?.sheet ?? null : null),
++    uploadedAt: meta.uploadedAt,
++    uploadedBy: meta.uploadedBy,
++  };
++  if (warrantySheetOnly) {
++    next.bodyText = current?.bodyText ?? null;
++    next.file = current?.file ?? null;
++    next.sheet = sheet;
++  }
++  return {
++    ok: true,
++    slot: { ...slot, publishedVersion: next.version, versions: [...slot.versions, next] },
++  };
++}
++
++export function rollbackLegalSlot(
++  slot: LegalSlot,
++  version: number,
++): { ok: true; slot: LegalSlot } | { ok: false; message: string } {
++  if (!slot.versions.some((row) => row.version === version)) {
++    return { ok: false, message: "That version is not in the history." };
++  }
++  return { ok: true, slot: { ...slot, publishedVersion: version } };
++}
++
++export type LegalPagePresentation = {
++  /** "site-page" keeps the existing React page and its wording. */
++  render: "site-page" | "text" | "file";
++  bodyText: string | null;
++  file: LegalFile | null;
++  sheet: LegalSheet | null;
++  version: number | null;
++  versionLabel: string | null;
++};
++
++export function presentLegalSlot(slot: LegalSlot | null): LegalPagePresentation {
++  const published = slot ? publishedVersion(slot) : null;
++  if (!published || published.source === "migration") {
++    return {
++      render: "site-page",
++      bodyText: null,
++      file: null,
++      sheet: published?.sheet ?? null,
++      version: published?.version ?? null,
++      versionLabel: slot && published ? `${slot.slug}@${published.version}` : null,
++    };
++  }
++  if (published.source === "file" && published.file) {
++    return {
++      render: "file",
++      bodyText: published.bodyText,
++      file: published.file,
++      sheet: published.sheet,
++      version: published.version,
++      versionLabel: `${slot!.slug}@${published.version}`,
++    };
++  }
++  if (published.source === "sheet" && !published.bodyText) {
++    return {
++      render: "site-page",
++      bodyText: null,
++      file: published.file,
++      sheet: published.sheet,
++      version: published.version,
++      versionLabel: `${slot!.slug}@${published.version}`,
++    };
++  }
++  return {
++    render: "text",
++    bodyText: published.bodyText,
++    file: published.file,
++    sheet: published.sheet,
++    version: published.version,
++    versionLabel: `${slot!.slug}@${published.version}`,
++  };
++}
++
++/** Parse a CSV sheet. Quoted commas are kept inside the cell. */
++export function parseCsvTable(text: string): LegalSheet | { error: string } {
++  const rows = parseCsvRows(text).filter((row) => row.some((cell) => cell.trim() !== ""));
++  if (rows.length === 0) return { error: "The spreadsheet has no rows." };
++  const [headers, ...body] = rows;
++  if (!headers || headers.every((cell) => cell.trim() === "")) return { error: "The spreadsheet needs a header row." };
++  return { headers: headers.map((cell) => cell.trim()), rows: body.map((row) => headers.map((_, index) => (row[index] ?? "").trim())) };
++}
++
++function parseCsvRows(text: string): string[][] {
++  const rows: string[][] = [];
++  let row: string[] = [];
++  let cell = "";
++  let inQuotes = false;
++  const source = text.replace(/^\uFEFF/, "");
++  for (let i = 0; i < source.length; i += 1) {
++    const char = source[i];
++    if (inQuotes) {
++      if (char === '"') {
++        if (source[i + 1] === '"') {
++          cell += '"';
++          i += 1;
++        } else {
++          inQuotes = false;
++        }
++      } else {
++        cell += char;
++      }
++      continue;
++    }
++    if (char === '"') {
++      inQuotes = true;
++      continue;
++    }
++    if (char === ",") {
++      row.push(cell);
++      cell = "";
++      continue;
++    }
++    if (char === "\n" || char === "\r") {
++      if (char === "\r" && source[i + 1] === "\n") i += 1;
++      row.push(cell);
++      rows.push(row);
++      row = [];
++      cell = "";
++      continue;
++    }
++    cell += char;
++  }
++  if (cell.length > 0 || row.length > 0) {
++    row.push(cell);
++    rows.push(row);
++  }
++  return rows;
++}
++
++export function sheetFromRows(headers: string[], rows: string[][]): LegalSheet | { error: string } {
++  if (headers.length === 0) return { error: "The spreadsheet needs a header row." };
++  return {
++    headers,
++    rows: rows.map((row) => headers.map((_, index) => String(row[index] ?? ""))),
++  };
++}
+diff --git a/shared/salesRepAgreement.ts b/shared/salesRepAgreement.ts
+new file mode 100644
+index 0000000..75811d7
+--- /dev/null
++++ b/shared/salesRepAgreement.ts
+@@ -0,0 +1,32 @@
++// Draft sales-rep agreement. The signup fee is intentionally unset.
++// Job Boarding (W-9, non-compete, government ID) stays on the cabinet-backend
++// branch cursor/job-boarding-salesperson-onboarding-8095. This text does not
++// collect a tax id and does not replace that packet.
++
++export const SALES_REP_AGREEMENT_VERSION = "draft-2026-11-11";
++
++export function buildSalesRepAgreementText(): string {
++  return [
++    "DRAFT — for Tom and his attorney to review. This is not the website Terms & Conditions and it is not a warranty.",
++    "",
++    `Sales Rep Agreement`,
++    `Version: sales-rep-agreement@${SALES_REP_AGREEMENT_VERSION}`,
++    "",
++    "1. Independent contractor",
++    "You are a 1099 independent contractor. You are not an employee of Cabinet Dealz. You are responsible for your own taxes. You have no authority to bind Cabinet Dealz.",
++    "Authorized reps for this program are expected in Florida and Wisconsin. An admin still has to approve you before you count as a sales rep.",
++    "",
++    "2. What you are paid",
++    "When you sell an affiliate account, you earn the flat fee and the residual rate saved in Cabinet Dealz commission settings at the time that account pays. Those amounts are copied onto the commission. A later settings change does not rewrite commissions already earned.",
++    "The residual is a percent of that affiliate's confirmed order sales for as long as the account remains a customer. Confirmed order sales are the same gross used for affiliate commissions: orders whose status is confirmed.",
++    "",
++    "3. Signup fee",
++    "TODO: Tom has not set a sales rep signup fee. There is no fee checkout until an admin enters an amount and turns the checkout on.",
++    "",
++    "4. Paperwork",
++    "After approval, the Job Boarding packet still applies: your information, the non-compete, Form W-9, and a government ID. This page does not collect a Social Security number or an EIN.",
++    "",
++    "5. Governing law",
++    "TODO: Tom and his attorney will choose the governing law. This draft does not choose a state.",
++  ].join("\n");
++}
+diff --git a/shared/salesRepCommission.ts b/shared/salesRepCommission.ts
+new file mode 100644
+index 0000000..6e19417
+--- /dev/null
++++ b/shared/salesRepCommission.ts
+@@ -0,0 +1,152 @@
++// Sales-rep pay for selling an affiliate account.
++// The numbers below are seeded defaults only. Checkout and the ledger must
++// use the settings row an admin saved, then copy that row onto the commission
++// so a later edit does not rewrite commissions already earned.
++//
++// Residual base: "confirmed_order_gross" means the same gross as
++// sumCommission in shared/affiliate.ts — the sum of totalAmount on orders
++// whose status is "confirmed". Other order statuses are not sales.
++
++import { sumCommission } from "./affiliate";
++
++export const SALES_REP_COMMISSION_DEFAULTS = {
++  flatFeeUsd: 400,
++  /** 0.5% as a fraction, matching computeCommission's rate argument. */
++  residualRate: 0.005,
++  residualBase: "confirmed_order_gross" as const,
++};
++
++export const RESIDUAL_BASES = ["confirmed_order_gross"] as const;
++export type ResidualBase = (typeof RESIDUAL_BASES)[number];
++
++export type SalesRepCommissionSettings = {
++  flatFeeUsd: number;
++  residualRate: number;
++  residualBase: ResidualBase;
++  /**
++   * Rep signup fee. Tom has not set one. Null keeps the rep checkout off.
++   * An admin can enter an amount later without a code change.
++   */
++  repFeeUsd: number | null;
++  repFeeCheckoutEnabled: boolean;
++};
++
++export const SALES_REP_FEE_TODO = "TODO: Tom has not set a sales rep signup fee.";
++
++export function defaultCommissionSettings(): SalesRepCommissionSettings {
++  return {
++    flatFeeUsd: SALES_REP_COMMISSION_DEFAULTS.flatFeeUsd,
++    residualRate: SALES_REP_COMMISSION_DEFAULTS.residualRate,
++    residualBase: SALES_REP_COMMISSION_DEFAULTS.residualBase,
++    repFeeUsd: null,
++    repFeeCheckoutEnabled: false,
++  };
++}
++
++export function normalizeCommissionSettings(
++  raw: Partial<SalesRepCommissionSettings> | null | undefined,
++): { ok: true; settings: SalesRepCommissionSettings } | { ok: false; message: string } {
++  const flatFeeUsd = numberOr(raw?.flatFeeUsd, SALES_REP_COMMISSION_DEFAULTS.flatFeeUsd);
++  const residualRate = numberOr(raw?.residualRate, SALES_REP_COMMISSION_DEFAULTS.residualRate);
++  const residualBase = raw?.residualBase ?? SALES_REP_COMMISSION_DEFAULTS.residualBase;
++  if (!Number.isFinite(flatFeeUsd) || flatFeeUsd < 0) {
++    return { ok: false, message: "The flat fee must be zero or a positive number of dollars." };
++  }
++  if (!Number.isFinite(residualRate) || residualRate < 0 || residualRate > 1) {
++    return { ok: false, message: "The residual rate must be between 0 and 1 (0.5% is 0.005)." };
++  }
++  if (!(RESIDUAL_BASES as readonly string[]).includes(residualBase)) {
++    return { ok: false, message: "The residual base must be confirmed order sales." };
++  }
++  const repFeeUsd = raw?.repFeeUsd == null || raw.repFeeUsd === ("" as unknown) ? null : Number(raw.repFeeUsd);
++  if (repFeeUsd != null && (!Number.isFinite(repFeeUsd) || repFeeUsd <= 0)) {
++    return { ok: false, message: "Leave the rep signup fee empty until Tom sets it, or enter a positive amount." };
++  }
++  return {
++    ok: true,
++    settings: {
++      flatFeeUsd: roundDollars(flatFeeUsd),
++      residualRate,
++      residualBase,
++      repFeeUsd: repFeeUsd == null ? null : roundDollars(repFeeUsd),
++      repFeeCheckoutEnabled: raw?.repFeeCheckoutEnabled === true && repFeeUsd != null && repFeeUsd > 0,
++    },
++  };
++}
++
++export type RateSnapshot = {
++  flatFeeCents: number;
++  residualRateBps: number;
++  residualBase: ResidualBase;
++  capturedAt: string;
++};
++
++/** Copy the settings that apply at the moment a commission is earned. */
++export function snapshotRates(settings: SalesRepCommissionSettings, capturedAt: string): RateSnapshot {
++  return {
++    flatFeeCents: Math.round(settings.flatFeeUsd * 100),
++    residualRateBps: Math.round(settings.residualRate * 10000),
++    residualBase: settings.residualBase,
++    capturedAt,
++  };
++}
++
++export type ConfirmedOrder = { id: number | string; totalAmount: number | null; status: string };
++
++export type ResidualLine = {
++  orderKey: string;
++  amountCents: number;
++  grossCents: number;
++  residualRateBps: number;
++  residualBase: ResidualBase;
++};
++
++/**
++ * Residual on one affiliate's orders using the rate saved when the rep sold
++ * the account. Gross matches sumCommission: confirmed orders only.
++ */
++export function residualLines(orders: ConfirmedOrder[], snapshot: RateSnapshot): ResidualLine[] {
++  if (snapshot.residualBase !== "confirmed_order_gross") return [];
++  if (snapshot.residualRateBps <= 0) return [];
++  const lines: ResidualLine[] = [];
++  for (const order of orders) {
++    if (order.status !== "confirmed") continue;
++    const gross = Number(order.totalAmount ?? 0);
++    if (!Number.isFinite(gross) || gross <= 0) continue;
++    const grossCents = Math.round(gross * 100);
++    const amountCents = Math.round((grossCents * snapshot.residualRateBps) / 10000);
++    if (amountCents <= 0) continue;
++    lines.push({
++      orderKey: `residual:order:${order.id}`,
++      amountCents,
++      grossCents,
++      residualRateBps: snapshot.residualRateBps,
++      residualBase: snapshot.residualBase,
++    });
++  }
++  return lines;
++}
++
++/** Same gross figure sumCommission reports, so the residual base is not a second definition. */
++export function confirmedOrderGross(orders: { totalAmount: number | null; status: string }[]): number {
++  return sumCommission(orders, 0).gross;
++}
++
++export function repFeeCheckoutAvailable(settings: SalesRepCommissionSettings): boolean {
++  return settings.repFeeCheckoutEnabled === true && settings.repFeeUsd != null && settings.repFeeUsd > 0;
++}
++
++export type RepApplicationStatus = "pending" | "approved" | "rejected";
++
++export function selectableSalesReps<T extends { status: RepApplicationStatus }>(reps: T[]): T[] {
++  return reps.filter((rep) => rep.status === "approved");
++}
++
++function numberOr(value: unknown, fallback: number): number {
++  if (typeof value !== "number") return fallback;
++  return value;
++}
++
++function roundDollars(value: number): number {
++  return Math.round(value * 100) / 100;
++}
+-- 
+2.43.0
+
+
+From 1d3155b6995ac84953f5de3d8bc27a3d421bd08b Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 16:11:20 +0000
+Subject: [PATCH 2/4] Set Florida law and Sarasota County venue on the
+ agreement drafts.
+
+Both documents stay marked as drafts for attorney review. The county is the one already named in the site Terms.
+---
+ shared/affiliateAgreement.ts | 2 +-
+ shared/salesRepAgreement.ts  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/shared/affiliateAgreement.ts b/shared/affiliateAgreement.ts
+index 8ffb70c..54d6bcb 100644
+--- a/shared/affiliateAgreement.ts
++++ b/shared/affiliateAgreement.ts
+@@ -52,7 +52,7 @@ export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMEN
+     "To the extent the law allows, Cabinet Dealz is not liable for indirect or consequential losses from your use of the storefront. Cabinet Dealz's liability to you for the membership is limited to the membership fees you paid in the three months before the claim.",
+     "",
+     "10. Governing law",
+-    "TODO: Tom and his attorney will choose the governing law and the venue. This draft does not choose a state.",
++    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
+     "",
+     "11. Separate document",
+     "This agreement is only between Cabinet Dealz and the affiliate. It does not replace the website Terms & Conditions, the privacy policy, or any manufacturer warranty.",
+diff --git a/shared/salesRepAgreement.ts b/shared/salesRepAgreement.ts
+index 75811d7..bddd7aa 100644
+--- a/shared/salesRepAgreement.ts
++++ b/shared/salesRepAgreement.ts
+@@ -27,6 +27,6 @@ export function buildSalesRepAgreementText(): string {
+     "After approval, the Job Boarding packet still applies: your information, the non-compete, Form W-9, and a government ID. This page does not collect a Social Security number or an EIN.",
+     "",
+     "5. Governing law",
+-    "TODO: Tom and his attorney will choose the governing law. This draft does not choose a state.",
++    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
+   ].join("\n");
+ }
+-- 
+2.43.0
+
+
+From 299b6a2cac841260531beaf89976fc2e75d1559f Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 16:14:08 +0000
+Subject: [PATCH 3/4] Limit the sales-rep residual to material sales.
+
+The 0.5 percent is calculated on the merchandise subtotal of a confirmed order. Freight, shipping, tax, fees, and affiliate-only cost fees are excluded. An order with no stored or line-item material subtotal is flagged instead of using the order total. The $400 flat fee is unchanged.
+---
+ ...278_affiliate_membership_checkout.tidb.sql |   5 +-
+ server/lib/membershipProgramStore.ts          |  53 +++++--
+ server/routers/orders.ts                      |  14 ++
+ server/routers/salesRepProgram.ts             |   1 +
+ shared/affiliateAgreement.ts                  |   2 +-
+ shared/salesRepAgreement.ts                   |   2 +-
+ shared/salesRepCommission.ts                  | 149 ++++++++++++++----
+ 7 files changed, 180 insertions(+), 46 deletions(-)
+
+diff --git a/docs/sql/0278_affiliate_membership_checkout.tidb.sql b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+index 319978a..b00ed13 100644
+--- a/docs/sql/0278_affiliate_membership_checkout.tidb.sql
++++ b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+@@ -16,7 +16,7 @@ CREATE TABLE cabinet_dealz.sales_rep_applications (id INT NOT NULL AUTO_INCREMEN
+ CREATE TABLE cabinet_dealz.sales_rep_commission_settings (id INT NOT NULL PRIMARY KEY, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, repFeeCents INT NULL, repFeeCheckoutEnabled TINYINT(1) NOT NULL DEFAULT 0, updatedByUserId INT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+ 
+ -- 3
+-INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_order_gross', NULL, 0);
++INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_material_subtotal', NULL, 0);
+ 
+ -- 4
+ CREATE TABLE cabinet_dealz.sales_rep_affiliate_credits (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, salesRepApplicationId INT NOT NULL, affiliateId INT NOT NULL, paymentRef VARCHAR(255) NULL, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, capturedAt DATETIME NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY sales_rep_affiliate_credits_affiliate_uq (affiliateId), KEY sales_rep_affiliate_credits_rep_idx (salesRepApplicationId));
+@@ -41,3 +41,6 @@ INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText
+ 
+ -- 11. Which approved rep is credited for an affiliate. The flat fee is written only after the membership payment.
+ CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT NULL PRIMARY KEY, salesRepApplicationId INT NOT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
++
++-- 12. Merchandise subtotal in cents for the sales-rep residual. Null means the order has no stored material subtotal. Do not fill it from totalAmount.
++ALTER TABLE cabinet_dealz.order_requests ADD COLUMN materialSubtotalCents INT NULL;
+diff --git a/server/lib/membershipProgramStore.ts b/server/lib/membershipProgramStore.ts
+index 11801aa..18fb13c 100644
+--- a/server/lib/membershipProgramStore.ts
++++ b/server/lib/membershipProgramStore.ts
+@@ -4,7 +4,7 @@ import {
+   defaultCommissionSettings,
+   residualLines,
+   snapshotRates,
+-  type ConfirmedOrder,
++  type MaterialSalesOrder,
+   type SalesRepCommissionSettings,
+ } from "@shared/salesRepCommission";
+ import { LEGAL_PAGE_SEED_SLOTS, type LegalSheet } from "@shared/legalPages";
+@@ -52,7 +52,7 @@ export function settingsFromRow(row: Record<string, unknown> | undefined): Sales
+   return {
+     flatFeeUsd: (nullableNumber(row.flatFeeCents) ?? 40000) / 100,
+     residualRate: (nullableNumber(row.residualRateBps) ?? 50) / 10000,
+-    residualBase: "confirmed_order_gross",
++    residualBase: "confirmed_material_subtotal",
+     repFeeUsd: repFeeCents == null ? null : repFeeCents / 100,
+     repFeeCheckoutEnabled: Number(row.repFeeCheckoutEnabled) === 1 && repFeeCents != null && repFeeCents > 0,
+   };
+@@ -185,6 +185,30 @@ export async function recordFlatCommission(db: Database, input: {
+   `);
+ }
+ 
++function parseLineItems(value: unknown): MaterialSalesOrder["lineItems"] {
++  const parsed = typeof value === "string" ? safeJson(value) : value;
++  if (!Array.isArray(parsed)) return null;
++  return parsed.filter((line) => line && typeof line === "object") as MaterialSalesOrder["lineItems"];
++}
++
++function safeJson(value: string): unknown {
++  try {
++    return JSON.parse(value);
++  } catch {
++    return null;
++  }
++}
++
++async function confirmedMaterialOrders(db: Database, affiliateId: number): Promise<Record<string, unknown>[]> {
++  try {
++    return await run(db, sql`SELECT id, status, lineItems, totalAmount, materialSubtotalCents FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    if (!/unknown column|materialSubtotalCents/i.test(message)) throw error;
++    return run(db, sql`SELECT id, status, lineItems, totalAmount FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
++  }
++}
++
+ export async function listAffiliateSaleCommissions(db: Database): Promise<Record<string, unknown>[]> {
+   const credits = await run(db, sql`
+     SELECT c.salesRepApplicationId, c.affiliateId, c.flatFeeCents, c.residualRateBps, c.residualBase, c.capturedAt,
+@@ -205,34 +229,39 @@ export async function listAffiliateSaleCommissions(db: Database): Promise<Record
+   const residualRows: Record<string, unknown>[] = [];
+   for (const credit of credits) {
+     const affiliateId = Number(credit.affiliateId);
+-    const orders = await run(db, sql`SELECT id, totalAmount, status FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
+-    const confirmed: ConfirmedOrder[] = orders.map((order) => ({
++    const orders = await confirmedMaterialOrders(db, affiliateId);
++    const confirmed: MaterialSalesOrder[] = orders.map((order) => ({
+       id: Number(order.id),
+-      totalAmount: order.totalAmount == null ? null : Number(order.totalAmount),
+       status: text(order.status),
++      materialSubtotalCents: order.materialSubtotalCents == null ? null : Number(order.materialSubtotalCents),
++      lineItems: parseLineItems(order.lineItems),
++      totalAmount: order.totalAmount == null ? null : Number(order.totalAmount),
+     }));
+-    const lines = residualLines(confirmed, {
++    const computed = residualLines(confirmed, {
+       flatFeeCents: Number(credit.flatFeeCents),
+       residualRateBps: Number(credit.residualRateBps),
+-      residualBase: "confirmed_order_gross",
++      residualBase: "confirmed_material_subtotal",
+       capturedAt: text(credit.capturedAt),
+     });
+-    lines.forEach((line, index) => {
++    const pushResidual = (index: number, amountCents: number, flagReason: string | null) => {
+       residualRows.push({
+         id: Number(`${affiliateId}${index + 1}`),
+         salesRepApplicationId: Number(credit.salesRepApplicationId),
+         affiliateId,
+         kind: "residual",
+-        amountCents: line.amountCents,
++        amountCents,
+         flatFeeCents: Number(credit.flatFeeCents),
+-        residualRateBps: line.residualRateBps,
+-        residualBase: line.residualBase,
++        residualRateBps: Number(credit.residualRateBps),
++        residualBase: "confirmed_material_subtotal",
++        flagReason,
+         status: "pending",
+         earnedAt: text(credit.capturedAt),
+         repName: text(credit.repName),
+         affiliateName: text(credit.affiliateName),
+       });
+-    });
++    };
++    computed.lines.forEach((line, index) => pushResidual(index, line.amountCents, null));
++    computed.flagged.forEach((line, index) => pushResidual(computed.lines.length + index, 0, line.reason));
+   }
+   return [...entries, ...residualRows];
+ }
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+index b5e6812..6e50291 100644
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -23,6 +23,7 @@ import {
+   type OrderLineItem,
+ } from "../../drizzle/schema";
+ import { normalizeReferralCode } from "@shared/affiliate";
++import { resolveMaterialSubtotal } from "@shared/salesRepCommission";
+ import { NO_DISTRIBUTOR_SKU_MAPPED, resolveDistributorPoLine } from "@shared/distributorPoLine";
+ import { fetchDistributorPoCatalog } from "../lib/distributorPoCatalog";
+ import { resolveLineDistributorId } from "../lib/distributorOrderEmail";
+@@ -1334,6 +1335,19 @@ export const ordersRouter = router({
+         taxAmount: calculatedTax ? String(calculatedTax.taxAmount.toFixed(2)) : null,
+       });
+       const insertId = (result as unknown as [{ insertId: number }])[0].insertId;
++      const materialSubtotal = resolveMaterialSubtotal({
++        id: insertId,
++        status: input.submit ? "submitted" : "draft",
++        lineItems: persistedLines,
++      });
++      if (materialSubtotal.ok) {
++        try {
++          await db.execute(sql`UPDATE cabinet_dealz.order_requests SET materialSubtotalCents = ${materialSubtotal.materialSubtotalCents} WHERE id = ${insertId}`);
++        } catch (error) {
++          const message = error instanceof Error ? error.message : String(error);
++          if (!/unknown column|materialSubtotalCents/i.test(message)) throw error;
++        }
++      }
+       await persistOrderCostSnapshot(db, insertId, persistedLines, {
+         carrier: shippingCarrier,
+         service: shippingService,
+diff --git a/server/routers/salesRepProgram.ts b/server/routers/salesRepProgram.ts
+index 2660072..dfdc4a1 100644
+--- a/server/routers/salesRepProgram.ts
++++ b/server/routers/salesRepProgram.ts
+@@ -164,6 +164,7 @@ export const salesRepProgramRouter = router({
+         flatFeeCents: Number(row.flatFeeCents),
+         residualRateBps: Number(row.residualRateBps),
+         residualBase: String(row.residualBase),
++        flagReason: row.flagReason == null ? null : String(row.flagReason),
+         status: String(row.status),
+         earnedAt: row.earnedAt instanceof Date ? row.earnedAt.toISOString() : String(row.earnedAt ?? ""),
+       }));
+diff --git a/shared/affiliateAgreement.ts b/shared/affiliateAgreement.ts
+index 54d6bcb..b6cf732 100644
+--- a/shared/affiliateAgreement.ts
++++ b/shared/affiliateAgreement.ts
+@@ -34,7 +34,7 @@ export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMEN
+     `The monthly amount is $${AFFILIATE_MEMBERSHIP.monthlyPriceUsd} per month. It is billed every month. The first ${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months are a minimum. A cancel before those ${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months is blocked in your account, and if billing is stopped early in Stripe the remaining months of the minimum are still billed through the commitment date. After the minimum, you may cancel and billing stops at the end of the month already paid.`,
+     "",
+     "4. Sales rep credit",
+-    "If you select an approved sales rep when you pay, that rep is credited with selling your affiliate account. The rep's flat fee and residual are the amounts Cabinet Dealz has saved in its commission settings at the time you pay. That saved rate stays on your account. A later change to the settings does not rewrite it.",
++    "If you select an approved sales rep when you pay, that rep is credited with selling your affiliate account. The rep's flat fee and residual are the amounts Cabinet Dealz has saved in its commission settings at the time you pay. That saved rate stays on your account. A later change to the settings does not rewrite it. The residual is on material sales only: the merchandise subtotal of your confirmed orders. It does not include freight, shipping, tax, fees, or affiliate-only cost fees. An order with no separate material subtotal is flagged, and no residual is calculated for it.",
+     "",
+     "5. Brand and storefront",
+     "Cabinet Dealz lets you use a storefront under your own name, and the Cabinet Dealz name only as this program describes. You may not copy the software, present yourself as Cabinet Dealz, or promise terms Cabinet Dealz did not approve.",
+diff --git a/shared/salesRepAgreement.ts b/shared/salesRepAgreement.ts
+index bddd7aa..6309160 100644
+--- a/shared/salesRepAgreement.ts
++++ b/shared/salesRepAgreement.ts
+@@ -18,7 +18,7 @@ export function buildSalesRepAgreementText(): string {
+     "",
+     "2. What you are paid",
+     "When you sell an affiliate account, you earn the flat fee and the residual rate saved in Cabinet Dealz commission settings at the time that account pays. Those amounts are copied onto the commission. A later settings change does not rewrite commissions already earned.",
+-    "The residual is a percent of that affiliate's confirmed order sales for as long as the account remains a customer. Confirmed order sales are the same gross used for affiliate commissions: orders whose status is confirmed.",
++    "The residual applies only to material sales on that affiliate's confirmed orders, for as long as the account remains a customer. Material sales means the merchandise subtotal. Freight, shipping, tax, fees, and affiliate-only cost fees are not included. If an order has no separate material subtotal, that order is flagged and no residual is calculated for it.",
+     "",
+     "3. Signup fee",
+     "TODO: Tom has not set a sales rep signup fee. There is no fee checkout until an admin enters an amount and turns the checkout on.",
+diff --git a/shared/salesRepCommission.ts b/shared/salesRepCommission.ts
+index 6e19417..be0e578 100644
+--- a/shared/salesRepCommission.ts
++++ b/shared/salesRepCommission.ts
+@@ -3,20 +3,19 @@
+ // use the settings row an admin saved, then copy that row onto the commission
+ // so a later edit does not rewrite commissions already earned.
+ //
+-// Residual base: "confirmed_order_gross" means the same gross as
+-// sumCommission in shared/affiliate.ts — the sum of totalAmount on orders
+-// whose status is "confirmed". Other order statuses are not sales.
+-
+-import { sumCommission } from "./affiliate";
++// Residual base: "confirmed_material_subtotal" is the merchandise subtotal of
++// confirmed orders. Freight, shipping, tax, fees, and affiliate-only cost fees
++// are not included. Affiliate commission gross (sumCommission / totalAmount)
++// is a different number and is not this base.
+ 
+ export const SALES_REP_COMMISSION_DEFAULTS = {
+   flatFeeUsd: 400,
+   /** 0.5% as a fraction, matching computeCommission's rate argument. */
+   residualRate: 0.005,
+-  residualBase: "confirmed_order_gross" as const,
++  residualBase: "confirmed_material_subtotal" as const,
+ };
+ 
+-export const RESIDUAL_BASES = ["confirmed_order_gross"] as const;
++export const RESIDUAL_BASES = ["confirmed_material_subtotal"] as const;
+ export type ResidualBase = (typeof RESIDUAL_BASES)[number];
+ 
+ export type SalesRepCommissionSettings = {
+@@ -48,15 +47,17 @@ export function normalizeCommissionSettings(
+ ): { ok: true; settings: SalesRepCommissionSettings } | { ok: false; message: string } {
+   const flatFeeUsd = numberOr(raw?.flatFeeUsd, SALES_REP_COMMISSION_DEFAULTS.flatFeeUsd);
+   const residualRate = numberOr(raw?.residualRate, SALES_REP_COMMISSION_DEFAULTS.residualRate);
+-  const residualBase = raw?.residualBase ?? SALES_REP_COMMISSION_DEFAULTS.residualBase;
++  const residualBase = (raw as { residualBase?: string } | null | undefined)?.residualBase
++    ?? SALES_REP_COMMISSION_DEFAULTS.residualBase;
+   if (!Number.isFinite(flatFeeUsd) || flatFeeUsd < 0) {
+     return { ok: false, message: "The flat fee must be zero or a positive number of dollars." };
+   }
+   if (!Number.isFinite(residualRate) || residualRate < 0 || residualRate > 1) {
+     return { ok: false, message: "The residual rate must be between 0 and 1 (0.5% is 0.005)." };
+   }
+-  if (!(RESIDUAL_BASES as readonly string[]).includes(residualBase)) {
+-    return { ok: false, message: "The residual base must be confirmed order sales." };
++  const base = residualBase === "confirmed_order_gross" ? "confirmed_material_subtotal" : residualBase;
++  if (!(RESIDUAL_BASES as readonly string[]).includes(base)) {
++    return { ok: false, message: "The residual base must be confirmed material sales." };
+   }
+   const repFeeUsd = raw?.repFeeUsd == null || raw.repFeeUsd === ("" as unknown) ? null : Number(raw.repFeeUsd);
+   if (repFeeUsd != null && (!Number.isFinite(repFeeUsd) || repFeeUsd <= 0)) {
+@@ -67,7 +68,7 @@ export function normalizeCommissionSettings(
+     settings: {
+       flatFeeUsd: roundDollars(flatFeeUsd),
+       residualRate,
+-      residualBase,
++      residualBase: base as ResidualBase,
+       repFeeUsd: repFeeUsd == null ? null : roundDollars(repFeeUsd),
+       repFeeCheckoutEnabled: raw?.repFeeCheckoutEnabled === true && repFeeUsd != null && repFeeUsd > 0,
+     },
+@@ -91,45 +92,131 @@ export function snapshotRates(settings: SalesRepCommissionSettings, capturedAt:
+   };
+ }
+ 
+-export type ConfirmedOrder = { id: number | string; totalAmount: number | null; status: string };
++export type MaterialOrderLine = {
++  linePrice?: number | string | null;
++  unitPrice?: number | string | null;
++  qty?: number | null;
++  productKind?: string | null;
++  description?: string | null;
++};
++
++export type MaterialSalesOrder = {
++  id: number | string;
++  status: string;
++  /** Stored merchandise subtotal in cents, when the order has that column. */
++  materialSubtotalCents?: number | null;
++  lineItems?: MaterialOrderLine[] | null;
++  /** Present on older rows. Never used as the residual base. */
++  totalAmount?: number | null;
++};
++
++export type MaterialSubtotal =
++  | { ok: true; materialSubtotalCents: number; source: "stored" | "line_items" }
++  | { ok: false; reason: "material_subtotal_missing" };
+ 
+ export type ResidualLine = {
+   orderKey: string;
+   amountCents: number;
+-  grossCents: number;
++  materialSubtotalCents: number;
+   residualRateBps: number;
+   residualBase: ResidualBase;
++  flagged: false;
+ };
+ 
++export type FlaggedResidual = {
++  orderKey: string;
++  reason: "material_subtotal_missing";
++  flagged: true;
++};
++
++export type ResidualComputation = {
++  lines: ResidualLine[];
++  flagged: FlaggedResidual[];
++};
++
++const NON_MATERIAL_KINDS = new Set(["freight", "shipping", "tax", "fee", "damage_fee", "tech_fee", "card_fee"]);
++
++function isNonMaterialLine(line: MaterialOrderLine): boolean {
++  const kind = (line.productKind ?? "").trim().toLowerCase();
++  if (NON_MATERIAL_KINDS.has(kind)) return true;
++  const description = (line.description ?? "").toLowerCase();
++  return /\b(freight|shipping|sales tax|damage fee|tech fee|card fee)\b/.test(description);
++}
++
++function dollarsToCents(value: number | string | null | undefined): number | null {
++  if (value == null || value === "") return null;
++  const amount = typeof value === "number" ? value : Number(String(value).trim());
++  if (!Number.isFinite(amount)) return null;
++  return Math.round(amount * 100);
++}
++
++function lineMerchandiseCents(line: MaterialOrderLine): number | null {
++  const fromLine = dollarsToCents(line.linePrice);
++  if (fromLine != null) return fromLine;
++  const unit = dollarsToCents(line.unitPrice);
++  if (unit == null) return null;
++  const qty = line.qty ?? 1;
++  if (!Number.isFinite(qty)) return null;
++  return unit * Math.max(0, Math.round(qty));
++}
++
++/**
++ * Merchandise subtotal for one order. A stored materialSubtotalCents wins.
++ * Otherwise the merchandise lines are summed. Freight, shipping, tax, and fee
++ * lines are left out. totalAmount is never used: if neither the stored
++ * subtotal nor a complete set of merchandise lines is present, the order is
++ * flagged instead of guessed.
++ */
++export function resolveMaterialSubtotal(order: MaterialSalesOrder): MaterialSubtotal {
++  const stored = order.materialSubtotalCents;
++  if (typeof stored === "number" && Number.isFinite(stored) && stored >= 0) {
++    return { ok: true, materialSubtotalCents: Math.round(stored), source: "stored" };
++  }
++  const lines = order.lineItems;
++  if (!lines || lines.length === 0) return { ok: false, reason: "material_subtotal_missing" };
++  const materialLines = lines.filter((line) => !isNonMaterialLine(line));
++  if (materialLines.length === 0) return { ok: false, reason: "material_subtotal_missing" };
++  let sum = 0;
++  for (const line of materialLines) {
++    const cents = lineMerchandiseCents(line);
++    if (cents == null) return { ok: false, reason: "material_subtotal_missing" };
++    sum += cents;
++  }
++  return { ok: true, materialSubtotalCents: sum, source: "line_items" };
++}
++
+ /**
+- * Residual on one affiliate's orders using the rate saved when the rep sold
+- * the account. Gross matches sumCommission: confirmed orders only.
++ * Residual on material sales only, using the rate saved when the rep sold
++ * the account. Orders that are not confirmed are ignored. Confirmed orders
++ * with no material subtotal are flagged and pay nothing.
+  */
+-export function residualLines(orders: ConfirmedOrder[], snapshot: RateSnapshot): ResidualLine[] {
+-  if (snapshot.residualBase !== "confirmed_order_gross") return [];
+-  if (snapshot.residualRateBps <= 0) return [];
++export function residualLines(orders: MaterialSalesOrder[], snapshot: RateSnapshot): ResidualComputation {
+   const lines: ResidualLine[] = [];
++  const flagged: FlaggedResidual[] = [];
++  const base = snapshot.residualBase === "confirmed_material_subtotal"
++    || (snapshot.residualBase as string) === "confirmed_order_gross";
++  if (!base || snapshot.residualRateBps <= 0) return { lines, flagged };
+   for (const order of orders) {
+     if (order.status !== "confirmed") continue;
+-    const gross = Number(order.totalAmount ?? 0);
+-    if (!Number.isFinite(gross) || gross <= 0) continue;
+-    const grossCents = Math.round(gross * 100);
+-    const amountCents = Math.round((grossCents * snapshot.residualRateBps) / 10000);
++    const material = resolveMaterialSubtotal(order);
++    const orderKey = `residual:order:${order.id}`;
++    if (!material.ok) {
++      flagged.push({ orderKey, reason: material.reason, flagged: true });
++      continue;
++    }
++    if (material.materialSubtotalCents <= 0) continue;
++    const amountCents = Math.round((material.materialSubtotalCents * snapshot.residualRateBps) / 10000);
+     if (amountCents <= 0) continue;
+     lines.push({
+-      orderKey: `residual:order:${order.id}`,
++      orderKey,
+       amountCents,
+-      grossCents,
++      materialSubtotalCents: material.materialSubtotalCents,
+       residualRateBps: snapshot.residualRateBps,
+-      residualBase: snapshot.residualBase,
++      residualBase: "confirmed_material_subtotal",
++      flagged: false,
+     });
+   }
+-  return lines;
+-}
+-
+-/** Same gross figure sumCommission reports, so the residual base is not a second definition. */
+-export function confirmedOrderGross(orders: { totalAmount: number | null; status: string }[]): number {
+-  return sumCommission(orders, 0).gross;
++  return { lines, flagged };
+ }
+ 
+ export function repFeeCheckoutAvailable(settings: SalesRepCommissionSettings): boolean {
+-- 
+2.43.0
+
+
+From b00cb7156343394507935c34fd973c318337be39 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 16:29:58 +0000
+Subject: [PATCH 4/4] Keep agreement edits as drafts until an admin publishes
+ them.
+
+The Affiliate Agreement and Sales Rep Agreement are preloaded as draft versions. Saving a draft does not change the public page.
+---
+ ...278_affiliate_membership_checkout.tidb.sql |   5 +-
+ server/lib/membershipProgramStore.ts          |  48 +++++++-
+ server/routers/legalPages.ts                  |  18 +++
+ shared/legalPages.ts                          | 106 +++++++++++++++---
+ 4 files changed, 156 insertions(+), 21 deletions(-)
+
+diff --git a/docs/sql/0278_affiliate_membership_checkout.tidb.sql b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+index b00ed13..9102018 100644
+--- a/docs/sql/0278_affiliate_membership_checkout.tidb.sql
++++ b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+@@ -31,7 +31,7 @@ CREATE TABLE cabinet_dealz.affiliate_checkout_acknowledgements (id INT NOT NULL
+ CREATE TABLE cabinet_dealz.legal_page_slots (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slug VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, publicPath VARCHAR(255) NOT NULL, publishedVersion INT NOT NULL DEFAULT 1, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_slots_slug_uq (slug), UNIQUE KEY legal_page_slots_path_uq (publicPath));
+ 
+ -- 8
+-CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
++CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet','draft') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
+ 
+ -- 9
+ INSERT INTO cabinet_dealz.legal_page_slots (slug, title, publicPath, publishedVersion) VALUES ('warranty', 'Warranty', '/warranty', 1), ('terms', 'Terms of Service / Terms and Conditions', '/terms', 1), ('affiliate-agreement', 'Affiliate Agreement', '/affiliate-agreement', 1), ('privacy', 'Privacy', '/privacy-policy', 1), ('sales-rep-agreement', 'Sales Rep Agreement', '/sales-rep-agreement', 1);
+@@ -44,3 +44,6 @@ CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT
+ 
+ -- 12. Merchandise subtotal in cents for the sales-rep residual. Null means the order has no stored material subtotal. Do not fill it from totalAmount.
+ ALTER TABLE cabinet_dealz.order_requests ADD COLUMN materialSubtotalCents INT NULL;
++
++-- 13. Let an agreement version stay a draft until an admin publishes it. "Duplicate column" does not apply. "Data truncated" means the enum already lists draft: skip this line.
++ALTER TABLE cabinet_dealz.legal_page_versions MODIFY COLUMN source ENUM('migration','text','file','sheet','draft') NOT NULL;
+diff --git a/server/lib/membershipProgramStore.ts b/server/lib/membershipProgramStore.ts
+index 18fb13c..cb00ed8 100644
+--- a/server/lib/membershipProgramStore.ts
++++ b/server/lib/membershipProgramStore.ts
+@@ -288,9 +288,14 @@ export async function listLegalSlots(db: Database): Promise<Record<string, unkno
+         await run(db, sql`INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy) VALUES (${slotId}, 1, 'migration', NULL, 'Site page')`);
+       }
+     }
+-    return run(db, sql`SELECT id, slug, title, publicPath, publishedVersion FROM cabinet_dealz.legal_page_slots ORDER BY id`);
+   }
+-  return slots;
++  try {
++    await ensureAgreementDrafts(db);
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    if (!isMissingSchema(error) && !/data truncated|incorrect/i.test(message)) throw error;
++  }
++  return run(db, sql`SELECT id, slug, title, publicPath, publishedVersion FROM cabinet_dealz.legal_page_slots ORDER BY id`);
+ }
+ 
+ export async function versionsForSlot(db: Database, slotId: number): Promise<Record<string, unknown>[]> {
+@@ -315,7 +320,8 @@ export async function publishLegalVersion(db: Database, input: {
+   const previous = current[0];
+   const keepSheet = input.sheet ? JSON.stringify(input.sheet) : (previous ? text(previous.sheetJson) || null : null);
+   const body = input.source === "sheet" ? (previous?.bodyText == null ? null : text(previous.bodyText) || null) : input.bodyText;
+-  const nextVersion = Number(slot.publishedVersion) + 1;
++  const maxVersion = await run(db, sql`SELECT MAX(version) AS maxVersion FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId}`);
++  const nextVersion = Number(maxVersion[0]?.maxVersion ?? slot.publishedVersion ?? 0) + 1;
+   await run(db, sql`
+     INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, fileName, mimeType, fileBase64, sheetJson, uploadedBy)
+     VALUES (
+@@ -329,6 +335,42 @@ export async function publishLegalVersion(db: Database, input: {
+   await run(db, sql`UPDATE cabinet_dealz.legal_page_slots SET publishedVersion = ${nextVersion} WHERE id = ${slotId}`);
+ }
+ 
++export async function saveLegalDraftVersion(db: Database, slug: string, bodyText: string, uploadedBy: string): Promise<void> {
++  const textBody = bodyText.trim();
++  if (!textBody) throw new Error("The draft is empty.");
++  const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
++  const slotId = Number(slots[0]?.id);
++  if (!slotId) throw new Error("That legal page does not exist.");
++  const maxVersion = await run(db, sql`SELECT MAX(version) AS maxVersion FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId}`);
++  const nextVersion = Number(maxVersion[0]?.maxVersion ?? 0) + 1;
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy)
++    VALUES (${slotId}, ${nextVersion}, 'draft', ${textBody}, ${uploadedBy})
++  `);
++}
++
++async function ensureAgreementDrafts(db: Database): Promise<void> {
++  const { buildAffiliateAgreementText } = await import("@shared/affiliateAgreement");
++  const { buildSalesRepAgreementText } = await import("@shared/salesRepAgreement");
++  const drafts: Record<string, string> = {
++    "affiliate-agreement": buildAffiliateAgreementText(),
++    "sales-rep-agreement": buildSalesRepAgreementText(),
++  };
++  for (const [slug, body] of Object.entries(drafts)) {
++    const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
++    const slotId = Number(slots[0]?.id);
++    if (!slotId) continue;
++    const existing = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId} AND source = 'draft' AND bodyText IS NOT NULL LIMIT 1`);
++    if (existing[0]) continue;
++    const maxVersion = await run(db, sql`SELECT MAX(version) AS maxVersion FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId}`);
++    const nextVersion = Number(maxVersion[0]?.maxVersion ?? 0) + 1;
++    await run(db, sql`
++      INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy)
++      VALUES (${slotId}, ${nextVersion}, 'draft', ${body}, 'Draft')
++    `);
++  }
++}
++
+ export async function rollbackLegalVersion(db: Database, slug: string, version: number): Promise<void> {
+   const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
+   const slotId = Number(slots[0]?.id);
+diff --git a/server/routers/legalPages.ts b/server/routers/legalPages.ts
+index 810c79d..36fa9a1 100644
+--- a/server/routers/legalPages.ts
++++ b/server/routers/legalPages.ts
+@@ -10,6 +10,7 @@ import {
+   parseSheet,
+   publishLegalVersion,
+   rollbackLegalVersion,
++  saveLegalDraftVersion,
+   versionsForSlot,
+ } from "../lib/membershipProgramStore";
+ 
+@@ -96,6 +97,23 @@ export const legalPagesRouter = router({
+     }
+   }),
+ 
++  saveDraft: adminProcedure.input(z.object({
++    slug: z.string().min(1).max(64),
++    bodyText: z.string().min(1).max(200000),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await saveLegalDraftVersion(db, input.slug, input.bodyText, ctx.user.name || ctx.user.email || `User ${ctx.user.id}`);
++      return { ok: true };
++    } catch (error) {
++      if (isMissingSchema(error)) {
++        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legal page tables are missing. Run docs/sql/0278_affiliate_membership_checkout.tidb.sql." });
++      }
++      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Could not save the draft." });
++    }
++  }),
++
+   publish: adminProcedure.input(z.object({
+     slug: z.string().min(1).max(64),
+     bodyText: z.string().max(200000).nullable().optional(),
+diff --git a/shared/legalPages.ts b/shared/legalPages.ts
+index c35acf4..579b741 100644
+--- a/shared/legalPages.ts
++++ b/shared/legalPages.ts
+@@ -7,7 +7,10 @@
+ // Tom uploads a replacement. A warranty spreadsheet is extra: it never
+ // replaces the warranty prose.
+ 
+-export type LegalVersionSource = "migration" | "text" | "file" | "sheet";
++import { buildAffiliateAgreementText } from "./affiliateAgreement";
++import { buildSalesRepAgreementText } from "./salesRepAgreement";
++
++export type LegalVersionSource = "migration" | "text" | "file" | "sheet" | "draft";
+ 
+ export type LegalSheet = {
+   headers: string[];
+@@ -51,22 +54,91 @@ export const LEGAL_PAGE_SEED_SLOTS: readonly { slug: string; title: string; publ
+   { slug: "sales-rep-agreement", title: "Sales Rep Agreement", publicPath: "/sales-rep-agreement" },
+ ];
+ 
++export const AGREEMENT_DRAFT_SLUGS = ["affiliate-agreement", "sales-rep-agreement"] as const;
++
++/** Full current draft for an agreement slot. Other slots have no preloaded body. */
++export function agreementDraftText(slug: string): string | null {
++  if (slug === "affiliate-agreement") return buildAffiliateAgreementText();
++  if (slug === "sales-rep-agreement") return buildSalesRepAgreementText();
++  return null;
++}
++
++export function isAgreementDraftSlot(slug: string): boolean {
++  return (AGREEMENT_DRAFT_SLUGS as readonly string[]).includes(slug);
++}
++
+ export function seedLegalSlots(uploadedAt: string, uploadedBy: string): LegalSlot[] {
+-  return LEGAL_PAGE_SEED_SLOTS.map((slot) => ({
+-    ...slot,
+-    publishedVersion: 1,
+-    versions: [
+-      {
+-        version: 1,
+-        source: "migration",
+-        bodyText: null,
+-        file: null,
+-        sheet: null,
+-        uploadedAt,
+-        uploadedBy,
+-      },
+-    ],
+-  }));
++  return LEGAL_PAGE_SEED_SLOTS.map((slot) => {
++    const draft = agreementDraftText(slot.slug);
++    if (draft) {
++      return {
++        ...slot,
++        publishedVersion: 0,
++        versions: [
++          {
++            version: 1,
++            source: "draft" as const,
++            bodyText: draft,
++            file: null,
++            sheet: null,
++            uploadedAt,
++            uploadedBy,
++          },
++        ],
++      };
++    }
++    return {
++      ...slot,
++      publishedVersion: 1,
++      versions: [
++        {
++          version: 1,
++          source: "migration" as const,
++          bodyText: null,
++          file: null,
++          sheet: null,
++          uploadedAt,
++          uploadedBy,
++        },
++      ],
++    };
++  });
++}
++
++/** Text the admin editor should show. Unpublished agreement drafts stay editable. */
++export function editableDraftText(slot: {
++  slug: string;
++  versions: { source: string; bodyText: string | null; version: number }[];
++}): string {
++  const newestFirst = [...slot.versions].sort((a, b) => b.version - a.version);
++  const draft = newestFirst.find((version) => version.source === "draft" && version.bodyText?.trim());
++  if (draft?.bodyText) return draft.bodyText;
++  const anyBody = newestFirst.find((version) => version.bodyText?.trim());
++  if (anyBody?.bodyText) return anyBody.bodyText;
++  return agreementDraftText(slot.slug) ?? "";
++}
++
++/**
++ * Save an agreement edit without making it the public page.
++ * The new row stays in the history with source "draft".
++ */
++export function saveLegalDraft(
++  slot: LegalSlot,
++  bodyText: string,
++  meta: { uploadedAt: string; uploadedBy: string },
++): { ok: true; slot: LegalSlot } | { ok: false; message: string } {
++  const text = bodyText.trim();
++  if (!text) return { ok: false, message: "The draft is empty." };
++  const next: LegalVersion = {
++    version: Math.max(0, ...slot.versions.map((version) => version.version)) + 1,
++    source: "draft",
++    bodyText: text,
++    file: null,
++    sheet: null,
++    uploadedAt: meta.uploadedAt,
++    uploadedBy: meta.uploadedBy,
++  };
++  return { ok: true, slot: { ...slot, versions: [...slot.versions, next] } };
+ }
+ 
+ export function publishedVersion(slot: LegalSlot): LegalVersion | null {
+@@ -180,7 +252,7 @@ export type LegalPagePresentation = {
+ 
+ export function presentLegalSlot(slot: LegalSlot | null): LegalPagePresentation {
+   const published = slot ? publishedVersion(slot) : null;
+-  if (!published || published.source === "migration") {
++  if (!published || published.source === "migration" || (published.source === "draft" && slot?.publishedVersion !== published.version)) {
+     return {
+       render: "site-page",
+       bodyText: null,
+-- 
+2.43.0
+

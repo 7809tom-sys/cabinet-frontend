@@ -203,10 +203,10 @@ describe.each(CASES)("Tom's refrigerator rules ($style $layout ${width}in @ $cen
     expect(elevationBox(bridge, room).bottom).toBeGreaterThanOrEqual(fridgeTop - 0.01);
   });
 
-  it("windows never move and the refrigerator slides at most two inches", () => {
+  it("windows never move and the refrigerator is not slid to close a gap", () => {
     if (!run) return;
     const move = run.wiggleMoves.find((entry) => entry.kind === "refrigerator");
-    if (move) expect(move.distanceFromOriginalIn).toBeLessThanOrEqual(2 + 1e-6);
+    expect(move).toBeUndefined();
     // Corner seating is a separate, disclosed allowance and reports itself.
     const cornerMove = run.applianceMoves.filter((entry) => entry.kind === "refrigerator");
     for (const entry of cornerMove) expect(entry.shiftIn).toBeGreaterThan(0);

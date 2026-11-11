@@ -20,7 +20,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { buildMainSiteJsonLd } from "@/lib/seo/jsonLd";
-import { formatMembershipPrice } from "@shared/affiliate";
+import { membershipOptionsLabel } from "@shared/affiliate";
 import { EditableText } from "@/components/admin/EditableText";
 import { HomepageWelcomeBanner } from "@/components/home/HomepageWelcomeBanner";
 import { PublicRoomSceneLightbox, type PublicSceneGroup } from "@/components/PublicRoomScenes";
@@ -810,7 +810,7 @@ function StyleShowcase() {
 
 function AffiliatePromo() {
   const { t } = useLanguage();
-  const membershipPrice = formatMembershipPrice();
+  const membershipPrice = membershipOptionsLabel();
   const advantages = [
     {
       icon: Star,
@@ -1032,6 +1032,9 @@ function Footer() {
                   </Link>
                 </li>
               ))}
+              <li>
+                <a href="/careers" className="hover:text-white transition-colors">Career Opportunities</a>
+              </li>
             </ul>
           </div>
         </div>

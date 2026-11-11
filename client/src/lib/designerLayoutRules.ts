@@ -45,6 +45,7 @@ import {
 } from "./design";
 import { normalizeOverApplianceWallMounts } from "./overApplianceMount";
 import { normalizeRefrigeratorBridgeDepth } from "./refrigeratorBridgeDepth";
+import { fillGapsUnderOneAndAHalf } from "./subOneAndHalfFiller";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { removeIllegalFillers } from "./fillerPlacementRule";
 import { applyFramelessDoorClearanceFillers } from "./framelessDoorClearance";
@@ -106,7 +107,9 @@ export const ANCHOR_WIGGLE_CAP_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.anchor_wiggl
 /** Anchor kinds that may slide, and the cap they slide within. */
 export function anchorWiggleLimitIn(kind: string): number {
   const normalized = (kind ?? "").toLowerCase();
-  if (normalized === "sink" || normalized === "stove" || normalized === "range" || normalized === "refrigerator") {
+  // The refrigerator is never slid to close a gap. A filler takes a gap under 1.5 inches.
+  if (normalized === "refrigerator") return 0;
+  if (normalized === "sink" || normalized === "stove" || normalized === "range") {
     return Math.min(kitchenRuleNumber("anchor_wiggle_cap_in"), autoDesignShiftLimitIn(kind));
   }
   return autoDesignShiftLimitIn(kind);
@@ -151,7 +154,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "wiggle-room",
     name: "wiggle room",
     phase: "wiggle",
-    summary: "During Auto-Design, slide a user-placed appliance left or right along its own wall when that yields a better cabinet fit. Ranges and dishwashers move at most 3 inches, sinks at most 3 inches, and refrigerators at most 6 inches. The smallest shift that works is used.",
+    summary: "During Auto-Design, slide a user-placed appliance left or right along its own wall when that yields a better cabinet fit. Ranges and dishwashers move at most 3 inches and sinks at most 3 inches. The refrigerator is never slid to close a gap. The smallest shift that works is used.",
   },
   {
     id: "straight-base-largest-first",
@@ -1105,6 +1108,14 @@ export function applyDesignerLayoutRules(input: {
   // cabinet above comes forward so its face is flush with the panel. This is the
   // last depth word, after every pass that can re-seat a wall box on the wall.
   placed = normalizeRefrigeratorBridgeDepth(placed, input.room);
+  const narrowGaps = fillGapsUnderOneAndAHalf({
+    placed,
+    room: input.room,
+    fillers: input.fillers,
+    makeUid: input.makeUid,
+    styleId: input.styleId,
+  });
+  placed = narrowGaps.placed;
   const sinks = normalizeSinkFixturesToBases([...(input.sinks ?? [])], placed, input.room);
   const panelStops = refrigeratorPanelOuterStops(placed, input.room);
   const trimPieces = enforceTrimSupplierContinuity(input.trimPieces ?? []).flatMap((piece) => {

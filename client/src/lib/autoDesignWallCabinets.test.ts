@@ -397,4 +397,31 @@ describe("buildAutoDesignWallCabinets", () => {
     expect(framedResult.additions.map((cabinet) => cabinet.masterCode)).toContain("W3330");
     expect(framedResult.additions.find((cabinet) => cabinet.masterCode === "W3330")?.width).toBe(33);
   });
+
+  it("places a corner wall cabinet so an L upper run meets, even without a chosen base corner", () => {
+    const top = onWall(ROOM, "top", { uid: "top-base", masterCode: "B24", placement: "base", width: 24, depth: 24 }, 36);
+    const left = onWall(ROOM, "left", { uid: "left-base", masterCode: "B24L", placement: "base", width: 24, depth: 24 }, 36);
+    const result = build({
+      placed: [top, left],
+      catalog: [
+        catalogCabinet({ id: 201, masterCode: "W2430", width: "24" }),
+        catalogCabinet({
+          id: 202, masterCode: "DCW2430", description: "Diagonal corner wall", width: "24",
+          cornerType: "diagonal", isCornerCabinet: true,
+        }),
+      ],
+    });
+    expect(result.placed.some((item) => item.masterCode === "DCW2430")).toBe(true);
+    expect(result.skipped.join(" ")).not.toMatch(/do not meet/i);
+  });
+
+  it("names the reason when an L corner has no corner wall cabinet that fits", () => {
+    const top = onWall(ROOM, "top", { uid: "top-base", masterCode: "B24", placement: "base", width: 24, depth: 24 }, 0);
+    const left = onWall(ROOM, "left", { uid: "left-base", masterCode: "B24L", placement: "base", width: 24, depth: 24 }, 0);
+    const result = build({
+      placed: [top, left],
+      catalog: [catalogCabinet({ id: 201, masterCode: "W2430", width: "24" })],
+    });
+    expect(result.skipped.join(" ")).toMatch(/do not meet/i);
+  });
 });

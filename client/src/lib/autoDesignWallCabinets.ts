@@ -21,7 +21,7 @@ import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall,
   STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
-  ordinaryWallMountBottom, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
+  ordinaryWallMountBottom, placedFootprint, roomWallRunFrames, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
 
@@ -684,10 +684,93 @@ export function buildAutoDesignWallCabinets(input: {
   } else {
     working = dropUppersOutsideRun({ placed: working, additions, room, skipped });
   }
+  const connected = connectUpperRunsWithCornerCabinets({
+    placed: working,
+    room,
+    corners,
+    wallBlinds,
+    makeCandidate,
+    commit,
+  });
+  skipped.push(...connected.reasons);
   // A wall blind corner exposes the door away from its blind side.
   working = assignBlindCornerDoorSides(working, room);
   const uids = new Set(additions.map((item) => item.uid));
   return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, substitutions, heightUsedIn };
+}
+
+function isConnectingCornerUpper(item: PlacedCabinet): boolean {
+  if (item.placement !== "wall") return false;
+  return isCornerCabinet(item.masterCode, item.description)
+    || isWallBlindCornerCabinet(item)
+    || item.cornerType === "diagonal"
+    || item.cornerType === "l-shape"
+    || item.cornerType === "triangle"
+    || item.cornerType === "lazy-susan"
+    || item.cornerType === "blind-corner";
+}
+
+function cornerUpperCoversVertex(item: PlacedCabinet, vertex: { x: number; y: number }): boolean {
+  if (!isConnectingCornerUpper(item)) return false;
+  const foot = placedFootprint(item);
+  return vertex.x >= item.x - 1 && vertex.x <= item.x + foot.w + 1
+    && vertex.y >= item.y - 1 && vertex.y <= item.y + foot.d + 1;
+}
+
+/**
+ * Every 90° join of two runs that already hold cabinets gets a corner wall
+ * cabinet, even when the base-corner step did not choose one. If the line
+ * sells none that fit, the reason is returned for the upper review.
+ */
+function connectUpperRunsWithCornerCabinets(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  corners: DesignCabinet[];
+  wallBlinds: DesignCabinet[];
+  makeCandidate: (source: DesignCabinet) => PlacedCabinet;
+  commit: (candidate: PlacedCabinet) => boolean;
+}): { reasons: string[] } {
+  const reasons: string[] = [];
+  const seen = new Set<string>();
+  const covered = [...input.placed];
+  const runWalls = new Set(
+    input.placed
+      .filter((item) => item.placement === "base" || item.placement === "wall" || item.placement === "tall")
+      .map((item) => item.wallId ?? cabinetWall(item, input.room)),
+  );
+  for (const frame of roomWallRunFrames(input.room)) {
+    if (!runWalls.has(frame.id)) continue;
+    for (const at of ["start", "end"] as const) {
+      const join = wallRunJoinAt(frame, at, input.room);
+      if (!join || Math.abs(join.turnDeg - 90) > 0.5) continue;
+      if (!runWalls.has(join.frame.id)) continue;
+      const vertex = at === "start" ? frame.start : frame.end;
+      const key = `${Math.round(vertex.x * 8)}:${Math.round(vertex.y * 8)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (covered.some((item) => cornerUpperCoversVertex(item, vertex))) continue;
+      const stock = [...input.corners, ...input.wallBlinds];
+      let seated = false;
+      if (stock.length === 0) {
+        reasons.push(`Upper runs do not meet at the corner of ${frame.id} and ${join.frame.id}. This line sells no corner wall cabinet.`);
+        continue;
+      }
+      for (const source of stock) {
+        const candidate = input.makeCandidate(source);
+        const spot = wallRunCornerPlacement(candidate, frame, at, input.room);
+        if (!spot) continue;
+        if (input.commit({ ...candidate, ...spot })) {
+          covered.push({ ...candidate, ...spot });
+          seated = true;
+          break;
+        }
+      }
+      if (!seated) {
+        reasons.push(`Upper runs do not meet at the corner of ${frame.id} and ${join.frame.id}. No corner wall cabinet in this line fits there.`);
+      }
+    }
+  }
+  return { reasons };
 }
 
 /**
