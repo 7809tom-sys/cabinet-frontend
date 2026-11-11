@@ -121,6 +121,19 @@
   footer a { color: #e2e8f0; text-decoration: none; }
   footer a:hover { text-decoration: underline; }
   .footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .parse-status {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin: 0.35rem 0 0;
+    min-height: 1.25em;
+  }
+  .field.autofilled input,
+  .field.autofilled textarea,
+  .field.autofilled select {
+    background: #fef3c7;
+    border-color: #d97706;
+    transition: background 0.8s ease, border-color 0.8s ease;
+  }
 </style>
 </head>
 <body>
@@ -141,6 +154,21 @@
   <div class="form-error" id="formError" role="alert" aria-live="assertive"></div>
 
   <form id="careersForm" novalidate>
+    <fieldset>
+      <legend>Start with your resume — we'll fill in what we can</legend>
+      <p class="hint" style="margin-bottom: 1rem;">
+        Upload your resume first and we'll fill in what we can. You can review and edit everything.
+        Or skip this step and fill it out yourself.
+      </p>
+      <div class="field" data-field="resume">
+        <label for="resume">Resume <span style="font-weight:400;color:var(--text-muted);">(optional — PDF or Word, max 5 MB)</span></label>
+        <input type="file" id="resume" name="resume" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+        <p class="hint">PDF resumes can be auto-filled. A Word file can still be attached when you submit. Your resume is only shared with the hiring team.</p>
+        <p class="error-msg">Please upload a PDF or Word file under 5 MB.</p>
+        <p class="parse-status" id="parseStatus" aria-live="polite"></p>
+      </div>
+    </fieldset>
+
     <fieldset>
       <legend>Contact information</legend>
 
@@ -245,13 +273,6 @@
         <input type="url" id="linkedinUrl" name="linkedinUrl" placeholder="https://…" />
         <p class="error-msg">Please enter a valid URL starting with http:// or https://</p>
       </div>
-
-      <div class="field" data-field="resume">
-        <label for="resume">Resume <span style="font-weight:400;color:var(--text-muted);">(optional — PDF or Word, max 5 MB)</span></label>
-        <input type="file" id="resume" name="resume" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-        <p class="hint">Your resume is only shared with the hiring team.</p>
-        <p class="error-msg">Please upload a PDF or Word file under 5 MB.</p>
-      </div>
     </fieldset>
 
     <fieldset>
@@ -291,15 +312,16 @@
 (function () {
   "use strict";
 
-  // ------------------------------------------------------------------
-  // CONFIG: replace with your real endpoint when the backend is ready.
-  // ------------------------------------------------------------------
-  var ENDPOINT = "/api/careers/apply"; // placeholder
+  // Same-origin paths. Vercel rewrites /api to the Railway backend.
+  var ENDPOINT = "/api/careers/apply";
+  var PARSE_ENDPOINT = "/api/careers/parse-resume";
+  var AUTO_FIELDS = ["fullName", "email", "phone", "city", "state", "yearsExperience", "workHistory", "linkedinUrl"];
 
   var form = document.getElementById("careersForm");
   var successBox = document.getElementById("successBox");
   var formError = document.getElementById("formError");
   var submitBtn = document.getElementById("submitBtn");
+  var parseStatus = document.getElementById("parseStatus");
 
   document.getElementById("year").textContent = new Date().getFullYear();
 
@@ -394,7 +416,11 @@
 
   form.addEventListener("change", function (e) {
     var name = e.target.name;
-    if (name === "consent" || name === "resume") validateField(name);
+    if (name === "consent") validateField(name);
+    if (name === "resume") {
+      validateField(name);
+      parseResumeFile();
+    }
   });
 
   function showError(msg) {
@@ -420,6 +446,83 @@
       reader.onerror = function () { reject(new Error("Could not read the resume file.")); };
       reader.readAsDataURL(file);
     });
+  }
+
+  function setParseStatus(msg) {
+    parseStatus.textContent = msg || "";
+  }
+
+  function isEmptyField(input) {
+    return !input || String(input.value || "").trim() === "";
+  }
+
+  function highlightAutofilled(name) {
+    var el = getFieldEl(name);
+    if (!el) return;
+    el.classList.add("autofilled");
+    window.setTimeout(function () {
+      el.classList.remove("autofilled");
+    }, 2500);
+  }
+
+  function applyParsedFields(fields) {
+    if (!fields || typeof fields !== "object") return 0;
+    var filled = 0;
+    AUTO_FIELDS.forEach(function (name) {
+      var input = form.elements[name];
+      if (!input || !isEmptyField(input)) return;
+      if (fields[name] === undefined || fields[name] === null) return;
+      var text = String(fields[name]).trim();
+      if (text === "") return;
+      input.value = text;
+      setInvalid(name, false);
+      highlightAutofilled(name);
+      filled += 1;
+    });
+    return filled;
+  }
+
+  function parseResumeFile() {
+    var input = form.elements["resume"];
+    var file = input.files && input.files[0];
+    if (!file) {
+      setParseStatus("");
+      return;
+    }
+    if (!validateField("resume")) {
+      setParseStatus("");
+      return;
+    }
+    setParseStatus("Reading your resume…");
+    readResume()
+      .then(function (resume) {
+        if (!resume) {
+          setParseStatus("");
+          return null;
+        }
+        return fetch(PARSE_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ resume: resume })
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (body) {
+            return { ok: res.ok, status: res.status, body: body };
+          });
+        });
+      })
+      .then(function (result) {
+        if (!result) return;
+        var fields = result.body && result.body.fields ? result.body.fields : {};
+        var count = applyParsedFields(fields);
+        if (count > 0) {
+          setParseStatus("We filled in what we could. Please review and complete the rest.");
+        } else {
+          setParseStatus("We couldn't auto-fill from that file — you can fill the form out yourself. Your resume will still be attached when you submit.");
+        }
+      })
+      .catch(function () {
+        setParseStatus("We couldn't auto-fill from that file — you can fill the form out yourself. Your resume will still be attached when you submit.");
+      });
   }
 
   form.addEventListener("submit", function (e) {
