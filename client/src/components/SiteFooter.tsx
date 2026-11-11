@@ -85,6 +85,9 @@ export function SiteFooter() {
                   </Link>
                 </li>
               ))}
+              <li>
+                <a href="/careers" className="hover:text-white transition-colors">Career opportunities</a>
+              </li>
             </ul>
           </div>
 
@@ -96,9 +99,6 @@ export function SiteFooter() {
                 { label: "Shipping Policy", href: "/shipping-policy" },
                 { label: "Return Policy", href: "/return-policy" },
                 { label: "Privacy Policy", href: "/privacy-policy" },
-             <li>
-         <a href="/careers" className="hover:text-white transition-colors">Career opportunities</a>
-       </li>
                 { label: "Terms & Conditions", href: "/terms" },
                 { label: "Warranty", href: "/warranty" },
                 { label: "Affiliate Agreement", href: "/affiliate-agreement" },
