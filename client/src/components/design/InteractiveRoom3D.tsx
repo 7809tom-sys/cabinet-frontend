@@ -11552,11 +11552,21 @@ function addPelicanBathroomFixture(
       ? verifiedPelicanBathroomFixtureProfile(nicheFixture.pelicanCode ?? "")
       : null;
     const nicheSide = (nicheFixture as { showerPanelSide?: "back" | "left" | "right" } | undefined)?.showerPanelSide ?? "back";
+    // The cut is expressed in the SURROUND's local frame, but the niche names its
+    // panel in plan terms. A surround turned end-for-end — which is every back-wall
+    // shower, rotation 180 — has its local left and right exchanged, so passing the
+    // plan side straight through cut the panel OPPOSITE the niche: the niche sat
+    // behind an intact sheet and the hole opened onto a panel with nothing behind
+    // it. Swapping back is what makes the opening land over the niche.
+    const surroundTurn = ((Math.round(furniture.rotation ?? 0) % 360) + 360) % 360;
+    const cutSide: "back" | "left" | "right" = surroundTurn === 180
+      ? nicheSide === "left" ? "right" : nicheSide === "right" ? "left" : "back"
+      : nicheSide;
     const surroundOpening = nicheFixture && nicheProfile
       ? {
-        side: nicheSide,
+        side: cutSide,
         // Centred: the placement centres a niche on its panel.
-        centreAlongIn: (nicheSide === "back" ? profile.widthIn : profile.depthIn) / 2,
+        centreAlongIn: (cutSide === "back" ? profile.widthIn : profile.depthIn) / 2,
         widthIn: nicheProfile.widthIn,
         bottomIn: Math.max(0, nicheFixture.mountHeightIn ?? 44),
         heightIn: nicheProfile.heightIn,
@@ -11616,8 +11626,15 @@ function addPelicanBathroomFixture(
     if (typeof window !== "undefined" && (window as any).__cdProbe) {
       (window as any).__cdProbe.push({ haveList: !!designFurniture, n: designFurniture?.length ?? -1, codes: (designFurniture ?? []).map((f)=>f.pelicanCode), found: !!surroundPanel, w: surroundPanel?.widthIn ?? null });
     }
-    const wetWallWidth = (surroundPanel?.widthIn ?? profile.widthIn) + 2 * SHOWER_PANEL_THICKNESS_IN;
-    const wetWallHeight = surroundPanel?.heightIn ?? (furniture.mountHeightIn ?? 0) + profile.heightIn;
+    // The wall this niche is cut into is the panel the niche actually sits on, so
+    // it takes that panel's own span. A side panel runs the shower's DEPTH, not its
+    // width; sized off the back panel the wall on a side hung well past the shower
+    // and read as a slab floating beside it.
+    const nichePanelSide = (furniture as { showerPanelSide?: "back" | "left" | "right" }).showerPanelSide ?? "back";
+    const wetWallWidth = nichePanelSide === "back"
+      ? (surroundPanel?.widthIn ?? profile.widthIn) + 2 * SHOWER_PANEL_THICKNESS_IN
+      : (surroundPanel?.depthIn ?? profile.depthIn) + 2 * SHOWER_PANEL_THICKNESS_IN;
+    const wetWallHeight = surroundPanel?.heightIn ?? ((furniture.mountHeightIn ?? 0) + profile.heightIn);
     const wetWallFinish = showerSurroundFinish(surroundPanel?.pelicanCode ?? profile.pelicanCode);
     const wetWallTexture = showerSurroundTexture(wetWallFinish);
     // FRONT side only. A double-sided slab draws its inner face too, and when the
@@ -11641,9 +11658,12 @@ function addPelicanBathroomFixture(
       thicknessIn: SHOWER_WET_WALL_THICKNESS_IN,
       heightIn: wetWallHeight,
       widthIn: wetWallWidth,
-      mountHeightIn: 0,
       // The wall has to finish behind the niche's back, or the two faces coincide.
       nicheDepthIn: profile.depthIn,
+      // This group is already lifted to the niche's mounting height; the wall is a
+      // child of it, so it must cancel that lift or it starts at the niche's
+      // bottom instead of the shower floor.
+      groupMountHeightIn: furniture.mountHeightIn ?? 0,
     })) {
       add(mesh, part);
     }
@@ -13889,6 +13909,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    sceneRef.current = threeScene;
 	    cameraRef.current = camera;
 	    setCameraReadyKey((current) => current + 1);
+
 
 	    let frame = 0;
 	    let readyFrame = 0;
