@@ -42,8 +42,7 @@
       "headers": [{ "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }]
           { "source": "/careers", "destination": "/careers.html" },
                   <li>
-                <a href="/careers" className="hover:text-white transition-colors">Career opportunities</a>
-              </li>
+                { "source": "/careers", "destination": "/careers.html" },
     }
   ]
 }
