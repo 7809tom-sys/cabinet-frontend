@@ -39,6 +39,14 @@ const INCH = 1 / 12;
  * floor, so they stay put whatever surround is fitted. The head is the CENTRE of
  * the head, not the top of its disk.
  */
+/**
+ * How thick a surround panel shell is, in inches.
+ *
+ * Shared by the surround (which draws the panel) and the niche (which is recessed
+ * into it), so the recess can never be deeper than the wall holding it.
+ */
+export const SHOWER_PANEL_THICKNESS_IN = 0.35;
+
 export const SHOWER_VALVE_HEIGHT_IN = 48;
 export const SHOWER_HEAD_HEIGHT_IN = 80;
 
@@ -236,7 +244,7 @@ export function makeShowerSurroundParts(
 ): ShowerPart[] {
   const W = profile.widthIn * INCH;
   const D = profile.depthIn * INCH;
-  const t = 0.35 * INCH;
+  const t = SHOWER_PANEL_THICKNESS_IN * INCH;
   const base = Math.max(0, options.baseHeightIn ?? 0) * INCH;
   const top = Math.max(base + 1, profile.heightIn * INCH);
   const halfW = W / 2;
@@ -441,8 +449,20 @@ export function makeShowerNicheParts(
 ): ShowerPart[] {
   const W = profile.widthIn * INCH;
   const Hp = profile.heightIn * INCH;
-  const depth = profile.depthIn * INCH;
   const shell = 0.12 * INCH;
+
+  // The recess may never be deeper than the panel it is cut into.
+  //
+  // A Pelican niche is published at 3-17/32" deep, but the surround is a 0.35"
+  // panel shell. Drawn at its published depth the niche's back pushed straight
+  // through the panel and its shelf frame showed on the OUTSIDE face of the
+  // shower — Tom's screenshot. The recess is therefore clamped to the panel
+  // thickness, so the niche sits inside the wall instead of through it.
+  //
+  // `SHOWER_PANEL_THICKNESS_IN` is shared with `makeShowerSurroundParts`; the
+  // two must agree or this clamp is meaningless.
+  const publishedDepth = profile.depthIn * INCH;
+  const depth = Math.min(publishedDepth, SHOWER_PANEL_THICKNESS_IN * INCH);
 
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string) => {
