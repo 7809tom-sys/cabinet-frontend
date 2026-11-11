@@ -13,6 +13,22 @@ export type AutoDesignRunDirection = "left" | "right";
 export const AUTO_DESIGN_WALL_LABELS = ["Wall 1", "Wall 2", "Wall 3", "Wall 4", "Wall 5", "Wall 6"] as const;
 export type WallLabel = typeof AUTO_DESIGN_WALL_LABELS[number];
 export type DishwasherSide = "left" | "right";
+/** Left or right of the sink, or no dishwasher at all. The default stays left/right. */
+export type DishwasherSideChoice = DishwasherSide | "none";
+
+export function isNoDishwasherChoice(value: DishwasherSideChoice | null | undefined): boolean {
+  return value === "none";
+}
+
+export function parseDishwasherSideChoice(value: string | null | undefined): DishwasherSideChoice {
+  if (value === "left" || value === "none") return value;
+  return "right";
+}
+
+/** A placed dishwasher is always on a side. "No dishwasher" never reaches this. */
+export function dishwasherSideForPlacement(value: DishwasherSideChoice | null | undefined): DishwasherSide {
+  return value === "left" ? "left" : "right";
+}
 
 /** When the Designer has not saved a side, the dishwasher sits away from the measured origin corner. */
 export function defaultDishwasherSide(input: { originCorner: "left" | "right" }): DishwasherSide {
@@ -217,8 +233,11 @@ export type AutoDesignInputs = {
   dishwasher?: AutoDesignMeasurement | null;
   /** True means do not add any dishwasher; false/undefined retains the sink-adjacent default. */
   skipDishwasher?: boolean;
-  /** Used only when no exact dishwasher center is entered. */
-  dishwasherSide?: DishwasherSide;
+  /**
+   * Left or right of the sink when no exact center is entered.
+   * "none" means do not add a dishwasher; the run is filled with base cabinets.
+   */
+  dishwasherSide?: DishwasherSideChoice;
   /** Null means the admin explicitly chose not to add a refrigerator/bay. */
   refrigerator: AutoDesignMeasurement | null;
   refrigeratorWidthIn?: 30 | 33 | 36 | 42;
@@ -577,20 +596,21 @@ export function planAutoDesignAutoBuild(input: AutoDesignInputs): AutoDesignBuil
   if (!refrigerator && input.refrigerator !== null && input.refrigerator !== undefined) missing.push("refrigerator");
 
   const dishwasher = validMeasurement(input.dishwasher) ? input.dishwasher : null;
-  if (!input.skipDishwasher && !dishwasher && input.dishwasher !== null && input.dishwasher !== undefined) missing.push("dishwasher");
+  const noDishwasher = input.skipDishwasher === true || isNoDishwasherChoice(input.dishwasherSide);
+  if (!noDishwasher && !dishwasher && input.dishwasher !== null && input.dishwasher !== undefined) missing.push("dishwasher");
   if (missing.length) return { ok: false, missing };
 
   const sink = input.sinkWindowCenter && validMeasurement(input.sinkWindowCenter)
     ? { ...input.sinkWindowCenter, kind: "sink" as const, source: "sink-window-centered" as const }
     : { ...input.sink, kind: "sink" as const, source: "measured" as const };
-  const dishwasherPlacement = input.skipDishwasher ? null : dishwasher
+  const dishwasherPlacement = noDishwasher ? null : dishwasher
     ? { ...dishwasher, kind: "dishwasher" as const, source: "measured" as const }
     : {
       wallLabel: sink.wallLabel,
       centerOffsetIn: sink.centerOffsetIn,
       kind: "dishwasher" as const,
       source: "adjacent-to-sink" as const,
-      dishwasherSide: input.dishwasherSide ?? "right",
+      dishwasherSide: dishwasherSideForPlacement(input.dishwasherSide),
     };
 
   return {

@@ -48,7 +48,28 @@ describe("AutoDesignDialog", () => {
       wallCabinetHeightIn: 30,
       sinkBaseWidthIn: 36,
       dishwasherSide: "right",
+      skipDishwasher: false,
     }));
+  });
+
+  it("submits no dishwasher when that side is chosen and still offers left and right", () => {
+    const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
+    const onDishwasherSideChange = vi.fn();
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} onDishwasherSideChange={onDishwasherSideChange} />);
+
+    fireEvent.click(screen.getByLabelText("Dishwasher side"));
+    expect(screen.getByRole("option", { name: "Left of sink" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Right of sink" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("option", { name: "No dishwasher" }));
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+
+    expect(onDishwasherSideChange).toHaveBeenCalledWith("none");
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
+      dishwasher: null,
+      skipDishwasher: true,
+      dishwasherSide: "none",
+    }));
+    expect((document.getElementById("auto-design-dishwasher-center") as HTMLInputElement).disabled).toBe(true);
   });
 
   it("builds a regular sink base unless the admin explicitly chooses farmhouse", () => {

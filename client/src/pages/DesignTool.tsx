@@ -306,7 +306,7 @@ import type { DoorAuditDoorProfile } from "@/lib/doorRenderingAudit";
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSide } from "@/lib/autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, parseDishwasherSideChoice, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSideChoice } from "@/lib/autoDesignAutoBuild";
 import { autoDesignBlocksEmptyPlan, autoDesignControlState, isRefrigeratorAppliance, isSinkBasePlacement } from "@/lib/autoDesignAvailability";
 import { anchoredRefrigeratorOf, refrigeratorAnchorMeasurement } from "@/lib/autoDesignRefrigeratorAnchor";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, fillAutoFaucet, isCatalogFaucet, sinkFaucetIsSatisfied, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
@@ -2238,7 +2238,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // plan can't be nudged while placing cabinets. lockedWalls freezes individual
   // walls. Cabinets can always still be added/moved.
   const [layoutLocked, setLayoutLocked] = useState(false);
-  const [dishwasherSidePreference, setDishwasherSidePreference] = useState<DishwasherSide | null>(null);
+  const [dishwasherSidePreference, setDishwasherSidePreference] = useState<DishwasherSideChoice | null>(null);
   const [autoDesignLayoutNotes, setAutoDesignLayoutNotes] = useState<string[]>([]);
   /** Rule 14: named warnings for design questions the build could not honor. */
   const [autoDesignReviewFindings, setAutoDesignReviewFindings] = useState<DesignerReviewFinding[]>([]);
@@ -6458,7 +6458,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         lightRail?: boolean;
         valance?: boolean;
         qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
-        dishwasherSide?: DishwasherSide | null;
+        dishwasherSide?: DishwasherSideChoice | null;
       } | null;
     }) => {
 	    historyRebaseRequestedRef.current = true;
@@ -6613,7 +6613,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           if (typeof value === "number" && Number.isFinite(value)) clean[kind] = Math.max(0, Math.min(99, value));
         }
         setTrimQtyOverride(clean);
-        setDishwasherSidePreference(savedTrim.dishwasherSide === "left" || savedTrim.dishwasherSide === "right" ? savedTrim.dishwasherSide : null);
+        setDishwasherSidePreference(savedTrim.dishwasherSide === "left" || savedTrim.dishwasherSide === "right" || savedTrim.dishwasherSide === "none" ? savedTrim.dishwasherSide : null);
       } else {
         setDishwasherSidePreference(null);
         trimOverride.current = { crown: false, toeKick: false, batten: false, lightRail: false, valance: false };
@@ -15200,7 +15200,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         lightRail?: boolean;
         valance?: boolean;
         qty?: Partial<Record<"crown" | "toeKick" | "batten" | "lightRail" | "valance", number>>;
-        dishwasherSide?: "left" | "right" | null;
+        dishwasherSide?: "left" | "right" | "none" | null;
       } | null }).trimSettings ?? null,
     });
     if (savedPresentation && typeof savedPresentation.cabinetFinish === "string" && typeof savedPresentation.countertopFinish === "string") {
@@ -17483,10 +17483,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 aria-label="Dishwasher side"
                 className="h-8 rounded-md border border-[#d4a75a] bg-white px-1 text-[11px] text-[#1a2744]"
                 value={dishwasherSidePreference ?? resolveDishwasherSide({ preference: null, originCorner: "left" })}
-                onChange={(event) => setDishwasherSidePreference(event.target.value === "left" ? "left" : "right")}
+                onChange={(event) => setDishwasherSidePreference(parseDishwasherSideChoice(event.target.value))}
               >
                 <option value="left">Left of sink</option>
                 <option value="right">Right of sink</option>
+                <option value="none">No dishwasher</option>
               </select>
             </label>
             {autoDesignBlockedNote && (
@@ -17799,10 +17800,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   aria-label="Dishwasher side"
                   className="h-8 min-w-0 max-w-[7.5rem] rounded-md border border-[#d4a75a] bg-white px-1 text-[11px] text-[#1a2744]"
                   value={dishwasherSidePreference ?? resolveDishwasherSide({ preference: null, originCorner: "left" })}
-                  onChange={(event) => setDishwasherSidePreference(event.target.value === "left" ? "left" : "right")}
+                  onChange={(event) => setDishwasherSidePreference(parseDishwasherSideChoice(event.target.value))}
                 >
                   <option value="left">Left of sink</option>
                   <option value="right">Right of sink</option>
+                  <option value="none">No dishwasher</option>
                 </select>
               </label>
               {autoDesignBlockedNote && (

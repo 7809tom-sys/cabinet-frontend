@@ -110,8 +110,8 @@ describe("public Auto-Design Designer wiring", () => {
     expect(dialogSource).toContain("Dishwasher side");
     expect(dialogSource).toContain("Left of sink");
     expect(dialogSource).toContain("Right of sink");
-    expect(dialogSource).toContain("Left of sink");
-    expect(dialogSource).toContain("Right of sink");
+    expect(dialogSource).toContain("No dishwasher");
+    expect(pageSource).toContain("No dishwasher");
     expect(dialogSource).toContain("dishwasherSide");
     expect(pageSource).toContain("data-testid=\"dishwasher-side-control\"");
     expect(pageSource).toContain("dishwasherSide: dishwasherSidePreference");

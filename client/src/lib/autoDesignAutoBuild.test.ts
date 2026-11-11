@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM } from "./design";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildSelectedWallCornerReservations, autoBuildStraightBaseCatalog, buildWallLabelMap, canRunAutoDesign, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, planAutoDesignAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId } from "./autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildSelectedWallCornerReservations, autoBuildStraightBaseCatalog, buildWallLabelMap, canRunAutoDesign, isAutoBuildStraightSinkBaseCandidate, isNoDishwasherChoice, makeAutoDesignSixWallTrainingRoom, parseDishwasherSideChoice, planAutoDesignAutoBuild, subtractAnchorRunReservations, wallLabelToEngineWallId } from "./autoDesignAutoBuild";
 
 describe("auto-design wall-label mapping", () => {
   it.each([
@@ -171,6 +171,41 @@ describe("auto-design auto-build", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.plan.anchors[2]).toMatchObject({ wallLabel: "Wall 1", source: "adjacent-to-sink", dishwasherSide: "left" });
+  });
+
+  it("omits the dishwasher when the side choice is no dishwasher, even if an exact center was typed", () => {
+    const result = planAutoDesignAutoBuild({
+      ...required,
+      layoutType: "l-shape",
+      originCorner: "left",
+      runDirection: "right",
+      dishwasher: { wallLabel: "Wall 1", centerOffsetIn: 90 },
+      dishwasherSide: "none",
+    });
+    expect(isNoDishwasherChoice("none")).toBe(true);
+    expect(parseDishwasherSideChoice("none")).toBe("none");
+    expect(parseDishwasherSideChoice("left")).toBe("left");
+    expect(parseDishwasherSideChoice("anything-else")).toBe("right");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.anchors.map((anchor) => anchor.kind)).toEqual(["sink", "stove", "refrigerator"]);
+    expect(result.plan.anchors.some((anchor) => anchor.kind === "dishwasher")).toBe(false);
+  });
+
+  it("keeps the right-of-sink default when no side is chosen", () => {
+    const result = planAutoDesignAutoBuild({
+      ...required,
+      layoutType: "single-wall",
+      originCorner: "left",
+      runDirection: "right",
+      dishwasher: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.anchors.find((anchor) => anchor.kind === "dishwasher")).toMatchObject({
+      source: "adjacent-to-sink",
+      dishwasherSide: "right",
+    });
   });
 
   it("does not add appliances explicitly marked as omitted, while retaining the required sink base", () => {
