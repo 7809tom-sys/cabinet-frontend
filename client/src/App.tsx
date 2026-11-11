@@ -106,6 +106,11 @@ const ShippingPolicy = lazy(() => import("@/pages/ShippingPolicy"));
 const ReturnPolicy = lazy(() => import("@/pages/ReturnPolicy"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const Terms = lazy(() => import("@/pages/Terms"));
+const Warranty = lazy(() => import("@/pages/Warranty"));
+const AffiliateAgreementPage = lazy(() => import("@/pages/AffiliateAgreementPage"));
+const SalesRepAgreementPage = lazy(() => import("@/pages/SalesRepAgreementPage"));
+const AffiliateMembershipCheckout = lazy(() => import("@/pages/AffiliateMembershipCheckout"));
+const SalesRepApply = lazy(() => import("@/pages/SalesRepApply"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
 const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
 const CrmCustomerLookupPreview = lazy(() => import("@/pages/CrmCustomerLookupPreview"));
@@ -938,6 +943,22 @@ export default function App() {
           </Suspense>
         </Route>
 
+        <Route path="/affiliate/membership">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <AffiliateMembershipCheckout />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
+        <Route path="/sales-rep/apply">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <SalesRepApply />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
         {/* Bookmarks and printed links from the original Marketing Hub still
             point at these guide files, so keep the published guides routed
             instead of falling through to the platform 404. */}
@@ -1198,6 +1219,30 @@ export default function App() {
           <AppLayout>
             <Suspense fallback={<PageLoader />}>
               <Terms />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
+        <Route path="/warranty">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <Warranty />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
+        <Route path="/affiliate-agreement">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <AffiliateAgreementPage />
+            </Suspense>
+          </AppLayout>
+        </Route>
+
+        <Route path="/sales-rep-agreement">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <SalesRepAgreementPage />
             </Suspense>
           </AppLayout>
         </Route>

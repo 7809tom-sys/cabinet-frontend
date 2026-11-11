@@ -57,14 +57,20 @@ export function sumCommission(
 
 
 // ─── Affiliate membership offer ───────────────────────────────────────────────
-// Single source of truth for the paid affiliate membership. An affiliate pays an
-// annual fee and gets: access to the kitchen design software, their own
-// (white-labeled) website/storefront, and membership in the buying group (trade
-// pricing). Surface this constant anywhere the offer/price is shown so copy and
-// pricing never drift.
+// Single source of truth for both paid affiliate membership prices. An affiliate
+// gets: access to the kitchen design software, their own (white-labeled)
+// website/storefront, and membership in the buying group (trade pricing).
+// Surface this constant anywhere the offer or price is shown so copy and
+// pricing never drift. Dollar amounts live here; cent amounts and the
+// three-month rule are derived in shared/affiliateMembershipPlans.ts.
 export const AFFILIATE_MEMBERSHIP = {
   priceUsd: 1195,
   billingPeriod: "year" as const,
+  monthlyPriceUsd: 169,
+  monthlyBillingPeriod: "month" as const,
+  monthlyMinimumMonths: 3,
+  // Cheaper up-front commitment first, then the annual plan.
+  planIds: ["monthly", "annual"] as const,
   benefits: [
     {
       title: "Kitchen Design Software",
@@ -92,4 +98,14 @@ export function formatMembershipPrice(
 // Full price label including the billing period, e.g. "$1,195/year".
 export function membershipPriceLabel(): string {
   return `${formatMembershipPrice()}/${AFFILIATE_MEMBERSHIP.billingPeriod}`;
+}
+
+// "$169/month".
+export function monthlyMembershipPriceLabel(): string {
+  return `${formatMembershipPrice(AFFILIATE_MEMBERSHIP.monthlyPriceUsd)}/${AFFILIATE_MEMBERSHIP.monthlyBillingPeriod}`;
+}
+
+// Both options, for any sentence that used to mention only the annual price.
+export function membershipOptionsLabel(): string {
+  return `${monthlyMembershipPriceLabel()} (${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths}-month minimum) or ${membershipPriceLabel()}`;
 }
