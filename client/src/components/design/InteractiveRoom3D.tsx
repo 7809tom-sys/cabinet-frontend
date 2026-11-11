@@ -113,6 +113,9 @@ import {
   makeShowerPanParts,
   makeShowerSurroundParts,
   makeShowerSystemParts,
+  makeShowerWetWallParts,
+  nicheDepthForWallThickness,
+  SHOWER_WET_WALL_THICKNESS_IN,
 } from "./showerFixtureGeometry";
 import {
   showerFinishFromCode,
@@ -11369,10 +11372,28 @@ export function showerSurroundPanelFinish(code: string | null | undefined): {
   return { color: "#efedea", roughness: 0.5, clearcoat: 0.2 };
 }
 
+/**
+ * The surround the plan has for this shower, so a niche's wet wall can be the size
+ * and finish of the panel it is cut into.
+ *
+ * It reads the design's own furniture list rather than the scene, because a niche
+ * can be drawn before its surround in an arbitrary order.
+ */
+function showerSurroundProfileForFixture(
+  designFurniture?: readonly PlacedFurniture[],
+): VerifiedPelicanBathroomFixtureProfile | null {
+  for (const item of designFurniture ?? []) {
+    const profile = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? "");
+    if (profile?.kind === "shower-surround") return profile;
+  }
+  return null;
+}
+
 function addPelicanBathroomFixture(
   root: THREE.Group,
   furniture: PlacedFurniture,
   profile: VerifiedPelicanBathroomFixtureProfile,
+  designFurniture?: readonly PlacedFurniture[],
 ) {
   const width = profile.widthIn * INCH;
   const depth = profile.depthIn * INCH;
@@ -11498,18 +11519,19 @@ function addPelicanBathroomFixture(
     // near-white translucent box at any distance, which is what the owner saw.
     const surroundFinish = showerSurroundFinish(profile.pelicanCode);
     const surroundTexture = showerSurroundTexture(surroundFinish);
+    const panelMaterial = new THREE.MeshPhysicalMaterial({
+      color: surroundTexture ? "#ffffff" : surroundFinish.color,
+      map: surroundTexture,
+      roughness: surroundFinish.roughness,
+      metalness: 0,
+      clearcoat: surroundFinish.clearcoat,
+      clearcoatRoughness: 0.3,
+      side: THREE.DoubleSide,
+    });
     const surround = makeShowerSurroundParts(profile, {
       shell: shell,
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
-      panel: new THREE.MeshPhysicalMaterial({
-        color: surroundTexture ? "#ffffff" : surroundFinish.color,
-        map: surroundTexture,
-        roughness: surroundFinish.roughness,
-        metalness: 0,
-        clearcoat: surroundFinish.clearcoat,
-        clearcoatRoughness: 0.3,
-        side: THREE.DoubleSide,
-      }),
+      panel: panelMaterial,
     });
     for (const { mesh, part } of surround) {
       add(mesh, part);
@@ -11542,12 +11564,53 @@ function addPelicanBathroomFixture(
     // mounting height. Without this the niche was drawn at floor level and half of
     // it sat below the pan — the thin slab hanging in Tom's 3D view.
     group.position.y = Math.max(0, furniture.mountHeightIn ?? 0) * INCH;
+    // A recess can only be as deep as the wall holding it, or it comes out of the
+    // back. A shower panel on its own is a 0.35" sheet, so the niche is given the
+    // depth a framed wet wall provides.
+    // The framed wet wall this niche is cut into.
+    //
+    // It must be the WHOLE panel, not a patch around the niche. Sized to the niche
+    // alone it reads as a slab standing off the outside of the wall — the same bump
+    // Tom complained about, just in a different material. Sized to the panel and
+    // finished with the panel's own décor, the outside face is one continuous wall
+    // with nothing to distinguish.
+    //
+    // Built in the NICHE's local frame (z runs into the wall) and added to this
+    // group, so it sits behind whichever panel the niche was mounted on — back, left
+    // or right — turns with it, and follows Move shower.
+    const surroundPanel = showerSurroundProfileForFixture(designFurniture);
+    const wetWallWidth = (surroundPanel?.widthIn ?? profile.widthIn) + 2 * SHOWER_PANEL_THICKNESS_IN;
+    const wetWallHeight = surroundPanel?.heightIn ?? (furniture.mountHeightIn ?? 0) + profile.heightIn;
+    const wetWallFinish = showerSurroundFinish(surroundPanel?.pelicanCode ?? profile.pelicanCode);
+    const wetWallTexture = showerSurroundTexture(wetWallFinish);
+    const wetWallPanel = new THREE.MeshPhysicalMaterial({
+      color: wetWallTexture ? "#ffffff" : wetWallFinish.color,
+      map: wetWallTexture,
+      roughness: wetWallFinish.roughness,
+      metalness: 0,
+      clearcoat: wetWallFinish.clearcoat,
+      clearcoatRoughness: 0.3,
+      side: THREE.DoubleSide,
+    });
+    for (const { mesh, part } of makeShowerWetWallParts(profile, {
+      shell: shell,
+      metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
+      panel: wetWallPanel,
+    }, {
+      thicknessIn: SHOWER_WET_WALL_THICKNESS_IN,
+      heightIn: wetWallHeight,
+      widthIn: wetWallWidth,
+      mountHeightIn: 0,
+    })) {
+      add(mesh, part);
+    }
+    const nicheShell = new THREE.MeshStandardMaterial({ color: "#eeeae4", roughness: 0.42 });
     for (const { mesh, part } of makeShowerNicheParts(profile, {
       // A niche is recessed into the wall it sits in, so it takes the surround's
       // finish rather than a separate white box.
-      shell: new THREE.MeshStandardMaterial({ color: "#eeeae4", roughness: 0.42 }),
+      shell: nicheShell,
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
-    })) {
+    }, { availableDepthIn: nicheDepthForWallThickness(SHOWER_WET_WALL_THICKNESS_IN) })) {
       add(mesh, part);
     }
     // An invisible pick box over the niche's whole envelope.
@@ -11666,14 +11729,20 @@ function addPelicanBathroomFixture(
   root.add(group);
 }
 
-export function addFurniture(root: THREE.Group, furniture: PlacedFurniture, selected = false) {
+export function addFurniture(
+  root: THREE.Group,
+  furniture: PlacedFurniture,
+  selected = false,
+  /** The design's whole furniture list, so a niche can size its wet wall to the panel. */
+  designFurniture?: readonly PlacedFurniture[],
+) {
   const def = FURNITURE_CATALOG.find((entry) => entry.id === furniture.defId);
   // A saved plan may still list a definition this build no longer has (for
   // example a removed planning-zone row); skip it instead of throwing.
   if (!def) return;
   const bathroomFixture = verifiedPelicanBathroomFixtureProfile(furniture.pelicanCode ?? def.pelicanCode);
   if (bathroomFixture) {
-    addPelicanBathroomFixture(root, furniture, bathroomFixture);
+    addPelicanBathroomFixture(root, furniture, bathroomFixture, designFurniture);
     const fixtureGroup = root.children[root.children.length - 1];
     if (selected && fixtureGroup instanceof THREE.Group) {
       const outline = new THREE.LineSegments(
@@ -13765,7 +13834,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 		      islandCountertopTexture,
 		    );
 	    for (const ponyWall of ponyWalls) addPonyWall(catalogRoot, ponyWall, room, ponyWalls);
-    for (const furnitureItem of furniture) addFurniture(catalogRoot, furnitureItem, furnitureItem.uid === selectedFurnitureUid);
+    for (const furnitureItem of furniture) addFurniture(catalogRoot, furnitureItem, furnitureItem.uid === selectedFurnitureUid, furniture);
 	    threeScene.add(catalogRoot);
 	    threeScene.traverse((node) => {
 	      node.castShadow = false;
@@ -13776,6 +13845,11 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    rendererRef.current = renderer;
 	    sceneRef.current = threeScene;
 	    cameraRef.current = camera;
+	    // Dev-only: a screenshot harness needs to aim the camera at a known fixture.
+	    // Guarded by import.meta.env.DEV so it is stripped from the production bundle.
+	    if (import.meta.env.DEV) {
+	      (window as any).__cdScene = { root: catalogRoot, camera, controlsRef, THREE, orbitTarget: null };
+	    }
 	    setCameraReadyKey((current) => current + 1);
 
 	    let frame = 0;
