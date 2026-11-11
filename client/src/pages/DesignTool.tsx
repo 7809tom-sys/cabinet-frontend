@@ -1107,7 +1107,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // against the room, or against a toilet footprint, is what slid the
       // pantry over on refresh.
       if (options?.exact || next === prev) return next;
-      const synced = syncWallRunOffsets(next, roomRef.current);
+      // One flush rule for Auto Design, the refrigerator popup, a palette drop,
+      // and a drag. A shallow box over a refrigerator comes forward to the
+      // panel face before the seat pass, which keeps that wall id.
+      const flushed = normalizeRefrigeratorBridgeDepth(next, roomRef.current);
+      const synced = syncWallRunOffsets(flushed, roomRef.current);
       const cut = applyRefrigeratorEndPanelFieldCuts(synced, roomRef.current);
       return cut === prev ? prev : cut;
     });

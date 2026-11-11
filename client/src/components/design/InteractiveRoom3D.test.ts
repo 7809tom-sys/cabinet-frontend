@@ -3777,14 +3777,15 @@ describe("interactive 3D room scene helpers", () => {
     })).toEqual({ x: 6, z: 39, rotation: Math.PI / 2, bottom: 54 });
   });
 
-  it("seats a legacy near-wall end-run wall cabinet flush even if an old record carries an in/out adjustment", () => {
+  it("seats a legacy near-wall end-run wall cabinet flush, and keeps an intentional forward pull", () => {
     const legacy = {
       uid: "left-end", cabinetId: 11, masterCode: "W3030", description: "Wall Cabinet", placement: "wall",
       x: 4, y: 24, width: 30, depth: 12, height: 30, rotation: 90, mountBottom: 54,
     } as never;
     const room = { width: 144, depth: 120, ceilingHeight: 96 };
     expect(existingCabinetTransform(legacy, room)).toMatchObject({ x: 6, z: 39, rotation: Math.PI / 2 });
-    expect(existingCabinetTransform({ ...legacy, depthPositionAdjusted: true }, room)).toMatchObject({ x: 6, z: 39, rotation: Math.PI / 2 });
+    // depthPositionAdjusted is the over-fridge pull. The center stays at x = 4 + 6.
+    expect(existingCabinetTransform({ ...legacy, depthPositionAdjusted: true }, room)).toMatchObject({ x: 10, z: 39, rotation: Math.PI / 2 });
   });
 
   it("uses the saved left-wall quarter turn to seat an offset legacy end run on the physical wall", () => {
