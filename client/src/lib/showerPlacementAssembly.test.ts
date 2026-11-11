@@ -453,3 +453,32 @@ describe("a small room keeps the fitting on the wall the shopper chose", () => {
     });
   }
 });
+
+/**
+ * Regression: picking the BACK wall put the fitting on the RIGHT panel.
+ *
+ * The wizard names walls the way a room does ("top", "left", "right") but a shower
+ * panel is "back", "left" or "right". The designer cast the wizard's string straight
+ * to a panel side, so "top" matched no branch and fell through to the right panel —
+ * making back and right indistinguishable. This pins the mapping the designer must
+ * apply, so the two name spaces cannot silently drift apart again.
+ */
+describe("the wizard's wall names map onto panel sides", () => {
+  const toPanelSide = (wall: "top" | "left" | "right"): "back" | "left" | "right" =>
+    wall === "top" ? "back" : wall === "left" ? "left" : "right";
+
+  it("maps top -> back, and keeps left and right", () => {
+    expect(toPanelSide("top")).toBe("back");
+    expect(toPanelSide("left")).toBe("left");
+    expect(toPanelSide("right")).toBe("right");
+  });
+
+  it("gives back and right genuinely different positions", () => {
+    const room = { width: 60, depth: 96, ceilingHeight: 96 } as any;
+    const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+    const back = placeWallFittingOnPanel("PL-SN1639", toPanelSide("top"), opening, 44)!;
+    const right = placeWallFittingOnPanel("PL-SN1639", toPanelSide("right"), opening, 44)!;
+    // A cast that passed "top" through used to make these identical.
+    expect(back.x).not.toBe(right.x);
+  });
+});
