@@ -503,12 +503,21 @@ export function makeShowerWetWallParts(
   // but its placement group is positioned at the fixture's CENTRE. A slab placed at
   // `t .. t + thickness` in that same frame therefore lands half a depth behind
   // where it belongs. Shift it by half the niche depth so the two agree.
+  // The slab starts just past the RECESS BACK, not at the panel face. Starting it
+  // earlier filled the back of the niche with solid wall, which is why the niche
+  // read as a flat patch inside the shower: from the room you were looking at the
+  // slab, not into a recess.
+  //
+  // So the slab is the wall AROUND the hole. It begins at the recess back plus the
+  // clearance and runs outward, and the opening in front of it stays empty for the
+  // niche to occupy.
   const centreOffset = (nicheDepthIn * INCH) / 2;
+  const slabFront = centreOffset + nicheDepthIn * INCH + BACK_CLEARANCE_IN * INCH;
   const slab = new THREE.Mesh(new THREE.BoxGeometry(W, H, Math.max(thickness, 0.02)), material);
   slab.position.set(
     0,
     Math.max(0, options.mountHeightIn ?? 0) * INCH + H / 2,
-    centreOffset + t + thickness / 2,
+    slabFront + thickness / 2,
   );
   slab.castShadow = false;
   slab.receiveShadow = false;

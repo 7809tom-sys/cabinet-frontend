@@ -574,7 +574,7 @@ describe("the niche keeps real depth inside and shows nothing outside", () => {
    * behind where it belonged and left the recess sticking out of the back. These
    * assertions use the same positions the renderer uses, not the raw geometry.
    */
-  it("puts the wet wall fully behind the panel and past the niche back", () => {
+  it("leaves the recess empty and puts the wall behind it", () => {
     for (const code of ["PL-SN1614", "PL-SN1627", "PL-SN1639"]) {
       const niche = verifiedPelicanBathroomFixtureProfile(code)!;
       const nicheParts = makeShowerNicheParts(niche, materials, { availableDepthIn: 4 });
@@ -596,12 +596,15 @@ describe("the niche keeps real depth inside and shows nothing outside", () => {
       const nicheBox = boxOf(nicheParts);
       const wallBox = boxOf(wallParts);
 
-      // The wall begins behind the niche's opening, so it never covers the front.
-      expect(wallBox.min.z / IN, `${code} wall starts behind the opening`).toBeGreaterThanOrEqual(-0.01);
-      // And finishes at least half an inch past the recess back, so no faces are
-      // coincident and the wall always wins from outside.
-      expect(wallBox.max.z / IN, `${code} wall clears the recess back`)
-        .toBeGreaterThanOrEqual(nicheBox.max.z / IN + 0.5 - 0.01);
+      // THE decisive property: the wall must not occupy the recess at all. A slab
+      // that overlaps it fills the back of the niche, so from inside the shower you
+      // look at wall rather than into a recess — which is how the niche ended up
+      // reading as a flat patch.
+      const overlap = Math.min(nicheBox.max.z, wallBox.max.z) - Math.max(nicheBox.min.z, wallBox.min.z);
+      expect(overlap, `${code} wall intrudes into the recess`).toBeLessThanOrEqual(0.001);
+      // And there is real wall behind the recess, so the outside is covered.
+      expect((wallBox.min.z - nicheBox.max.z) / IN, `${code} wall behind the recess`)
+        .toBeGreaterThanOrEqual(0.4);
     }
   });
   it("keeps the flange on the shower side, so nothing laps onto the outside", () => {
