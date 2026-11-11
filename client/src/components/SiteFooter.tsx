@@ -97,6 +97,9 @@ export function SiteFooter() {
                 { label: "Return Policy", href: "/return-policy" },
                 { label: "Privacy Policy", href: "/privacy-policy" },
                 { label: "Terms & Conditions", href: "/terms" },
+                { label: "Warranty", href: "/warranty" },
+                { label: "Affiliate Agreement", href: "/affiliate-agreement" },
+                { label: "Sales Rep Agreement", href: "/sales-rep-agreement" },
               ].map((item) => (
                 <li key={item.label}>
                   <Link href={item.href} className="hover:text-white transition-colors">
