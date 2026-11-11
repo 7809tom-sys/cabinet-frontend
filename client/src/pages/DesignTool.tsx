@@ -174,6 +174,8 @@ import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
 import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
 import { normalizeRefrigeratorBridgeDepth } from "@/lib/refrigeratorBridgeDepth";
+import { fillGapsUnderOneAndAHalf } from "@/lib/subOneAndHalfFiller";
+import type { CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
@@ -1097,6 +1099,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const autoDesignFaucetPromptedRef = useRef(new Set<string>());
   const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
   roomRef.current = room;
+  const narrowGapFillRef = useRef<{ fillers: CatalogFillerCandidate[]; styleId: number | null }>({ fillers: [], styleId: null });
   // ONE commit boundary for cabinet state: every seated cabinet's run offset is
   // re-derived from its plan body on every wall kind, so resize, rotate and any
   // x/y-only edit can never leave a stale wallOffset behind.
@@ -1112,7 +1115,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // panel face before the seat pass, which keeps that wall id.
       const flushed = normalizeRefrigeratorBridgeDepth(next, roomRef.current);
       const synced = syncWallRunOffsets(flushed, roomRef.current);
-      const cut = applyRefrigeratorEndPanelFieldCuts(synced, roomRef.current);
+      const filled = fillGapsUnderOneAndAHalf({
+        placed: synced,
+        room: roomRef.current,
+        fillers: narrowGapFillRef.current.fillers,
+        makeUid,
+        styleId: narrowGapFillRef.current.styleId,
+      });
+      const cut = applyRefrigeratorEndPanelFieldCuts(filled.placed, roomRef.current);
       return cut === prev ? prev : cut;
     });
   }, []);
@@ -3826,6 +3836,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     () => (threeDAccessoryCatalog as DesignCabinet[] | undefined) ?? [],
     [threeDAccessoryCatalog],
   );
+  narrowGapFillRef.current = { fillers: catalogFillers, styleId: styleIdRef.current };
   // AltaEuro end panels are priced (BEP2535, WEP*, TEP3096) but omitted from
   // placeableCabinets: the row's placement is blank, and the tall sheet is not
   // on the accessory palette. Resolve them by code only for an AltaEuro style.
