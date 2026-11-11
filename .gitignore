@@ -137,3 +137,6 @@ manus storage/
 !docs/library/internal/*.pdf
 !docs/library/internal/*.md
 config.bat
+
+# Local secrets: never commit the bare .env
+.env
