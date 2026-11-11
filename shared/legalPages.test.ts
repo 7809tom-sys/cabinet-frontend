@@ -3,12 +3,16 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   addLegalSlot,
+  editableDraftText,
   parseCsvTable,
   presentLegalSlot,
   publishLegalUpload,
   rollbackLegalSlot,
+  saveLegalDraft,
   seedLegalSlots,
 } from "./legalPages";
+import { buildAffiliateAgreementText } from "./affiliateAgreement";
+import { buildSalesRepAgreementText } from "./salesRepAgreement";
 
 const root = resolve(import.meta.dirname, "..");
 
@@ -69,6 +73,38 @@ describe("legal page slots", () => {
     expect(added.ok).toBe(true);
     if (!added.ok) return;
     expect(added.slots.at(-1)?.slug).toBe("delivery-notes");
+  });
+
+  it("preloads the agreement drafts for editing and does not publish them", () => {
+    const affiliate = seeded.find((slot) => slot.slug === "affiliate-agreement")!;
+    const salesRep = seeded.find((slot) => slot.slug === "sales-rep-agreement")!;
+    expect(affiliate.versions[0]?.source).toBe("draft");
+    expect(affiliate.versions[0]?.bodyText).toBe(buildAffiliateAgreementText());
+    expect(affiliate.versions[0]?.bodyText?.startsWith("DRAFT")).toBe(true);
+    expect(presentLegalSlot(affiliate).render).toBe("site-page");
+    expect(salesRep.versions[0]?.bodyText).toBe(buildSalesRepAgreementText());
+    expect(editableDraftText(salesRep).startsWith("DRAFT")).toBe(true);
+    expect(seeded.find((slot) => slot.slug === "warranty")?.versions[0]?.bodyText).toBeNull();
+    expect(seeded.find((slot) => slot.slug === "terms")?.versions[0]?.bodyText).toBeNull();
+    expect(seeded.find((slot) => slot.slug === "privacy")?.versions[0]?.bodyText).toBeNull();
+
+    const saved = saveLegalDraft(affiliate, `${affiliate.versions[0]?.bodyText}\nEdited.`, {
+      uploadedAt: "2026-11-12T00:00:00.000Z",
+      uploadedBy: "Tom",
+    });
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.slot.publishedVersion).toBe(0);
+    expect(saved.slot.versions).toHaveLength(2);
+    expect(presentLegalSlot(saved.slot).render).toBe("site-page");
+    const published = publishLegalUpload(saved.slot, { bodyText: editableDraftText(saved.slot) }, {
+      uploadedAt: "2026-11-12T01:00:00.000Z",
+      uploadedBy: "Tom",
+    });
+    expect(published.ok).toBe(true);
+    if (!published.ok) return;
+    expect(presentLegalSlot(published.slot).render).toBe("text");
+    expect(published.slot.versions).toHaveLength(3);
   });
 
   it("does not rewrite the existing Terms or warranty pages", () => {

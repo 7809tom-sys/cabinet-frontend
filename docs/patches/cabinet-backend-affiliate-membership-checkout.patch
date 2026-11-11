@@ -1,7 +1,7 @@
 From d116c7de626d635a7dbf159f1bcaf43fec39d2cd Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Wed, 11 Nov 2026 15:51:26 +0000
-Subject: [PATCH 1/3] Record affiliate membership checkout, rep commissions,
+Subject: [PATCH 1/4] Record affiliate membership checkout, rep commissions,
  and legal page versions.
 
 Membership checkout stays in Stripe test mode. A monthly cancel before the three-month commitment is pushed to the commitment date so the remaining months still bill. Commission rates are admin settings and are copied onto each earned commission. Legal pages keep a version history.
@@ -1804,7 +1804,7 @@ index 0000000..6e19417
 From 1d3155b6995ac84953f5de3d8bc27a3d421bd08b Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Wed, 11 Nov 2026 16:11:20 +0000
-Subject: [PATCH 2/3] Set Florida law and Sarasota County venue on the
+Subject: [PATCH 2/4] Set Florida law and Sarasota County venue on the
  agreement drafts.
 
 Both documents stay marked as drafts for attorney review. The county is the one already named in the site Terms.
@@ -1845,7 +1845,7 @@ index 75811d7..bddd7aa 100644
 From 299b6a2cac841260531beaf89976fc2e75d1559f Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Wed, 11 Nov 2026 16:14:08 +0000
-Subject: [PATCH 3/3] Limit the sales-rep residual to material sales.
+Subject: [PATCH 3/4] Limit the sales-rep residual to material sales.
 
 The 0.5 percent is calculated on the merchandise subtotal of a confirmed order. Freight, shipping, tax, fees, and affiliate-only cost fees are excluded. An order with no stored or line-item material subtotal is flagged instead of using the order total. The $400 flat fee is unchanged.
 ---
@@ -2264,6 +2264,286 @@ index 6e19417..be0e578 100644
  }
  
  export function repFeeCheckoutAvailable(settings: SalesRepCommissionSettings): boolean {
+-- 
+2.43.0
+
+
+From b00cb7156343394507935c34fd973c318337be39 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 16:29:58 +0000
+Subject: [PATCH 4/4] Keep agreement edits as drafts until an admin publishes
+ them.
+
+The Affiliate Agreement and Sales Rep Agreement are preloaded as draft versions. Saving a draft does not change the public page.
+---
+ ...278_affiliate_membership_checkout.tidb.sql |   5 +-
+ server/lib/membershipProgramStore.ts          |  48 +++++++-
+ server/routers/legalPages.ts                  |  18 +++
+ shared/legalPages.ts                          | 106 +++++++++++++++---
+ 4 files changed, 156 insertions(+), 21 deletions(-)
+
+diff --git a/docs/sql/0278_affiliate_membership_checkout.tidb.sql b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+index b00ed13..9102018 100644
+--- a/docs/sql/0278_affiliate_membership_checkout.tidb.sql
++++ b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+@@ -31,7 +31,7 @@ CREATE TABLE cabinet_dealz.affiliate_checkout_acknowledgements (id INT NOT NULL
+ CREATE TABLE cabinet_dealz.legal_page_slots (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slug VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, publicPath VARCHAR(255) NOT NULL, publishedVersion INT NOT NULL DEFAULT 1, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_slots_slug_uq (slug), UNIQUE KEY legal_page_slots_path_uq (publicPath));
+ 
+ -- 8
+-CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
++CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet','draft') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
+ 
+ -- 9
+ INSERT INTO cabinet_dealz.legal_page_slots (slug, title, publicPath, publishedVersion) VALUES ('warranty', 'Warranty', '/warranty', 1), ('terms', 'Terms of Service / Terms and Conditions', '/terms', 1), ('affiliate-agreement', 'Affiliate Agreement', '/affiliate-agreement', 1), ('privacy', 'Privacy', '/privacy-policy', 1), ('sales-rep-agreement', 'Sales Rep Agreement', '/sales-rep-agreement', 1);
+@@ -44,3 +44,6 @@ CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT
+ 
+ -- 12. Merchandise subtotal in cents for the sales-rep residual. Null means the order has no stored material subtotal. Do not fill it from totalAmount.
+ ALTER TABLE cabinet_dealz.order_requests ADD COLUMN materialSubtotalCents INT NULL;
++
++-- 13. Let an agreement version stay a draft until an admin publishes it. "Duplicate column" does not apply. "Data truncated" means the enum already lists draft: skip this line.
++ALTER TABLE cabinet_dealz.legal_page_versions MODIFY COLUMN source ENUM('migration','text','file','sheet','draft') NOT NULL;
+diff --git a/server/lib/membershipProgramStore.ts b/server/lib/membershipProgramStore.ts
+index 18fb13c..cb00ed8 100644
+--- a/server/lib/membershipProgramStore.ts
++++ b/server/lib/membershipProgramStore.ts
+@@ -288,9 +288,14 @@ export async function listLegalSlots(db: Database): Promise<Record<string, unkno
+         await run(db, sql`INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy) VALUES (${slotId}, 1, 'migration', NULL, 'Site page')`);
+       }
+     }
+-    return run(db, sql`SELECT id, slug, title, publicPath, publishedVersion FROM cabinet_dealz.legal_page_slots ORDER BY id`);
+   }
+-  return slots;
++  try {
++    await ensureAgreementDrafts(db);
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    if (!isMissingSchema(error) && !/data truncated|incorrect/i.test(message)) throw error;
++  }
++  return run(db, sql`SELECT id, slug, title, publicPath, publishedVersion FROM cabinet_dealz.legal_page_slots ORDER BY id`);
+ }
+ 
+ export async function versionsForSlot(db: Database, slotId: number): Promise<Record<string, unknown>[]> {
+@@ -315,7 +320,8 @@ export async function publishLegalVersion(db: Database, input: {
+   const previous = current[0];
+   const keepSheet = input.sheet ? JSON.stringify(input.sheet) : (previous ? text(previous.sheetJson) || null : null);
+   const body = input.source === "sheet" ? (previous?.bodyText == null ? null : text(previous.bodyText) || null) : input.bodyText;
+-  const nextVersion = Number(slot.publishedVersion) + 1;
++  const maxVersion = await run(db, sql`SELECT MAX(version) AS maxVersion FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId}`);
++  const nextVersion = Number(maxVersion[0]?.maxVersion ?? slot.publishedVersion ?? 0) + 1;
+   await run(db, sql`
+     INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, fileName, mimeType, fileBase64, sheetJson, uploadedBy)
+     VALUES (
+@@ -329,6 +335,42 @@ export async function publishLegalVersion(db: Database, input: {
+   await run(db, sql`UPDATE cabinet_dealz.legal_page_slots SET publishedVersion = ${nextVersion} WHERE id = ${slotId}`);
+ }
+ 
++export async function saveLegalDraftVersion(db: Database, slug: string, bodyText: string, uploadedBy: string): Promise<void> {
++  const textBody = bodyText.trim();
++  if (!textBody) throw new Error("The draft is empty.");
++  const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
++  const slotId = Number(slots[0]?.id);
++  if (!slotId) throw new Error("That legal page does not exist.");
++  const maxVersion = await run(db, sql`SELECT MAX(version) AS maxVersion FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId}`);
++  const nextVersion = Number(maxVersion[0]?.maxVersion ?? 0) + 1;
++  await run(db, sql`
++    INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy)
++    VALUES (${slotId}, ${nextVersion}, 'draft', ${textBody}, ${uploadedBy})
++  `);
++}
++
++async function ensureAgreementDrafts(db: Database): Promise<void> {
++  const { buildAffiliateAgreementText } = await import("@shared/affiliateAgreement");
++  const { buildSalesRepAgreementText } = await import("@shared/salesRepAgreement");
++  const drafts: Record<string, string> = {
++    "affiliate-agreement": buildAffiliateAgreementText(),
++    "sales-rep-agreement": buildSalesRepAgreementText(),
++  };
++  for (const [slug, body] of Object.entries(drafts)) {
++    const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
++    const slotId = Number(slots[0]?.id);
++    if (!slotId) continue;
++    const existing = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId} AND source = 'draft' AND bodyText IS NOT NULL LIMIT 1`);
++    if (existing[0]) continue;
++    const maxVersion = await run(db, sql`SELECT MAX(version) AS maxVersion FROM cabinet_dealz.legal_page_versions WHERE slotId = ${slotId}`);
++    const nextVersion = Number(maxVersion[0]?.maxVersion ?? 0) + 1;
++    await run(db, sql`
++      INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText, uploadedBy)
++      VALUES (${slotId}, ${nextVersion}, 'draft', ${body}, 'Draft')
++    `);
++  }
++}
++
+ export async function rollbackLegalVersion(db: Database, slug: string, version: number): Promise<void> {
+   const slots = await run(db, sql`SELECT id FROM cabinet_dealz.legal_page_slots WHERE slug = ${slug} LIMIT 1`);
+   const slotId = Number(slots[0]?.id);
+diff --git a/server/routers/legalPages.ts b/server/routers/legalPages.ts
+index 810c79d..36fa9a1 100644
+--- a/server/routers/legalPages.ts
++++ b/server/routers/legalPages.ts
+@@ -10,6 +10,7 @@ import {
+   parseSheet,
+   publishLegalVersion,
+   rollbackLegalVersion,
++  saveLegalDraftVersion,
+   versionsForSlot,
+ } from "../lib/membershipProgramStore";
+ 
+@@ -96,6 +97,23 @@ export const legalPagesRouter = router({
+     }
+   }),
+ 
++  saveDraft: adminProcedure.input(z.object({
++    slug: z.string().min(1).max(64),
++    bodyText: z.string().min(1).max(200000),
++  })).mutation(async ({ ctx, input }) => {
++    const db = await getDb();
++    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++    try {
++      await saveLegalDraftVersion(db, input.slug, input.bodyText, ctx.user.name || ctx.user.email || `User ${ctx.user.id}`);
++      return { ok: true };
++    } catch (error) {
++      if (isMissingSchema(error)) {
++        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legal page tables are missing. Run docs/sql/0278_affiliate_membership_checkout.tidb.sql." });
++      }
++      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "Could not save the draft." });
++    }
++  }),
++
+   publish: adminProcedure.input(z.object({
+     slug: z.string().min(1).max(64),
+     bodyText: z.string().max(200000).nullable().optional(),
+diff --git a/shared/legalPages.ts b/shared/legalPages.ts
+index c35acf4..579b741 100644
+--- a/shared/legalPages.ts
++++ b/shared/legalPages.ts
+@@ -7,7 +7,10 @@
+ // Tom uploads a replacement. A warranty spreadsheet is extra: it never
+ // replaces the warranty prose.
+ 
+-export type LegalVersionSource = "migration" | "text" | "file" | "sheet";
++import { buildAffiliateAgreementText } from "./affiliateAgreement";
++import { buildSalesRepAgreementText } from "./salesRepAgreement";
++
++export type LegalVersionSource = "migration" | "text" | "file" | "sheet" | "draft";
+ 
+ export type LegalSheet = {
+   headers: string[];
+@@ -51,22 +54,91 @@ export const LEGAL_PAGE_SEED_SLOTS: readonly { slug: string; title: string; publ
+   { slug: "sales-rep-agreement", title: "Sales Rep Agreement", publicPath: "/sales-rep-agreement" },
+ ];
+ 
++export const AGREEMENT_DRAFT_SLUGS = ["affiliate-agreement", "sales-rep-agreement"] as const;
++
++/** Full current draft for an agreement slot. Other slots have no preloaded body. */
++export function agreementDraftText(slug: string): string | null {
++  if (slug === "affiliate-agreement") return buildAffiliateAgreementText();
++  if (slug === "sales-rep-agreement") return buildSalesRepAgreementText();
++  return null;
++}
++
++export function isAgreementDraftSlot(slug: string): boolean {
++  return (AGREEMENT_DRAFT_SLUGS as readonly string[]).includes(slug);
++}
++
+ export function seedLegalSlots(uploadedAt: string, uploadedBy: string): LegalSlot[] {
+-  return LEGAL_PAGE_SEED_SLOTS.map((slot) => ({
+-    ...slot,
+-    publishedVersion: 1,
+-    versions: [
+-      {
+-        version: 1,
+-        source: "migration",
+-        bodyText: null,
+-        file: null,
+-        sheet: null,
+-        uploadedAt,
+-        uploadedBy,
+-      },
+-    ],
+-  }));
++  return LEGAL_PAGE_SEED_SLOTS.map((slot) => {
++    const draft = agreementDraftText(slot.slug);
++    if (draft) {
++      return {
++        ...slot,
++        publishedVersion: 0,
++        versions: [
++          {
++            version: 1,
++            source: "draft" as const,
++            bodyText: draft,
++            file: null,
++            sheet: null,
++            uploadedAt,
++            uploadedBy,
++          },
++        ],
++      };
++    }
++    return {
++      ...slot,
++      publishedVersion: 1,
++      versions: [
++        {
++          version: 1,
++          source: "migration" as const,
++          bodyText: null,
++          file: null,
++          sheet: null,
++          uploadedAt,
++          uploadedBy,
++        },
++      ],
++    };
++  });
++}
++
++/** Text the admin editor should show. Unpublished agreement drafts stay editable. */
++export function editableDraftText(slot: {
++  slug: string;
++  versions: { source: string; bodyText: string | null; version: number }[];
++}): string {
++  const newestFirst = [...slot.versions].sort((a, b) => b.version - a.version);
++  const draft = newestFirst.find((version) => version.source === "draft" && version.bodyText?.trim());
++  if (draft?.bodyText) return draft.bodyText;
++  const anyBody = newestFirst.find((version) => version.bodyText?.trim());
++  if (anyBody?.bodyText) return anyBody.bodyText;
++  return agreementDraftText(slot.slug) ?? "";
++}
++
++/**
++ * Save an agreement edit without making it the public page.
++ * The new row stays in the history with source "draft".
++ */
++export function saveLegalDraft(
++  slot: LegalSlot,
++  bodyText: string,
++  meta: { uploadedAt: string; uploadedBy: string },
++): { ok: true; slot: LegalSlot } | { ok: false; message: string } {
++  const text = bodyText.trim();
++  if (!text) return { ok: false, message: "The draft is empty." };
++  const next: LegalVersion = {
++    version: Math.max(0, ...slot.versions.map((version) => version.version)) + 1,
++    source: "draft",
++    bodyText: text,
++    file: null,
++    sheet: null,
++    uploadedAt: meta.uploadedAt,
++    uploadedBy: meta.uploadedBy,
++  };
++  return { ok: true, slot: { ...slot, versions: [...slot.versions, next] } };
+ }
+ 
+ export function publishedVersion(slot: LegalSlot): LegalVersion | null {
+@@ -180,7 +252,7 @@ export type LegalPagePresentation = {
+ 
+ export function presentLegalSlot(slot: LegalSlot | null): LegalPagePresentation {
+   const published = slot ? publishedVersion(slot) : null;
+-  if (!published || published.source === "migration") {
++  if (!published || published.source === "migration" || (published.source === "draft" && slot?.publishedVersion !== published.version)) {
+     return {
+       render: "site-page",
+       bodyText: null,
 -- 
 2.43.0
 

@@ -31,7 +31,7 @@ CREATE TABLE cabinet_dealz.affiliate_checkout_acknowledgements (id INT NOT NULL 
 CREATE TABLE cabinet_dealz.legal_page_slots (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slug VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, publicPath VARCHAR(255) NOT NULL, publishedVersion INT NOT NULL DEFAULT 1, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_slots_slug_uq (slug), UNIQUE KEY legal_page_slots_path_uq (publicPath));
 
 -- 8
-CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
+CREATE TABLE cabinet_dealz.legal_page_versions (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, slotId INT NOT NULL, version INT NOT NULL, source ENUM('migration','text','file','sheet','draft') NOT NULL, bodyText MEDIUMTEXT NULL, fileName VARCHAR(255) NULL, mimeType VARCHAR(128) NULL, fileBase64 MEDIUMTEXT NULL, sheetJson MEDIUMTEXT NULL, uploadedBy VARCHAR(256) NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY legal_page_versions_slot_version_uq (slotId, version));
 
 -- 9
 INSERT INTO cabinet_dealz.legal_page_slots (slug, title, publicPath, publishedVersion) VALUES ('warranty', 'Warranty', '/warranty', 1), ('terms', 'Terms of Service / Terms and Conditions', '/terms', 1), ('affiliate-agreement', 'Affiliate Agreement', '/affiliate-agreement', 1), ('privacy', 'Privacy', '/privacy-policy', 1), ('sales-rep-agreement', 'Sales Rep Agreement', '/sales-rep-agreement', 1);
@@ -44,3 +44,6 @@ CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT 
 
 -- 12. Merchandise subtotal in cents for the sales-rep residual. Null means the order has no stored material subtotal. Do not fill it from totalAmount.
 ALTER TABLE cabinet_dealz.order_requests ADD COLUMN materialSubtotalCents INT NULL;
+
+-- 13. Let an agreement version stay a draft until an admin publishes it. "Duplicate column" does not apply. "Data truncated" means the enum already lists draft: skip this line.
+ALTER TABLE cabinet_dealz.legal_page_versions MODIFY COLUMN source ENUM('migration','text','file','sheet','draft') NOT NULL;

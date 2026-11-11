@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,8 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { seedLegalSlots, type LegalSheet } from "@shared/legalPages";
+import { editableDraftText, isAgreementDraftSlot, seedLegalSlots, type LegalSheet } from "@shared/legalPages";
 import { isSpreadsheetName, sheetFromArrayBuffer } from "@/lib/legalSheetFile";
+import { agreementDraftDocx, agreementDraftPdf, downloadBlob } from "@/lib/legalDraftExport";
 import { useMembershipProgramProcedures } from "@/lib/membershipProgramProcedures";
 
 function readFile(file: File): Promise<ArrayBuffer> {
@@ -47,7 +48,24 @@ export default function LegalPagesOperationsAdmin() {
   const [newTitle, setNewTitle] = useState("");
   const [newPath, setNewPath] = useState("");
   const active = slots.find((slot) => slot.slug === slug) ?? slots[0];
+  const draftSlot = active ? isAgreementDraftSlot(active.slug) : false;
+  const editorSeed = active ? editableDraftText(active) : "";
 
+  useEffect(() => {
+    setBody(editorSeed);
+    setSheet(null);
+    setFileName(null);
+    setFileBase64(null);
+    setMimeType(null);
+  }, [active?.slug, editorSeed]);
+
+  const saveDraft = api.legalPages.saveDraft.useMutation({
+    onSuccess: () => {
+      toast.success("Draft saved. It is not on the public page until you publish it.");
+      void utils.legalPages.list.invalidate();
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const publish = api.legalPages.publish.useMutation({
     onSuccess: () => {
       toast.success("Published. The public page now uses this version.");
@@ -118,8 +136,8 @@ export default function LegalPagesOperationsAdmin() {
       <div>
         <h2 className="font-serif text-2xl font-bold">Warranties and legal pages</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Pick a page, then upload the document or sheet. Saving publishes that version to the page&apos;s public address.
-          Terms, privacy, and warranty wording stay on their current pages until you publish a replacement.
+          Pick a page, then upload the document or sheet. Warranty, Terms, and Privacy stay on their current wording until you publish a replacement.
+          The Affiliate Agreement and Sales Rep Agreement open as drafts. Save keeps your edit private. Publish is what puts that text on the public page.
           The warranty spreadsheet is shown under the warranty text and does not rewrite it.
         </p>
         {query.data?.schemaMissing && (
@@ -139,7 +157,12 @@ export default function LegalPagesOperationsAdmin() {
             ))}
           </SelectContent>
         </Select>
-        {active && <p className="text-xs text-muted-foreground">Public address: {active.publicPath}. Published version {active.publishedVersion}.</p>}
+        {active && (
+          <p className="text-xs text-muted-foreground">
+            Public address: {active.publicPath}. {active.publishedVersion > 0 ? `Published version ${active.publishedVersion}.` : "No version is public yet."}
+            {draftSlot ? " The copy in the editor is a DRAFT." : ""}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -156,20 +179,70 @@ export default function LegalPagesOperationsAdmin() {
         />
         {fileName && <p className="text-xs text-muted-foreground">Ready: {fileName}{sheet ? ` (${sheet.rows.length} data rows)` : ""}</p>}
       </div>
-      <Button
-        className="bg-[var(--color-navy)] text-white"
-        disabled={!active || publish.isPending}
-        onClick={() => active && publish.mutate({
-          slug: active.slug,
-          bodyText: body.trim() ? body : null,
-          fileName,
-          mimeType,
-          fileBase64,
-          sheet,
-        })}
-      >
-        {publish.isPending ? "Publishing…" : "Save and publish"}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        {draftSlot && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!active || !body.trim() || saveDraft.isPending}
+            onClick={() => active && saveDraft.mutate({ slug: active.slug, bodyText: body })}
+          >
+            {saveDraft.isPending ? "Saving draft…" : "Save draft"}
+          </Button>
+        )}
+        <Button
+          className="bg-[var(--color-navy)] text-white"
+          disabled={!active || publish.isPending}
+          onClick={() => active && publish.mutate({
+            slug: active.slug,
+            bodyText: body.trim() ? body : null,
+            fileName,
+            mimeType,
+            fileBase64,
+            sheet,
+          })}
+        >
+          {publish.isPending ? "Publishing…" : draftSlot ? "Publish" : "Save and publish"}
+        </Button>
+        {draftSlot && (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                void navigator.clipboard.writeText(body).then(
+                  () => toast.success("Draft copied. Nothing was emailed."),
+                  () => toast.error("Could not copy the draft."),
+                );
+              }}
+            >
+              Copy draft
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const name = active?.slug ?? "agreement";
+                downloadBlob(agreementDraftPdf(active?.title ?? "Agreement", body), `${name}-draft.pdf`);
+              }}
+            >
+              Download PDF
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                const name = active?.slug ?? "agreement";
+                void agreementDraftDocx(active?.title ?? "Agreement", body).then((blob) => {
+                  downloadBlob(blob, `${name}-draft.docx`);
+                });
+              }}
+            >
+              Download DOCX
+            </Button>
+          </>
+        )}
+      </div>
 
       {active && (
         <div className="space-y-2">
@@ -179,7 +252,8 @@ export default function LegalPagesOperationsAdmin() {
               <li key={version.version} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2">
                 <span>
                   Version {version.version} · {version.source} · {version.uploadedBy} · {new Date(version.uploadedAt).toLocaleString()}
-                  {version.version === active.publishedVersion ? " · public" : ""}
+                  {version.version === active.publishedVersion && active.publishedVersion > 0 ? " · public" : ""}
+                  {version.source === "draft" ? " · DRAFT" : ""}
                   {version.hasSheet ? " · spreadsheet" : ""}
                 </span>
                 {version.version !== active.publishedVersion && (

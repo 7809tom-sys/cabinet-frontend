@@ -7,7 +7,10 @@
 // Tom uploads a replacement. A warranty spreadsheet is extra: it never
 // replaces the warranty prose.
 
-export type LegalVersionSource = "migration" | "text" | "file" | "sheet";
+import { buildAffiliateAgreementText } from "./affiliateAgreement";
+import { buildSalesRepAgreementText } from "./salesRepAgreement";
+
+export type LegalVersionSource = "migration" | "text" | "file" | "sheet" | "draft";
 
 export type LegalSheet = {
   headers: string[];
@@ -51,22 +54,91 @@ export const LEGAL_PAGE_SEED_SLOTS: readonly { slug: string; title: string; publ
   { slug: "sales-rep-agreement", title: "Sales Rep Agreement", publicPath: "/sales-rep-agreement" },
 ];
 
+export const AGREEMENT_DRAFT_SLUGS = ["affiliate-agreement", "sales-rep-agreement"] as const;
+
+/** Full current draft for an agreement slot. Other slots have no preloaded body. */
+export function agreementDraftText(slug: string): string | null {
+  if (slug === "affiliate-agreement") return buildAffiliateAgreementText();
+  if (slug === "sales-rep-agreement") return buildSalesRepAgreementText();
+  return null;
+}
+
+export function isAgreementDraftSlot(slug: string): boolean {
+  return (AGREEMENT_DRAFT_SLUGS as readonly string[]).includes(slug);
+}
+
 export function seedLegalSlots(uploadedAt: string, uploadedBy: string): LegalSlot[] {
-  return LEGAL_PAGE_SEED_SLOTS.map((slot) => ({
-    ...slot,
-    publishedVersion: 1,
-    versions: [
-      {
-        version: 1,
-        source: "migration",
-        bodyText: null,
-        file: null,
-        sheet: null,
-        uploadedAt,
-        uploadedBy,
-      },
-    ],
-  }));
+  return LEGAL_PAGE_SEED_SLOTS.map((slot) => {
+    const draft = agreementDraftText(slot.slug);
+    if (draft) {
+      return {
+        ...slot,
+        publishedVersion: 0,
+        versions: [
+          {
+            version: 1,
+            source: "draft" as const,
+            bodyText: draft,
+            file: null,
+            sheet: null,
+            uploadedAt,
+            uploadedBy,
+          },
+        ],
+      };
+    }
+    return {
+      ...slot,
+      publishedVersion: 1,
+      versions: [
+        {
+          version: 1,
+          source: "migration" as const,
+          bodyText: null,
+          file: null,
+          sheet: null,
+          uploadedAt,
+          uploadedBy,
+        },
+      ],
+    };
+  });
+}
+
+/** Text the admin editor should show. Unpublished agreement drafts stay editable. */
+export function editableDraftText(slot: {
+  slug: string;
+  versions: { source: string; bodyText: string | null; version: number }[];
+}): string {
+  const newestFirst = [...slot.versions].sort((a, b) => b.version - a.version);
+  const draft = newestFirst.find((version) => version.source === "draft" && version.bodyText?.trim());
+  if (draft?.bodyText) return draft.bodyText;
+  const anyBody = newestFirst.find((version) => version.bodyText?.trim());
+  if (anyBody?.bodyText) return anyBody.bodyText;
+  return agreementDraftText(slot.slug) ?? "";
+}
+
+/**
+ * Save an agreement edit without making it the public page.
+ * The new row stays in the history with source "draft".
+ */
+export function saveLegalDraft(
+  slot: LegalSlot,
+  bodyText: string,
+  meta: { uploadedAt: string; uploadedBy: string },
+): { ok: true; slot: LegalSlot } | { ok: false; message: string } {
+  const text = bodyText.trim();
+  if (!text) return { ok: false, message: "The draft is empty." };
+  const next: LegalVersion = {
+    version: Math.max(0, ...slot.versions.map((version) => version.version)) + 1,
+    source: "draft",
+    bodyText: text,
+    file: null,
+    sheet: null,
+    uploadedAt: meta.uploadedAt,
+    uploadedBy: meta.uploadedBy,
+  };
+  return { ok: true, slot: { ...slot, versions: [...slot.versions, next] } };
 }
 
 export function publishedVersion(slot: LegalSlot): LegalVersion | null {
@@ -180,7 +252,7 @@ export type LegalPagePresentation = {
 
 export function presentLegalSlot(slot: LegalSlot | null): LegalPagePresentation {
   const published = slot ? publishedVersion(slot) : null;
-  if (!published || published.source === "migration") {
+  if (!published || published.source === "migration" || (published.source === "draft" && slot?.publishedVersion !== published.version)) {
     return {
       render: "site-page",
       bodyText: null,

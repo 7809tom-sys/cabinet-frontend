@@ -82,6 +82,12 @@ export function useMembershipProgramProcedures() {
       list: {
         useQuery: (input?: undefined, options?: { retry?: boolean }) => Query<{ slots: LegalSlotView[]; schemaMissing: boolean }>;
       };
+      saveDraft: {
+        useMutation: (options?: { onSuccess?: () => void; onError?: (error: ProcedureError) => void }) => {
+          mutate: (input: { slug: string; bodyText: string }) => void;
+          isPending: boolean;
+        };
+      };
       publish: {
         useMutation: (options?: { onSuccess?: () => void; onError?: (error: ProcedureError) => void }) => {
           mutate: (input: {
