@@ -40,8 +40,6 @@
     {
       "source": "/(index\\.html|version\\.json)",
       "headers": [{ "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }]
-          { "source": "/careers", "destination": "/careers.html" },
-                  <li>
                 { "source": "/careers", "destination": "/careers.html" },
     }
   ]
