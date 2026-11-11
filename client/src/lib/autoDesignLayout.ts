@@ -45,7 +45,7 @@ import {
 } from "./autoDesignFillerConsolidation";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
-import { AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN, buildMandatoryAutoDesignRefrigeratorBay } from "./autoDesignRefrigeratorBay";
+import { buildMandatoryAutoDesignRefrigeratorBay, holdRefrigeratorPanelsOnWall } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase } from "./autoDesignSink";
@@ -871,10 +871,22 @@ export function runAutoDesignLayout(args: {
     anchorsByKind.set("refrigerator", refrigeratorBay.refrigerator);
     refrigeratorBayWarnings.push(...refrigeratorBay.warnings);
     const fittedBay = fitExplicitRefrigeratorOptionPlacements(working, refrigeratorBay.additions, refrigerator.uid, room);
-    if (Math.abs(fittedBay.shiftIn) > AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN + COLLISION_EPSILON_IN) {
+    // A gap under 1.5 inches beside the panels is filled. The refrigerator stays
+    // where it was measured. A larger miss still stops the layout.
+    if (Math.abs(fittedBay.shiftIn) > 1.5 + COLLISION_EPSILON_IN) {
       return fail("The measured refrigerator bay does not have room for its two panels and matching cabinet above. Adjust the refrigerator center measurement; Auto-Design will not move it.");
     }
-    const committedBay = appendRefrigeratorEnclosurePlacements(fittedBay.existing, fittedBay.additions, refrigerator.uid, room);
+    const unshiftedFridge = working.find((item) => item.uid === refrigerator.uid) ?? refrigeratorBay.refrigerator;
+    const heldPanels = Math.abs(fittedBay.shiftIn) > COLLISION_EPSILON_IN
+      ? holdRefrigeratorPanelsOnWall(refrigeratorBay.additions, room)
+      : null;
+    const bayExisting = heldPanels
+      ? fittedBay.existing.map((item) => item.uid === refrigerator.uid ? unshiftedFridge : item)
+      : fittedBay.existing;
+    const bayAdditions = heldPanels ? heldPanels.additions : fittedBay.additions;
+    const appliedBayShift = heldPanels ? 0 : fittedBay.shiftIn;
+    if (heldPanels?.note) notes.push(heldPanels.note);
+    const committedBay = appendRefrigeratorEnclosurePlacements(bayExisting, bayAdditions, refrigerator.uid, room);
     if (committedBay.rejected.length > 0) {
       return fail("The measured refrigerator bay overlaps an anchor, opening, or wall end. Adjust the refrigerator center measurement; Auto-Design will not add a filler or move it.");
     }
@@ -891,8 +903,8 @@ export function runAutoDesignLayout(args: {
     notes.push(...contained.notes);
     refrigeratorReservation = {
       ...refrigeratorBay.reservation,
-      start: refrigeratorBay.reservation.start + fittedBay.shiftIn,
-      end: refrigeratorBay.reservation.end + fittedBay.shiftIn,
+      start: refrigeratorBay.reservation.start + appliedBayShift,
+      end: refrigeratorBay.reservation.end + appliedBayShift,
     };
     notes.push(...refrigeratorBay.notes, ...(refrigeratorBay.refrigeratorClampNote ? [refrigeratorBay.refrigeratorClampNote] : []));
   }

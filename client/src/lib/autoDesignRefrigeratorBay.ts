@@ -554,6 +554,36 @@ export function acceptMeasuredCornerRefrigeratorBay(input: {
 }
 
 /**
+ * The refrigerator stays on its measured spot. A panel that would hang past
+ * the wall by at most 1.5 inches is pulled back onto the wall instead of
+ * sliding the appliance. A larger miss is left for the caller to refuse.
+ */
+export function holdRefrigeratorPanelsOnWall(
+  additions: readonly PlacedCabinet[],
+  room: RoomData,
+): { additions: PlacedCabinet[]; note: string | null } {
+  const notes: string[] = [];
+  const next = additions.map((item) => {
+    if (item.refrigeratorAssemblyRole !== "left-panel" && item.refrigeratorAssemblyRole !== "right-panel") return item;
+    const side = (item.wallId ?? "top") as WallSide;
+    const frame = wallRunFrame(side, room);
+    if (!frame) return item;
+    const start = item.wallOffset != null && Number.isFinite(Number(item.wallOffset))
+      ? Number(item.wallOffset)
+      : 0;
+    const width = Math.max(0, Number(item.width) || 0);
+    let along = start;
+    if (start < -0.001) along = 0;
+    if (start + width > frame.length + 0.001) along = Math.max(0, frame.length - width);
+    if (Math.abs(along - start) <= 0.001 || Math.abs(along - start) > 1.5) return item;
+    const spot = wallPlacementAtUnbounded(along, width, Math.max(0, Number(item.depth) || 0), side, room);
+    notes.push(`The refrigerator stays where it was measured. ${item.masterCode} is held on the wall; the refrigerator was not slid to close the ${Math.abs(along - start).toFixed(3)}" panel gap.`);
+    return { ...item, ...spot, wallId: spot.wallId ?? item.wallId, wallOffset: spot.wallOffset ?? along };
+  });
+  return { additions: next, note: notes[0] ?? null };
+}
+
+/**
  * Move a wall cabinet's front to `faceDepth` without changing its box depth.
  * The shift is along that wall's inward normal, on a rectangle side and on an
  * angled wall alike. `seatCabinetFrontIn` is the same move for a saved cabinet.
