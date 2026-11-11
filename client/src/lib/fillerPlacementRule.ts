@@ -277,7 +277,10 @@ export function fillerRuleViolation(input: {
 
   const panelBound = bounds.find((bound) => bound.kind === "item" && bound.item != null
     && (isRefrigeratorEndPanel(bound.item) || isPanelItem(bound.item)));
-  if (panelBound?.item) {
+  // A gap under 1.5 inches between a cabinet and a refrigerator panel is closed
+  // with a filler. The board must still not run through the panel (caught above).
+  const narrowCabinetToPanel = (Number(filler.width) || 0) <= 1.5 + FILLER_SEAM_TOLERANCE_IN;
+  if (panelBound?.item && !narrowCabinetToPanel) {
     return {
       code: "against-refrigerator-panel",
       detail: `${filler.masterCode} is cut against the ${panelBound.item.masterCode} panel. A filler closes a cabinet-to-cabinet, cabinet-to-wall, or cabinet-to-appliance gap, never a panel side.`,

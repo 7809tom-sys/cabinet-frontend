@@ -148,7 +148,7 @@ describe("auto-design wiggle room", () => {
     expect(moved.wallId).toBe(item.wallId);
   });
 
-  it("moves a refrigerator and a sink only inside the 2 inch anchor cap", () => {
+  it("does not slide a refrigerator to close a gap, and keeps a sink inside the 2 inch cap", () => {
     expect(REFRIGERATOR_SHIFT_LIMIT_IN).toBe(6);
     expect(MEASURED_REFRIGERATOR_CORNER_SHIFT_LIMIT_IN).toBe(12);
     expect(measuredRefrigeratorCornerShiftLimitIn()).toBe(12);
@@ -163,14 +163,9 @@ describe("auto-design wiggle room", () => {
       origins: [originFor(fridge, "refrigerator", 15)],
     });
     const fridgeStart = wallRunOffset(fridgeResult.placed[0]!, "bottom", room);
-    // The owner's 2 inch anchor cap applies to the refrigerator too.
-    expect(Math.abs(fridgeStart - 15)).toBeLessThanOrEqual(2 + 1e-6);
-    expect(fridgeResult.moves[0]).toMatchObject({
-      kind: "refrigerator",
-      applianceType: "refrigerator",
-      label: "Refrigerator",
-      direction: "left",
-    });
+    // A gap is closed with a filler. The refrigerator is not slid to make the cabinet fit.
+    expect(fridgeStart).toBeCloseTo(15, 5);
+    expect(fridgeResult.moves).toEqual([]);
 
     const sink = { ...item, uid: "sink-1" };
     const sinkResult = applyAutoDesignWiggleRoom({
@@ -218,7 +213,7 @@ describe("auto-design wiggle room", () => {
     expect(stayed.x).toBe(fridge.x);
     expect(stayed.y).toBe(fridge.y);
     expect(result.moves).toEqual([]);
-    // A fixed range would still be free to jog, so this pins the refrigerator only.
+    // Even without the fixed-anchor flag, a refrigerator is not jogged to close a gap.
     const other = applyAutoDesignWiggleRoom({
       placed: [fridge],
       room,
@@ -226,7 +221,8 @@ describe("auto-design wiggle room", () => {
       catalog: catalog([36]),
       origins: [originFor(fridge, "refrigerator", 15)],
     });
-    expect(other.moves).toHaveLength(1);
+    expect(other.moves).toEqual([]);
+    expect(wallRunOffset(other.placed[0]!, "bottom", room)).toBeCloseTo(15, 5);
   });
 
   it("measures the 2 inch anchor cap from the original placement after a corner nudge", () => {    const { room, item } = rangeOnBottom(120, 46);
