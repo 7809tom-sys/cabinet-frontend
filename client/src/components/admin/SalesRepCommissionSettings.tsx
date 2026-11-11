@@ -30,7 +30,7 @@ export default function SalesRepCommissionSettings() {
     setDraft({
       flatFeeUsd: settingsQuery.data.flatFeeUsd,
       residualRate: settingsQuery.data.residualRate,
-      residualBase: "confirmed_order_gross",
+      residualBase: "confirmed_material_subtotal",
       repFeeUsd: settingsQuery.data.repFeeUsd,
       repFeeCheckoutEnabled: settingsQuery.data.repFeeCheckoutEnabled,
     });
@@ -50,7 +50,7 @@ export default function SalesRepCommissionSettings() {
   for (const row of rows) {
     const current = byRep.get(row.repUserId) ?? { name: row.repName, flat: 0, residual: 0 };
     if (row.kind === "flat") current.flat += row.amountCents;
-    if (row.kind === "residual") current.residual += row.amountCents;
+    if (row.kind === "residual" && !row.flagReason) current.residual += row.amountCents;
     byRep.set(row.repUserId, current);
   }
 
@@ -60,9 +60,11 @@ export default function SalesRepCommissionSettings() {
         <div>
           <h3 className="font-semibold">Affiliate-sale commission settings</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Seeded defaults are a $400 flat fee and 0.5% of the affiliate&apos;s confirmed order sales.
-            Confirmed order sales are the same gross the affiliate commission uses: orders with status confirmed.
-            Saving changes future sales only. Each commission keeps the rate from the day it was earned.
+            Seeded defaults are a $400 flat fee and 0.5% of material sales.
+            Material sales are the merchandise subtotal of the affiliate&apos;s confirmed orders.
+            Freight, shipping, tax, fees, and affiliate-only cost fees are excluded.
+            If an order has no separate material subtotal, it is flagged and no residual is calculated.
+            Saving changes future sales only. Each commission keeps the rate from the day it was earned. The $400 flat fee is separate from this residual.
           </p>
         </div>
         {user?.role === "admin" && (
@@ -77,7 +79,7 @@ export default function SalesRepCommissionSettings() {
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label>Residual base</Label>
-              <p className="text-sm">Confirmed order gross. This is not editable to a different base until Tom names one.</p>
+              <p className="text-sm">Confirmed material sales only. Merchandise subtotal, not the order total. Freight, shipping, tax, fees, and affiliate-only cost fees stay out.</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="rep-fee">{SALES_REP_FEE_TODO}</Label>
@@ -117,7 +119,7 @@ export default function SalesRepCommissionSettings() {
       <div className="space-y-2">
         <h3 className="font-semibold">Flat and residual by rep</h3>
         {byRep.size === 0 ? (
-          <p className="text-sm text-muted-foreground">No affiliate-sale commissions yet. A flat fee is recorded when a credited affiliate pays for membership. Residual lines follow that affiliate&apos;s confirmed orders.</p>
+          <p className="text-sm text-muted-foreground">No affiliate-sale commissions yet. A flat fee is recorded when a credited affiliate pays for membership. Residual lines follow that affiliate&apos;s confirmed material sales.</p>
         ) : (
           <ul className="space-y-2 text-sm">
             {[...byRep.entries()].map(([id, totals]) => (
@@ -131,7 +133,7 @@ export default function SalesRepCommissionSettings() {
           <ul className="space-y-1 text-xs text-muted-foreground">
             {rows.map((row: AffiliateSaleCommission) => (
               <li key={row.id}>
-                {row.repName} · {row.affiliateName} · {row.kind} · {money(row.amountCents)} · rate snapshot {row.kind === "flat" ? money(row.flatFeeCents) : `${(row.residualRateBps / 100).toFixed(2)}% of ${row.residualBase}`}
+                {row.repName} · {row.affiliateName} · {row.kind} · {row.flagReason ? "Material subtotal missing — residual not calculated" : money(row.amountCents)} · rate snapshot {row.kind === "flat" ? money(row.flatFeeCents) : `${(row.residualRateBps / 100).toFixed(2)}% of material sales`}
               </li>
             ))}
           </ul>

@@ -30,6 +30,8 @@ describe("affiliate agreement draft", () => {
     expect(text).toContain(`$${AFFILIATE_MEMBERSHIP.monthlyPriceUsd}`);
     expect(text).toContain(`${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months`);
     expect(text).toContain("approved sales rep");
+    expect(text).toContain("material sales only");
+    expect(text).toContain("does not include freight, shipping, tax, fees, or affiliate-only cost fees");
     expect(text).toContain("does not replace the website Terms & Conditions");
   });
 
@@ -64,6 +66,8 @@ describe("checkout acknowledgements", () => {
   it("sets Florida law and Sarasota County venue on the sales rep draft too", () => {
     const text = buildSalesRepAgreementText();
     expect(text.startsWith("DRAFT")).toBe(true);
+    expect(text).toContain("material sales");
+    expect(text).toContain("Freight, shipping, tax, fees, and affiliate-only cost fees are not included");
     expect(text).toContain("governed by the laws of the State of Florida");
     expect(text).toContain("courts of Sarasota County, Florida");
     expect(text).not.toContain("TODO: Tom and his attorney will choose the governing law");

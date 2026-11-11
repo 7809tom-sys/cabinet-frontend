@@ -16,7 +16,7 @@ CREATE TABLE cabinet_dealz.sales_rep_applications (id INT NOT NULL AUTO_INCREMEN
 CREATE TABLE cabinet_dealz.sales_rep_commission_settings (id INT NOT NULL PRIMARY KEY, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, repFeeCents INT NULL, repFeeCheckoutEnabled TINYINT(1) NOT NULL DEFAULT 0, updatedByUserId INT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
 
 -- 3
-INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_order_gross', NULL, 0);
+INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_material_subtotal', NULL, 0);
 
 -- 4
 CREATE TABLE cabinet_dealz.sales_rep_affiliate_credits (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, salesRepApplicationId INT NOT NULL, affiliateId INT NOT NULL, paymentRef VARCHAR(255) NULL, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, capturedAt DATETIME NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY sales_rep_affiliate_credits_affiliate_uq (affiliateId), KEY sales_rep_affiliate_credits_rep_idx (salesRepApplicationId));
@@ -41,3 +41,6 @@ INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText
 
 -- 11. Which approved rep is credited for an affiliate. The flat fee is written only after the membership payment.
 CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT NULL PRIMARY KEY, salesRepApplicationId INT NOT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+
+-- 12. Merchandise subtotal in cents for the sales-rep residual. Null means the order has no stored material subtotal. Do not fill it from totalAmount.
+ALTER TABLE cabinet_dealz.order_requests ADD COLUMN materialSubtotalCents INT NULL;

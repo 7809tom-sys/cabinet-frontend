@@ -48,6 +48,7 @@ export type AffiliateSaleCommission = {
   residualBase: string;
   status: string;
   earnedAt: string;
+  flagReason?: string | null;
 };
 
 type Query<T> = {

@@ -1,7 +1,7 @@
 From d116c7de626d635a7dbf159f1bcaf43fec39d2cd Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Wed, 11 Nov 2026 15:51:26 +0000
-Subject: [PATCH 1/2] Record affiliate membership checkout, rep commissions,
+Subject: [PATCH 1/3] Record affiliate membership checkout, rep commissions,
  and legal page versions.
 
 Membership checkout stays in Stripe test mode. A monthly cancel before the three-month commitment is pushed to the commitment date so the remaining months still bill. Commission rates are admin settings and are copied onto each earned commission. Legal pages keep a version history.
@@ -1804,7 +1804,7 @@ index 0000000..6e19417
 From 1d3155b6995ac84953f5de3d8bc27a3d421bd08b Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Wed, 11 Nov 2026 16:11:20 +0000
-Subject: [PATCH 2/2] Set Florida law and Sarasota County venue on the
+Subject: [PATCH 2/3] Set Florida law and Sarasota County venue on the
  agreement drafts.
 
 Both documents stay marked as drafts for attorney review. The county is the one already named in the site Terms.
@@ -1838,6 +1838,432 @@ index 75811d7..bddd7aa 100644
 +    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
    ].join("\n");
  }
+-- 
+2.43.0
+
+
+From 299b6a2cac841260531beaf89976fc2e75d1559f Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 16:14:08 +0000
+Subject: [PATCH 3/3] Limit the sales-rep residual to material sales.
+
+The 0.5 percent is calculated on the merchandise subtotal of a confirmed order. Freight, shipping, tax, fees, and affiliate-only cost fees are excluded. An order with no stored or line-item material subtotal is flagged instead of using the order total. The $400 flat fee is unchanged.
+---
+ ...278_affiliate_membership_checkout.tidb.sql |   5 +-
+ server/lib/membershipProgramStore.ts          |  53 +++++--
+ server/routers/orders.ts                      |  14 ++
+ server/routers/salesRepProgram.ts             |   1 +
+ shared/affiliateAgreement.ts                  |   2 +-
+ shared/salesRepAgreement.ts                   |   2 +-
+ shared/salesRepCommission.ts                  | 149 ++++++++++++++----
+ 7 files changed, 180 insertions(+), 46 deletions(-)
+
+diff --git a/docs/sql/0278_affiliate_membership_checkout.tidb.sql b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+index 319978a..b00ed13 100644
+--- a/docs/sql/0278_affiliate_membership_checkout.tidb.sql
++++ b/docs/sql/0278_affiliate_membership_checkout.tidb.sql
+@@ -16,7 +16,7 @@ CREATE TABLE cabinet_dealz.sales_rep_applications (id INT NOT NULL AUTO_INCREMEN
+ CREATE TABLE cabinet_dealz.sales_rep_commission_settings (id INT NOT NULL PRIMARY KEY, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, repFeeCents INT NULL, repFeeCheckoutEnabled TINYINT(1) NOT NULL DEFAULT 0, updatedByUserId INT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
+ 
+ -- 3
+-INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_order_gross', NULL, 0);
++INSERT INTO cabinet_dealz.sales_rep_commission_settings (id, flatFeeCents, residualRateBps, residualBase, repFeeCents, repFeeCheckoutEnabled) VALUES (1, 40000, 50, 'confirmed_material_subtotal', NULL, 0);
+ 
+ -- 4
+ CREATE TABLE cabinet_dealz.sales_rep_affiliate_credits (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, salesRepApplicationId INT NOT NULL, affiliateId INT NOT NULL, paymentRef VARCHAR(255) NULL, flatFeeCents INT NOT NULL, residualRateBps INT NOT NULL, residualBase VARCHAR(64) NOT NULL, capturedAt DATETIME NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE KEY sales_rep_affiliate_credits_affiliate_uq (affiliateId), KEY sales_rep_affiliate_credits_rep_idx (salesRepApplicationId));
+@@ -41,3 +41,6 @@ INSERT INTO cabinet_dealz.legal_page_versions (slotId, version, source, bodyText
+ 
+ -- 11. Which approved rep is credited for an affiliate. The flat fee is written only after the membership payment.
+ CREATE TABLE cabinet_dealz.sales_rep_affiliate_assignments (affiliateId INT NOT NULL PRIMARY KEY, salesRepApplicationId INT NOT NULL, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP);
++
++-- 12. Merchandise subtotal in cents for the sales-rep residual. Null means the order has no stored material subtotal. Do not fill it from totalAmount.
++ALTER TABLE cabinet_dealz.order_requests ADD COLUMN materialSubtotalCents INT NULL;
+diff --git a/server/lib/membershipProgramStore.ts b/server/lib/membershipProgramStore.ts
+index 11801aa..18fb13c 100644
+--- a/server/lib/membershipProgramStore.ts
++++ b/server/lib/membershipProgramStore.ts
+@@ -4,7 +4,7 @@ import {
+   defaultCommissionSettings,
+   residualLines,
+   snapshotRates,
+-  type ConfirmedOrder,
++  type MaterialSalesOrder,
+   type SalesRepCommissionSettings,
+ } from "@shared/salesRepCommission";
+ import { LEGAL_PAGE_SEED_SLOTS, type LegalSheet } from "@shared/legalPages";
+@@ -52,7 +52,7 @@ export function settingsFromRow(row: Record<string, unknown> | undefined): Sales
+   return {
+     flatFeeUsd: (nullableNumber(row.flatFeeCents) ?? 40000) / 100,
+     residualRate: (nullableNumber(row.residualRateBps) ?? 50) / 10000,
+-    residualBase: "confirmed_order_gross",
++    residualBase: "confirmed_material_subtotal",
+     repFeeUsd: repFeeCents == null ? null : repFeeCents / 100,
+     repFeeCheckoutEnabled: Number(row.repFeeCheckoutEnabled) === 1 && repFeeCents != null && repFeeCents > 0,
+   };
+@@ -185,6 +185,30 @@ export async function recordFlatCommission(db: Database, input: {
+   `);
+ }
+ 
++function parseLineItems(value: unknown): MaterialSalesOrder["lineItems"] {
++  const parsed = typeof value === "string" ? safeJson(value) : value;
++  if (!Array.isArray(parsed)) return null;
++  return parsed.filter((line) => line && typeof line === "object") as MaterialSalesOrder["lineItems"];
++}
++
++function safeJson(value: string): unknown {
++  try {
++    return JSON.parse(value);
++  } catch {
++    return null;
++  }
++}
++
++async function confirmedMaterialOrders(db: Database, affiliateId: number): Promise<Record<string, unknown>[]> {
++  try {
++    return await run(db, sql`SELECT id, status, lineItems, totalAmount, materialSubtotalCents FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
++  } catch (error) {
++    const message = error instanceof Error ? error.message : String(error);
++    if (!/unknown column|materialSubtotalCents/i.test(message)) throw error;
++    return run(db, sql`SELECT id, status, lineItems, totalAmount FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
++  }
++}
++
+ export async function listAffiliateSaleCommissions(db: Database): Promise<Record<string, unknown>[]> {
+   const credits = await run(db, sql`
+     SELECT c.salesRepApplicationId, c.affiliateId, c.flatFeeCents, c.residualRateBps, c.residualBase, c.capturedAt,
+@@ -205,34 +229,39 @@ export async function listAffiliateSaleCommissions(db: Database): Promise<Record
+   const residualRows: Record<string, unknown>[] = [];
+   for (const credit of credits) {
+     const affiliateId = Number(credit.affiliateId);
+-    const orders = await run(db, sql`SELECT id, totalAmount, status FROM cabinet_dealz.order_requests WHERE affiliateId = ${affiliateId} AND status = 'confirmed'`);
+-    const confirmed: ConfirmedOrder[] = orders.map((order) => ({
++    const orders = await confirmedMaterialOrders(db, affiliateId);
++    const confirmed: MaterialSalesOrder[] = orders.map((order) => ({
+       id: Number(order.id),
+-      totalAmount: order.totalAmount == null ? null : Number(order.totalAmount),
+       status: text(order.status),
++      materialSubtotalCents: order.materialSubtotalCents == null ? null : Number(order.materialSubtotalCents),
++      lineItems: parseLineItems(order.lineItems),
++      totalAmount: order.totalAmount == null ? null : Number(order.totalAmount),
+     }));
+-    const lines = residualLines(confirmed, {
++    const computed = residualLines(confirmed, {
+       flatFeeCents: Number(credit.flatFeeCents),
+       residualRateBps: Number(credit.residualRateBps),
+-      residualBase: "confirmed_order_gross",
++      residualBase: "confirmed_material_subtotal",
+       capturedAt: text(credit.capturedAt),
+     });
+-    lines.forEach((line, index) => {
++    const pushResidual = (index: number, amountCents: number, flagReason: string | null) => {
+       residualRows.push({
+         id: Number(`${affiliateId}${index + 1}`),
+         salesRepApplicationId: Number(credit.salesRepApplicationId),
+         affiliateId,
+         kind: "residual",
+-        amountCents: line.amountCents,
++        amountCents,
+         flatFeeCents: Number(credit.flatFeeCents),
+-        residualRateBps: line.residualRateBps,
+-        residualBase: line.residualBase,
++        residualRateBps: Number(credit.residualRateBps),
++        residualBase: "confirmed_material_subtotal",
++        flagReason,
+         status: "pending",
+         earnedAt: text(credit.capturedAt),
+         repName: text(credit.repName),
+         affiliateName: text(credit.affiliateName),
+       });
+-    });
++    };
++    computed.lines.forEach((line, index) => pushResidual(index, line.amountCents, null));
++    computed.flagged.forEach((line, index) => pushResidual(computed.lines.length + index, 0, line.reason));
+   }
+   return [...entries, ...residualRows];
+ }
+diff --git a/server/routers/orders.ts b/server/routers/orders.ts
+index b5e6812..6e50291 100644
+--- a/server/routers/orders.ts
++++ b/server/routers/orders.ts
+@@ -23,6 +23,7 @@ import {
+   type OrderLineItem,
+ } from "../../drizzle/schema";
+ import { normalizeReferralCode } from "@shared/affiliate";
++import { resolveMaterialSubtotal } from "@shared/salesRepCommission";
+ import { NO_DISTRIBUTOR_SKU_MAPPED, resolveDistributorPoLine } from "@shared/distributorPoLine";
+ import { fetchDistributorPoCatalog } from "../lib/distributorPoCatalog";
+ import { resolveLineDistributorId } from "../lib/distributorOrderEmail";
+@@ -1334,6 +1335,19 @@ export const ordersRouter = router({
+         taxAmount: calculatedTax ? String(calculatedTax.taxAmount.toFixed(2)) : null,
+       });
+       const insertId = (result as unknown as [{ insertId: number }])[0].insertId;
++      const materialSubtotal = resolveMaterialSubtotal({
++        id: insertId,
++        status: input.submit ? "submitted" : "draft",
++        lineItems: persistedLines,
++      });
++      if (materialSubtotal.ok) {
++        try {
++          await db.execute(sql`UPDATE cabinet_dealz.order_requests SET materialSubtotalCents = ${materialSubtotal.materialSubtotalCents} WHERE id = ${insertId}`);
++        } catch (error) {
++          const message = error instanceof Error ? error.message : String(error);
++          if (!/unknown column|materialSubtotalCents/i.test(message)) throw error;
++        }
++      }
+       await persistOrderCostSnapshot(db, insertId, persistedLines, {
+         carrier: shippingCarrier,
+         service: shippingService,
+diff --git a/server/routers/salesRepProgram.ts b/server/routers/salesRepProgram.ts
+index 2660072..dfdc4a1 100644
+--- a/server/routers/salesRepProgram.ts
++++ b/server/routers/salesRepProgram.ts
+@@ -164,6 +164,7 @@ export const salesRepProgramRouter = router({
+         flatFeeCents: Number(row.flatFeeCents),
+         residualRateBps: Number(row.residualRateBps),
+         residualBase: String(row.residualBase),
++        flagReason: row.flagReason == null ? null : String(row.flagReason),
+         status: String(row.status),
+         earnedAt: row.earnedAt instanceof Date ? row.earnedAt.toISOString() : String(row.earnedAt ?? ""),
+       }));
+diff --git a/shared/affiliateAgreement.ts b/shared/affiliateAgreement.ts
+index 54d6bcb..b6cf732 100644
+--- a/shared/affiliateAgreement.ts
++++ b/shared/affiliateAgreement.ts
+@@ -34,7 +34,7 @@ export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMEN
+     `The monthly amount is $${AFFILIATE_MEMBERSHIP.monthlyPriceUsd} per month. It is billed every month. The first ${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months are a minimum. A cancel before those ${AFFILIATE_MEMBERSHIP.monthlyMinimumMonths} paid months is blocked in your account, and if billing is stopped early in Stripe the remaining months of the minimum are still billed through the commitment date. After the minimum, you may cancel and billing stops at the end of the month already paid.`,
+     "",
+     "4. Sales rep credit",
+-    "If you select an approved sales rep when you pay, that rep is credited with selling your affiliate account. The rep's flat fee and residual are the amounts Cabinet Dealz has saved in its commission settings at the time you pay. That saved rate stays on your account. A later change to the settings does not rewrite it.",
++    "If you select an approved sales rep when you pay, that rep is credited with selling your affiliate account. The rep's flat fee and residual are the amounts Cabinet Dealz has saved in its commission settings at the time you pay. That saved rate stays on your account. A later change to the settings does not rewrite it. The residual is on material sales only: the merchandise subtotal of your confirmed orders. It does not include freight, shipping, tax, fees, or affiliate-only cost fees. An order with no separate material subtotal is flagged, and no residual is calculated for it.",
+     "",
+     "5. Brand and storefront",
+     "Cabinet Dealz lets you use a storefront under your own name, and the Cabinet Dealz name only as this program describes. You may not copy the software, present yourself as Cabinet Dealz, or promise terms Cabinet Dealz did not approve.",
+diff --git a/shared/salesRepAgreement.ts b/shared/salesRepAgreement.ts
+index bddd7aa..6309160 100644
+--- a/shared/salesRepAgreement.ts
++++ b/shared/salesRepAgreement.ts
+@@ -18,7 +18,7 @@ export function buildSalesRepAgreementText(): string {
+     "",
+     "2. What you are paid",
+     "When you sell an affiliate account, you earn the flat fee and the residual rate saved in Cabinet Dealz commission settings at the time that account pays. Those amounts are copied onto the commission. A later settings change does not rewrite commissions already earned.",
+-    "The residual is a percent of that affiliate's confirmed order sales for as long as the account remains a customer. Confirmed order sales are the same gross used for affiliate commissions: orders whose status is confirmed.",
++    "The residual applies only to material sales on that affiliate's confirmed orders, for as long as the account remains a customer. Material sales means the merchandise subtotal. Freight, shipping, tax, fees, and affiliate-only cost fees are not included. If an order has no separate material subtotal, that order is flagged and no residual is calculated for it.",
+     "",
+     "3. Signup fee",
+     "TODO: Tom has not set a sales rep signup fee. There is no fee checkout until an admin enters an amount and turns the checkout on.",
+diff --git a/shared/salesRepCommission.ts b/shared/salesRepCommission.ts
+index 6e19417..be0e578 100644
+--- a/shared/salesRepCommission.ts
++++ b/shared/salesRepCommission.ts
+@@ -3,20 +3,19 @@
+ // use the settings row an admin saved, then copy that row onto the commission
+ // so a later edit does not rewrite commissions already earned.
+ //
+-// Residual base: "confirmed_order_gross" means the same gross as
+-// sumCommission in shared/affiliate.ts — the sum of totalAmount on orders
+-// whose status is "confirmed". Other order statuses are not sales.
+-
+-import { sumCommission } from "./affiliate";
++// Residual base: "confirmed_material_subtotal" is the merchandise subtotal of
++// confirmed orders. Freight, shipping, tax, fees, and affiliate-only cost fees
++// are not included. Affiliate commission gross (sumCommission / totalAmount)
++// is a different number and is not this base.
+ 
+ export const SALES_REP_COMMISSION_DEFAULTS = {
+   flatFeeUsd: 400,
+   /** 0.5% as a fraction, matching computeCommission's rate argument. */
+   residualRate: 0.005,
+-  residualBase: "confirmed_order_gross" as const,
++  residualBase: "confirmed_material_subtotal" as const,
+ };
+ 
+-export const RESIDUAL_BASES = ["confirmed_order_gross"] as const;
++export const RESIDUAL_BASES = ["confirmed_material_subtotal"] as const;
+ export type ResidualBase = (typeof RESIDUAL_BASES)[number];
+ 
+ export type SalesRepCommissionSettings = {
+@@ -48,15 +47,17 @@ export function normalizeCommissionSettings(
+ ): { ok: true; settings: SalesRepCommissionSettings } | { ok: false; message: string } {
+   const flatFeeUsd = numberOr(raw?.flatFeeUsd, SALES_REP_COMMISSION_DEFAULTS.flatFeeUsd);
+   const residualRate = numberOr(raw?.residualRate, SALES_REP_COMMISSION_DEFAULTS.residualRate);
+-  const residualBase = raw?.residualBase ?? SALES_REP_COMMISSION_DEFAULTS.residualBase;
++  const residualBase = (raw as { residualBase?: string } | null | undefined)?.residualBase
++    ?? SALES_REP_COMMISSION_DEFAULTS.residualBase;
+   if (!Number.isFinite(flatFeeUsd) || flatFeeUsd < 0) {
+     return { ok: false, message: "The flat fee must be zero or a positive number of dollars." };
+   }
+   if (!Number.isFinite(residualRate) || residualRate < 0 || residualRate > 1) {
+     return { ok: false, message: "The residual rate must be between 0 and 1 (0.5% is 0.005)." };
+   }
+-  if (!(RESIDUAL_BASES as readonly string[]).includes(residualBase)) {
+-    return { ok: false, message: "The residual base must be confirmed order sales." };
++  const base = residualBase === "confirmed_order_gross" ? "confirmed_material_subtotal" : residualBase;
++  if (!(RESIDUAL_BASES as readonly string[]).includes(base)) {
++    return { ok: false, message: "The residual base must be confirmed material sales." };
+   }
+   const repFeeUsd = raw?.repFeeUsd == null || raw.repFeeUsd === ("" as unknown) ? null : Number(raw.repFeeUsd);
+   if (repFeeUsd != null && (!Number.isFinite(repFeeUsd) || repFeeUsd <= 0)) {
+@@ -67,7 +68,7 @@ export function normalizeCommissionSettings(
+     settings: {
+       flatFeeUsd: roundDollars(flatFeeUsd),
+       residualRate,
+-      residualBase,
++      residualBase: base as ResidualBase,
+       repFeeUsd: repFeeUsd == null ? null : roundDollars(repFeeUsd),
+       repFeeCheckoutEnabled: raw?.repFeeCheckoutEnabled === true && repFeeUsd != null && repFeeUsd > 0,
+     },
+@@ -91,45 +92,131 @@ export function snapshotRates(settings: SalesRepCommissionSettings, capturedAt:
+   };
+ }
+ 
+-export type ConfirmedOrder = { id: number | string; totalAmount: number | null; status: string };
++export type MaterialOrderLine = {
++  linePrice?: number | string | null;
++  unitPrice?: number | string | null;
++  qty?: number | null;
++  productKind?: string | null;
++  description?: string | null;
++};
++
++export type MaterialSalesOrder = {
++  id: number | string;
++  status: string;
++  /** Stored merchandise subtotal in cents, when the order has that column. */
++  materialSubtotalCents?: number | null;
++  lineItems?: MaterialOrderLine[] | null;
++  /** Present on older rows. Never used as the residual base. */
++  totalAmount?: number | null;
++};
++
++export type MaterialSubtotal =
++  | { ok: true; materialSubtotalCents: number; source: "stored" | "line_items" }
++  | { ok: false; reason: "material_subtotal_missing" };
+ 
+ export type ResidualLine = {
+   orderKey: string;
+   amountCents: number;
+-  grossCents: number;
++  materialSubtotalCents: number;
+   residualRateBps: number;
+   residualBase: ResidualBase;
++  flagged: false;
+ };
+ 
++export type FlaggedResidual = {
++  orderKey: string;
++  reason: "material_subtotal_missing";
++  flagged: true;
++};
++
++export type ResidualComputation = {
++  lines: ResidualLine[];
++  flagged: FlaggedResidual[];
++};
++
++const NON_MATERIAL_KINDS = new Set(["freight", "shipping", "tax", "fee", "damage_fee", "tech_fee", "card_fee"]);
++
++function isNonMaterialLine(line: MaterialOrderLine): boolean {
++  const kind = (line.productKind ?? "").trim().toLowerCase();
++  if (NON_MATERIAL_KINDS.has(kind)) return true;
++  const description = (line.description ?? "").toLowerCase();
++  return /\b(freight|shipping|sales tax|damage fee|tech fee|card fee)\b/.test(description);
++}
++
++function dollarsToCents(value: number | string | null | undefined): number | null {
++  if (value == null || value === "") return null;
++  const amount = typeof value === "number" ? value : Number(String(value).trim());
++  if (!Number.isFinite(amount)) return null;
++  return Math.round(amount * 100);
++}
++
++function lineMerchandiseCents(line: MaterialOrderLine): number | null {
++  const fromLine = dollarsToCents(line.linePrice);
++  if (fromLine != null) return fromLine;
++  const unit = dollarsToCents(line.unitPrice);
++  if (unit == null) return null;
++  const qty = line.qty ?? 1;
++  if (!Number.isFinite(qty)) return null;
++  return unit * Math.max(0, Math.round(qty));
++}
++
++/**
++ * Merchandise subtotal for one order. A stored materialSubtotalCents wins.
++ * Otherwise the merchandise lines are summed. Freight, shipping, tax, and fee
++ * lines are left out. totalAmount is never used: if neither the stored
++ * subtotal nor a complete set of merchandise lines is present, the order is
++ * flagged instead of guessed.
++ */
++export function resolveMaterialSubtotal(order: MaterialSalesOrder): MaterialSubtotal {
++  const stored = order.materialSubtotalCents;
++  if (typeof stored === "number" && Number.isFinite(stored) && stored >= 0) {
++    return { ok: true, materialSubtotalCents: Math.round(stored), source: "stored" };
++  }
++  const lines = order.lineItems;
++  if (!lines || lines.length === 0) return { ok: false, reason: "material_subtotal_missing" };
++  const materialLines = lines.filter((line) => !isNonMaterialLine(line));
++  if (materialLines.length === 0) return { ok: false, reason: "material_subtotal_missing" };
++  let sum = 0;
++  for (const line of materialLines) {
++    const cents = lineMerchandiseCents(line);
++    if (cents == null) return { ok: false, reason: "material_subtotal_missing" };
++    sum += cents;
++  }
++  return { ok: true, materialSubtotalCents: sum, source: "line_items" };
++}
++
+ /**
+- * Residual on one affiliate's orders using the rate saved when the rep sold
+- * the account. Gross matches sumCommission: confirmed orders only.
++ * Residual on material sales only, using the rate saved when the rep sold
++ * the account. Orders that are not confirmed are ignored. Confirmed orders
++ * with no material subtotal are flagged and pay nothing.
+  */
+-export function residualLines(orders: ConfirmedOrder[], snapshot: RateSnapshot): ResidualLine[] {
+-  if (snapshot.residualBase !== "confirmed_order_gross") return [];
+-  if (snapshot.residualRateBps <= 0) return [];
++export function residualLines(orders: MaterialSalesOrder[], snapshot: RateSnapshot): ResidualComputation {
+   const lines: ResidualLine[] = [];
++  const flagged: FlaggedResidual[] = [];
++  const base = snapshot.residualBase === "confirmed_material_subtotal"
++    || (snapshot.residualBase as string) === "confirmed_order_gross";
++  if (!base || snapshot.residualRateBps <= 0) return { lines, flagged };
+   for (const order of orders) {
+     if (order.status !== "confirmed") continue;
+-    const gross = Number(order.totalAmount ?? 0);
+-    if (!Number.isFinite(gross) || gross <= 0) continue;
+-    const grossCents = Math.round(gross * 100);
+-    const amountCents = Math.round((grossCents * snapshot.residualRateBps) / 10000);
++    const material = resolveMaterialSubtotal(order);
++    const orderKey = `residual:order:${order.id}`;
++    if (!material.ok) {
++      flagged.push({ orderKey, reason: material.reason, flagged: true });
++      continue;
++    }
++    if (material.materialSubtotalCents <= 0) continue;
++    const amountCents = Math.round((material.materialSubtotalCents * snapshot.residualRateBps) / 10000);
+     if (amountCents <= 0) continue;
+     lines.push({
+-      orderKey: `residual:order:${order.id}`,
++      orderKey,
+       amountCents,
+-      grossCents,
++      materialSubtotalCents: material.materialSubtotalCents,
+       residualRateBps: snapshot.residualRateBps,
+-      residualBase: snapshot.residualBase,
++      residualBase: "confirmed_material_subtotal",
++      flagged: false,
+     });
+   }
+-  return lines;
+-}
+-
+-/** Same gross figure sumCommission reports, so the residual base is not a second definition. */
+-export function confirmedOrderGross(orders: { totalAmount: number | null; status: string }[]): number {
+-  return sumCommission(orders, 0).gross;
++  return { lines, flagged };
+ }
+ 
+ export function repFeeCheckoutAvailable(settings: SalesRepCommissionSettings): boolean {
 -- 
 2.43.0
 
