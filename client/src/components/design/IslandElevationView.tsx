@@ -325,18 +325,30 @@ export function IslandHardwareOverlay({
     const standardTopDrawerRow = drawers > 0 && !isWall && bandStart === 0;
     const regionTop = standardTopDrawerRow ? STANDARD_BASE_DRAWER_ROW_PCT : bandStart;
     const regionHeight = standardTopDrawerRow ? 100 - STANDARD_BASE_DRAWER_ROW_PCT : 100 - bandStart;
-    const verticalAnchor = raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
     const resolvedFaceHeight = Number(faceHeightIn);
+    // Same reach rule as the wall elevation: a full-height tall door does not
+    // keep its pull on the top rail just because it stands on the floor.
+    const tallFullHeightReach = !isWall && raisedDoorPullOnRail
+      && Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight >= 60
+      && regionHeight >= 80;
+    const verticalAnchor = tallFullHeightReach
+      ? "reach" as const
+      : raisedDoorPullOnRail
+        ? "top" as const
+        : isWall
+          ? "bottom" as const
+          : "top" as const;
     const inchPlacedTop = Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight > 0 && regionHeight > 0
       ? regionTop + regionHeight / 2 - (doorPullCenterOffsetFromFaceCenterIn({
         faceHeightIn: resolvedFaceHeight * regionHeight / 100,
         pullLengthIn: resolvedFaceHeight * 0.28,
         anchor: verticalAnchor,
+        doorCenterFloorIn: tallFullHeightReach ? resolvedFaceHeight / 2 : undefined,
       }) / resolvedFaceHeight) * 100
       : null;
     const edgeFraction = normalizedDoorPosition === "top-center" && !raisedDoorPullOnRail
       ? 0.13
-      : verticalAnchor === "bottom" ? 0.82 : raisedDoorPullOnRail ? 0.13 : 0.18;
+      : verticalAnchor === "bottom" ? 0.82 : verticalAnchor === "reach" ? 0.53 : raisedDoorPullOnRail ? 0.13 : 0.18;
     const topPct = inchPlacedTop ?? regionTop + regionHeight * edgeFraction;
     const visibleDoorPieces = normalizedDoorPosition === "paired" || (normalizedDoorPosition === "auto" && doors > 1)
       ? Math.min(doors, 2)

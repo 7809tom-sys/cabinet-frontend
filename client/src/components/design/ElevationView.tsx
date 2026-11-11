@@ -2435,15 +2435,30 @@ export function HardwareOverlay({
     const topRailCenterPct = Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight > 0
       ? (resolvedRail > 0 ? resolvedRail : 3) / 2 / (resolvedCabinetHeight * (doorHeightPct / 100)) * doorHeightPct
       : doorHeightPct * 0.06;
-    const verticalAnchor = pantryLayout ? "bottom" as const : raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
+    // A floor-seated wall cabinet is short, so "raised" means the top rail.
+    // A full-height tall door is not: the same flag used to pin its pull near
+    // the ceiling. That pull belongs at a 42" reach, matching the 3D view.
+    const tallFullHeightReach = !pantryLayout && !isWall && raisedDoorPullOnRail
+      && Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight >= 60
+      && doorHeightPct >= 80;
+    const verticalAnchor = pantryLayout
+      ? "bottom" as const
+      : tallFullHeightReach
+        ? "reach" as const
+        : raisedDoorPullOnRail
+          ? "top" as const
+          : isWall
+            ? "bottom" as const
+            : "top" as const;
     const inchPlacedTop = Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight > 0 && doorHeightPct > 0
       ? doorBandTop + doorHeightPct / 2 - (doorPullCenterOffsetFromFaceCenterIn({
         faceHeightIn: resolvedCabinetHeight * doorHeightPct / 100,
         pullLengthIn: resolvedCabinetHeight * verticalDoorPullHeightPct / 100,
         anchor: verticalAnchor,
+        doorCenterFloorIn: tallFullHeightReach ? resolvedCabinetHeight / 2 : undefined,
       }) / resolvedCabinetHeight) * 100
       : null;
-    const fallbackFraction = verticalAnchor === "bottom" ? 0.82 : raisedDoorPullOnRail ? 0.13 : 0.18;
+    const fallbackFraction = verticalAnchor === "bottom" ? 0.82 : verticalAnchor === "reach" ? 0.53 : raisedDoorPullOnRail ? 0.13 : 0.18;
     const requestedDoorTop = normalizedDoorPosition === "top-center" && !raisedDoorPullOnRail
       ? doorBandTop + topRailCenterPct
       : inchPlacedTop ?? doorBandTop + doorHeightPct * fallbackFraction;
