@@ -11620,6 +11620,10 @@ function addPelicanBathroomFixture(
     const wetWallHeight = surroundPanel?.heightIn ?? (furniture.mountHeightIn ?? 0) + profile.heightIn;
     const wetWallFinish = showerSurroundFinish(surroundPanel?.pelicanCode ?? profile.pelicanCode);
     const wetWallTexture = showerSurroundTexture(wetWallFinish);
+    // FRONT side only. A double-sided slab draws its inner face too, and when the
+    // camera is outside, that inner face sits behind the valve — so the valve was
+    // painted over the wall. The slab is a solid box, so its outward faces already
+    // cover every outside angle without rendering the inside.
     const wetWallPanel = new THREE.MeshPhysicalMaterial({
       color: wetWallTexture ? "#ffffff" : wetWallFinish.color,
       map: wetWallTexture,
@@ -11627,7 +11631,7 @@ function addPelicanBathroomFixture(
       metalness: 0,
       clearcoat: wetWallFinish.clearcoat,
       clearcoatRoughness: 0.3,
-      side: THREE.DoubleSide,
+      side: THREE.FrontSide,
     });
     for (const { mesh, part } of makeShowerWetWallParts(profile, {
       shell: shell,
@@ -13885,9 +13889,6 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    sceneRef.current = threeScene;
 	    cameraRef.current = camera;
 	    setCameraReadyKey((current) => current + 1);
-	    // LOCAL ONLY (uncommitted)
-	    (window as any).__cdScene = { root: catalogRoot, camera, controlsRef, THREE };
-
 
 	    let frame = 0;
 	    let readyFrame = 0;
