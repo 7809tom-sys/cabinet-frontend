@@ -237,10 +237,62 @@ export function makeShowerPanParts(
  * far), and the open front is the -Z long face where the door goes. Nothing here
  * occupies floor.
  */
+/**
+ * Emit a rectangle with a rectangular hole cut out of it.
+ *
+ * `emit(u0, u1, v0, v1)` is called once per surrounding strip. With no hole it is
+ * called once for the whole rect, so callers can pass `undefined` freely.
+ */
+function rectWithHole(
+  u0: number,
+  u1: number,
+  v0: number,
+  v1: number,
+  hole: { u0: number; u1: number; v0: number; v1: number } | null | undefined,
+  emit: (a0: number, a1: number, b0: number, b1: number) => void,
+): void {
+  if (!hole) {
+    emit(u0, u1, v0, v1);
+    return;
+  }
+  // A hole that misses the panel entirely must not delete the panel.
+  if (hole.u1 <= u0 || hole.u0 >= u1 || hole.v1 <= v0 || hole.v0 >= v1) {
+    emit(u0, u1, v0, v1);
+    return;
+  }
+  const hu0 = Math.max(u0, hole.u0);
+  const hu1 = Math.min(u1, hole.u1);
+  const hv0 = Math.max(v0, hole.v0);
+  const hv1 = Math.min(v1, hole.v1);
+  if (hv0 > v0) emit(u0, u1, v0, hv0);      // below the hole
+  if (hv1 < v1) emit(u0, u1, hv1, v1);      // above it
+  if (hu0 > u0) emit(u0, hu0, hv0, hv1);    // to its left
+  if (hu1 < u1) emit(hu1, u1, hv0, hv1);    // to its right
+}
+
 export function makeShowerSurroundParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
-  options: { baseHeightIn?: number } = {},
+  options: {
+    baseHeightIn?: number;
+    /**
+     * A hole to cut through the panel the niche is mounted on.
+     *
+     * Without it the panel is a solid sheet and the niche sits BEHIND it: from
+     * inside the shower you look at wall, not into a recess. The niche is only
+     * visible once the panel actually has an opening at its face.
+     *
+     * `side` is the panel to cut ("back" | "left" | "right"); the rectangle is in
+     * that panel's own plane, in inches above the base.
+     */
+    opening?: {
+      side: "back" | "left" | "right";
+      centreAlongIn: number;   // along the panel, from its start
+      widthIn: number;
+      bottomIn: number;
+      heightIn: number;
+    } | null;
+  } = {},
 ): ShowerPart[] {
   const W = profile.widthIn * INCH;
   const D = profile.depthIn * INCH;
@@ -262,10 +314,20 @@ export function makeShowerSurroundParts(
   // ---- Back panel: the +Z long side, spanning the full alcove width ----------
   {
     const p = new Panel();
-    p.quad([
-      v(-halfW, base, halfD - t), v(halfW, base, halfD - t),
-      v(halfW, top, halfD - t), v(-halfW, top, halfD - t),
-    ], v(0, 0, -1));
+    const opening = options.opening?.side === "back" ? options.opening : null;
+    const hole = opening
+      ? {
+        u0: -halfW + (opening.centreAlongIn - opening.widthIn / 2) * INCH,
+        u1: -halfW + (opening.centreAlongIn + opening.widthIn / 2) * INCH,
+        v0: base + opening.bottomIn * INCH,
+        v1: base + (opening.bottomIn + opening.heightIn) * INCH,
+      }
+      : null;
+    // Inner face, with the niche's opening cut out of it.
+    rectWithHole(-halfW, halfW, base, top, hole, (u0, u1, v0, v1) => {
+      p.quad([v(u0, v0, halfD - t), v(u1, v0, halfD - t), v(u1, v1, halfD - t), v(u0, v1, halfD - t)], v(0, 0, -1));
+    });
+    // Outer face: solid. The wet wall behind covers the hole from outside.
     p.quad([
       v(-halfW, base, halfD), v(halfW, base, halfD),
       v(halfW, top, halfD), v(-halfW, top, halfD),
@@ -284,10 +346,21 @@ export function makeShowerSurroundParts(
     const xInner = side * (halfW - t);
     // Inner face (toward the shower), outer face, top edge, and the cut edge at
     // the open front.
-    p.quad([
-      v(xInner, base, -halfD), v(xInner, base, halfD - t),
-      v(xInner, top, halfD - t), v(xInner, top, -halfD),
-    ], v(-side, 0, 0));
+    // Inner face, with the niche's opening cut out when the niche is on this end.
+    const sideName = side < 0 ? "left" : "right";
+    const opening = options.opening?.side === sideName ? options.opening : null;
+    const hole = opening
+      ? {
+        // Along the panel is plan Z; the opening is measured from the front (-halfD).
+        u0: -halfD + (opening.centreAlongIn - opening.widthIn / 2) * INCH,
+        u1: -halfD + (opening.centreAlongIn + opening.widthIn / 2) * INCH,
+        v0: base + opening.bottomIn * INCH,
+        v1: base + (opening.bottomIn + opening.heightIn) * INCH,
+      }
+      : null;
+    rectWithHole(-halfD, halfD - t, base, top, hole, (u0, u1, v0, v1) => {
+      p.quad([v(xInner, v0, u0), v(xInner, v0, u1), v(xInner, v1, u1), v(xInner, v1, u0)], v(-side, 0, 0));
+    });
     p.quad([
       v(xOuter, base, -halfD), v(xOuter, base, halfD - t),
       v(xOuter, top, halfD - t), v(xOuter, top, -halfD),

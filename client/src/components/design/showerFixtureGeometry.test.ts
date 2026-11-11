@@ -653,3 +653,74 @@ describe("the wet wall finishes behind the niche, so the outside is never see-th
     expect(body.mesh.geometry.boundingBox!.max.z / IN).toBeCloseTo(niche.depthIn, 0);
   });
 });
+
+/**
+ * Regression: the niche was invisible from inside the shower.
+ *
+ * The surround panel was a solid sheet, so the niche sat BEHIND it — from inside
+ * you looked at wall, not into a recess. No amount of correct niche geometry helps
+ * if the panel covering it has no hole. The panel now has a real opening at the
+ * niche's rectangle, cut through its inner face on whichever panel the niche is on.
+ */
+describe("the panel has an opening at the niche's rectangle", () => {
+  const IN2 = 1 / 12;
+
+  /** Total area of the inner face's triangles, in square inches. */
+  const innerFaceArea = (parts: ReturnType<typeof makeShowerSurroundParts>, name: string): number => {
+    const mesh = parts.find((entry) => entry.part === name)!.mesh;
+    const position = mesh.geometry.getAttribute("position");
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+    const pos = geometry.getAttribute("position");
+    let area = 0;
+    for (let i = 0; i < pos.count; i += 3) {
+      const a = new THREE.Vector3().fromBufferAttribute(pos, i);
+      const b = new THREE.Vector3().fromBufferAttribute(pos, i + 1);
+      const c = new THREE.Vector3().fromBufferAttribute(pos, i + 2);
+      area += b.clone().sub(a).cross(c.clone().sub(a)).length() / 2;
+    }
+    void position;
+    return (area / (IN2 * IN2));
+  };
+
+  for (const side of ["back", "left", "right"] as const) {
+    it(`cuts a ${side}-panel opening and leaves the other panels whole`, () => {
+      const panel = verifiedPelicanBathroomFixtureProfile("PL-603096 Brick")!;
+      const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1639")!;
+
+      const solid = makeShowerSurroundParts(panel, materials);
+      const cut = makeShowerSurroundParts(panel, materials, {
+        opening: {
+          side,
+          centreAlongIn: (side === "back" ? panel.widthIn : panel.depthIn) / 2,
+          widthIn: niche.widthIn,
+          bottomIn: 44,
+          heightIn: niche.heightIn,
+        },
+      });
+
+      const panelName = side === "back" ? "shower-surround-back" : `shower-surround-end-${side}`;
+      const solidArea = innerFaceArea(solid, panelName);
+      const cutArea = innerFaceArea(cut, panelName);
+
+      // The opening removes real area from the chosen panel.
+      const expectedHole = niche.widthIn * niche.heightIn;
+      expect(solidArea - cutArea, `${side} opening area`).toBeGreaterThan(expectedHole * 0.5);
+
+      // And the other panels are untouched.
+      for (const other of ["shower-surround-back", "shower-surround-end-left", "shower-surround-end-right"]) {
+        if (other === panelName) continue;
+        expect(innerFaceArea(cut, other), `${other} unchanged`).toBeCloseTo(innerFaceArea(solid, other), 1);
+      }
+    });
+  }
+
+  it("leaves the panel whole when there is no niche on it", () => {
+    const panel = verifiedPelicanBathroomFixtureProfile("PL-603096 Brick")!;
+    const withOpening = makeShowerSurroundParts(panel, materials, {
+      opening: { side: "back", centreAlongIn: 30, widthIn: 16, bottomIn: 44, heightIn: 39 },
+    });
+    const without = makeShowerSurroundParts(panel, materials);
+    expect(innerFaceArea(withOpening, "shower-surround-back"))
+      .toBeLessThan(innerFaceArea(without, "shower-surround-back"));
+  });
+});

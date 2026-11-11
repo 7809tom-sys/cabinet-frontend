@@ -11541,11 +11541,32 @@ function addPelicanBathroomFixture(
       clearcoatRoughness: 0.3,
       side: THREE.DoubleSide,
     });
+    // Cut the niche's opening through the panel it is mounted on. Without this the
+    // panel stays a solid sheet and the niche is hidden behind it — from inside the
+    // shower you see wall instead of a recess.
+    const nicheFixture = (designFurniture ?? []).find((item) => {
+      const p2 = verifiedPelicanBathroomFixtureProfile(item.pelicanCode ?? "");
+      return p2?.kind === "shower-niche";
+    });
+    const nicheProfile = nicheFixture
+      ? verifiedPelicanBathroomFixtureProfile(nicheFixture.pelicanCode ?? "")
+      : null;
+    const nicheSide = (nicheFixture as { showerPanelSide?: "back" | "left" | "right" } | undefined)?.showerPanelSide ?? "back";
+    const surroundOpening = nicheFixture && nicheProfile
+      ? {
+        side: nicheSide,
+        // Centred: the placement centres a niche on its panel.
+        centreAlongIn: (nicheSide === "back" ? profile.widthIn : profile.depthIn) / 2,
+        widthIn: nicheProfile.widthIn,
+        bottomIn: Math.max(0, nicheFixture.mountHeightIn ?? 44),
+        heightIn: nicheProfile.heightIn,
+      }
+      : null;
     const surround = makeShowerSurroundParts(profile, {
       shell: shell,
       metal: showerMetalMaterial(showerFinishFromCode(profile.pelicanCode)),
       panel: panelMaterial,
-    });
+    }, { opening: surroundOpening });
     for (const { mesh, part } of surround) {
       add(mesh, part);
     }
@@ -13864,6 +13885,9 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    sceneRef.current = threeScene;
 	    cameraRef.current = camera;
 	    setCameraReadyKey((current) => current + 1);
+	    // LOCAL ONLY (uncommitted)
+	    (window as any).__cdScene = { root: catalogRoot, camera, controlsRef, THREE };
+
 
 	    let frame = 0;
 	    let readyFrame = 0;
