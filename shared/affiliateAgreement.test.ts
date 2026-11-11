@@ -8,6 +8,7 @@ import {
   checkoutAcknowledgementsValid,
 } from "./affiliateAgreement";
 import { AFFILIATE_OPERATOR_NOTICE } from "./affiliateOperatorNotice";
+import { buildSalesRepAgreementText } from "./salesRepAgreement";
 
 describe("affiliate agreement draft", () => {
   const text = buildAffiliateAgreementText();
@@ -15,7 +16,9 @@ describe("affiliate agreement draft", () => {
   it("is marked as a draft and records a version", () => {
     expect(text.startsWith("DRAFT")).toBe(true);
     expect(text).toContain(affiliateAgreementVersionLabel(AFFILIATE_AGREEMENT_VERSION));
-    expect(text).toContain("TODO: Tom and his attorney will choose the governing law");
+    expect(text).toContain("governed by the laws of the State of Florida");
+    expect(text).toContain("courts of Sarasota County, Florida");
+    expect(text).not.toContain("TODO: Tom and his attorney will choose the governing law");
   });
 
   it("covers the commercial points and both membership prices", () => {
@@ -56,6 +59,14 @@ describe("checkout acknowledgements", () => {
     });
     expect(ready.ok).toBe(true);
     if (ready.ok) expect(ready.agreementVersion).toContain("affiliate-agreement@");
+  });
+
+  it("sets Florida law and Sarasota County venue on the sales rep draft too", () => {
+    const text = buildSalesRepAgreementText();
+    expect(text.startsWith("DRAFT")).toBe(true);
+    expect(text).toContain("governed by the laws of the State of Florida");
+    expect(text).toContain("courts of Sarasota County, Florida");
+    expect(text).not.toContain("TODO: Tom and his attorney will choose the governing law");
   });
 
   it("uses the plain operator sentences", () => {

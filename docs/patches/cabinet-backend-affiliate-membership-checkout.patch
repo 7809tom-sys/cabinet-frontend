@@ -1,8 +1,8 @@
 From d116c7de626d635a7dbf159f1bcaf43fec39d2cd Mon Sep 17 00:00:00 2001
 From: Cursor Agent <cursoragent@cursor.com>
 Date: Wed, 11 Nov 2026 15:51:26 +0000
-Subject: [PATCH] Record affiliate membership checkout, rep commissions, and
- legal page versions.
+Subject: [PATCH 1/2] Record affiliate membership checkout, rep commissions,
+ and legal page versions.
 
 Membership checkout stays in Stripe test mode. A monthly cancel before the three-month commitment is pushed to the commitment date so the remaining months still bill. Commission rates are admin settings and are copied onto each earned commission. Legal pages keep a version history.
 ---
@@ -1797,6 +1797,47 @@ index 0000000..6e19417
 +function roundDollars(value: number): number {
 +  return Math.round(value * 100) / 100;
 +}
+-- 
+2.43.0
+
+
+From 1d3155b6995ac84953f5de3d8bc27a3d421bd08b Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Wed, 11 Nov 2026 16:11:20 +0000
+Subject: [PATCH 2/2] Set Florida law and Sarasota County venue on the
+ agreement drafts.
+
+Both documents stay marked as drafts for attorney review. The county is the one already named in the site Terms.
+---
+ shared/affiliateAgreement.ts | 2 +-
+ shared/salesRepAgreement.ts  | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/shared/affiliateAgreement.ts b/shared/affiliateAgreement.ts
+index 8ffb70c..54d6bcb 100644
+--- a/shared/affiliateAgreement.ts
++++ b/shared/affiliateAgreement.ts
+@@ -52,7 +52,7 @@ export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMEN
+     "To the extent the law allows, Cabinet Dealz is not liable for indirect or consequential losses from your use of the storefront. Cabinet Dealz's liability to you for the membership is limited to the membership fees you paid in the three months before the claim.",
+     "",
+     "10. Governing law",
+-    "TODO: Tom and his attorney will choose the governing law and the venue. This draft does not choose a state.",
++    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
+     "",
+     "11. Separate document",
+     "This agreement is only between Cabinet Dealz and the affiliate. It does not replace the website Terms & Conditions, the privacy policy, or any manufacturer warranty.",
+diff --git a/shared/salesRepAgreement.ts b/shared/salesRepAgreement.ts
+index 75811d7..bddd7aa 100644
+--- a/shared/salesRepAgreement.ts
++++ b/shared/salesRepAgreement.ts
+@@ -27,6 +27,6 @@ export function buildSalesRepAgreementText(): string {
+     "After approval, the Job Boarding packet still applies: your information, the non-compete, Form W-9, and a government ID. This page does not collect a Social Security number or an EIN.",
+     "",
+     "5. Governing law",
+-    "TODO: Tom and his attorney will choose the governing law. This draft does not choose a state.",
++    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
+   ].join("\n");
+ }
 -- 
 2.43.0
 

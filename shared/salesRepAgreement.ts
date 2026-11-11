@@ -27,6 +27,6 @@ export function buildSalesRepAgreementText(): string {
     "After approval, the Job Boarding packet still applies: your information, the non-compete, Form W-9, and a government ID. This page does not collect a Social Security number or an EIN.",
     "",
     "5. Governing law",
-    "TODO: Tom and his attorney will choose the governing law. This draft does not choose a state.",
+    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
   ].join("\n");
 }

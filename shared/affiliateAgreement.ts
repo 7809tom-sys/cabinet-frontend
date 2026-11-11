@@ -52,7 +52,7 @@ export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMEN
     "To the extent the law allows, Cabinet Dealz is not liable for indirect or consequential losses from your use of the storefront. Cabinet Dealz's liability to you for the membership is limited to the membership fees you paid in the three months before the claim.",
     "",
     "10. Governing law",
-    "TODO: Tom and his attorney will choose the governing law and the venue. This draft does not choose a state.",
+    "This agreement is governed by the laws of the State of Florida. Disputes are brought in the courts of Sarasota County, Florida, the county of Cabinet Dealz's principal place of business.",
     "",
     "11. Separate document",
     "This agreement is only between Cabinet Dealz and the affiliate. It does not replace the website Terms & Conditions, the privacy policy, or any manufacturer warranty.",
