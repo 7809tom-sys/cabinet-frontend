@@ -5,6 +5,7 @@ import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, r
 import { readFileSync } from "node:fs";
 import { ALL_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import * as THREE from "three";
+import { SHOWER_PANEL_THICKNESS_IN } from "./showerFixtureGeometry";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import { wallAngleEndPlan } from "@/lib/wallAngleEndLayout";
 import { canSyncThreeDOrderToCart, constrainedThreeDWallHeight, exactFittedFillerInches, filteredThreeDCatalogItems, hybridPlanUnderlayModel, resolvedPlacedCabinetDoorProfile, resolvedPlacedCabinetDoorSampleUrl, resolvedPlacedCabinetFinish, resolvedThreeDWallHeights, shouldShowThreeDCatalog, THREE_D_EMBEDDED_TOOLBAR_CLASS, THREE_D_WORKSPACE_ACTIONS, threeDCabinetHitFromObject, threeDDecorativeEndSides, threeDDrawerZoneHeight, threeDFillerMeasurementNoticeEntries, threeDFittedFillerWidthText, threeDFrontDatumSnapIndicators, threeDHasVerifiedDoorLayout, threeDOrderLineForSelectedCabinet, threeDPointerSelectsCabinet, threeDPreviewFadeAllowed, threeDSelectedCabinetDescription, threeDSelectedCabinetDockClass, threeDSelectionFromPlaced, threeDStructuralFinish, threeDTallPantryDoorsPerRow, threeDTemporaryPreviewCounterText, threeDTouchTapOpensWindow, threeDUpperCabinetWallMinimums, threeDUsesAuthoritativePlanScene, threeDUsesCatalogFrontVisual, threeDWallClearanceText, threeDWallFitGuideText, threeDWallSideForEdge, threeDWallSideForPolygonEdge, updatedThreeDWallHeights } from "./InteractiveRoom3D";
@@ -9966,7 +9967,10 @@ describe("shower niche is pickable so it can be selected and deleted", () => {
     const inches = (v: number) => v * 12;
     expect(inches(size.x)).toBeCloseTo(16 + 1 / 64, 0);   // published width
     expect(inches(size.y)).toBeCloseTo(39 + 1 / 32, 0);   // published height
-    expect(inches(size.z)).toBeCloseTo(3 + 17 / 32, 0);   // published recess depth
+    // The niche keeps its FULL published recess depth (the inside view must read as
+    // a real, deep niche); it is the cavity closure around it that keeps the
+    // outside plain. The invisible selection box therefore matches the real depth.
+    expect(inches(size.z)).toBeCloseTo(3 + 17 / 32, 0);
 
     // A ray straight at the niche's centre hits the pick box and resolves the
     // niche's own uid, which is what makes the delete path work.

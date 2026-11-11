@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
+import { bayForWall, openingForSurround, placeShowerSurround, placeWallFittingOnPanel } from "@/lib/showerPlacementAssembly";
 import {
+  SHOWER_PANEL_THICKNESS_IN,
   makeShowerNicheParts,
   makeShowerPanParts,
   makeShowerSurroundParts,
@@ -205,8 +207,11 @@ describe("Shower surround, system and niche geometry", () => {
     // (z = depth). Authored this way so the fixture's own group, which sits at
     // floor level and whose +Z face is the wall, puts the recess into the wall
     // rather than sideways across the shower.
-    expect(inch(size.z)).toBeGreaterThan(2);
-    expect(inch(size.z)).toBeCloseTo(profile.depthIn + 0.12, 1);
+    // The inside view keeps the FULL published recess depth plus the flange shell.
+    // (The overall box is 0.06" deeper because the cavity closure's outer skin sits
+    // just behind the recess back; that is the wall, not the niche.)
+    expect(inch(size.z)).toBeGreaterThan(3);
+    expect(inch(size.z)).toBeCloseTo(profile.depthIn + 0.12 + 0.06, 1);
     // The face flange makes the outer frame a little bigger than the opening.
     expect(inch(size.x)).toBeGreaterThan(profile.widthIn);
     // It stands on the deck: the mesh never dips below its own mounting plane, so
@@ -235,7 +240,8 @@ describe("Shower surround, system and niche geometry", () => {
     expect(inch(box.min.y)).toBeGreaterThanOrEqual(-0.5 - 0.01);
     expect(inch(box.max.y)).toBeCloseTo(niche.heightIn + 0.5, 1);
     // The recess runs into the wall on +Z, so the depth is the Z extent...
-    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12, 1);
+    // Full published depth, for a real niche on the inside, plus the closure skin.
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12 + 0.06, 1);
     // ...and the opening spans the published width on X. Under the old frame the
     // width landed on Z and the thin depth on X, which is what read as a sideways
     // panel hanging in the shower instead of a recess in the wall.
@@ -302,7 +308,7 @@ describe("Shower surround, system and niche geometry", () => {
     const { inch, box } = bounds(makeShowerNicheParts(niche, materials));
     expect(inch(box.max.x - box.min.x)).toBeGreaterThan(niche.widthIn);
     expect(inch(box.max.y - box.min.y)).toBeGreaterThan(niche.heightIn);
-    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12, 1);
+    expect(inch(box.max.z - box.min.z)).toBeCloseTo(niche.depthIn + 0.12 + 0.06, 1);
   });
 
   it("keeps the soap trays illustrative rather than claiming a measured fit", () => {
@@ -419,4 +425,69 @@ describe("a shower system stays inside its surround", () => {
     expect(isShowerSystemTubCombo("PL-86A23T/S CHR")).toBe(true);
     expect(isShowerSystemTubCombo(null)).toBe(false);
   });
+});
+
+/**
+ * Regression: the niche was visible from OUTSIDE the shower.
+ *
+ * A Pelican niche is published 3-17/32" deep, but the surround is a 0.35" panel
+ * shell. Drawn at its published depth its back pushed clean through the panel, so
+ * the white shelf frame showed on the exterior face of the wall (Tom's
+ * screenshot from the live site).
+ *
+ * The recess is now clamped to the panel thickness, so the niche sits inside the
+ * wall rather than through it. These tests pin that for every wall choice, and
+ * check the niche never reaches the panel's outer face.
+ */
+describe("the niche keeps real depth inside and shows nothing outside", () => {
+  const IN = 1 / 12;
+
+  const nicheParts = (code: string) => {
+    const profile = verifiedPelicanBathroomFixtureProfile(code)!;
+    return { profile, parts: makeShowerNicheParts(profile, materials) };
+  };
+
+  it("keeps a real recess depth on the inside view", () => {
+    for (const code of ["PL-SN1614", "PL-SN1627", "PL-SN1639"]) {
+      const { profile, parts } = nicheParts(code);
+      const recess = parts.find((entry) => entry.part === "shower-niche-body")!;
+      recess.mesh.geometry.computeBoundingBox();
+      const depthIn = (recess.mesh.geometry.boundingBox!.max.z - recess.mesh.geometry.boundingBox!.min.z) / IN;
+      // A niche must look like a niche: real depth matching the product, not
+      // flattened into the panel sheet. The body runs from the flange plane
+      // (-shell) to the recess back, hence the extra 0.12".
+      expect(depthIn, code).toBeGreaterThanOrEqual(3);
+      expect(depthIn, code).toBeCloseTo(profile.depthIn + 0.12, 1);
+    }
+  });
+
+  it("encloses the recess in a cavity closure drawn in the PANEL material", () => {
+    const { parts } = nicheParts("PL-SN1639");
+    const closure = parts.find((entry) => entry.part === "shower-niche-cavity-closure");
+    expect(closure).toBeDefined();
+    // It is the wall, not the white niche shell, so the outside face reads as wall.
+    expect(closure!.mesh.material).toBe(materials.panel);
+  });
+
+  it("gives the closure an outer face at or beyond the recess back, and never inside it", () => {
+    const { parts } = nicheParts("PL-SN1639");
+    const body = parts.find((entry) => entry.part === "shower-niche-body")!;
+    const closure = parts.find((entry) => entry.part === "shower-niche-cavity-closure")!;
+    body.mesh.geometry.computeBoundingBox();
+    closure.mesh.geometry.computeBoundingBox();
+    const bodyBack = body.mesh.geometry.boundingBox!.max.z;
+    const closureBack = closure.mesh.geometry.boundingBox!.max.z;
+    // The closure starts at the recess's back plane and extends beyond it, so it
+    // covers the hole rather than intruding into the niche.
+    expect(closureBack).toBeGreaterThan(bodyBack);
+    expect(closureBack - bodyBack).toBeLessThan(0.2 * 12 * IN + 0.01);
+  });
+
+  it("keeps the flange on the shower side, so nothing laps onto the outside", () => {
+    const { parts } = nicheParts("PL-SN1639");
+    const flange = parts.find((entry) => entry.part === "shower-niche-flange")!;
+    flange.mesh.geometry.computeBoundingBox();
+    expect(flange.mesh.geometry.boundingBox!.max.z / IN).toBeLessThanOrEqual(0);
+  });
+
 });

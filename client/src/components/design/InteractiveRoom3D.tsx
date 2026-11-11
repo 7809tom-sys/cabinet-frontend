@@ -108,6 +108,7 @@ import { applyThreeDCabinetPieceGrain, threeDPieceGrainTransform } from "@/lib/w
 import { isSlipperTub, makeFreestandingTubParts } from "./freestandingTubGeometry";
 import { makeAlcoveTubParts } from "./alcoveTubGeometry";
 import {
+  SHOWER_PANEL_THICKNESS_IN,
   makeShowerNicheParts,
   makeShowerPanParts,
   makeShowerSurroundParts,
@@ -11562,18 +11563,19 @@ function addPelicanBathroomFixture(
     // raycasts, unlike `layers` or `raycast = () => {}`. It carries the same
     // `furnitureUid` the other parts get, so `inspectFurnitureAtPoint` resolves the
     // niche from it.
+    // The box follows the niche's real depth. The niche keeps its full recess and
+    // is enclosed by a cavity closure, so the selection envelope matching that
+    // depth is correct — and it is invisible either way.
+    const pickDepth = Math.max(profile.depthIn * INCH, 0.06);
+    const pickHeight = Math.max(profile.heightIn * INCH, 0.12);
     const nichePickBox = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        profile.widthIn * INCH,
-        Math.max(profile.heightIn * INCH, 0.12),
-        Math.max(profile.depthIn * INCH, 0.06),
-      ),
+      new THREE.BoxGeometry(profile.widthIn * INCH, pickHeight, pickDepth),
       new THREE.MeshBasicMaterial({ visible: false }),
     );
     // The niche body is authored standing on y = 0 with its recess running into
     // +Z from the wall face, so the box is centred half its height up and half its
     // depth forward.
-    nichePickBox.position.set(0, Math.max(profile.heightIn * INCH, 0.12) / 2, Math.max(profile.depthIn * INCH, 0.06) / 2);
+    nichePickBox.position.set(0, pickHeight / 2, pickDepth / 2);
     nichePickBox.name = "shower-niche-pick-box";
     add(nichePickBox, "shower-niche-pick-box");
     // `add` sets cast/receiveShadow; keep the pick box out of the render entirely.
