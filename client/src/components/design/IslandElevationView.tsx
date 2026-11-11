@@ -40,7 +40,7 @@ import {
   STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
+import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { useRef, useEffect, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -78,7 +78,7 @@ function RecessedPanel({
 }
 
 function DoorFront({
-  kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, facePattern, frameInsetPx, farmhouseSinkBase = false, cabinetWidthIn,
+  kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, facePattern, frameInsetPx, farmhouseSinkBase = false, cabinetWidthIn, masterCode,
 }: {
   kind: DoorPanelKind; edge: string; face: string;
   doors: number; drawers: number; isWall: boolean;
@@ -91,6 +91,7 @@ function DoorFront({
   frameInsetPx?: number | null;
   farmhouseSinkBase?: boolean;
   cabinetWidthIn?: number;
+  masterCode?: string | null;
 }) {
   void drawerSampleUrl; // reserved for future drawer-front photo rendering in island view
   // A real farmhouse (apron-front) sink base has no top rail and no false drawer
@@ -169,6 +170,35 @@ function DoorFront({
       </div>
     );
   }
+  if (drawers > 0 && doors === 0) {
+    const available = Math.max(1, cabinetHeightIn - (isWall ? 0 : 4.5));
+    const heights = drawerOnlyFrontRowHeightsIn({ masterCode, numberOfDrawers: drawers }, available, drawers);
+    const total = heights.reduce((sum, height) => sum + height, 0) || 1;
+    let top = 0;
+    return (
+      <div className="absolute inset-0" data-island-drawer-stack="true">
+        {heights.map((height, index) => {
+          const pct = (height / total) * 100;
+          const row = (
+            <div
+              key={`island-drawer-${index}`}
+              data-island-drawer-front={index + 1}
+              className="absolute left-0 right-0"
+              style={{ top: `${top}%`, height: `${pct}%` }}
+            >
+              <DoorFront
+                kind={kind} edge={edge} face={face} doors={1} drawers={0} isWall={isWall}
+                doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} cabinetType={null}
+                blindOnLeft={blindOnLeft} cabinetHeightIn={height} frameInsetPx={frameInsetPx}
+              />
+            </div>
+          );
+          top += pct;
+          return row;
+        })}
+      </div>
+    );
+  }
   const railBevel: React.CSSProperties = {
     boxShadow: `inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 ${edge}55, inset 1px 0 0 rgba(255,255,255,0.2), inset -1px 0 0 ${edge}44`,
   };
@@ -240,7 +270,7 @@ function DoorFront({
 }
 
 export function IslandHardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct, isWall = false, faceHeightIn,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct, isWall = false, faceHeightIn, masterCode,
 }: {
   doors: number; drawers: number;
   doorPiece: "knob" | "pull" | "none";
@@ -255,6 +285,7 @@ export function IslandHardwareOverlay({
   doorBandStartPct?: number;
   isWall?: boolean;
   faceHeightIn?: number | null;
+  masterCode?: string | null;
 }) {
   const metal = `linear-gradient(135deg, color-mix(in srgb, ${accent} 55%, #ffffff) 0%, ${accent} 38%, color-mix(in srgb, ${accent} 70%, #000000) 72%, color-mix(in srgb, ${accent} 88%, #ffffff) 100%)`;
   const metalShadow = "0 1px 1.5px rgba(0,0,0,0.35), inset 0 0.5px 0 rgba(255,255,255,0.55)";
@@ -363,10 +394,20 @@ export function IslandHardwareOverlay({
       for (let column = 0; column < drawers; column++) {
         items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${column}`, STANDARD_BASE_DRAWER_ROW_PCT / 2, false, column, drawers));
       }
+    } else if (doors === 0) {
+      const available = Math.max(1, (Number(faceHeightIn) || 34.5) - (isWall ? 0 : 4.5));
+      const heights = drawerOnlyFrontRowHeightsIn({ masterCode, numberOfDrawers: drawers }, available, drawers);
+      const total = heights.reduce((sum, height) => sum + height, 0) || 1;
+      let cursor = 0;
+      heights.forEach((height, index) => {
+        const pct = (height / total) * 100;
+        items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${index}`, cursor + pct / 2));
+        cursor += pct;
+      });
     } else {
-      const drawerH = 100 / (drawers + (doors > 0 ? 1 : 0));
+      const drawerH = 100 / (drawers + 1);
       for (let i = 0; i < drawers; i++) {
-        const topPct = (doors > 0 ? drawerH : 0) + drawerH * i + drawerH / 2;
+        const topPct = drawerH + drawerH * i + drawerH / 2;
         items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${i}`, topPct));
       }
     }
@@ -591,6 +632,7 @@ export function IslandElevationView({
               blindOnLeft={blindLeft}
               cabinetHeightIn={height}
               cabinetWidthIn={cabSizeAlong}
+              masterCode={p.masterCode}
               facePattern={p.facePattern ?? null}
               frameInsetPx={cabPanelKind === "slim-shaker" ? cabFrameInset ?? 4 : undefined}
               farmhouseSinkBase={Boolean(farmhouseFace)}
@@ -610,6 +652,7 @@ export function IslandElevationView({
               frameStileIn={cabFrameStileIn}
               isWall={isWall}
               faceHeightIn={height}
+              masterCode={p.masterCode}
               doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
             />
           )}

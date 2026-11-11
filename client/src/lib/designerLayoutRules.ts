@@ -336,9 +336,9 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
   },
   {
     id: "two-drawer-side-by-side",
-    name: "two drawers side by side",
+    name: "two drawers stacked",
     phase: "shared-pipeline",
-    summary: "A two-drawer base draws its two drawer fronts side by side in one row, never stacked one above the other.",
+    summary: "A two-drawer base draws two equal full-width drawer fronts, one above the other. Each front gets one horizontal pull centered on that drawer.",
   },
   {
     id: "single-door-base-required",

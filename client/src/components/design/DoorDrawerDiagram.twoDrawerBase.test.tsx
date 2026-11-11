@@ -21,11 +21,14 @@ describe("DoorDrawerDiagram 2-DB family", () => {
       width: 200,
     }));
 
-    const drawerHeights = Array.from(markup.matchAll(/height="([^"]+)"[^>]*fill="#f59e0b"/g))
-      .map((match) => Number(match[1]))
-      .filter((height) => height > 20);
-    expect(drawerHeights).toHaveLength(2);
-    expect(drawerHeights[0]).toBeCloseTo(drawerHeights[1]!, 12);
+    const drawers = Array.from(markup.matchAll(/x="([^"]+)" y="([^"]+)" width="([^"]+)" height="([^"]+)"[^>]*fill="#f59e0b"/g))
+      .map((match) => ({ x: Number(match[1]), y: Number(match[2]), width: Number(match[3]), height: Number(match[4]) }))
+      .filter((zone) => zone.height > 20);
+    expect(drawers).toHaveLength(2);
+    expect(drawers[0]!.height).toBeCloseTo(drawers[1]!.height, 12);
+    expect(drawers[0]!.x).toBeCloseTo(drawers[1]!.x, 6);
+    expect(drawers[0]!.width).toBeCloseTo(drawers[1]!.width, 6);
+    expect(Math.abs(drawers[0]!.y - drawers[1]!.y)).toBeGreaterThan(20);
   });
 
   it("renders active 3-DB30 as one shallow top drawer over two equal deeper drawers", () => {

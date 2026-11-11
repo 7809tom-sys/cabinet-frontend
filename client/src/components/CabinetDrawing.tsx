@@ -3,7 +3,7 @@ import {
   cabinetDrawingType,
   cabinetAltText,
   resolveDoorDrawerCounts,
-  threeDrawerBaseRowHeights,
+  drawerOnlyFrontRowHeightsIn,
   type CabinetLike,
   type CabinetDrawingType,
 } from "@/lib/cabinetGraphics";
@@ -336,10 +336,10 @@ function DrawerBaseFront({ x, y, w, h, fill, cabinet }: Omit<FrontProps, "type">
   const innerH = h - inset * 2;
   const drawableHeight = innerH - (n - 1) * gap;
   const physicalFaceHeight = Math.max(1, (toNum(cabinet.height) ?? 34.5) - 4.5);
-  const verifiedThreeDrawerRows = threeDrawerBaseRowHeights(cabinet, physicalFaceHeight, n);
-  const physicalTotal = verifiedThreeDrawerRows?.reduce((sum, row) => sum + row, 0) ?? physicalFaceHeight;
-  const rowHeights = verifiedThreeDrawerRows
-    ? verifiedThreeDrawerRows.map((row) => (row / physicalTotal) * drawableHeight)
+  const verifiedDrawerRows = drawerOnlyFrontRowHeightsIn(cabinet, physicalFaceHeight, n);
+  const physicalTotal = verifiedDrawerRows.reduce((sum, row) => sum + row, 0) || physicalFaceHeight;
+  const rowHeights = verifiedDrawerRows.length
+    ? verifiedDrawerRows.map((row) => (row / physicalTotal) * drawableHeight)
     : Array.from({ length: n }, () => drawableHeight / n);
   const rowTop = (index: number) => rowHeights.slice(0, index).reduce((sum, row) => sum + row + gap, 0);
   return (

@@ -8,14 +8,11 @@ build/
 *.dist
 
 # Environment variables
-.env
-.env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
 # IDE and editor files
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -139,3 +136,4 @@ manus storage/
 # .vercelignore, so Vite copies none of them into dist/.
 !docs/library/internal/*.pdf
 !docs/library/internal/*.md
+config.bat

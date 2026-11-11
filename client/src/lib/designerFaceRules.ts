@@ -1,7 +1,7 @@
 /**
  * Owner face rules the Designer applies to every Auto-Design kitchen.
  *
- *   Rule 5  a two-drawer base shows its drawers side by side, never stacked
+ *   Rule 5  a two-drawer base shows two equal full-width drawers, one above the other
  *   Rule 6  every kitchen has at least one single-door base
  *   Rule 7  adjacent single-door cabinets meet handles at the shared seam by default,
  *           and the user can still choose the hinge side
@@ -105,18 +105,20 @@ function upperHeightsOnDatum(placed: readonly PlacedCabinet[]): PlacedCabinet[] 
   });
 }
 
-/** Rule 5: a two-drawer base is a drawer base whose fronts sit in one row. */
+/** Rule 5: a two-drawer base is a drawer base with two full-width fronts. */
 export function isTwoDrawerBase(item: PlacedCabinet): boolean {
   if (item.placement !== "base") return false;
   const code = `${item.masterCode ?? ""}`.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (/^2DB\d/.test(code) || /^2VDB\d/.test(code)) return true;
+  if (/^(?:RB|ADA)?2(?:DB|VDB)(?:ID)?\d/.test(code)) return true;
   return (item.numberOfDoors ?? 0) === 0 && (item.numberOfDrawers ?? 0) === 2;
 }
 
 /** Rule 5: the drawer-row contract for a two-drawer base, shared by every view. */
 export function twoDrawerRowLayout(item: PlacedCabinet): { rows: Array<{ count: number; height: number }>; sideBySide: boolean } {
   if (!isTwoDrawerBase(item)) return { rows: [], sideBySide: false };
-  return { rows: [{ count: 2, height: placedHeight(item) }], sideBySide: true };
+  const height = placedHeight(item);
+  const row = height > 0 ? height / 2 : 17.25;
+  return { rows: [{ count: 1, height: row }, { count: 1, height: row }], sideBySide: false };
 }
 
 /** A real single-door cabinet: exactly one hinged door, not a drawer box or an open cabinet. */

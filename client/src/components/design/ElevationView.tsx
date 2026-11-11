@@ -33,7 +33,7 @@ import {
   STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, threeDrawerBaseRowHeights, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
+import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { toeKickHeightForElevation } from "@/lib/elevationToeKick";
 import { drawerPanelInsetPx, elevationFrameInsetPx, isShakerElevationStyle, shakerFacePanelGeometry } from "@/lib/elevationFrameGeometry";
@@ -799,6 +799,7 @@ export function ElevationView({
                 frameRailIn={cabFrameMetrics?.railInches}
                 cabinetHeightIn={faceHeightIn}
                 doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
+                masterCode={p.masterCode}
                 pantryLayout={pantryDrawerFrontLayout({ ...p, placementType: p.placement, graphicType: customProfile, numberOfDoors: displayCounts.doors, numberOfDrawers: displayCounts.drawers }, faceHeightIn)}
               />
             );
@@ -2272,7 +2273,7 @@ export function ElevationView({
 // Pieces are tiny CSS shapes positioned by percentage so they scale with zoom.
 //   knob → small filled circle   pull → short horizontal bar   cup → half-moon
 export function HardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, isWall = false, faceWidthIn, frameStileIn, frameRailIn, cabinetHeightIn, raisedDoorPullOnRail = false, pantryLayout, doorBandStartPct,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, isWall = false, faceWidthIn, frameStileIn, frameRailIn, cabinetHeightIn, raisedDoorPullOnRail = false, pantryLayout, doorBandStartPct, masterCode,
 }: {
   doors: number;
   drawers: number;
@@ -2290,6 +2291,7 @@ export function HardwareOverlay({
   pantryLayout?: ReturnType<typeof pantryDrawerFrontLayout>;
   /** Doors start this many percent below the top of the face (farmhouse sink apron zone). */
   doorBandStartPct?: number;
+  masterCode?: string | null;
 }) {
   // Brushed-metal sheen: diagonal light streak over accent color with crisp
   // top highlight and soft drop shadow so pieces read as real metal hardware.
@@ -2414,6 +2416,16 @@ export function HardwareOverlay({
       for (let column = 0; column < drawers; column++) {
         pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${column}`, drawerBand / 2, false, column, drawers));
       }
+    } else if (!hasDoors) {
+      const available = Math.max(1, (Number(cabinetHeightIn) || 34.5) - (isWall ? 0 : 4.5));
+      const heights = drawerOnlyFrontRowHeightsIn({ masterCode, numberOfDrawers: drawers }, available, drawers);
+      const total = heights.reduce((sum, height) => sum + height, 0) || 1;
+      let cursor = 0;
+      heights.forEach((height, index) => {
+        const pct = (height / total) * drawerBand;
+        pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${index}`, cursor + pct / 2, false));
+        cursor += pct;
+      });
     } else {
       for (let i = 0; i < drawers; i++) {
         const sliceH = drawerBand / drawers;
@@ -3949,16 +3961,16 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
       );
     }
     // Drawer-only bases share the same family rules as thumbnails, selected
-    // details, and final 3D: 2-DB is 50/50; 3-DB is 6in over equal lower rows.
+    // details, and final 3D: 2-DB is two equal full-width fronts; 3-DB is 6in
+    // over equal lower rows; 4-DB is four equal fronts.
     const availableDrawerFaceIn = Math.max(1, (cabinetHeightIn ?? 34.5) - (isWall ? 0 : 4.5));
-    const verifiedThreeDrawerRows = threeDrawerBaseRowHeights(
+    const drawerRowHeightsIn = drawerOnlyFrontRowHeightsIn(
       { masterCode, numberOfDrawers: drawerCount },
       availableDrawerFaceIn,
       drawerCount,
     );
-    const allDrawerRowHeights: number[] = verifiedThreeDrawerRows
-      ? verifiedThreeDrawerRows.map((height) => (height / availableDrawerFaceIn) * 100)
-      : Array.from({ length: drawerCount }, () => 100 / drawerCount);
+    const drawerRowTotal = drawerRowHeightsIn.reduce((sum, height) => sum + height, 0) || 1;
+    const allDrawerRowHeights: number[] = drawerRowHeightsIn.map((height) => (height / drawerRowTotal) * 100);
     return withFace(
       <>
         {Array.from({ length: drawerCount }).map((_, i) => {
@@ -3972,7 +3984,7 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
               {i > 0 && (
                 <div className="absolute left-0 right-0 top-0" style={{ height: 2, background: stroke }} />
               )}
-              <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={verifiedThreeDrawerRows?.[i] ?? availableDrawerFaceIn / drawerCount} />
+              <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={drawerRowHeightsIn[i] ?? availableDrawerFaceIn / drawerCount} />
             </div>
           );
         })}

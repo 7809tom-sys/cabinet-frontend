@@ -62,7 +62,7 @@ import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, wallAngle
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
 import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
-import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType, fourDrawerBaseRowHeights, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseStackedRows } from "@/lib/cabinetGraphics";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
@@ -3235,9 +3235,19 @@ export function resolvedThreeDDrawerRows(
 ) {
   const count = Math.max(0, fallbackCount);
   if (isEqualHeightTwoDrawerBase(sku, fallbackCount)) {
-    // Rule 5: a two-drawer base shows its two drawers side by side, never stacked.
-    return twoDrawerBaseSideBySideRows(sku, availableHeight, fallbackCount)
-      ?? [{ count: 2, height: availableHeight }];
+    // A two-drawer base is two equal full-width fronts, one above the other.
+    const faceIn = availableHeight / INCH;
+    const rows = twoDrawerBaseStackedRows(sku, faceIn, fallbackCount)
+      ?? [{ count: 1, height: faceIn / 2 }, { count: 1, height: faceIn / 2 }];
+    return rows.map((row) => ({ count: row.count, height: row.height * INCH }));
+  }
+  const verifiedFourDrawerRows = fourDrawerBaseRowHeights(sku, availableHeight / INCH, count);
+  if (verifiedFourDrawerRows) {
+    return verifiedFourDrawerRows.map((heightIn) => ({ count: 1, height: heightIn * INCH }));
+  }
+  const verifiedThreeDrawerRows = threeDrawerBaseRowHeights(sku, availableHeight / INCH, count);
+  if (verifiedThreeDrawerRows) {
+    return verifiedThreeDrawerRows.map((heightIn) => ({ count: 1, height: heightIn * INCH }));
   }
   try {
     const parsed = JSON.parse(sku.drawerLayout ?? "null");
@@ -3262,12 +3272,6 @@ export function resolvedThreeDDrawerRows(
     if (!standardBaseFace.drawerRows.length || !(availableHeight > 0)) return [];
     const rowHeight = availableHeight / standardBaseFace.drawerRows.length;
     return standardBaseFace.drawerRows.map((row) => ({ count: row.count, height: rowHeight }));
-  }
-  const verifiedThreeDrawerRows = useShallowTopDrawer
-    ? threeDrawerBaseRowHeights(sku, availableHeight / INCH, count)
-    : null;
-  if (verifiedThreeDrawerRows) {
-    return verifiedThreeDrawerRows.map((heightIn) => ({ count: 1, height: heightIn * INCH }));
   }
   if (useShallowTopDrawer && count > 1 && availableHeight > 6 * INCH) {
     const topHeight = 6 * INCH;
