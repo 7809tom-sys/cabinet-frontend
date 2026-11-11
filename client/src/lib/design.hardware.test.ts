@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCabinetDoorHardwareToAll, isCabinetDoorHardwareEligible, isFullHeightCabinet, isTrashCanRolloutCabinet, requiresCenteredTopDoorPull, resolveCabinetHardwarePosition, supportsCenteredTopDoorPull, usesRaisedFloorWallDoorPull, type PlacedCabinet } from "./design";
+import { applyCabinetDoorHardwareToAll, isCabinetDoorHardwareEligible, isFullHeightCabinet, isTrashCanRolloutCabinet, normalizeStoredDoorHardwareChoice, requiresCenteredTopDoorPull, resolveCabinetHardwarePosition, restoreSavedDesignerPlan, supportsCenteredTopDoorPull, usesRaisedFloorWallDoorPull, type PlacedCabinet, type RoomData } from "./design";
 
 function cabinet(overrides: Partial<PlacedCabinet>): PlacedCabinet {
   return {
@@ -74,5 +74,31 @@ describe("B15/B18 centered top-rail pull", () => {
     expect(resolveCabinetHardwarePosition(floorWall)).toBe("left");
     expect(resolveCabinetHardwarePosition(islandWall)).toBe("auto");
     expect(supportsCenteredTopDoorPull(islandWall)).toBe(false);
+  });
+
+  it("treats a saved top-center pull on an ordinary door as automatic, and keeps a real top-rail choice", () => {
+    const ordinaryBase = cabinet({ uid: "b30", masterCode: "B30", width: 30, numberOfDoors: 2, hardwarePosition: "top-center", handleSide: "top", swing: "left" });
+    const ordinaryWall = cabinet({ uid: "w30", masterCode: "W3030", placement: "wall", width: 30, height: 30, mountBottom: 54, numberOfDoors: 2, numberOfDrawers: 0, hardwarePosition: "top-center", swing: "right" });
+    const chosenSide = cabinet({ uid: "b24", masterCode: "B24", width: 24, numberOfDoors: 2, hardwarePosition: "left", handleSide: "left", swing: "left" });
+    const trashChoice = cabinet({ uid: "b18", masterCode: "B18", width: 18, hardwarePosition: "top-center", swing: "right" });
+    const tray = cabinet({ uid: "td", masterCode: "B18TD", width: 18, hardwarePosition: "left", swing: "left" });
+    const room = { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
+    const loaded = restoreSavedDesignerPlan({
+      room,
+      placed: [ordinaryBase, ordinaryWall, chosenSide, trashChoice, tray],
+    });
+    const byUid = new Map(loaded.placed.map((item) => [item.uid, item]));
+
+    expect(byUid.get("b30")).toMatchObject({ hardwarePosition: null, handleSide: null, swing: "left" });
+    expect(byUid.get("w30")).toMatchObject({ hardwarePosition: null, swing: "right" });
+    expect(byUid.get("b24")).toMatchObject({ hardwarePosition: "left", handleSide: "left", swing: "left" });
+    expect(byUid.get("b18")).toMatchObject({ hardwarePosition: "top-center", swing: "right" });
+    expect(resolveCabinetHardwarePosition(byUid.get("b30")!)).toBe("auto");
+    expect(resolveCabinetHardwarePosition(byUid.get("w30")!)).toBe("auto");
+    expect(resolveCabinetHardwarePosition(byUid.get("b24")!)).toBe("left");
+    expect(resolveCabinetHardwarePosition(byUid.get("b18")!)).toBe("top-center");
+    expect(resolveCabinetHardwarePosition(byUid.get("td")!)).toBe("top-center");
+    expect(normalizeStoredDoorHardwareChoice(ordinaryBase)).not.toBe(ordinaryBase);
+    expect(normalizeStoredDoorHardwareChoice(trashChoice)).toBe(trashChoice);
   });
 });

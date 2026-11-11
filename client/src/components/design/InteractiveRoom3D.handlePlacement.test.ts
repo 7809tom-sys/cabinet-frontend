@@ -177,6 +177,59 @@ describe("3D door handle placement", () => {
     expect(((upperPull.position.y - (upperPull.geometry as THREE.BoxGeometry).parameters.height / 2) - upperBottom) * 12).toBeCloseTo(DOOR_PULL_EDGE_CLEARANCE_IN, 5);
   });
 
+  it("re-derives opening-edge pulls for a saved top-center door, and keeps a B18 top-rail choice", () => {
+    const staleBase = render({
+      masterCode: "B30",
+      description: "30 inch Double Door Base",
+      placement: "base",
+      width: 30,
+      height: 34.5,
+      numberOfDoors: 2,
+      numberOfDrawers: 1,
+      hardwarePosition: "top-center",
+      handleSide: "top",
+      swing: "left",
+    });
+    const doorPulls = staleBase.pulls.filter((node) => node.userData.cabinetPull === "door");
+    expect(doorPulls).toHaveLength(2);
+    expect(doorPulls.every((pull) => pull.userData.verticalPull === true && pull.userData.pullVerticalAnchor === "top")).toBe(true);
+    const doors = doorOf(staleBase.fronts).sort((a, b) => a.position.x - b.position.x);
+    doors.forEach((door, index) => {
+      const towardCenter = index === 0 ? 1 : -1;
+      expect((doorPulls.sort((a, b) => a.position.x - b.position.x)[index]!.position.x - door.position.x) * towardCenter).toBeGreaterThan(0);
+    });
+
+    const staleWall = render({
+      masterCode: "W3030",
+      description: "30 inch Wall Cabinet",
+      placement: "wall",
+      width: 30,
+      height: 30,
+      numberOfDoors: 2,
+      numberOfDrawers: 0,
+      mountBottom: 54,
+      hardwarePosition: "top-center",
+      swing: "right",
+    });
+    const wallPulls = staleWall.pulls.filter((node) => node.userData.cabinetPull === "door");
+    expect(wallPulls).toHaveLength(2);
+    expect(wallPulls.every((pull) => pull.userData.verticalPull === true && pull.userData.pullVerticalAnchor === "bottom")).toBe(true);
+
+    const chosen = render({
+      masterCode: "B18",
+      description: "18 inch Base",
+      placement: "base",
+      width: 18,
+      height: 34.5,
+      numberOfDoors: 1,
+      numberOfDrawers: 1,
+      hardwarePosition: "top-center",
+      swing: "left",
+    });
+    const chosenPull = chosen.pulls.find((node) => node.userData.cabinetPull === "door")!;
+    expect(chosenPull.userData).toMatchObject({ verticalPull: false, hardwarePosition: "top-center", pullEdge: "top-center" });
+  });
+
   it("does not change a selected bar-pull finish when the pull moves", () => {
     const { pulls } = render({
       masterCode: "B18",

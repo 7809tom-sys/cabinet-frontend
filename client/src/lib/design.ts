@@ -1515,6 +1515,11 @@ export function resolveCabinetHardwarePosition(p: {
   // retired Center option; treat it as Automatic so every hinged door returns
   // to the applicable opening-edge stile without mutating the saved cabinet.
   if (p.hardwarePosition === "center") return "auto";
+  // "Top center" used to be written onto ordinary doors and drew a horizontal
+  // bar in the panel. Re-placing a cabinet drops the field and looks right.
+  // Keep it only where it is still a real choice: tray dividers, pull-outs,
+  // and a B15/B18 the customer explicitly set.
+  if (p.hardwarePosition === "top-center" && !supportsCenteredTopDoorPull(p)) return "auto";
   if (
     p.hardwarePosition === "auto" ||
     p.hardwarePosition === "left" ||
@@ -16573,6 +16578,29 @@ export function restoredFurniture(rows: unknown): PlacedFurniture[] {
  * Cabinets come back at the coordinates that were saved. This pass does not
  * reseat them, snap them, or push them off a toilet or tub.
  */
+/**
+ * Drop a saved pull position that the current rules no longer honor.
+ * Left, right, and paired choices stay. A top-rail pull stays on a tray,
+ * pull-out, or B15/B18 that still offers that choice. `handleSide` of
+ * "top" or "bottom" was the older centered-pull alias and is not a hinge.
+ */
+export function normalizeStoredDoorHardwareChoice<T extends Parameters<typeof supportsCenteredTopDoorPull>[0] & {
+  hardwarePosition?: CabinetHardwarePosition | null;
+  handleSide?: "left" | "right" | "top" | "bottom" | null;
+}>(cabinet: T): T {
+  const staleTopCenter = cabinet.hardwarePosition === "top-center"
+    && !requiresCenteredTopDoorPull(cabinet)
+    && !supportsCenteredTopDoorPull(cabinet);
+  const staleCenter = cabinet.hardwarePosition === "center";
+  const staleHandleSide = cabinet.handleSide === "top" || cabinet.handleSide === "bottom";
+  if (!staleTopCenter && !staleCenter && !staleHandleSide) return cabinet;
+  return {
+    ...cabinet,
+    ...(staleTopCenter || staleCenter ? { hardwarePosition: null } : {}),
+    ...(staleHandleSide ? { handleSide: null } : {}),
+  };
+}
+
 export function restoreSavedDesignerPlan(snapshot: {
   room: RoomData;
   placed?: PlacedCabinet[] | null;
@@ -16580,7 +16608,7 @@ export function restoreSavedDesignerPlan(snapshot: {
 }): { room: RoomData; placed: PlacedCabinet[]; furniture: PlacedFurniture[] } {
   const embedded = snapshot.room?.persistedEntities?.furniture;
   const furniture = restoredFurniture(Array.isArray(snapshot.furniture) ? snapshot.furniture : embedded);
-  const placed = (Array.isArray(snapshot.placed) ? snapshot.placed : []).map((cabinet) => ({ ...cabinet }));
+  const placed = (Array.isArray(snapshot.placed) ? snapshot.placed : []).map((cabinet) => normalizeStoredDoorHardwareChoice({ ...cabinet }));
   return { room: snapshot.room, placed, furniture };
 }
 
