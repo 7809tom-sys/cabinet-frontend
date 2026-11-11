@@ -786,7 +786,7 @@ export function runAutoDesignLayout(args: {
       ? {
         ...anchor,
         wallLabel: input.sink.wallLabel,
-        centerOffsetIn: adjacentDishwasherCenterIn(input.sink.centerOffsetIn, sinkBaseWidth, width, input.dishwasherSide ?? "right"),
+        centerOffsetIn: adjacentDishwasherCenterIn(input.sink.centerOffsetIn, sinkBaseWidth, width, input.dishwasherSide === "left" ? "left" : "right"),
       }
       : anchor;
     if (!autoDesignLayoutUsesWall(input.layoutType, measuredAnchor.wallLabel)) {

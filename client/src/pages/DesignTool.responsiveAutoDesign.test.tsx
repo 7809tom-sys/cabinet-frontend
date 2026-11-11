@@ -265,6 +265,7 @@ describe("Auto-Design is identical on phone, tablet, and desktop", () => {
       expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
         "Left of sink",
         "Right of sink",
+        "No dishwasher",
       ]);
 
       // No refrigerator in the layout means no anchor note and no blocked note anywhere.

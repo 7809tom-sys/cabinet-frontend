@@ -12,7 +12,7 @@ import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
 import { DEFAULT_OVER_RANGE_ANSWER } from "@/lib/overRangeCompanion";
 import type { RoomData } from "@/lib/design";
 import type {
-  DishwasherSide,
+  DishwasherSideChoice,
   AutoDesignInputs,
   AutoDesignLayoutType,
   AutoDesignOriginCorner,
@@ -26,8 +26,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBuild: (input: AutoDesignInputs) => AutoDesignSubmitResult;
-  dishwasherSide?: DishwasherSide | null;
-  onDishwasherSideChange?: (side: DishwasherSide) => void;
+  dishwasherSide?: DishwasherSideChoice | null;
+  onDishwasherSideChange?: (side: DishwasherSideChoice) => void;
   /** The selected line's source-priced base catalog is still arriving. */
   catalogLoading?: boolean;
   /** Actual room-wall count, capped by the shared six-wall input contract. */
@@ -98,7 +98,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [sinkBaseKind, setSinkBaseKind] = useState<AutoDesignSinkBaseKind>("regular");
   const [wallCabinetHeight, setWallCabinetHeight] = useState<WallCabinetHeight>(30);
   const [overRangeAnswer, setOverRangeAnswer] = useState<"hood" | "microwave-bridge" | "open">(DEFAULT_OVER_RANGE_ANSWER);
-  const [dishwasherSide, setDishwasherSide] = useState<DishwasherSide>("right");
+  const [dishwasherSide, setDishwasherSide] = useState<DishwasherSideChoice>("right");
   const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");
   const [kitchenUses, setKitchenUses] = useState<KitchenUseId[]>([]);
@@ -108,7 +108,9 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     if (open) onWallGuideChange?.({ originCorner, runDirection });
   }, [open, onWallGuideChange, originCorner, runDirection]);
   useEffect(() => {
-    if (dishwasherSidePreference === "left" || dishwasherSidePreference === "right") setDishwasherSide(dishwasherSidePreference);
+    if (dishwasherSidePreference === "left" || dishwasherSidePreference === "right" || dishwasherSidePreference === "none") {
+      setDishwasherSide(dishwasherSidePreference);
+    }
   }, [dishwasherSidePreference]);
 
   const setValue = (field: PointField, patch: Partial<FieldValue>) => setValues((current) => ({
@@ -152,6 +154,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   });
   const optionalMeasurement = (field: PointField) => values[field].centerOffsetIn.trim() ? measurement(field) : null;
 
+  const noDishwasher = omitted.dishwasher || dishwasherSide === "none";
   const submit = () => {
     setSubmitError(null);
     const result = onBuild({
@@ -163,9 +166,9 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
       sinkBaseWidthIn: sinkBaseWidth,
       sinkBaseKind,
       stove: omitted.stove ? null : measurement("stove"),
-      dishwasher: omitted.dishwasher ? null : optionalMeasurement("dishwasher"),
-      skipDishwasher: omitted.dishwasher,
-      dishwasherSide,
+      dishwasher: noDishwasher ? null : optionalMeasurement("dishwasher"),
+      skipDishwasher: noDishwasher,
+      dishwasherSide: noDishwasher ? "none" : dishwasherSide,
       refrigerator: omitted.refrigerator ? null : measurement("refrigerator"),
       refrigeratorWidthIn: refrigeratorWidth,
       refrigeratorPanels: "both",
@@ -295,7 +298,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                   placeholder={field === "dishwasher" ? "Leave blank for sink side" : undefined}
                   value={values[field].centerOffsetIn}
                   onChange={(event) => setValue(field, { centerOffsetIn: event.target.value })}
-                  disabled={field !== "sink" && omitted[field]}
+                  disabled={(field !== "sink" && omitted[field]) || (field === "dishwasher" && noDishwasher)}
                   aria-label={`${labels[field]} center from selected wall start in inches`}
                 />
               </div>
@@ -389,11 +392,20 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="auto-design-dishwasher-side">Dishwasher side</Label>
-              <Select value={dishwasherSide} onValueChange={(value) => { const side = value as DishwasherSide; setDishwasherSide(side); onDishwasherSideChange?.(side); }} disabled={omitted.dishwasher}>
+              <Select value={noDishwasher ? "none" : dishwasherSide} onValueChange={(value) => {
+                const side = value as DishwasherSideChoice;
+                setDishwasherSide(side);
+                setOmitted((current) => ({ ...current, dishwasher: side === "none" }));
+                onDishwasherSideChange?.(side);
+              }} disabled={omitted.dishwasher && dishwasherSide !== "none"}>
                 <SelectTrigger id="auto-design-dishwasher-side" aria-label="Dishwasher side"><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="left">Left of sink</SelectItem><SelectItem value="right">Right of sink</SelectItem></SelectContent>
+                <SelectContent>
+                  <SelectItem value="left">Left of sink</SelectItem>
+                  <SelectItem value="right">Right of sink</SelectItem>
+                  <SelectItem value="none">No dishwasher</SelectItem>
+                </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">{omitted.dishwasher ? "No dishwasher will be added." : "Left of sink or right of sink. Auto-Design keeps the dishwasher against the sink when it can, and otherwise on this side as close as possible."}</p>
+              <p className="text-xs text-muted-foreground">{noDishwasher ? "No dishwasher or dishwasher panel will be added. That run is filled with regular base cabinets." : "Left of sink, right of sink, or no dishwasher. Auto-Design keeps a dishwasher against the sink when it can, and otherwise on this side as close as possible."}</p>
             </div>
           </div>
 
