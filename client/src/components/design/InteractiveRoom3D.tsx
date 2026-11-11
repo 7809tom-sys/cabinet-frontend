@@ -11617,6 +11617,8 @@ function addPelicanBathroomFixture(
       heightIn: wetWallHeight,
       widthIn: wetWallWidth,
       mountHeightIn: 0,
+      // The wall has to finish behind the niche's back, or the two faces coincide.
+      nicheDepthIn: profile.depthIn,
     })) {
       add(mesh, part);
     }

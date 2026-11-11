@@ -573,3 +573,41 @@ describe("the niche keeps real depth inside and shows nothing outside", () => {
   });
 
 });
+
+/**
+ * Regression: the niche's white shell showed through the wall from outside.
+ *
+ * The wet wall's back face sat level with the niche's back, so the two surfaces
+ * were coincident and z-fought — resolved per pixel, which let the niche's shell
+ * win in places. The wall now finishes at least half an inch BEHIND the recess, so
+ * there is no tie to lose: from outside the wall always covers it.
+ */
+describe("the wet wall finishes behind the niche, so the outside is never see-through", () => {
+  const IN = 1 / 12;
+  it("leaves at least half an inch of wall behind the recess", () => {
+    for (const code of ["PL-SN1614", "PL-SN1627", "PL-SN1639"]) {
+      const niche = verifiedPelicanBathroomFixtureProfile(code)!;
+      const wall = makeShowerWetWallParts(niche, materials, {
+        thicknessIn: SHOWER_WET_WALL_THICKNESS_IN,
+        nicheDepthIn: niche.depthIn,
+        widthIn: 60,
+        heightIn: 96,
+      });
+      const box = new THREE.Box3().setFromObject(wall[0]!.mesh);
+      const wallBackIn = box.max.z / IN;
+      const nicheBackIn = niche.depthIn;
+      expect(wallBackIn - nicheBackIn, `${code} clearance`).toBeGreaterThanOrEqual(0.5 - 0.01);
+    }
+  });
+
+  it("keeps a solid back on the inside, not a hole", () => {
+    // The inside view needs a real back panel: the recess must be a closed box on
+    // its back face, or the shopper sees through the wall.
+    const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1639")!;
+    const parts = makeShowerNicheParts(niche, materials, { availableDepthIn: 4 });
+    const body = parts.find((entry) => entry.part === "shower-niche-body")!;
+    body.mesh.geometry.computeBoundingBox();
+    // The back quad sits at the full recess depth (not at zero), so the box closes.
+    expect(body.mesh.geometry.boundingBox!.max.z / IN).toBeCloseTo(niche.depthIn, 0);
+  });
+});

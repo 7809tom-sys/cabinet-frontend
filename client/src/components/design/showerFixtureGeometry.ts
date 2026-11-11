@@ -475,10 +475,20 @@ export function nicheDepthForWallThickness(wallThicknessIn: number): number {
 export function makeShowerWetWallParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
-  options: { thicknessIn?: number; heightIn?: number; widthIn?: number; mountHeightIn?: number } = {},
+  options: { thicknessIn?: number; heightIn?: number; widthIn?: number; mountHeightIn?: number; nicheDepthIn?: number } = {},
 ): ShowerPart[] {
   const t = SHOWER_PANEL_THICKNESS_IN * INCH;
-  const thickness = Math.max(0, (options.thicknessIn ?? SHOWER_WET_WALL_THICKNESS_IN) * INCH - t);
+  // The slab must finish BEHIND the niche's back, not level with it. Coincident
+  // faces z-fight, and the loser is decided per-pixel — which is how the niche's
+  // white shell kept showing through the wall on the outside. A clear gap removes
+  // the tie entirely, so the wall always wins from outside.
+  const BACK_CLEARANCE_IN = 0.5;
+  const nicheDepthIn = options.nicheDepthIn ?? profile.depthIn;
+  const needed = nicheDepthIn * INCH + BACK_CLEARANCE_IN * INCH - t;
+  const thickness = Math.max(
+    needed,
+    Math.max(0, (options.thicknessIn ?? SHOWER_WET_WALL_THICKNESS_IN) * INCH - t),
+  );
   const H = (options.heightIn ?? profile.heightIn) * INCH;
   const W = (options.widthIn ?? profile.widthIn) * INCH;
   const material = materials.panel ?? materials.shell;
