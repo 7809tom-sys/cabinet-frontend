@@ -347,7 +347,10 @@ export function placeWallFittingOnPanel(
     // "Inside the enclosure" means moving INWARD from the chosen side panel:
     // rightwards from the left panel, leftwards from the right one. Getting this
     // sign backwards put the fitting outside the surround, through the wall.
-    const sign = side === "left" ? 1 : -1;
+    // The bay's `tangent` runs left-to-right along the back wall, so the LEFT
+    // panel is toward -tangent and the RIGHT panel toward +tangent. These were
+    // the wrong way round, which put a left-wall niche on the right panel.
+    const sign = side === "left" ? -1 : 1;
     const alongPanel = halfDepth;         // centred front-to-back on the side panel
     // `centre` is the fitting's CENTRE, so the offset has to clear half the extent
     // that runs ACROSS the side panel — which for a quarter-turned fitting is

@@ -482,3 +482,35 @@ describe("the wizard's wall names map onto panel sides", () => {
     expect(back.x).not.toBe(right.x);
   });
 });
+
+/**
+ * Regression: the side panels were swapped — a LEFT-wall niche sat on the RIGHT
+ * panel and vice versa.
+ *
+ * `tangent` runs left-to-right along the back wall, so the left panel is toward
+ * -tangent. The sign was inverted, and the existing tests only asserted that the
+ * three walls produced different positions — which a mirror image also satisfies.
+ * These assert WHICH side each one lands on.
+ */
+describe("left and right panels are on the sides their names say", () => {
+  for (const roomWidth of [60, 120]) {
+    it(`puts the left panel left of centre and the right panel right of it (${roomWidth}")`, () => {
+      const room = { width: roomWidth, depth: 96, ceilingHeight: 96 } as any;
+      const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+      const centre = roomWidth / 2;
+
+      const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1639")!;
+      const back = placeWallFittingOnPanel("PL-SN1639", "back", opening, 44)!;
+      const left = placeWallFittingOnPanel("PL-SN1639", "left", opening, 44)!;
+      const right = placeWallFittingOnPanel("PL-SN1639", "right", opening, 44)!;
+
+      // Compare centres, since `x` is the bounding-box corner.
+      const cx = (placed: { x: number }) => placed.x + niche.widthIn / 2;
+      expect(cx(back), "back is centred").toBeCloseTo(centre, 1);
+      expect(cx(left), "left panel is left of centre").toBeLessThan(centre);
+      expect(cx(right), "right panel is right of centre").toBeGreaterThan(centre);
+      // And the two are mirror images about the centreline.
+      expect(centre - cx(left)).toBeCloseTo(cx(right) - centre, 1);
+    });
+  }
+});
