@@ -237,10 +237,62 @@ export function makeShowerPanParts(
  * far), and the open front is the -Z long face where the door goes. Nothing here
  * occupies floor.
  */
+/**
+ * Emit a rectangle with a rectangular hole cut out of it.
+ *
+ * `emit(u0, u1, v0, v1)` is called once per surrounding strip. With no hole it is
+ * called once for the whole rect, so callers can pass `undefined` freely.
+ */
+function rectWithHole(
+  u0: number,
+  u1: number,
+  v0: number,
+  v1: number,
+  hole: { u0: number; u1: number; v0: number; v1: number } | null | undefined,
+  emit: (a0: number, a1: number, b0: number, b1: number) => void,
+): void {
+  if (!hole) {
+    emit(u0, u1, v0, v1);
+    return;
+  }
+  // A hole that misses the panel entirely must not delete the panel.
+  if (hole.u1 <= u0 || hole.u0 >= u1 || hole.v1 <= v0 || hole.v0 >= v1) {
+    emit(u0, u1, v0, v1);
+    return;
+  }
+  const hu0 = Math.max(u0, hole.u0);
+  const hu1 = Math.min(u1, hole.u1);
+  const hv0 = Math.max(v0, hole.v0);
+  const hv1 = Math.min(v1, hole.v1);
+  if (hv0 > v0) emit(u0, u1, v0, hv0);      // below the hole
+  if (hv1 < v1) emit(u0, u1, hv1, v1);      // above it
+  if (hu0 > u0) emit(u0, hu0, hv0, hv1);    // to its left
+  if (hu1 < u1) emit(hu1, u1, hv0, hv1);    // to its right
+}
+
 export function makeShowerSurroundParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
-  options: { baseHeightIn?: number } = {},
+  options: {
+    baseHeightIn?: number;
+    /**
+     * A hole to cut through the panel the niche is mounted on.
+     *
+     * Without it the panel is a solid sheet and the niche sits BEHIND it: from
+     * inside the shower you look at wall, not into a recess. The niche is only
+     * visible once the panel actually has an opening at its face.
+     *
+     * `side` is the panel to cut ("back" | "left" | "right"); the rectangle is in
+     * that panel's own plane, in inches above the base.
+     */
+    opening?: {
+      side: "back" | "left" | "right";
+      centreAlongIn: number;   // along the panel, from its start
+      widthIn: number;
+      bottomIn: number;
+      heightIn: number;
+    } | null;
+  } = {},
 ): ShowerPart[] {
   const W = profile.widthIn * INCH;
   const D = profile.depthIn * INCH;
@@ -262,14 +314,26 @@ export function makeShowerSurroundParts(
   // ---- Back panel: the +Z long side, spanning the full alcove width ----------
   {
     const p = new Panel();
-    p.quad([
-      v(-halfW, base, halfD - t), v(halfW, base, halfD - t),
-      v(halfW, top, halfD - t), v(-halfW, top, halfD - t),
-    ], v(0, 0, -1));
-    p.quad([
-      v(-halfW, base, halfD), v(halfW, base, halfD),
-      v(halfW, top, halfD), v(-halfW, top, halfD),
-    ], v(0, 0, 1));
+    const opening = options.opening?.side === "back" ? options.opening : null;
+    const hole = opening
+      ? {
+        u0: -halfW + (opening.centreAlongIn - opening.widthIn / 2) * INCH,
+        u1: -halfW + (opening.centreAlongIn + opening.widthIn / 2) * INCH,
+        v0: base + opening.bottomIn * INCH,
+        v1: base + (opening.bottomIn + opening.heightIn) * INCH,
+      }
+      : null;
+    // Inner face, with the niche's opening cut out of it.
+    rectWithHole(-halfW, halfW, base, top, hole, (u0, u1, v0, v1) => {
+      p.quad([v(u0, v0, halfD - t), v(u1, v0, halfD - t), v(u1, v1, halfD - t), v(u0, v1, halfD - t)], v(0, 0, -1));
+    });
+    // Outer face: cut at the same rectangle. Left solid it sealed the back of the
+    // recess, so from inside the shower you looked into the niche and met this
+    // quad a third of an inch in — the recess read as a flat patch, not a recess.
+    // The wet wall's own closed back is what covers the opening from outside.
+    rectWithHole(-halfW, halfW, base, top, hole, (u0, u1, v0, v1) => {
+      p.quad([v(u0, v0, halfD), v(u1, v0, halfD), v(u1, v1, halfD), v(u0, v1, halfD)], v(0, 0, 1));
+    });
     p.quad([
       v(-halfW, top, halfD - t), v(halfW, top, halfD - t),
       v(halfW, top, halfD), v(-halfW, top, halfD),
@@ -284,14 +348,26 @@ export function makeShowerSurroundParts(
     const xInner = side * (halfW - t);
     // Inner face (toward the shower), outer face, top edge, and the cut edge at
     // the open front.
-    p.quad([
-      v(xInner, base, -halfD), v(xInner, base, halfD - t),
-      v(xInner, top, halfD - t), v(xInner, top, -halfD),
-    ], v(-side, 0, 0));
-    p.quad([
-      v(xOuter, base, -halfD), v(xOuter, base, halfD - t),
-      v(xOuter, top, halfD - t), v(xOuter, top, -halfD),
-    ], v(side, 0, 0));
+    // Inner face, with the niche's opening cut out when the niche is on this end.
+    const sideName = side < 0 ? "left" : "right";
+    const opening = options.opening?.side === sideName ? options.opening : null;
+    const hole = opening
+      ? {
+        // Along the panel is plan Z; the opening is measured from the front (-halfD).
+        u0: -halfD + (opening.centreAlongIn - opening.widthIn / 2) * INCH,
+        u1: -halfD + (opening.centreAlongIn + opening.widthIn / 2) * INCH,
+        v0: base + opening.bottomIn * INCH,
+        v1: base + (opening.bottomIn + opening.heightIn) * INCH,
+      }
+      : null;
+    rectWithHole(-halfD, halfD - t, base, top, hole, (u0, u1, v0, v1) => {
+      p.quad([v(xInner, v0, u0), v(xInner, v0, u1), v(xInner, v1, u1), v(xInner, v1, u0)], v(-side, 0, 0));
+    });
+    // Outer face, cut at the niche's rectangle for the same reason as the back
+    // panel: left solid it capped the recess from behind.
+    rectWithHole(-halfD, halfD - t, base, top, hole, (u0, u1, v0, v1) => {
+      p.quad([v(xOuter, v0, u0), v(xOuter, v0, u1), v(xOuter, v1, u1), v(xOuter, v1, u0)], v(side, 0, 0));
+    });
     p.quad([
       v(xInner, top, -halfD), v(xInner, top, halfD - t),
       v(xOuter, top, halfD - t), v(xOuter, top, -halfD),
@@ -338,6 +414,12 @@ export function makeShowerSystemParts(
   // system is built about the origin too: the wall sits half a footprint away on
   // +Z and the head reaches back toward the room.
   const wallZ = ((profile.depthIn || 8) / 2) * INCH;
+  // The panel sheet sits in front of the wall the group is centred on, so the
+  // finished surface the trim beds against is one panel thickness nearer the room.
+  // Everything is offset by this: without it the trim plate's back face landed ON
+  // the panel's OUTER face, so from the street the valve was a metal disc sitting
+  // flush in the wall — the protrusion Tom photographed.
+  const faceZ = wallZ - SHOWER_PANEL_THICKNESS_IN * INCH;
 
   // FIXED plumbing heights, measured from the finished floor. Tom's rule:
   //
@@ -369,7 +451,7 @@ export function makeShowerSystemParts(
     materials.metal,
   );
   plate.rotation.x = Math.PI / 2;
-  plate.position.set(0, valveY, wallZ - 0.25 * INCH);
+  plate.position.set(0, valveY, faceZ - 0.25 * INCH);
   push(plate, "shower-valve-trim");
 
   const lever = new THREE.Mesh(
@@ -377,7 +459,7 @@ export function makeShowerSystemParts(
     materials.metal,
   );
   lever.rotation.x = Math.PI / 2;
-  lever.position.set(0, valveY, wallZ - 1.5 * INCH);
+  lever.position.set(0, valveY, faceZ - 1.5 * INCH);
   push(lever, "shower-valve-handle");
 
   // ---- Riser and head -------------------------------------------------------
@@ -399,7 +481,7 @@ export function makeShowerSystemParts(
     materials.metal,
   );
   escutcheon.rotation.x = Math.PI / 2;
-  escutcheon.position.set(0, riserBottom, wallZ - 0.07 * INCH);
+  escutcheon.position.set(0, riserBottom, faceZ - 0.07 * INCH);
   push(escutcheon, "shower-riser-escutcheon");
 
   // Arm out into the room along -Z, then the head face over the pan.
@@ -408,7 +490,7 @@ export function makeShowerSystemParts(
     materials.metal,
   );
   arm.rotation.x = Math.PI / 2;
-  arm.position.set(0, headY, wallZ - reach / 2);
+  arm.position.set(0, headY, faceZ - reach / 2);
   push(arm, "shower-head-arm");
 
   const head = new THREE.Mesh(
@@ -418,7 +500,7 @@ export function makeShowerSystemParts(
   // Tom's 80" is the CENTRE of the head, so the head sits exactly on `headY`. It
   // used to hang 0.4" below the arm's centreline, which put the visible head 0.4"
   // under the specified height.
-  head.position.set(0, headY, wallZ - reach);
+  head.position.set(0, headY, faceZ - reach);
   push(head, "shower-head");
 
   // ---- Tub spout ------------------------------------------------------------
@@ -431,7 +513,7 @@ export function makeShowerSystemParts(
       materials.metal,
     );
     spout.rotation.x = Math.PI / 2;
-    spout.position.set(0, deck + 8 * INCH, wallZ - 2 * INCH);
+    spout.position.set(0, deck + 8 * INCH, faceZ - 2 * INCH);
     push(spout, "shower-spout");
   }
 
@@ -443,27 +525,210 @@ export function makeShowerSystemParts(
  *
  * It is recessed, so it has no floor footprint; the caller mounts it on a wall.
  */
+/**
+ * How thick a FRAMED shower wet wall is, in inches — a 2x4 stud wall plus tile.
+ *
+ * A surround on its own is a 0.35" panel sheet. A 3-17/32" niche cannot sit inside
+ * that, and there is no room wall behind a free-standing shower side to hide it in,
+ * so the recess simply stuck out of the back (Tom's screenshots, twice).
+ *
+ * A real installation builds a wet wall: framing deep enough to swallow the niche,
+ * faced with the panel on the shower side. Giving the panel that thickness is what
+ * makes the niche legal — the recess lives in the framing, the panel stays flush on
+ * the inside, and the outside face is a flat wall.
+ */
+export const SHOWER_WET_WALL_THICKNESS_IN = 4.5;
+
+/** The niche depth a wall of this thickness can absorb. */
+export function nicheDepthForWallThickness(wallThicknessIn: number): number {
+  // Leave the panel's own sheet on the inside face, so the recess starts where the
+  // finish ends rather than eating the visible panel.
+  return Math.max(0, wallThicknessIn - SHOWER_PANEL_THICKNESS_IN);
+}
+
+/**
+ * A framed wet wall for one side of a surround: a solid slab from the panel's inner
+ * face out to the wall's outer face, drawn in the panel's own material.
+ *
+ * The niche is then recessed inside THIS slab (see `availableDepthIn` on
+ * `makeShowerNicheParts`), so the outer face is flat and nothing protrudes. Only the
+ * slab is drawn — the panel stays where it was, flush on the inside.
+ */
+export function makeShowerWetWallParts(
+  profile: VerifiedPelicanBathroomFixtureProfile,
+  materials: ShowerMaterials,
+  options: {
+    thicknessIn?: number;
+    heightIn?: number;
+    widthIn?: number;
+    mountHeightIn?: number;
+    nicheDepthIn?: number;
+    /**
+     * The height the niche's own group is lifted to, inches.
+     *
+     * This wall is a child of that group, so it inherits the lift. Without
+     * cancelling it the wall floated up with the niche and its bottom sat at the
+     * niche's height instead of the shower floor.
+     */
+    groupMountHeightIn?: number;
+  } = {},
+): ShowerPart[] {
+  const t = SHOWER_PANEL_THICKNESS_IN * INCH;
+  // A framed wet wall is framing PLUS the panel sheet already in front of it, so
+  // the nominal 4.5" includes the 0.35" panel. Counting the panel twice made the
+  // wall half an inch too deep and pushed its face off the back of the shower.
+  const nominal = Math.max(0, (options.thicknessIn ?? SHOWER_WET_WALL_THICKNESS_IN) * INCH);
+  const BACK_CLEARANCE_IN = 0.5;
+  const nicheDepthIn = options.nicheDepthIn ?? profile.depthIn;
+
+  // The recess back must finish INSIDE the framing, with a clear gap behind it.
+  // Coincident faces z-fight and the loser is chosen per pixel, which is how the
+  // niche's pale shell kept winning against the wall from outside. A real gap
+  // removes the tie: the wall always covers it from the outside.
+  // Same frame as the niche. The group origin sits `depth/2` out from the room
+  // wall and local +Z runs INTO the wall, so a larger z is deeper in the wall.
+  //
+  //   panel inner face  = depth/2 - t   (the niche's opening plane)
+  //   panel outer face  = depth/2       (where the framing starts)
+  //   framed wall back  = inner + nominal
+  //   recess back       = inner + niche depth
+  //
+  // The framing therefore starts at the panel's OUTER face and runs further in.
+  // Starting it at the inner face (or at the recess back) left the wall standing
+  // in front of the recess — on the room side of the glass.
+  const halfFootprint = (profile.depthIn * INCH) / 2;
+  const panelInner = halfFootprint - t;
+  const wallInner = halfFootprint;                                  // framing's front
+  const wallBack = panelInner + nominal;                            // framing's back
+  const cavityBack = panelInner + nicheDepthIn * INCH + BACK_CLEARANCE_IN * INCH;
+
+  const H = (options.heightIn ?? profile.heightIn) * INCH;
+  const W = (options.widthIn ?? profile.widthIn) * INCH;
+  const material = materials.panel ?? materials.shell;
+
+  // Everything here is in the NICHE's local frame: z = 0 is the opening plane on
+  // the panel's inside face, +z runs into the wall, and the group itself is lifted
+  // to the niche's mounting height. So the wall's own vertical range has to cancel
+  // that lift to span the real panel.
+  const groupLift = (options.groupMountHeightIn ?? 0) * INCH;
+  const yBottom = -groupLift;
+  const yTop = H - groupLift;
+
+  const parts: ShowerPart[] = [];
+  const wallBox = (xa: number, xb: number, ya: number, yb: number, za: number, zb: number) => {
+    // Take the extremes rather than trusting the caller's ordering: these are
+    // computed from mixed frames above and an inverted pair would give a negative
+    // box dimension and silently drop a piece of the wall.
+    const x0 = Math.min(xa, xb);
+    const x1 = Math.max(xa, xb);
+    const y0 = Math.min(ya, yb);
+    const y1 = Math.max(ya, yb);
+    const z0 = Math.min(za, zb);
+    const z1 = Math.max(za, zb);
+    const w = x1 - x0;
+    const h = y1 - y0;
+    const d = z1 - z0;
+    // A zero-width strip is a degenerate box: drop it rather than draw a sliver.
+    if (w <= 1e-6 || h <= 1e-6 || d <= 1e-6) return;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+    mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    parts.push({ mesh, part: "shower-wet-wall" });
+  };
+
+  // The wall is a closed FRAME around the recess, not a slab in front of or behind
+  // it. Drawn as a slab it either filled the niche (so the recess read as a flat
+  // patch) or stood off the back of the panel as a separate bump. As a frame the
+  // outside is one uninterrupted face and the recess stays empty.
+  //
+  // Back plate, closing the wall behind the recess. This is the surface seen from
+  // outside, which is why it spans the whole panel.
+  wallBox(-W / 2, W / 2, yBottom, yTop, wallBack, cavityBack);
+
+  // The four sides, around the niche's opening and never across it.
+  // The opening in the frame goes exactly where the NICHE is. The niche is always
+  // authored at local y 0..height inside this same group, so the aperture is too —
+  // no mount height involved. Deriving it from an absolute height instead put the
+  // hole at floor level while the niche sat at 44–83", so the frame closed over the
+  // niche and it read as a flat patch again.
+  const halfNiche = (profile.widthIn * INCH) / 2;
+  const nicheTop = profile.heightIn * INCH;
+  // Cover the niche's face flange too, so no part of the frame laps over it.
+  const openingBottom = -0.5 * INCH;
+  const openingTop = nicheTop + 0.5 * INCH;
+  wallBox(-W / 2, -halfNiche, yBottom, yTop, cavityBack, wallInner);
+  wallBox(halfNiche, W / 2, yBottom, yTop, cavityBack, wallInner);
+  wallBox(-halfNiche, halfNiche, yBottom, openingBottom, cavityBack, wallInner);
+  wallBox(-halfNiche, halfNiche, openingTop, yTop, cavityBack, wallInner);
+
+  return parts;
+}
+
+/**
+ * Local z of a niche's OPENING plane, in the frame `makeShowerNicheParts` builds in.
+ *
+ * A niche group is placed at the fixture's footprint centre, half a depth out from
+ * the room wall, so its opening only lands on the panel's inside face once it is
+ * pushed forward by half the footprint and back by one panel thickness. Anything
+ * that positions geometry relative to the niche — the selection box especially —
+ * has to use this, or it covers the niche in the old frame and misses it.
+ */
+export function showerNicheOpeningOffsetIn(
+  profile: VerifiedPelicanBathroomFixtureProfile,
+): number {
+  return (profile.depthIn - SHOWER_PANEL_THICKNESS_IN) / 2;
+}
+
 export function makeShowerNicheParts(
   profile: VerifiedPelicanBathroomFixtureProfile,
   materials: ShowerMaterials,
+  options: { availableDepthIn?: number } = {},
 ): ShowerPart[] {
   const W = profile.widthIn * INCH;
   const Hp = profile.heightIn * INCH;
   const shell = 0.12 * INCH;
 
-  // The recess keeps its FULL published depth, so from inside the shower it still
-  // reads as a real niche with real depth to the shelves and the back.
+  // How deep a recess this niche may cut, in inches.
   //
-  // What it must never do is show on the OUTSIDE of the panel. A surround panel is
-  // a 0.35" sheet, so a 3-17/32" recess necessarily runs behind it — physically
-  // that is the stud cavity, and that is where a real niche lives. The niche is
-  // therefore enclosed in a cavity box (below) that runs from the panel's inner
-  // face to its outer face and is painted with the panel's own material, so the
-  // outside face stays plain and flat.
+  // The niche is authored opening at z = 0 with its recess running into +Z, and its
+  // placement rotates it so local +Z points INTO the wall it is mounted on. So the
+  // recess eats into whatever thickness that wall has.
   //
-  // Clamping the depth instead would have flattened the niche to 0.35" and ruined
-  // the inside view; this keeps both rules true at once.
-  const depth = profile.depthIn * INCH;
+  // A shower surround panel is a 0.35" sheet. A 3-17/32" recess behind it has
+  // nowhere to go: there is no wall there, so anything drawn in that space sticks
+  // out of the back of the shower and is visible from outside — which is exactly
+  // what Tom photographed, twice. Wrapping that space in panel material only turned
+  // a white bump into a grey bump.
+  //
+  // The caller therefore passes the depth the WALL can actually absorb:
+  //   - a surround backed by a room wall: that wall's thickness,
+  //   - a framed wet wall (see `makeShowerWetWallParts`): its stud depth,
+  //   - a bare 0.35" panel with nothing behind it: 0.35", i.e. no real recess.
+  //
+  // Clamping here is the honest behaviour: a niche can only be as deep as the wall
+  // holding it, so the outside face stays perfectly flat.
+  const availableDepth = Number.isFinite(options.availableDepthIn) && (options.availableDepthIn ?? 0) > 0
+    ? options.availableDepthIn!
+    : SHOWER_PANEL_THICKNESS_IN;
+  const depth = Math.min(profile.depthIn, availableDepth) * INCH;
+
+  // Where the opening plane sits relative to the group origin.
+  //
+  // The group is centred on the fixture's FOOTPRINT, so its origin is half a depth
+  // back from the front of the part. The recess is authored from the opening
+  // instead, so the two only line up once the opening is pushed forward by half the
+  // footprint depth. Without this the niche straddled the panel: roughly half of it
+  // stood out into the room and the other half came through the outside face —
+  // exactly the bump Tom kept photographing. The wet wall below is offset by the
+  // same amount, so the frame and the recess stay in one frame.
+  //
+  // The group sits half a depth out from the room wall (its footprint is flush to
+  // that wall), and local +Z runs INTO the wall, so a point at local z maps to
+  // `depth/2 - z` from the wall. The opening belongs on the panel's INNER face,
+  // which is one panel thickness out from the wall, hence `depth/2 - t`.
+  const halfFootprint = (profile.depthIn * INCH) / 2;
+  const openingZ = halfFootprint - SHOWER_PANEL_THICKNESS_IN * INCH;
 
   const parts: ShowerPart[] = [];
   const push = (geometry: THREE.BufferGeometry, part: string) => {
@@ -473,166 +738,47 @@ export function makeShowerNicheParts(
     parts.push({ mesh, part });
   };
 
-  /**
-   * The cavity closure: a sleeve around the part of the recess that runs BEHIND
-   * the panel, drawn in the PANEL's own material.
-   *
-   * Frames matter here. The niche is authored opening at z = 0 with its recess
-   * running into +Z, and its placement rotates it so local +Z points INTO the wall
-   * it is mounted on. So the panel occupies z in [0, SHOWER_PANEL_THICKNESS_IN] and
-   * the rest of the 3-17/32" recess (z = 0.35 .. 3.53) sits in the stud cavity —
-   * which is exactly where a real niche lives, and exactly what was showing on the
-   * outside face of the wall.
-   *
-   * The sleeve therefore wraps the recess from the panel's OUTER face (0.35") back
-   * to just past the recess back, with four side walls and an outer skin. Inside the
-   * shower you still look through the opening at z = 0 into a full-depth niche; from
-   * outside, every surface you can reach belongs to the wall.
-   *
-   * Nothing here extends toward -Z, so it can never fill the shower or block the
-   * niche's opening.
-   */
-  {
-    const t = 0.06 * INCH;                                  // sleeve wall thickness
-    const faceZ = SHOWER_PANEL_THICKNESS_IN * INCH;         // the panel's OUTER face
-    const backZ = depth;                                    // the recess's back plane
-    const skinZ = backZ + t;                                // the outer skin, just past it
-    const outerW = W / 2 + t;
-    const yBottom = -t;
-    const yTop = Hp + t;
-    const plate = new Panel();
-
-    // Outer skin: the face a viewer BEHIND the wall sees where the hole would be.
-    plate.quad(
-      [v(-outerW, yTop, skinZ), v(outerW, yTop, skinZ),
-        v(outerW, yBottom, skinZ), v(-outerW, yBottom, skinZ)],
-      v(0, 0, 1),
-    );
-    // Four side walls, from the panel's outer face back to the skin, so a grazing
-    // view along the wall sees wall material rather than the niche's white shell.
-    plate.quad([v(-outerW, yTop, faceZ), v(outerW, yTop, faceZ), v(outerW, yTop, skinZ), v(-outerW, yTop, skinZ)], v(0, -1, 0));
-    plate.quad([v(-outerW, yBottom, faceZ), v(outerW, yBottom, faceZ), v(outerW, yBottom, skinZ), v(-outerW, yBottom, skinZ)], UP);
-    plate.quad([v(-outerW, yBottom, faceZ), v(-outerW, yTop, faceZ), v(-outerW, yTop, skinZ), v(-outerW, yBottom, skinZ)], v(1, 0, 0));
-    plate.quad([v(outerW, yBottom, faceZ), v(outerW, yTop, faceZ), v(outerW, yTop, skinZ), v(outerW, yBottom, skinZ)], v(-1, 0, 0));
-
-    const mesh = new THREE.Mesh(plate.geometry(), materials.panel ?? materials.shell);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    parts.push({ mesh, part: "shower-niche-cavity-closure" });
-  }
-
-  // The recess keeps its FULL published depth, so from inside the shower it still
-  // reads as a real niche with real depth to the shelves and the back.
-  //
-  // What it must never do is show on the OUTSIDE of the panel. A surround panel is
-  // a 0.35" sheet, so a 3-17/32" recess necessarily runs behind it — physically
-  // that is the stud cavity, and that is where a real niche lives. The niche is
-  // therefore enclosed in a cavity box (below) that runs from the panel's inner
-  // face to its outer face and is painted with the panel's own material, so the
-  // outside face stays plain and flat.
-  //
-  // Clamping the depth instead would have flattened the niche to 0.35" and ruined
-  // the inside view; this keeps both rules true at once.
-
-  /**
-   * The cavity closure: the wall around the hole, from the panel's INNER face out
-   * to its OUTER face, drawn in the PANEL's own material.
-   *
-   * This is what lets the niche keep its full 3-17/32" depth for the inside view
-   * while never showing on the outside. A surround panel is a 0.35" sheet, so a
-   * recess that deep necessarily runs behind it — physically into the stud cavity,
-   * which is exactly where a real niche lives. The closure is the wall around that
-   * hole: the shower side still looks into a genuinely deep niche, and the outside
-   * face stays plain, flat wall.
-   *
-   * Only the OUTER skin of the sleeve is built (a back plate plus four returns), so
-   * it can never occlude the niche from the room.
-   */
-  {
-    const t = 0.06 * INCH;                 // sleeve wall thickness
-    const backZ = depth;                   // the recess's own back plane
-    const outerZ = backZ + t;              // just behind it: the panel's outer face
-    const outerW = W / 2 + t;
-    const yBottom = -t;
-    const yTop = Hp + t;
-    const plate = new Panel();
-    // The face a viewer OUTSIDE the shower sees where the hole would be.
-    plate.quad(
-      [v(-outerW, yTop, outerZ), v(outerW, yTop, outerZ),
-        v(outerW, yBottom, outerZ), v(-outerW, yBottom, outerZ)],
-      v(0, 0, 1),
-    );
-    // Four returns close the gap from the recess edge out to that plate, so no
-    // seam or light path shows through the sleeve at any viewing angle.
-    plate.quad([v(-outerW, yTop, backZ), v(outerW, yTop, backZ), v(outerW, yTop, outerZ), v(-outerW, yTop, outerZ)], v(0, -1, 0));
-    plate.quad([v(-outerW, yBottom, backZ), v(outerW, yBottom, backZ), v(outerW, yBottom, outerZ), v(-outerW, yBottom, outerZ)], UP);
-    plate.quad([v(-outerW, yBottom, backZ), v(-outerW, yTop, backZ), v(-outerW, yTop, outerZ), v(-outerW, yBottom, outerZ)], v(1, 0, 0));
-    plate.quad([v(outerW, yBottom, backZ), v(outerW, yTop, backZ), v(outerW, yTop, outerZ), v(outerW, yBottom, outerZ)], v(-1, 0, 0));
-    const mesh = new THREE.Mesh(plate.geometry(), materials.panel ?? materials.shell);
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    parts.push({ mesh, part: "shower-niche-cavity-closure" });
-  }
-
-
-  // Authored in the SAME frame as the rest of the shower: the room-facing opening
-  // is the face at z = 0 and the recess runs AWAY from the room into +Z, with the
-  // fixture standing on y = 0 so its bottom sits on the deck it is mounted over.
-  //
-  // It used to be recessed along +X and centred on y = 0. Every fixture group is
-  // positioned at floor level (y = 0) and rotated so its +Z face is the wall, so
-  // that older frame put half the niche below the floor and turned the recess
-  // sideways — a thin slab hanging in the shower at an odd angle (Tom's report).
+  // The recess: opening at z = 0 (the wall's inner face), back at z = depth. Never
+  // deeper than the wall, so nothing crosses the outer face.
+  const zOpen = openingZ - shell;
+  const zBack = openingZ + depth;
   const p = new Panel();
-  p.quad([v(-W / 2, Hp, depth), v(W / 2, Hp, depth), v(W / 2, 0, depth), v(-W / 2, 0, depth)], v(0, 0, 1));
-  // Floor, ceiling and both sides of the recess.
-  p.quad([v(-W / 2, 0, -shell), v(W / 2, 0, -shell), v(W / 2, 0, depth), v(-W / 2, 0, depth)], UP);
-  p.quad([v(-W / 2, Hp, -shell), v(W / 2, Hp, -shell), v(W / 2, Hp, depth), v(-W / 2, Hp, depth)], v(0, -1, 0));
-  p.quad([v(-W / 2, 0, -shell), v(-W / 2, 0, depth), v(-W / 2, Hp, depth), v(-W / 2, Hp, -shell)], v(1, 0, 0));
-  p.quad([v(W / 2, 0, -shell), v(W / 2, 0, depth), v(W / 2, Hp, depth), v(W / 2, Hp, -shell)], v(-1, 0, 0));
+  p.quad([v(-W / 2, Hp, zBack), v(W / 2, Hp, zBack), v(W / 2, 0, zBack), v(-W / 2, 0, zBack)], v(0, 0, 1));
+  p.quad([v(-W / 2, 0, zOpen), v(W / 2, 0, zOpen), v(W / 2, 0, zBack), v(-W / 2, 0, zBack)], UP);
+  p.quad([v(-W / 2, Hp, zOpen), v(W / 2, Hp, zOpen), v(W / 2, Hp, zBack), v(-W / 2, Hp, zBack)], v(0, -1, 0));
+  p.quad([v(-W / 2, 0, zOpen), v(-W / 2, 0, zBack), v(-W / 2, Hp, zBack), v(-W / 2, Hp, zOpen)], v(1, 0, 0));
+  p.quad([v(W / 2, 0, zOpen), v(W / 2, 0, zBack), v(W / 2, Hp, zBack), v(W / 2, Hp, zOpen)], v(-1, 0, 0));
   push(p.geometry(), "shower-niche-body");
 
-  // Face flange, the visible 1/2" border that laps the wall finish. It lives on the
-  // room-facing plane and is centred on the opening, so it reads as a frame around
-  // the recess instead of a separate sheet.
+  // Face flange: the visible 1/2" border lapping the wall finish, on the shower
+  // side of the opening so nothing laps onto the outside.
   const f = new Panel();
   const flange = 0.5 * INCH;
   const outerW = W / 2 + flange;
-  f.quad([v(-outerW, Hp + flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(-W / 2, Hp, -shell)], v(0, 0, -1));
-  f.quad([v(-outerW, -flange, -shell), v(outerW, -flange, -shell), v(W / 2, 0, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
-  f.quad([v(-outerW, -flange, -shell), v(-outerW, Hp + flange, -shell), v(-W / 2, Hp, -shell), v(-W / 2, 0, -shell)], v(0, 0, -1));
-  f.quad([v(outerW, -flange, -shell), v(outerW, Hp + flange, -shell), v(W / 2, Hp, -shell), v(W / 2, 0, -shell)], v(0, 0, -1));
+  f.quad([v(-outerW, Hp + flange, zOpen), v(outerW, Hp + flange, zOpen), v(W / 2, Hp, zOpen), v(-W / 2, Hp, zOpen)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, zOpen), v(outerW, -flange, zOpen), v(W / 2, 0, zOpen), v(-W / 2, 0, zOpen)], v(0, 0, -1));
+  f.quad([v(-outerW, -flange, zOpen), v(-outerW, Hp + flange, zOpen), v(-W / 2, Hp, zOpen), v(-W / 2, 0, zOpen)], v(0, 0, -1));
+  f.quad([v(outerW, -flange, zOpen), v(outerW, Hp + flange, zOpen), v(W / 2, Hp, zOpen), v(W / 2, 0, zOpen)], v(0, 0, -1));
   push(f.geometry(), "shower-niche-flange");
 
-  // Shelves. Pelican sells these niches as "1 Shelf" / "2 Shelves" / "3 Shelves",
-  // and the reference bathrooms show a real shelf dividing the recess. Without them
-  // the niche reads as an empty hole in the wall.
+  // Shelves, inside the available depth.
   const shelfCount = nicheShelfCount(profile.name);
   if (shelfCount > 0) {
     const shelfThickness = 0.4 * INCH;
     for (let index = 1; index <= shelfCount; index += 1) {
-      // Shelves divide the recess evenly, measured up from the niche's own floor.
       const y = (Hp * index) / (shelfCount + 1);
+      const shelfBack = zOpen + Math.max(depth * 0.94, 0.01);
       const s = new Panel();
-      // A shelf spans the opening, sits inside the recess, and is thin.
-      s.quad(
-        [v(-W / 2, y - shelfThickness / 2, -shell), v(W / 2, y - shelfThickness / 2, -shell),
-          v(W / 2, y - shelfThickness / 2, depth * 0.94), v(-W / 2, y - shelfThickness / 2, depth * 0.94)],
-        v(0, -1, 0),
-      );
-      s.quad(
-        [v(-W / 2, y + shelfThickness / 2, -shell), v(W / 2, y + shelfThickness / 2, -shell),
-          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
-        UP,
-      );
-      s.quad(
-        [v(-W / 2, y - shelfThickness / 2, depth * 0.94), v(W / 2, y - shelfThickness / 2, depth * 0.94),
-          v(W / 2, y + shelfThickness / 2, depth * 0.94), v(-W / 2, y + shelfThickness / 2, depth * 0.94)],
-        v(0, 0, 1),
-      );
+      s.quad([v(-W / 2, y - shelfThickness / 2, zOpen), v(W / 2, y - shelfThickness / 2, zOpen),
+        v(W / 2, y - shelfThickness / 2, shelfBack), v(-W / 2, y - shelfThickness / 2, shelfBack)], v(0, -1, 0));
+      s.quad([v(-W / 2, y + shelfThickness / 2, zOpen), v(W / 2, y + shelfThickness / 2, zOpen),
+        v(W / 2, y + shelfThickness / 2, shelfBack), v(-W / 2, y + shelfThickness / 2, shelfBack)], UP);
+      s.quad([v(-W / 2, y - shelfThickness / 2, shelfBack), v(W / 2, y - shelfThickness / 2, shelfBack),
+        v(W / 2, y + shelfThickness / 2, shelfBack), v(-W / 2, y + shelfThickness / 2, shelfBack)], v(0, 0, 1));
       push(s.geometry(), `shower-niche-shelf-${index}`);
     }
   }
+
   return parts;
 }
 

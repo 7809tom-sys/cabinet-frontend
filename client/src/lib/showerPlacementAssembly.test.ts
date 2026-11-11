@@ -416,3 +416,101 @@ describe("wall fittings open toward the shower, never out through the wall", () 
     }
   });
 });
+
+/**
+ * Regression: in a SMALL room the right-wall niche landed outside the shower.
+ *
+ * The side offset cleared only half of `footprint.across`, but `centre` is the
+ * fitting's centre, so the offset must clear half the extent that runs across the
+ * side panel — `footprint.w` after the quarter turn. In a 60" alcove the shortfall
+ * put the right-wall niche at a negative x, outside the enclosure, and the caller
+ * then clamped it back onto the back wall, so the shopper's wall choice was lost.
+ */
+describe("a small room keeps the fitting on the wall the shopper chose", () => {
+  for (const roomWidth of [60, 66, 96, 120]) {
+    it(`puts back, left and right on three different panels at ${roomWidth}" wide`, () => {
+      const room = { width: roomWidth, depth: 96, ceilingHeight: 96 } as any;
+      const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+
+      for (const code of ["PL-SN1639", "PL-86S22S CHR"]) {
+        const back = placeWallFittingOnPanel(code, "back", opening, 44)!;
+        const left = placeWallFittingOnPanel(code, "left", opening, 44)!;
+        const right = placeWallFittingOnPanel(code, "right", opening, 44)!;
+
+        // Three genuinely different spots.
+        expect(new Set([back.x, left.x, right.x]).size, `${code} distinct x`).toBe(3);
+        // And every one inside the room, not clamped back onto the back wall.
+        for (const [side, placed] of [["back", back], ["left", left], ["right", right]] as const) {
+          expect(placed.x, `${code} ${side} x >= 0`).toBeGreaterThanOrEqual(-0.01);
+          expect(placed.x, `${code} ${side} fits`).toBeLessThan(roomWidth);
+          expect(placed.y, `${code} ${side} y >= 0`).toBeGreaterThanOrEqual(-0.01);
+          expect(placed.y, `${code} ${side} fits depth`).toBeLessThan(room.depth);
+        }
+        // The two side panels sit on opposite sides of the back panel.
+        expect(Math.min(left.x, right.x)).toBeLessThan(back.x);
+        expect(Math.max(left.x, right.x)).toBeGreaterThan(back.x);
+      }
+    });
+  }
+});
+
+/**
+ * Regression: picking the BACK wall put the fitting on the RIGHT panel.
+ *
+ * The wizard names walls the way a room does ("top", "left", "right") but a shower
+ * panel is "back", "left" or "right". The designer cast the wizard's string straight
+ * to a panel side, so "top" matched no branch and fell through to the right panel —
+ * making back and right indistinguishable. This pins the mapping the designer must
+ * apply, so the two name spaces cannot silently drift apart again.
+ */
+describe("the wizard's wall names map onto panel sides", () => {
+  const toPanelSide = (wall: "top" | "left" | "right"): "back" | "left" | "right" =>
+    wall === "top" ? "back" : wall === "left" ? "left" : "right";
+
+  it("maps top -> back, and keeps left and right", () => {
+    expect(toPanelSide("top")).toBe("back");
+    expect(toPanelSide("left")).toBe("left");
+    expect(toPanelSide("right")).toBe("right");
+  });
+
+  it("gives back and right genuinely different positions", () => {
+    const room = { width: 60, depth: 96, ceilingHeight: 96 } as any;
+    const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+    const back = placeWallFittingOnPanel("PL-SN1639", toPanelSide("top"), opening, 44)!;
+    const right = placeWallFittingOnPanel("PL-SN1639", toPanelSide("right"), opening, 44)!;
+    // A cast that passed "top" through used to make these identical.
+    expect(back.x).not.toBe(right.x);
+  });
+});
+
+/**
+ * Regression: the side panels were swapped — a LEFT-wall niche sat on the RIGHT
+ * panel and vice versa.
+ *
+ * `tangent` runs left-to-right along the back wall, so the left panel is toward
+ * -tangent. The sign was inverted, and the existing tests only asserted that the
+ * three walls produced different positions — which a mirror image also satisfies.
+ * These assert WHICH side each one lands on.
+ */
+describe("left and right panels are on the sides their names say", () => {
+  for (const roomWidth of [60, 120]) {
+    it(`puts the left panel left of centre and the right panel right of it (${roomWidth}")`, () => {
+      const room = { width: roomWidth, depth: 96, ceilingHeight: 96 } as any;
+      const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+      const centre = roomWidth / 2;
+
+      const niche = verifiedPelicanBathroomFixtureProfile("PL-SN1639")!;
+      const back = placeWallFittingOnPanel("PL-SN1639", "back", opening, 44)!;
+      const left = placeWallFittingOnPanel("PL-SN1639", "left", opening, 44)!;
+      const right = placeWallFittingOnPanel("PL-SN1639", "right", opening, 44)!;
+
+      // Compare centres, since `x` is the bounding-box corner.
+      const cx = (placed: { x: number }) => placed.x + niche.widthIn / 2;
+      expect(cx(back), "back is centred").toBeCloseTo(centre, 1);
+      expect(cx(left), "left panel is left of centre").toBeLessThan(centre);
+      expect(cx(right), "right panel is right of centre").toBeGreaterThan(centre);
+      // And the two are mirror images about the centreline.
+      expect(centre - cx(left)).toBeCloseTo(cx(right) - centre, 1);
+    });
+  }
+});

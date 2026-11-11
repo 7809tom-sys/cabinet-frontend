@@ -2895,7 +2895,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setShowerWarnings((current) => ({ ...current, [stepId]: nextWarnings }));
         return;
       }
-      const panel = (wall ?? null) as ShowerPanelSide | null;
+      // The wizard names the wall the way a room does — "top", "left", "right" — but
+      // a shower panel is "back", "left" or "right". Casting the string through used
+      // to pass "top" as a panel side, which matched no branch and silently fell
+      // through to the RIGHT panel, so picking the back wall put the fitting on the
+      // right. Map the names explicitly, and reject anything else.
+      const panel: ShowerPanelSide | null = wall === "top"
+        ? "back"
+        : wall === "left"
+          ? "left"
+          : wall === "right"
+            ? "right"
+            : null;
       if (panel == null) {
         nextWarnings.push("Choose which shower panel this goes on — back, left side or right side.");
         setShowerWarnings((current) => ({ ...current, [stepId]: nextWarnings }));
