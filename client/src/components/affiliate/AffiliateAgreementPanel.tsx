@@ -1,14 +1,14 @@
 import { useState } from "react";
-import { AFFILIATE_AGREEMENT_DRAFT_BANNER, buildAffiliateAgreementText } from "@shared/affiliateAgreement";
+import { AFFILIATE_AGREEMENT_DRAFT_BANNER, AFFILIATE_AGREEMENT_VERSION, buildAffiliateAgreementText } from "@shared/affiliateAgreement";
 
-export default function AffiliateAgreementPanel({ version }: { version: string }) {
+export default function AffiliateAgreementPanel({ version, body }: { version: string; body?: string | null }) {
   const [open, setOpen] = useState(false);
-  const text = buildAffiliateAgreementText(version);
+  const text = body?.trim() ? body : buildAffiliateAgreementText(AFFILIATE_AGREEMENT_VERSION);
   return (
     <div className="rounded-xl border border-border p-4" data-testid="affiliate-agreement-panel">
       <p className="text-sm font-semibold text-amber-800">{AFFILIATE_AGREEMENT_DRAFT_BANNER}</p>
       <p className="mt-2 text-sm text-muted-foreground">
-        Read the Affiliate Agreement before you pay. It is a separate document from the website Terms &amp; Conditions and from any warranty.
+        Read the Affiliate Agreement before you pay. The version you accept is {version}. It is a separate document from the website Terms &amp; Conditions and from any warranty.
       </p>
       <div className="mt-3 flex flex-wrap gap-3 text-sm">
         <button type="button" className="font-semibold underline underline-offset-4" onClick={() => setOpen((value) => !value)}>

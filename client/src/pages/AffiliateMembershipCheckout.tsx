@@ -32,7 +32,10 @@ export default function AffiliateMembershipCheckout() {
   const [repId, setRepId] = useState(NONE);
   const api = useMembershipProgramProcedures();
   const reps = api.salesRepProgram.approvedReps.useQuery(undefined, { retry: false, enabled: isAuthenticated });
-  const version = affiliateAgreementVersionLabel(AFFILIATE_AGREEMENT_VERSION);
+  const publishedAgreement = api.legalPages.published.useQuery({ slug: "affiliate-agreement" }, { retry: false });
+  const version = publishedAgreement.data?.versionLabel
+    ?? affiliateAgreementVersionLabel(AFFILIATE_AGREEMENT_VERSION);
+  const agreementBody = publishedAgreement.data?.render === "text" ? publishedAgreement.data.bodyText : null;
   const checkout = api.affiliateMembership.startCheckout.useMutation({
     onSuccess: (result) => {
       window.location.assign(result.url);
@@ -102,7 +105,7 @@ export default function AffiliateMembershipCheckout() {
         </span>
       </label>
 
-      <AffiliateAgreementPanel version={AFFILIATE_AGREEMENT_VERSION} />
+      <AffiliateAgreementPanel version={version} body={agreementBody} />
       <label className="flex items-start gap-3 text-sm">
         <Checkbox checked={agreementAccepted} onCheckedChange={(value) => setAgreementAccepted(value === true)} />
         <span>I have read the Affiliate Agreement ({version}) and I agree to it.</span>
