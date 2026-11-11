@@ -349,7 +349,12 @@ export function placeWallFittingOnPanel(
     // sign backwards put the fitting outside the surround, through the wall.
     const sign = side === "left" ? 1 : -1;
     const alongPanel = halfDepth;         // centred front-to-back on the side panel
-    const inFromSide = footprint.across / 2;
+    // `centre` is the fitting's CENTRE, so the offset has to clear half the extent
+    // that runs ACROSS the side panel — which for a quarter-turned fitting is
+    // `footprint.w`, not `footprint.across`. Using `across` put a small-room
+    // right-wall niche at a negative x, outside the shower, and the caller then
+    // clamped it back onto the back wall.
+    const inFromSide = footprint.w / 2;
     centre = {
       x: bay.start.x
         + bay.tangent.x * (bay.spanIn / 2 + sign * (halfWidth - inFromSide))

@@ -416,3 +416,40 @@ describe("wall fittings open toward the shower, never out through the wall", () 
     }
   });
 });
+
+/**
+ * Regression: in a SMALL room the right-wall niche landed outside the shower.
+ *
+ * The side offset cleared only half of `footprint.across`, but `centre` is the
+ * fitting's centre, so the offset must clear half the extent that runs across the
+ * side panel — `footprint.w` after the quarter turn. In a 60" alcove the shortfall
+ * put the right-wall niche at a negative x, outside the enclosure, and the caller
+ * then clamped it back onto the back wall, so the shopper's wall choice was lost.
+ */
+describe("a small room keeps the fitting on the wall the shopper chose", () => {
+  for (const roomWidth of [60, 66, 96, 120]) {
+    it(`puts back, left and right on three different panels at ${roomWidth}" wide`, () => {
+      const room = { width: roomWidth, depth: 96, ceilingHeight: 96 } as any;
+      const opening = openingForSurround(placeShowerSurround("PL-603096 Brick", bayForWall(room, "top")!), room)!;
+
+      for (const code of ["PL-SN1639", "PL-86S22S CHR"]) {
+        const back = placeWallFittingOnPanel(code, "back", opening, 44)!;
+        const left = placeWallFittingOnPanel(code, "left", opening, 44)!;
+        const right = placeWallFittingOnPanel(code, "right", opening, 44)!;
+
+        // Three genuinely different spots.
+        expect(new Set([back.x, left.x, right.x]).size, `${code} distinct x`).toBe(3);
+        // And every one inside the room, not clamped back onto the back wall.
+        for (const [side, placed] of [["back", back], ["left", left], ["right", right]] as const) {
+          expect(placed.x, `${code} ${side} x >= 0`).toBeGreaterThanOrEqual(-0.01);
+          expect(placed.x, `${code} ${side} fits`).toBeLessThan(roomWidth);
+          expect(placed.y, `${code} ${side} y >= 0`).toBeGreaterThanOrEqual(-0.01);
+          expect(placed.y, `${code} ${side} fits depth`).toBeLessThan(room.depth);
+        }
+        // The two side panels sit on opposite sides of the back panel.
+        expect(Math.min(left.x, right.x)).toBeLessThan(back.x);
+        expect(Math.max(left.x, right.x)).toBeGreaterThan(back.x);
+      }
+    });
+  }
+});

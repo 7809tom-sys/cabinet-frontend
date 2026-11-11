@@ -12,6 +12,7 @@ import {
   SHOWER_WALL_LABELS,
   SHOWER_SURROUND_DECORS,
   choosePart,
+  defaultWallForStep,
   offeredParts,
   showerCartLines,
   showerPlacementIssues,
@@ -354,10 +355,22 @@ export function ShowerBuilderWizard({
     return undefined;
   };
 
+  /**
+   * Seed this step's wall from the surround when the shopper has not chosen one.
+   *
+   * This used to write `wallForStep` back into `wallByStep`, which reads its own
+   * output: once a step had a value it could never change, so picking the right
+   * wall after the left kept placing the niche on the left. The seed now comes from
+   * the surround's own wall, and only when this step has no choice yet.
+   */
   useEffect(() => {
     if (!step.picksWall) return;
-    setWallByStep((current) => (current[step.id] ? current : { ...current, [step.id]: wallForStep }));
-  }, [step.id, step.picksWall, wallForStep]);
+    const seeded = defaultWallForStep(step.id, selection);
+    setWallByStep((current) => (current[step.id] ? current : { ...current, [step.id]: seeded }));
+    // `selection` is deliberately not a dependency: this seeds once per step, and
+    // re-running on every selection change would overwrite a shopper's pick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step.id, step.picksWall]);
 
   const pickPart = (part: ShowerCatalogPart) => {
     // A required wall must be chosen first; the cards are disabled until then, so
