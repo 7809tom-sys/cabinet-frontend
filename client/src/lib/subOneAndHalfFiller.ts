@@ -77,7 +77,7 @@ export function fillGapsUnderOneAndAHalf(input: {
     const wall = item.wallId ?? cabinetWall(item, input.room);
     if (wallRunFrame(wall, input.room)) walls.add(wall);
   }
-  for (const wall of walls) {
+  for (const wall of Array.from(walls)) {
     for (const layer of ["base", "wall"] as const) {
       const edges: Edge[] = [];
       for (const item of placed) {
