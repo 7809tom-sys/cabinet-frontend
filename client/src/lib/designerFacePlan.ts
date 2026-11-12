@@ -7,7 +7,7 @@ import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
 import { WIZARD_DOOR_FINISH_STORAGE_KEY, wizardDoorFacePlan, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
 import {
   effectiveDoorColorSource,
-  readDoorColorSourceSelection,
+  selectionForStyle,
   styleForDoorColorSource,
   type DoorColorSourceSelection,
 } from "@shared/doorColorSourceSelection";
@@ -17,6 +17,10 @@ export type DesignerFaceStyle = DoorStyleFaceInput & {
   approvedReferenceImageUrl?: string | null;
   approvedVersionId?: number | null;
   id?: number | null;
+  doorColorSource?: string | null;
+  doorColorSourceValue?: unknown;
+  doorColorSourceUpdatedAt?: string | Date | null;
+  doorColorSourceSelection?: unknown;
 };
 
 function trimmedImageUrl(value: string | null | undefined): string {
@@ -131,7 +135,8 @@ export function designerFacePlan(
 ): CabinetFacePlan | null {
   if (!style) return null;
   // An explicit, confirmed door color source choice wins (one selector, Tom Nov 12 2026).
-  const selection = readDoorColorSourceSelection(style.id ?? null);
+  // The server value is the source of truth for every shopper; localStorage is a fallback/cache.
+  const selection = selectionForStyle(style);
   if (selection) {
     const chosen = selectedDoorColorFacePlan(style, placement, selection);
     if (chosen) return chosen;
