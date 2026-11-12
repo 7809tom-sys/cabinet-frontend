@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The door editor shows ONE door color source selector at the top of its color panel (Tom, Nov 12 2026). */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const styles: Record<string, unknown>[] = [
@@ -10,9 +10,13 @@ const styles: Record<string, unknown>[] = [
   { id: 5, ourName: "Torino Dark Wood", isFeatured: false, featuredRank: 0, isActive: true, distributorId: 3, grainDirection: "horizontal" },
   { id: 3, ourName: "Natural Oak", isFeatured: true, featuredRank: 2, isActive: true, distributorId: 1 },
 ];
-const pendingRef = vi.hoisted(() => ({ list: [] as unknown[], mutate: (() => {}) as (x: unknown) => void }));
+const pendingRef = vi.hoisted(() => ({
+  list: [] as unknown[],
+  mutate: (() => {}) as (x: unknown) => void,
+  mutateAsync: vi.fn(async (x: unknown) => x),
+}));
 vi.mock("@/lib/trpc", () => {
-  const mut = () => ({ mutate: (x: unknown) => pendingRef.mutate(x), mutateAsync: vi.fn(), isPending: false });
+  const mut = () => ({ mutate: (x: unknown) => pendingRef.mutate(x), mutateAsync: pendingRef.mutateAsync, isPending: false });
   const q = (path: string) => () => ({ data: path.includes("listForAdmin") ? styles : path.includes("skuCounts") ? [] : path.includes("listDoorMeasurementSubmissions") ? pendingRef.list : undefined, isLoading: false });
   const make = (path: string): unknown => new Proxy(() => {}, {
     get: (_t, k: string) => {
@@ -31,8 +35,16 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), err
 import FeaturedStylesAdmin from "./FeaturedStylesAdmin";
 
 
-afterEach(cleanup);
-beforeEach(() => localStorage.clear());
+const firstStyle = { ...styles[0] };
+afterEach(() => {
+  cleanup();
+  styles[0] = { ...firstStyle };
+});
+beforeEach(() => {
+  localStorage.clear();
+  pendingRef.mutateAsync.mockClear();
+  styles[0] = { ...firstStyle };
+});
 
 const STORE = "doorColorSourceSelection.v1";
 const stored = () => JSON.parse(localStorage.getItem(STORE) ?? "{}");
@@ -84,5 +96,42 @@ describe("Edit Door: one door color source selector", () => {
     expect(screen.getByTestId("door-color-source-ai-missing")).toBeTruthy();
     expect(screen.getByTestId("door-color-source-open-ai-maker")).toBeTruthy();
     expect(stored()["1"].source).toBe("original-image");
+  });
+
+  it("hydrates the selector from server fields when localStorage is empty", () => {
+    styles[0] = {
+      ...styles[0],
+      doorColorSource: "hex",
+      doorColorSourceValue: { hex: "#224466" },
+      doorColorSourceUpdatedAt: "2026-11-12T19:00:00.000Z",
+    };
+    const dialog = openFirst();
+    expect(screen.getByTestId("door-color-source-hex").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Hex · #224466/);
+    expect(stored()["1"]).toMatchObject({ source: "hex", confirmed: true, hex: "#224466" });
+    expect(dialog.querySelector('[data-testid="door-color-source-selector"]')).toBeTruthy();
+  });
+
+  it("missing server fields do not crash and keep the current selector behavior", () => {
+    // styles[0] has no doorColorSource* keys
+    const dialog = openFirst();
+    expect(screen.getByTestId("door-color-source-original-image").getAttribute("aria-checked")).toBe("true");
+    expect(dialog.querySelector('[data-testid="door-color-source-selector"]')).toBeTruthy();
+    fireEvent.click(screen.getByTestId("door-color-source-hex"));
+    fireEvent.change(screen.getByTestId("door-color-source-hex-input"), { target: { value: "#224466" } });
+    fireEvent.click(screen.getByTestId("door-color-source-hex-confirm"));
+    expect(stored()["1"]).toMatchObject({ source: "hex", confirmed: true, hex: "#224466" });
+  });
+
+  it("Save Changes sends the confirmed selection on adminUpdateDoorStyle", async () => {
+    vi.stubGlobal("open", vi.fn());
+    openFirst();
+    fireEvent.click(screen.getByTestId("door-color-source-hex"));
+    fireEvent.change(screen.getByTestId("door-color-source-hex-input"), { target: { value: "#224466" } });
+    fireEvent.click(screen.getByTestId("door-color-source-hex-confirm"));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(pendingRef.mutateAsync).toHaveBeenCalled());
+    const payload = pendingRef.mutateAsync.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.doorColorSourceSelection).toMatchObject({ source: "hex", confirmed: true, hex: "#224466" });
   });
 });
