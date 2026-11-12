@@ -62,7 +62,7 @@ describe("a saved value reaches the pass that reads it", () => {
   });
 
   it("wiggle room: the range, refrigerator and sink cap", () => {
-    expect(anchorWiggleLimitIn("sink")).toBe(2);
+    expect(anchorWiggleLimitIn("sink")).toBe(3);
     setKitchenRuleParameters({ anchor_wiggle_cap_in: 1 });
     expect(anchorWiggleLimitIn("sink")).toBe(1);
     // Never wider than the general jog, however the two are set.

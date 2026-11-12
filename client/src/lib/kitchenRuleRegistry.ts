@@ -108,7 +108,7 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
       "The range, refrigerator and sink base are measured anchors and slide at most this far from the measured center. A sink base also keeps its sink on the window within this cap.",
     category: "Wiggle room",
     valueType: "number",
-    defaultValue: 2,
+    defaultValue: 3,
     unit: "in",
     step: 0.25,
     min: 0,

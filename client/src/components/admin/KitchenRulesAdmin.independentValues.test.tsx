@@ -66,7 +66,7 @@ function row(overrides: Record<string, unknown>) {
 /** Five rules, five clearly different values and five different authors. */
 const FIVE = [
   row({ settingKey: "jog_max_in", title: "Wiggle room", value: "1.25", defaultValue: "3", updatedBy: "Tom", updatedAt: "2026-11-01T00:00:00.000Z" }),
-  row({ settingKey: "anchor_wiggle_cap_in", title: "Anchor wiggle", value: "1.5", defaultValue: "2", updatedBy: "Rich", updatedAt: "2026-11-02T00:00:00.000Z" }),
+  row({ settingKey: "anchor_wiggle_cap_in", title: "Anchor wiggle", value: "1.5", defaultValue: "3", updatedBy: "Rich", updatedAt: "2026-11-02T00:00:00.000Z" }),
   row({ settingKey: "filler_gap_max_in", title: "Widest seam", value: "4.5", defaultValue: "6", category: "Fillers", updatedBy: "Tom", updatedAt: "2026-11-03T00:00:00.000Z" }),
   row({ settingKey: "wall_bottom_in", title: "Wall bottom", value: "51", defaultValue: "54", category: "Upper heights", updatedBy: "Rich", updatedAt: "2026-11-04T00:00:00.000Z" }),
   row({ settingKey: "hood_bottom_in", title: "Hood bottom", value: "63", defaultValue: "60", category: "Range and hood", updatedBy: "Tom", updatedAt: "2026-11-05T00:00:00.000Z" }),
