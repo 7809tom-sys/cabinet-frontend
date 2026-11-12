@@ -39,7 +39,7 @@ import {
   doorColorSourceReducer,
   hasApprovedAiImage,
   initialDoorColorSourceDraft,
-  readDoorColorSourceSelection,
+  selectionForStyle,
   styleForDoorColorSource,
   writeDoorColorSourceSelection,
   type DoorColorSourceSelection,
@@ -132,7 +132,11 @@ interface AdminStyle {
   doorSampleVerified: boolean;
   drawerSampleVerified?: boolean;
   approvedReferenceImageUrl?: string | null;
+  approvedVersionId?: number | null;
   approvedByName?: string | null;
+  doorColorSource?: string | null;
+  doorColorSourceValue?: unknown;
+  doorColorSourceUpdatedAt?: string | Date | null;
   autoRoomScene?: AutoRoomScene | null;
   isFeatured: boolean;
   featuredRank: number;
@@ -474,14 +478,15 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   // image, Sherwin-Williams or Hex. Only explicit, confirmed choices are stored.
   const [colorSource, dispatchColorSource] = useReducer(
     doorColorSourceReducer,
-    style.id,
-    (id: number) => initialDoorColorSourceDraft(readDoorColorSourceSelection(id)),
+    style,
+    (s: AdminStyle) => initialDoorColorSourceDraft(selectionForStyle(s)),
   );
   const approvedVersionId = (style as AdminStyle & { approvedVersionId?: number | null }).approvedVersionId ?? null;
   const aiAvailable = hasApprovedAiImage({ approvedVersionId, approvedReferenceImageUrl: style.approvedReferenceImageUrl });
   /** The wizard's Apply patch, held until Sherwin-Williams is confirmed. */
   const pendingSherwinPatch = useRef<MatchSavePatch | null>(null);
-  const lastStoredColorSource = useRef<DoorColorSourceSelection | null>(colorSource.stored);
+  // undefined until the first effect, so a server-hydrated choice is written to the local cache on open.
+  const lastStoredColorSource = useRef<DoorColorSourceSelection | null | undefined>(undefined);
   const colorSourceStyle = styleForDoorColorSource({
     id: style.id,
     distributorId: style.distributorId,
@@ -557,9 +562,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setStyleVerified(s.styleVerified !== false && s.styleVerified !== 0);
     setStyleSourceNote(s.styleSourceNote ?? "");
     pendingSherwinPatch.current = null;
-    const stored = readDoorColorSourceSelection(s.id);
+    const stored = selectionForStyle(s);
     lastStoredColorSource.current = stored;
     dispatchColorSource({ type: "reset", stored });
+    if (stored) writeDoorColorSourceSelection(s.id, stored);
   };
 
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
@@ -746,6 +752,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       sourceSpecification: effectiveFrameCitation || null,
       styleVerified,
       styleSourceNote: styleSourceNote.trim() || null,
+      // Confirmed selector choice only. Omitted when nothing is chosen, so an
+      // unset row stays NULL (current color order). localStorage remains a cache.
+      doorColorSourceSelection: colorSource.stored ?? undefined,
     } as Parameters<typeof update.mutate>[0];
 
     const requested = specBatchRef.current?.selection() ?? null;

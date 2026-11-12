@@ -39,6 +39,6 @@ The door editor (Admin → Door Styles → Edit) has ONE selector at the top of 
 
 Sherwin-Williams and Hex only count after Confirm ("that's the one"). Until then, or if the editor is left without confirming, the toggle turns back off and the door uses its supplier photo.
 
-The choice is stored per style (`shared/doorColorSourceSelection.ts`, browser record `doorColorSourceSelection.v1`, like the wizard finish record, until a door_styles column holds it). `designerFacePlan` resolves an explicit choice first, ahead of every automatic layer. With no choice stored, the order above is unchanged.
+The confirmed choice is stored per style on `door_styles` (`doorColorSource`, `doorColorSourceValue`, `doorColorSourceUpdatedAt`). The browser record `doorColorSourceSelection.v1` is a fallback and a cache only (`shared/doorColorSourceSelection.ts`). NULL or a missing field means nothing was chosen, and the door keeps its current color order. `designerFacePlan` resolves an explicit choice first, ahead of every automatic layer. With no choice stored, the order above is unchanged.
 
 The selector only chooses which source is used. It does not start, change or call AI image generation.
