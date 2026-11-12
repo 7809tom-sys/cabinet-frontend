@@ -16,6 +16,8 @@ import {
   initialDoorColorSourceDraft,
   parseDoorColorSourceSelection,
   readDoorColorSourceSelection,
+  selectionForStyle,
+  selectionFromServerFields,
   styleForDoorColorSource,
   writeDoorColorSourceSelection,
   type DoorColorSourceSelection,
@@ -194,6 +196,78 @@ describe("color resolution: the explicit choice wins", () => {
     (globalThis as { localStorage?: Storage }).localStorage = memoryStorage({
       [DOOR_COLOR_SOURCE_STORAGE_KEY]: JSON.stringify({ [VENDOR.id]: { source: "hex", confirmed: true, chosenAt: NOW, hex: "#0a0b0c" } }),
       [WIZARD_DOOR_FINISH_STORAGE_KEY]: JSON.stringify({ [VENDOR.id]: { ...SW_STAIN, finish: "paint", hex: "#ff0000" } }),
+    });
+    expect(designerFacePlan(VENDOR, "base")?.dlcCrop?.solidColor).toBe("#0a0b0c");
+  });
+});
+
+
+describe("server fields, with localStorage as fallback/cache", () => {
+  it("selectionFromServerFields reads a confirmed hex, a Sherwin-Williams chip, and image modes", () => {
+    expect(selectionFromServerFields({
+      doorColorSource: "hex",
+      doorColorSourceValue: { hex: "#AABBCC" },
+      doorColorSourceUpdatedAt: NOW,
+    })).toMatchObject({ source: "hex", confirmed: true, hex: "#aabbcc", chosenAt: NOW });
+    expect(selectionFromServerFields({
+      doorColorSource: "sherwin-williams",
+      doorColorSourceValue: SW_STAIN,
+      doorColorSourceUpdatedAt: NOW,
+    })?.source).toBe("sherwin-williams");
+    expect(selectionFromServerFields({ doorColorSource: "original-image", doorColorSourceUpdatedAt: NOW })?.source).toBe("original-image");
+    expect(selectionFromServerFields({ doorColorSource: "approved-ai-image", doorColorSourceValue: null })?.source).toBe("approved-ai-image");
+  });
+
+  it("missing, NULL, or malformed server fields return null and never throw", () => {
+    expect(selectionFromServerFields(undefined)).toBeNull();
+    expect(selectionFromServerFields({})).toBeNull();
+    expect(selectionFromServerFields({ doorColorSource: null, doorColorSourceValue: null, doorColorSourceUpdatedAt: null })).toBeNull();
+    expect(selectionFromServerFields({ doorColorSource: "hex", doorColorSourceValue: { hex: "nope" } })).toBeNull();
+    expect(selectionFromServerFields({ doorColorSource: "not-a-mode" })).toBeNull();
+    expect(() => selectionFromServerFields({ doorColorSource: "hex", doorColorSourceValue: { get hex() { throw new Error("boom"); } } })).not.toThrow();
+  });
+
+  it("selectionForStyle prefers the server value over a stale localStorage cache", () => {
+    const storage = memoryStorage({
+      [DOOR_COLOR_SOURCE_STORAGE_KEY]: JSON.stringify({
+        [VENDOR.id]: { source: "hex", confirmed: true, chosenAt: NOW, hex: "#111111" },
+      }),
+    });
+    const style = {
+      id: VENDOR.id,
+      doorColorSource: "original-image" as const,
+      doorColorSourceValue: null,
+      doorColorSourceUpdatedAt: NOW,
+    };
+    expect(selectionForStyle(style, storage)?.source).toBe("original-image");
+  });
+
+  it("selectionForStyle falls back to localStorage when the server field is absent or NULL", () => {
+    const storage = memoryStorage({
+      [DOOR_COLOR_SOURCE_STORAGE_KEY]: JSON.stringify({
+        [VENDOR.id]: { source: "hex", confirmed: true, chosenAt: NOW, hex: "#0a0b0c" },
+      }),
+    });
+    expect(selectionForStyle({ id: VENDOR.id }, storage)).toMatchObject({ source: "hex", hex: "#0a0b0c" });
+    expect(selectionForStyle({ id: VENDOR.id, doorColorSource: null, doorColorSourceValue: null }, storage)).toMatchObject({ source: "hex", hex: "#0a0b0c" });
+  });
+
+  it("designerFacePlan uses the server choice even when localStorage is empty", () => {
+    (globalThis as { localStorage?: Storage }).localStorage = memoryStorage();
+    const style = {
+      ...VENDOR,
+      doorColorSource: "hex" as const,
+      doorColorSourceValue: { hex: "#123456" },
+      doorColorSourceUpdatedAt: NOW,
+    };
+    expect(designerFacePlan(style, "base")?.dlcCrop?.solidColor).toBe("#123456");
+  });
+
+  it("designerFacePlan with no server fields still honors the localStorage cache", () => {
+    (globalThis as { localStorage?: Storage }).localStorage = memoryStorage({
+      [DOOR_COLOR_SOURCE_STORAGE_KEY]: JSON.stringify({
+        [VENDOR.id]: { source: "hex", confirmed: true, chosenAt: NOW, hex: "#0a0b0c" },
+      }),
     });
     expect(designerFacePlan(VENDOR, "base")?.dlcCrop?.solidColor).toBe("#0a0b0c");
   });

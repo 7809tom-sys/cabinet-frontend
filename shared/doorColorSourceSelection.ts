@@ -20,9 +20,11 @@
  * This module only decides WHICH source a door uses. It never starts, changes or
  * calls AI image generation.
  *
- * Storage: door_styles has no color-source column yet, so the choice is kept as a
- * small browser record per style (the same pattern as the WalzCraft wizard finish
- * record in `walzcraftDesignerPickup.ts`). A missing record means "nothing chosen".
+ * Storage: the confirmed choice lives on door_styles (doorColorSource,
+ * doorColorSourceValue, doorColorSourceUpdatedAt; cabinet-backend 0280). The
+ * browser record (`doorColorSourceSelection.v1`) is a fallback and a cache only.
+ * A missing or NULL server value, and a missing browser record, both mean
+ * "nothing chosen": the door keeps its current color order.
  */
 import { PAINT_FINISH, STAIN_FINISH, type WizardFinish } from "./sherwinWilliamsStain";
 
@@ -153,6 +155,78 @@ export function writeDoorColorSourceSelection(
     /* A full or blocked store leaves the door on its supplier photo. */
   }
   return selection;
+}
+
+/** Server columns (and an optional assembled object) for one door style. All optional so a missing field never crashes. */
+export type DoorColorSourceServerFields = {
+  doorColorSource?: string | null;
+  doorColorSourceValue?: unknown;
+  doorColorSourceUpdatedAt?: string | Date | null;
+  doorColorSourceSelection?: unknown;
+};
+
+function chosenAtFrom(value: Date | string | null | undefined): string {
+  if (!value) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  }
+  return "";
+}
+
+/**
+ * Read a confirmed choice from server fields. Missing, NULL, or malformed fields
+ * return null and never throw, so an older backend without the column is safe.
+ */
+export function selectionFromServerFields(
+  fields: DoorColorSourceServerFields | null | undefined,
+): DoorColorSourceSelection | null {
+  if (!fields) return null;
+  try {
+    const assembled = parseDoorColorSourceSelection(fields.doorColorSourceSelection);
+    if (assembled) return assembled;
+    if (fields.doorColorSource == null || fields.doorColorSource === "") return null;
+    const chosenAt = chosenAtFrom(fields.doorColorSourceUpdatedAt);
+    switch (fields.doorColorSource) {
+      case "original-image":
+      case "approved-ai-image":
+        return parseDoorColorSourceSelection({ source: fields.doorColorSource, chosenAt });
+      case "hex": {
+        const value = fields.doorColorSourceValue;
+        const hex = typeof value === "string"
+          ? value
+          : value && typeof value === "object" && !Array.isArray(value)
+            ? (value as { hex?: unknown }).hex
+            : undefined;
+        return parseDoorColorSourceSelection({ source: "hex", confirmed: true, chosenAt, hex });
+      }
+      case "sherwin-williams":
+        return parseDoorColorSourceSelection({
+          source: "sherwin-williams",
+          confirmed: true,
+          chosenAt,
+          color: fields.doorColorSourceValue,
+        });
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Prefer the server's confirmed choice; fall back to the browser cache when the
+ * server has nothing (or the field is absent). A server value wins over a stale cache.
+ */
+export function selectionForStyle(
+  style: (DoorColorSourceServerFields & { id?: number | string | null }) | null | undefined,
+  storage: ReadStorage | undefined = defaultStorage(),
+): DoorColorSourceSelection | null {
+  const fromServer = selectionFromServerFields(style);
+  if (fromServer) return fromServer;
+  return readDoorColorSourceSelection(style?.id ?? null, storage);
 }
 
 export type AcceptedAiAvailability = {
