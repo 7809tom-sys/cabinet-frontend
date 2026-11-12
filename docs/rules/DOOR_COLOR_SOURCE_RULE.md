@@ -27,3 +27,18 @@ The saved door library entries (`shared/doorLibraryProfiles.ts`) carry two diffe
 
 - `shared/doorColorSourceRule.test.ts`: raised-panel styles keep the library shape but take their face from the vendor image; base cabinets keep a separate drawer image (two-drawer bases), walls show none; the shaker blueprint path is unchanged.
 - `shared/doorLibraryProfiles.test.ts`: the library entries and wizard precedence, updated so the raised-panel case asserts shape, not color.
+
+## One door color source selector (Tom, Nov 12 2026, by voice)
+
+The door editor (Admin → Door Styles → Edit) has ONE selector at the top of its color panel, `DoorColorSourceSelector`, with four mutually exclusive options. The ones not selected are shaded.
+
+1. **Original image** — the supplier-uploaded door photo, "the truth". The default.
+2. **Approved AI image** — the accepted AI render. With none accepted, the editor says so, offers the existing AI render tool (Door Rendering Audit), and the door keeps its supplier photo.
+3. **Sherwin-Williams** — the existing WalzCraft wizard wheels show underneath. Has a **Confirm** button.
+4. **Hex** — a hex field and color input show underneath; clicking either door photo also picks a hex. Has a **Confirm** button.
+
+Sherwin-Williams and Hex only count after Confirm ("that's the one"). Until then, or if the editor is left without confirming, the toggle turns back off and the door uses its supplier photo.
+
+The choice is stored per style (`shared/doorColorSourceSelection.ts`, browser record `doorColorSourceSelection.v1`, like the wizard finish record, until a door_styles column holds it). `designerFacePlan` resolves an explicit choice first, ahead of every automatic layer. With no choice stored, the order above is unchanged.
+
+The selector only chooses which source is used. It does not start, change or call AI image generation.
