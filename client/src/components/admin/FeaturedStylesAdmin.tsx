@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, useReducer } from "react";
 import {
   Star, Search, GripVertical, ArrowUp, ArrowDown, X,
   AlertTriangle, CheckCircle2, Pencil, RotateCcw, Upload, Loader2, ImageIcon, EyeOff, Eye,
@@ -34,6 +34,17 @@ import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, rea
 import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
+import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
+import {
+  doorColorSourceReducer,
+  hasApprovedAiImage,
+  initialDoorColorSourceDraft,
+  readDoorColorSourceSelection,
+  styleForDoorColorSource,
+  writeDoorColorSourceSelection,
+  type DoorColorSourceSelection,
+} from "@shared/doorColorSourceSelection";
+import { writeWizardDoorFinish, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
 import { officialRecordAsStylePatch, type AiDoorOfficialRecord } from "@shared/aiDoorDescription";
 import type { MatchSavePatch } from "@shared/wizardDoorMatch";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
@@ -459,7 +470,19 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const walzColorType = walzDoor ? colorTypeFor(walzDoor) : null;
   const isWoodGrain = walzColorType?.colorType === "woodGrain";
   const woodGrainLabel = walzColorType && isWoodGrain ? woodGrainBadge(walzColorType, style.grainDirection) : null;
-  const doorColor = resolveDoorColor({
+  // One door color source (Tom, Nov 12 2026): Original image (default), Approved AI
+  // image, Sherwin-Williams or Hex. Only explicit, confirmed choices are stored.
+  const [colorSource, dispatchColorSource] = useReducer(
+    doorColorSourceReducer,
+    style.id,
+    (id: number) => initialDoorColorSourceDraft(readDoorColorSourceSelection(id)),
+  );
+  const approvedVersionId = (style as AdminStyle & { approvedVersionId?: number | null }).approvedVersionId ?? null;
+  const aiAvailable = hasApprovedAiImage({ approvedVersionId, approvedReferenceImageUrl: style.approvedReferenceImageUrl });
+  /** The wizard's Apply patch, held until Sherwin-Williams is confirmed. */
+  const pendingSherwinPatch = useRef<MatchSavePatch | null>(null);
+  const lastStoredColorSource = useRef<DoorColorSourceSelection | null>(colorSource.stored);
+  const colorSourceStyle = styleForDoorColorSource({
     id: style.id,
     distributorId: style.distributorId,
     distributorName: style.distributorName,
@@ -472,7 +495,11 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     finish,
     woodSpecies,
     renderHex,
-  });
+    approvedVersionId,
+    approvedReferenceImageUrl: style.approvedReferenceImageUrl ?? null,
+  }, colorSource.stored);
+  // The resolver sees only the explicitly chosen source (supplier photo by default).
+  const doorColor = resolveDoorColor({ ...colorSourceStyle });
   const woodGrainSwatch = isWoodGrain ? (approvedTilesFor(style.id)[0]?.dataUrl ?? style.doorSampleImageUrl ?? walzDoor?.photo ?? null) : null;
   const [bakeAfterSave, setBakeAfterSave] = useState(true);
   const walzFormValues: ProfileFormValues = {
@@ -529,11 +556,41 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setCornerSwatchImageUrl(s.cornerSwatchImageUrl ?? "");
     setStyleVerified(s.styleVerified !== false && s.styleVerified !== 0);
     setStyleSourceNote(s.styleSourceNote ?? "");
+    pendingSherwinPatch.current = null;
+    const stored = readDoorColorSourceSelection(s.id);
+    lastStoredColorSource.current = stored;
+    dispatchColorSource({ type: "reset", stored });
   };
 
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
     onError: (e) => toast.error(e.message),
   });
+
+  /** The wizard's own Apply, unchanged: sets the editor fields and saves them. */
+  const applyWizardPatch = (patch: MatchSavePatch) => {
+    setRenderHex(patch.renderHex);
+    setWoodSpecies(patch.woodSpecies ?? "");
+    setGrainDirection(patch.grainDirection);
+    const wizardFields = { id: style.id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection };
+    update.mutate(wizardFields as unknown as Parameters<typeof update.mutate>[0]);
+  };
+
+  // Store each explicit choice. A confirmed Hex becomes the render hex (saved with
+  // the dialog); a confirmed Sherwin-Williams pick runs the wizard's own Apply and
+  // writes its finish record. Nothing here starts AI image generation.
+  useEffect(() => {
+    const stored = colorSource.stored;
+    if (stored === lastStoredColorSource.current) return;
+    lastStoredColorSource.current = stored;
+    writeDoorColorSourceSelection(style.id, stored);
+    if (stored?.source === "hex") setRenderHex(stored.hex);
+    if (stored?.source === "sherwin-williams") {
+      writeWizardDoorFinish(style.id, stored.color as WizardDoorFinish);
+      if (pendingSherwinPatch.current) applyWizardPatch(pendingSherwinPatch.current);
+      pendingSherwinPatch.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colorSource.stored, style.id]);
 
   /**
    * Choosing an AI description as official writes the winner's own values into the
@@ -969,6 +1026,89 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
           })()}
 
+          {/* ONE door color source selector, top of the color panel (Tom, Nov 12 2026). */}
+          {(() => {
+            const sherwinPicker = (
+            <DoorEditorWalzAudit
+              style={{
+                id: style.id,
+                distributorId: style.distributorId,
+                ourName,
+                aliasName,
+                distributorName: style.distributorName,
+                supplierBrandName: style.supplierBrandName,
+                styleCode: style.styleCode,
+                doorStyle,
+                color,
+                finish,
+                woodSpecies,
+                renderHex,
+                grainDirection,
+                railWidth: style.railWidth,
+                doorSampleImageUrl: doorSampleImageUrl || style.doorSampleImageUrl,
+                thumbnailImageUrl: thumbnailImageUrl || style.thumbnailImageUrl,
+                profileImageUrl: style.doorSampleImageUrl,
+              }}
+              sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
+              others={catalogStyles.map((item) => ({ id: item.id, distributorId: item.distributorId, ourName: item.ourName, styleCode: item.styleCode }))}
+              onApply={(patch: MatchSavePatch) => {
+                // Held until Confirm in the door color source selector.
+                pendingSherwinPatch.current = patch;
+              }}
+              onSaveFinish={(finishRecord: WizardDoorFinish) => {
+                if (colorSource.active !== "sherwin-williams") {
+                  dispatchColorSource({ type: "choose", option: "sherwin-williams", aiAvailable, now: new Date().toISOString() });
+                }
+                dispatchColorSource({ type: "pendingSherwin", color: finishRecord });
+              }}
+              onProfileImage={(image) => {
+                if (!image) return;
+                setDoorSampleImageUrl(image.url);
+                update.mutate({ id: style.id, doorSampleImageUrl: image.url } as Parameters<typeof update.mutate>[0]);
+              }}
+              uploadImage={uploadWizardImage}
+              onReplicate={(ids, patch) => {
+                for (const id of ids) {
+                  applySiblingSpecs.mutate({ id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof applySiblingSpecs.mutate>[0]);
+                }
+              }}
+            />
+            );
+            const pendingHex = colorSource.pendingHex ?? "";
+            const hexPicker = (
+              <div className="space-y-1.5">
+                <Label htmlFor="ed-color-source-hex">Hex</Label>
+                <div className="flex items-center gap-2">
+                  <Input id="ed-color-source-hex" data-testid="door-color-source-hex-input" value={pendingHex} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} placeholder={renderHex || "#2a211c"} />
+                  <input aria-label="Pick hex" type="color" value={/^#[0-9a-f]{6}$/i.test(pendingHex) ? pendingHex : (/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea")} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} />
+                </div>
+                <p className="text-xs text-muted-foreground">Or click either door photo below to pick a hex.</p>
+                <p className="text-xs text-muted-foreground">Resolved for render: {doorColor.appliedHex}</p>
+              </div>
+            );
+            return (
+              <>
+                <DoorColorSourceSelector
+                  draft={colorSource}
+                  dispatch={dispatchColorSource}
+                  aiAvailable={aiAvailable}
+                  supplierPhotoUrl={doorSampleImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl || null}
+                  aiImageUrl={style.approvedReferenceImageUrl ?? null}
+                  sherwinPicker={colorSource.active === "sherwin-williams" ? sherwinPicker : null}
+                  hexPicker={hexPicker}
+                  onOpenAiMaker={() => openStyleAudit(style.id, style.ourName ?? "")}
+                />
+                {colorSource.active !== "sherwin-williams" && (
+                  <details data-testid="door-color-source-wizard-tools" className="rounded-lg border border-border px-3 py-2">
+                    <summary className="cursor-pointer text-xs font-semibold">WalzCraft wizard (profile image, grain, Sherwin-Williams wheels)</summary>
+                    <p className="mt-1 text-xs text-muted-foreground">Applying a Sherwin-Williams color here switches the selector to Sherwin-Williams; it only counts after Confirm.</p>
+                    {sherwinPicker}
+                  </details>
+                )}
+              </>
+            );
+          })()}
+
           <DoorRenderOverrides
             woodGrain={woodGrainLabel ? { label: woodGrainLabel, swatchUrl: woodGrainSwatch, horizontal: woodGrainLabel.endsWith("Horizontal") } : null}
             renderHex={renderHex}
@@ -993,46 +1133,11 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             })}
             resolvedHex={doorColor.appliedHex}
             colorReview={doorColor.review}
-          />
-
-          <DoorEditorWalzAudit
-            style={{
-              id: style.id,
-              distributorId: style.distributorId,
-              ourName,
-              aliasName,
-              distributorName: style.distributorName,
-              supplierBrandName: style.supplierBrandName,
-              styleCode: style.styleCode,
-              doorStyle,
-              color,
-              finish,
-              woodSpecies,
-              renderHex,
-              grainDirection,
-              railWidth: style.railWidth,
-              doorSampleImageUrl: doorSampleImageUrl || style.doorSampleImageUrl,
-              thumbnailImageUrl: thumbnailImageUrl || style.thumbnailImageUrl,
-              profileImageUrl: style.doorSampleImageUrl,
-            }}
-            sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
-            others={catalogStyles.map((item) => ({ id: item.id, distributorId: item.distributorId, ourName: item.ourName, styleCode: item.styleCode }))}
-            onApply={(patch: MatchSavePatch) => {
-              setRenderHex(patch.renderHex);
-              setWoodSpecies(patch.woodSpecies ?? "");
-              setGrainDirection(patch.grainDirection);
-              update.mutate({ id: style.id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof update.mutate>[0]);
-            }}
-            onProfileImage={(image) => {
-              if (!image) return;
-              setDoorSampleImageUrl(image.url);
-              update.mutate({ id: style.id, doorSampleImageUrl: image.url } as Parameters<typeof update.mutate>[0]);
-            }}
-            uploadImage={uploadWizardImage}
-            onReplicate={(ids, patch) => {
-              for (const id of ids) {
-                applySiblingSpecs.mutate({ id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection } as Parameters<typeof applySiblingSpecs.mutate>[0]);
-              }
+            colorFromSelector
+            onPickFromPhoto={(hex) => {
+              // Picking from a photo is a Hex choice; it only counts after Confirm.
+              if (colorSource.active !== "hex") dispatchColorSource({ type: "choose", option: "hex", aiAvailable, now: new Date().toISOString() });
+              dispatchColorSource({ type: "pendingHex", hex });
             }}
           />
 
@@ -2515,7 +2620,13 @@ function DoorRenderOverrides({
   preview,
   resolvedHex,
   colorReview,
+  colorFromSelector = false,
+  onPickFromPhoto,
 }: {
+  /** With the selector, a photo pick goes to its Hex option instead of the render hex. */
+  onPickFromPhoto?: (hex: string) => void;
+  /** The render hex and eyedropper moved into the door color source selector. */
+  colorFromSelector?: boolean;
   brochure?: { src: string | null; label: string } | null;
   woodGrain?: { label: string; swatchUrl: string | null; horizontal: boolean } | null;
   renderHex: string;
@@ -2547,7 +2658,18 @@ function DoorRenderOverrides({
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-{woodGrain ? (
+{colorFromSelector ? (
+          <div data-testid="render-color-in-selector" className="space-y-1.5">
+            {woodGrain ? <WoodGrainColorDisplay label={woodGrain.label} swatchUrl={woodGrain.swatchUrl} horizontal={woodGrain.horizontal} /> : null}
+            <p className="text-xs text-muted-foreground">Door color is set in Door color source above. Resolved for render: {resolvedHex ?? "name fallback"}</p>
+            {colorReview?.needsColorReview && (
+              <p data-testid="door-color-needs-review" className="text-xs text-amber-800">
+                Needs color review. Keeping {resolvedHex} ({colorReview.keptBecause}). The {colorReview.chosenSource} hex {colorReview.chosenHex} disagrees with the estimator {colorReview.estimatorHex ?? "none"}
+                {colorReview.deltaE != null ? ` (ΔE ${colorReview.deltaE.toFixed(1)})` : ""}.
+              </p>
+            )}
+          </div>
+        ) : woodGrain ? (
           <div className="space-y-1.5">
             <WoodGrainColorDisplay label={woodGrain.label} swatchUrl={woodGrain.swatchUrl} horizontal={woodGrain.horizontal} />
             <details data-testid="fallback-tint">
@@ -2601,10 +2723,10 @@ function DoorRenderOverrides({
           </p>
         </div>
       </div>
-      {/* One picker: click either door to set the render color. */}
+      {/* One picker: click either door to set the color (Hex in the selector). */}
       <SampleEyedropper
         images={[{ url: sampleImageUrl, label: "Sample door" }, ...(brochure ? [{ url: brochure.src ?? "", label: brochure.label }] : [])]}
-        onPick={onRenderHex}
+        onPick={colorFromSelector && onPickFromPhoto ? onPickFromPhoto : onRenderHex}
         editedDoor={editedDoorUrl ?? null}
       />
       {besideEyedropper ? <div data-testid="eyedropper-distributor-selector">{besideEyedropper}</div> : null}

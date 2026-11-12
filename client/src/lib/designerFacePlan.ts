@@ -4,7 +4,14 @@ import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
-import { wizardDoorFacePlan } from "@shared/walzcraftDesignerPickup";
+import { WIZARD_DOOR_FINISH_STORAGE_KEY, wizardDoorFacePlan, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
+import {
+  effectiveDoorColorSource,
+  readDoorColorSourceSelection,
+  styleForDoorColorSource,
+  type DoorColorSourceSelection,
+} from "@shared/doorColorSourceSelection";
+import { PAINT_FINISH } from "@shared/sherwinWilliamsStain";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & {
   approvedReferenceImageUrl?: string | null;
@@ -60,8 +67,54 @@ export function designerApprovedFaceUrl(style: DesignerFaceStyle | null | undefi
   return thumbnail || null;
 }
 
+/** A one-door read-only store holding a finish record, for reusing the wizard's face plan. */
+function singleFinishStorage(styleId: number | string, finish: WizardDoorFinish): Pick<Storage, "getItem"> {
+  const value = JSON.stringify({ [String(styleId)]: finish });
+  return { getItem: (key: string) => (key === WIZARD_DOOR_FINISH_STORAGE_KEY ? value : null) };
+}
+
+/**
+ * Face plan for an explicit door color source choice (the one selector in the door
+ * editor; docs/rules/DOOR_COLOR_SOURCE_RULE.md). The explicit choice wins over every
+ * automatic layer:
+ *
+ *   original-image     the style's own door and drawer images, with a typed render hex
+ *                      and any accepted run removed so neither overrides the photo.
+ *   approved-ai-image  the accepted render; with none accepted, the supplier photo.
+ *   sherwin-williams   the confirmed chip through the wizard's own paint / stain plan.
+ *   hex                the confirmed hex as an opaque paint through the same plan.
+ *
+ * It only picks a source. It never starts or changes AI image generation.
+ */
+export function selectedDoorColorFacePlan(
+  style: DesignerFaceStyle,
+  placement: string | null | undefined,
+  selection: DoorColorSourceSelection,
+): CabinetFacePlan | null {
+  const effective = effectiveDoorColorSource(selection, style);
+  const photoStyle = styleForDoorColorSource(style, { source: "original-image", chosenAt: selection.chosenAt });
+  if (effective.source === "original-image") return resolveCabinetFaceImages(photoStyle, placement);
+  if (effective.source === "approved-ai-image") {
+    return acceptedRenderFacePlan(style, placement) ?? resolveCabinetFaceImages(photoStyle, placement);
+  }
+  const key = style.id ?? "selected";
+  const finish: WizardDoorFinish | null = selection.source === "sherwin-williams"
+    ? { ...selection.color }
+    : selection.source === "hex"
+      ? { finish: PAINT_FINISH, code: "", label: selection.hex, hex: selection.hex, woodSpecies: null, grainDirection: "none", profileImageUrl: null }
+      : null;
+  if (!finish) return resolveCabinetFaceImages(photoStyle, placement);
+  const colored = styleForDoorColorSource({ ...style, id: style.id ?? null }, selection);
+  return wizardDoorFacePlan({ ...colored, id: key as number }, placement, singleFinishStorage(key, finish))
+    ?? resolveCabinetFaceImages(photoStyle, placement);
+}
+
 /**
  * Face plan for one cabinet.
+ *
+ * An explicit door color source choice (Original image, Approved AI image, a
+ * confirmed Sherwin-Williams chip or a confirmed Hex) is resolved first and wins.
+ * With nothing chosen, the order below is unchanged.
  *
  * A door the WalzCraft wizard made or saved is resolved first, by the wizard's own
  * shared module; the Designer shows it without any wizard UI.
@@ -77,6 +130,12 @@ export function designerFacePlan(
   placement: string | null | undefined,
 ): CabinetFacePlan | null {
   if (!style) return null;
+  // An explicit, confirmed door color source choice wins (one selector, Tom Nov 12 2026).
+  const selection = readDoorColorSourceSelection(style.id ?? null);
+  if (selection) {
+    const chosen = selectedDoorColorFacePlan(style, placement, selection);
+    if (chosen) return chosen;
+  }
   // A door made or saved through the WalzCraft wizard renders its own profile, grain and
   // color. A door the wizard never touched returns null here and takes the normal path.
   const wizard = wizardDoorFacePlan(style, placement);
