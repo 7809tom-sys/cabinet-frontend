@@ -3676,16 +3676,25 @@ export function triangleCornerFrontWidth(bodyWidth: number, bodyDepth: number) {
 
 /** The exposed hypotenuse plane of a triangular angled-wall cabinet. */
 export function triangleCornerFrontPose(bodyWidth: number, bodyDepth: number, outwardOffset = 0.029, hand: "left" | "right" = "right") {
-  const normalX = hand === "left" ? Math.SQRT1_2 : -Math.SQRT1_2;
-  const normalZ = Math.SQRT1_2;
-  void bodyWidth;
-  void bodyDepth;
+  // The hypotenuse runs corner to corner of the body box, so its angle follows
+  // the box: 45 degrees only when width equals depth. A WTC2430 keeps its
+  // 24-by-12 catalog footprint, and a fixed 45-degree pose turned its doors
+  // about 18 degrees off the carcass face and pushed their ends out of the box.
+  const width = bodyWidth > 0 ? bodyWidth : 1;
+  const depth = bodyDepth > 0 ? bodyDepth : width;
+  const theta = Math.atan2(depth, width);
+  const rotation = hand === "left" ? theta : -theta;
+  const normalX = Math.sin(rotation);
+  const normalZ = Math.cos(rotation);
   return {
     x: normalX * outwardOffset,
     z: normalZ * outwardOffset,
-    rotation: hand === "left" ? Math.PI / 4 : -Math.PI / 4,
+    rotation,
     normalX,
     normalZ,
+    /** Unit vector along the face (the door's local +x). */
+    tangentX: Math.cos(rotation),
+    tangentZ: -Math.sin(rotation),
   };
 }
 
@@ -7299,9 +7308,9 @@ export function addCabinet(
     for (const direction of [-1, 1] as const) {
       const door = new THREE.Mesh(new THREE.BoxGeometry(triangleDoorWidth - 0.03, triangleDoorHeight, 0.052), faceMaterial);
       door.position.set(
-        triangleFace.x + direction * Math.SQRT1_2 * tangentOffset,
+        triangleFace.x + direction * triangleFace.tangentX * tangentOffset,
         0,
-        triangleFace.z + direction * Math.SQRT1_2 * tangentOffset,
+        triangleFace.z + direction * triangleFace.tangentZ * tangentOffset,
       );
       door.rotation.y = triangleFace.rotation;
       door.userData = { specialtyProfile: "triangle-corner", triangleDoor: direction === -1 ? "left" : "right", cabinetFront: true, flushPhysicalFace: true };
@@ -9201,6 +9210,7 @@ function worldCrownEdges(cabinet: PlacedCabinet, room: RoomData): ThreeDCrownPer
   const top = box.bottom + box.height;
   const diagonalCorner = cornerKind === "diagonal";
   const lCorner = cornerKind === "l-shape";
+  const triangleCorner = cornerKind === "triangle";
   const lCornerParts = lCorner
     ? lCornerCarcassParts(width, depth, cabinet.placement === "wall" ? 0.5 : cornerLegRatioForPlaced(cabinet))
     : null;
@@ -9215,6 +9225,19 @@ function worldCrownEdges(cabinet: PlacedCabinet, room: RoomData): ThreeDCrownPer
           { kind: "front" as const, start: { x: -width / 2 + lCornerParts.legWidth, z: -depth / 2 + lCornerParts.legDepth }, end: { x: -width / 2 + lCornerParts.legWidth, z: depth / 2 } },
           { kind: "left-return" as const, start: { x: -width / 2 + lCornerParts.legWidth, z: depth / 2 }, end: { x: -width / 2, z: depth / 2 } },
         ]
+    : triangleCorner
+      ? (() => {
+          // A WTC/BTC is the right triangle of triangleCornerFootprintVertices:
+          // its doors are the hypotenuse. The rectangular edge set put crown on
+          // the full-depth side and then out across empty air, never on the door
+          // face. Run it along the hypotenuse, outward toward the room.
+          const [back, square, front] = triangleCornerFootprintVertices(width, depth);
+          void back;
+          return [
+            { kind: "right-return" as const, start: square!, end: front! },
+            { kind: "diagonal-front" as const, start: front!, end: { x: -width / 2, z: -depth / 2 } },
+          ];
+        })()
     : [
         { kind: "right-return" as const, start: { x: width / 2, z: -depth / 2 }, end: { x: width / 2, z: depth / 2 } },
         { kind: "front" as const, start: { x: width / 2, z: depth / 2 }, end: { x: -width / 2, z: depth / 2 } },
@@ -9265,6 +9288,8 @@ function worldCrownFootprints(cabinet: PlacedCabinet, room: RoomData): CrownFoot
       })()
     : [cornerKind === "diagonal"
     ? diagonalCornerFootprintVertices(width, depth)
+    : cornerKind === "triangle"
+    ? triangleCornerFootprintVertices(width, depth)
     : [
         { x: -width / 2, z: -depth / 2 },
         { x: width / 2, z: -depth / 2 },
