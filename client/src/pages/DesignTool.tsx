@@ -377,6 +377,7 @@ import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
+import { AutoDesignReviewList } from "@/components/design/AutoDesignReviewList";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
 import { cornerCatalogForLayer } from "@/lib/autoDesignCornerChoice";
@@ -20749,17 +20750,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            </div>
 	          )}
 	          {autoDesignReviewFindings.length > 0 && (
-	            <div className="absolute bottom-3 right-28 z-40 max-w-md" data-testid="designer-review-list">
-	              <div role="alert" className="rounded-lg border border-rose-400 bg-rose-50 px-3 py-2 text-sm text-rose-950 shadow-md">
-	                <p className="font-semibold">Design questions needing review</p>
-	                <ul className="mt-1 space-y-1">
-	                  {designerReviewLines({ findings: autoDesignReviewFindings, allHonored: false }).map((line) => (
-	                    <li key={line} data-testid="designer-review-finding">{line}</li>
-	                  ))}
-	                </ul>
-	                <button type="button" onClick={() => setAutoDesignReviewFindings([])} className="mt-1 rounded p-0.5 text-xs font-semibold text-rose-800 hover:bg-rose-100" aria-label="Dismiss review list">Dismiss</button>
-	              </div>
-	            </div>
+	            <AutoDesignReviewList
+	              lines={designerReviewLines({ findings: autoDesignReviewFindings, allHonored: false })}
+	              onDismiss={() => setAutoDesignReviewFindings([])}
+	            />
 	          )}
 	          {placementNotice.visible && placementWarning && (
 	            <div role="alert" className="absolute left-3 right-3 top-3 z-40 max-h-[70%] overflow-y-auto rounded-lg border border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 shadow-md sm:right-auto sm:max-w-lg">
