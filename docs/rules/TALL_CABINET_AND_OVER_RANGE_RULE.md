@@ -21,7 +21,7 @@ Only a fit that passes the collision gate and stays inside the refrigerator pane
 - Never past a wall end (`boundedWallPlacementAt`).
 - Never across the refrigerator panel limit, through an opening or corner clearance, or over another cabinet.
 - The box's real height must clear that wall's lowest ceiling.
-- **Nothing moves to make room.** Range, sink, and refrigerator anchors keep their existing 2-inch wiggle limit, and a window never moves. A tall box that cannot seat is reported, not forced.
+- **Nothing moves to make room.** Range, sink, and refrigerator anchors keep their existing 3-inch wiggle limit, and a window never moves. A tall box that cannot seat is reported, not forced.
 
 ## Several tall cabinets in one build
 

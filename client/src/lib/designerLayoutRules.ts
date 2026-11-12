@@ -99,8 +99,8 @@ export function autoDesignShiftLimitIn(kind: string): number {
  * sink base stays centered on the window within that cap. Everything else that
  * is not an anchor uses the normal wiggle allowance.
  *
- * Before this cap, each anchor took the full jog (3 inches), which moved a
- * measured sink further off its window than the owner allows.
+ * The cap equals the general jog (3 inches). It is still read separately so an
+ * admin can tighten the appliance allowance without tightening every cabinet.
  */
 export const ANCHOR_WIGGLE_CAP_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.anchor_wiggle_cap_in;
 
