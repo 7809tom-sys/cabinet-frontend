@@ -2,7 +2,8 @@
  * Rule 1: appliances come first.
  *
  * The range, sink and refrigerator are placed as fixed anchors before any cabinet is chosen.
- * Each anchor may slide at most 3 inches from its measured center; the refrigerator bay (its two
+ * Each anchor may slide at most the Kitchen Rules cap (`anchor_wiggle_cap_in`, 3 inches
+ * by default) from its measured center; the refrigerator bay (its two
  * 3/4 inch end panels and the cabinet above) may slide as one assembly, and nothing in the kitchen
  * may ever extend past the refrigerator panel.
  *
@@ -19,14 +20,24 @@ import {
   type PlacedCabinet,
   type RoomData,
 } from "./design";
-import { AUTO_DESIGN_WIGGLE_ROOM_IN } from "./designerLayoutRules";
+import { ANCHOR_WIGGLE_CAP_IN, anchorWiggleCapIn } from "./designerLayoutRules";
 
 /** Anchor kinds in the order rule 1 seats them. */
 export const ANCHOR_ORDER = ["range", "sink", "refrigerator"] as const;
 export type AnchorKind = (typeof ANCHOR_ORDER)[number];
 
-/** Rule 1: the largest slide any anchor may take from its measured center. */
-export const ANCHOR_WIGGLE_MAX_IN = AUTO_DESIGN_WIGGLE_ROOM_IN;
+/**
+ * Rule 1: the largest slide any anchor may take from its measured center.
+ * This is the code default of `anchor_wiggle_cap_in` (3 inches). The live
+ * admin value is `anchorWiggleMaxIn()`, which is the same source
+ * `anchorWiggleLimitIn()` reads, so the two cannot drift.
+ */
+export const ANCHOR_WIGGLE_MAX_IN = ANCHOR_WIGGLE_CAP_IN;
+
+/** Live anchor wiggle cap: the admin rule, or 3 inches when nothing is saved. */
+export function anchorWiggleMaxIn(): number {
+  return anchorWiggleCapIn();
+}
 
 export type SeatedAnchor = {
   uid: string;
@@ -108,12 +119,15 @@ export function pieceStaysInsideRefrigeratorLimit(input: {
 }
 
 /**
- * Rule 1: the slide an anchor is allowed. Range and sink take the 3 inch jog; a refrigerator bay
- * slides as one assembly within its own measured cap. Never more, never in/out.
+ * Rule 1: the slide an anchor is allowed. Range, sink, and a measured
+ * refrigerator take the live `anchor_wiggle_cap_in` (3 inches by default). An
+ * unmeasured refrigerator bay still uses its own 6 inch gap-closing slide,
+ * which is a separate rule (`refrigerator_shift_limit_in`). Never more, never
+ * in/out.
  */
 export function anchorSlideAllowance(kind: AnchorKind, options?: { measured?: boolean }): number {
-  if (kind === "refrigerator") return options?.measured === false ? 6 : ANCHOR_WIGGLE_MAX_IN;
-  return ANCHOR_WIGGLE_MAX_IN;
+  if (kind === "refrigerator") return options?.measured === false ? 6 : anchorWiggleMaxIn();
+  return anchorWiggleMaxIn();
 }
 
 /** True when every anchor is still inside its own slide allowance from its measured center. */

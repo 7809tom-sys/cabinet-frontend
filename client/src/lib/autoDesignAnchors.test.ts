@@ -1,15 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   ANCHOR_ORDER,
   ANCHOR_WIGGLE_MAX_IN,
   anchorKindOf,
   anchorSlideAllowance,
+  anchorWiggleMaxIn,
   anchorsWithinSlideLimit,
   pieceStaysInsideRefrigeratorLimit,
   refrigeratorLimitIn,
   seatedAnchors,
 } from "./autoDesignAnchors";
 import { DEFAULT_ROOM, wallPlacementAt, type PlacedCabinet } from "./design";
+import { resetKitchenRuleParameters, setKitchenRuleParameters } from "./kitchenRuleParameters";
 
 function placedItem(
   masterCode: string,
@@ -58,8 +60,12 @@ describe("rule 1: appliances are fixed anchors first", () => {
 
   it("allows 3 inches of wiggle, and no more", () => {
     expect(ANCHOR_WIGGLE_MAX_IN).toBe(3);
+    expect(anchorWiggleMaxIn()).toBe(3);
     expect(anchorSlideAllowance("range")).toBe(3);
     expect(anchorSlideAllowance("sink")).toBe(3);
+    expect(anchorSlideAllowance("refrigerator")).toBe(3);
+    // The unmeasured refrigerator bay gap-closing slide is a separate 6 inch rule.
+    expect(anchorSlideAllowance("refrigerator", { measured: false })).toBe(6);
     const range = placedItem("RANGE-30", 30, 63, "appliance");
     expect(anchorsWithinSlideLimit({
       placed: [range],
@@ -72,6 +78,19 @@ describe("rule 1: appliances are fixed anchors first", () => {
       room: DEFAULT_ROOM,
       measuredCenters: { [tooFar.uid]: 60 },
     })).toBe(false);
+  });
+
+  afterEach(() => {
+    resetKitchenRuleParameters();
+  });
+
+  it("reads the live admin cap so it cannot drift from the wiggle pass", () => {
+    setKitchenRuleParameters({ anchor_wiggle_cap_in: 1.5 });
+    expect(anchorWiggleMaxIn()).toBe(1.5);
+    expect(anchorSlideAllowance("range")).toBe(1.5);
+    expect(anchorSlideAllowance("refrigerator")).toBe(1.5);
+    // The constant stays the code default; the live function follows the admin value.
+    expect(ANCHOR_WIGGLE_MAX_IN).toBe(3);
   });
 
   it("reads the refrigerator panel limit and refuses anything past it", () => {

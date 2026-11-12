@@ -21,9 +21,9 @@ function box(partial: Partial<PlacedCabinet> & Pick<PlacedCabinet, "uid" | "mast
 }
 
 describe("gaps under 1.5 inches", () => {
-  it("does not slide the refrigerator to close a gap", () => {
-    expect(anchorWiggleLimitIn("refrigerator")).toBe(0);
-    expect(anchorWiggleLimitIn("sink")).toBeGreaterThan(0);
+  it("gives the refrigerator the same 3 inch wiggle cap as the other appliances", () => {
+    expect(anchorWiggleLimitIn("refrigerator")).toBe(3);
+    expect(anchorWiggleLimitIn("sink")).toBe(3);
   });
 
   it("fills a gap under 1.5 inches between two cabinets and leaves a wider gap alone", () => {

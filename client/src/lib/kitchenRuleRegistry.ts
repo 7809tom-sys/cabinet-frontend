@@ -103,12 +103,12 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
   },
   {
     key: "anchor_wiggle_cap_in",
-    title: "Wiggle room for the range, refrigerator and sink base",
+    title: "Wiggle room for appliances",
     description:
-      "The range, refrigerator and sink base are measured anchors and slide at most this far from the measured center. A sink base also keeps its sink on the window within this cap.",
+      "Every appliance — the range, refrigerator, sink base, and dishwasher — may slide at most this far each way from the measured center. A sink base also keeps its sink on the window within this cap. Windows never move.",
     category: "Wiggle room",
     valueType: "number",
-    defaultValue: 2,
+    defaultValue: 3,
     unit: "in",
     step: 0.25,
     min: 0,

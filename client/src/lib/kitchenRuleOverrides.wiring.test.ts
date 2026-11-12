@@ -61,13 +61,21 @@ describe("a saved value reaches the pass that reads it", () => {
     expect(autoDesignShiftLimitIn("cabinet")).toBe(1.5);
   });
 
-  it("wiggle room: the range, refrigerator and sink cap", () => {
-    expect(anchorWiggleLimitIn("sink")).toBe(2);
+  it("wiggle room: the range, refrigerator, sink and dishwasher cap", () => {
+    expect(anchorWiggleLimitIn("sink")).toBe(3);
+    expect(anchorWiggleLimitIn("range")).toBe(3);
+    expect(anchorWiggleLimitIn("refrigerator")).toBe(3);
+    expect(anchorWiggleLimitIn("dishwasher")).toBe(3);
     setKitchenRuleParameters({ anchor_wiggle_cap_in: 1 });
     expect(anchorWiggleLimitIn("sink")).toBe(1);
-    // Never wider than the general jog, however the two are set.
+    expect(anchorWiggleLimitIn("refrigerator")).toBe(1);
+    // The cap is the admin rule itself, not min'd with the cabinet jog, so the
+    // two cannot silently fight. An 8 inch saved value is honored (the rule
+    // allows up to 12).
     setKitchenRuleParameters({ anchor_wiggle_cap_in: 8 });
-    expect(anchorWiggleLimitIn("sink")).toBe(3);
+    expect(anchorWiggleLimitIn("sink")).toBe(8);
+    expect(anchorWiggleLimitIn("refrigerator")).toBe(8);
+    expect(anchorWiggleLimitIn("dishwasher")).toBe(8);
   });
 
   it("wiggle room: the measured refrigerator corner slide", () => {
@@ -191,6 +199,16 @@ describe("the auto-designer modules read the settings, not hardcoded numbers", (
     expect(source).toContain('kitchenRuleNumber("anchor_wiggle_cap_in")');
     expect(source).toContain("autoDesignFillerMaxIn()");
     expect(source).not.toMatch(/=\s*3;\s*\/\*\* A sink base/);
+  });
+
+  it("the anchor cap and the wiggle pass read the same admin rule", () => {
+    const rules = read("client/src/lib/designerLayoutRules.ts");
+    const anchors = read("client/src/lib/autoDesignAnchors.ts");
+    expect(rules).toContain("export function anchorWiggleCapIn()");
+    expect(rules).toContain('kitchenRuleNumber("anchor_wiggle_cap_in")');
+    expect(anchors).toContain("anchorWiggleCapIn");
+    expect(anchors).toContain("export function anchorWiggleMaxIn()");
+    expect(anchors).toContain("ANCHOR_WIGGLE_MAX_IN = ANCHOR_WIGGLE_CAP_IN");
   });
 
   it("the corner seating reads the live refrigerator slide", () => {

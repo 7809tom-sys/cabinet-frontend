@@ -8,7 +8,7 @@
  *     from the height rule, which requires that cabinet's top to line up with
  *     the other uppers.
  *
- * Windows never move, and the refrigerator may slide at most 2 inches.
+ * Windows never move, and the refrigerator may slide at most 3 inches in the wiggle pass.
  */
 import { describe, expect, it } from "vitest";
 import catalogFixture from "./__fixtures__/autoDesignMatrixCatalog.json";
@@ -203,10 +203,12 @@ describe.each(CASES)("Tom's refrigerator rules ($style $layout ${width}in @ $cen
     expect(elevationBox(bridge, room).bottom).toBeGreaterThanOrEqual(fridgeTop - 0.01);
   });
 
-  it("windows never move and the refrigerator is not slid to close a gap", () => {
+  it("windows never move and the refrigerator stays inside the 3 inch wiggle cap", () => {
     if (!run) return;
     const move = run.wiggleMoves.find((entry) => entry.kind === "refrigerator");
-    expect(move).toBeUndefined();
+    // The refrigerator may now take the same 3 inch wiggle cap as the other
+    // appliances. A move inside that cap is allowed; a move past it is not.
+    if (move) expect(Math.abs(move.distanceFromOriginalIn)).toBeLessThanOrEqual(3 + 1e-6);
     // Corner seating is a separate, disclosed allowance and reports itself.
     const cornerMove = run.applianceMoves.filter((entry) => entry.kind === "refrigerator");
     for (const entry of cornerMove) expect(entry.shiftIn).toBeGreaterThan(0);

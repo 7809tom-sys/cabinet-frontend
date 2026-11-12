@@ -71,6 +71,7 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
+import { isDishwasherItem } from "./dishwasherPanelRule";
 import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "./framelessWallTopAlignment";
 import {
   applyRangeFlankEndPanels,
@@ -1445,9 +1446,11 @@ export function runAutoDesignLayout(args: {
     makeUid,
     styleId: args.styleId,
     wallIds: runWalls,
-    // Anchors (range, refrigerator, sink base) move at most 2 inches; every other
-    // cabinet may use the normal allowance.
+    // Appliances (range, refrigerator, sink base, dishwasher) move at most the
+    // anchor wiggle cap (3 inches by default); every other cabinet may use the
+    // normal jog.
     slideLimitFor: (item) => (isSinkBaseCabinet(item)
+      || isDishwasherItem(item)
       || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
       ? kitchenRuleNumber("anchor_wiggle_cap_in")
       : kitchenRuleNumber("jog_max_in")),

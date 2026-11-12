@@ -3,8 +3,9 @@
  * through, base and wall alike.
  *
  * Owner rules, in order:
- *   1. Slide the cabinets beside an opening within the wiggle room. Anchors (range,
- *      refrigerator, sink base) move at most 2 inches; windows never move.
+ *   1. Slide the cabinets beside an opening within the wiggle room. Appliances (range,
+ *      refrigerator, sink base, dishwasher) move at most the anchor wiggle cap
+ *      (3 inches by default); windows never move.
  *   2. If that is not enough, widen a neighbor to a real larger cabinet.
  *   3. Seat a real narrow cabinet in the opening.
  *   4. Only then, and only if the space is a genuinely unusable sliver, use filler.
@@ -113,7 +114,7 @@ export function planRealCabinetFixes(input: {
   room: RoomData;
   wallId: string;
   layer: "base" | "wall";
-  /** Maximum legal slide for a neighbor, in inches. Anchors pass their 2 inch cap. */
+  /** Maximum legal slide for a neighbor, in inches. Appliances pass their anchor wiggle cap. */
   slideLimitIn?: number;
   /** Wall boxes in a 42" design must be this tall. The 30" row is listed first. */
   preferHeightIn?: number | null;

@@ -64,7 +64,10 @@ import { normalizeUpperHeights } from "./designerFaceRules";
  * The most a user-placed Auto-Design appliance may slide along its own wall
  * while the run is fitted. The cap is measured from the original placement,
  * not from a later corner nudge. Movement is horizontal only: left or right
- * along the wall, never in or out. Sinks and refrigerators use their own caps.
+ * along the wall, never in or out. In the wiggle pass every appliance shares
+ * the `anchor_wiggle_cap_in` cap (3 inches by default). The sink-base gap
+ * solver and the refrigerator bay / corner-seating slides stay on their own
+ * separate caps.
  *
  * Every constant below is the CODE DEFAULT. The live number is read through
  * `kitchenRuleNumber` so an admin can change it in Kitchen Rules without a
@@ -94,23 +97,35 @@ export function autoDesignShiftLimitIn(kind: string): number {
 }
 
 /**
- * Owner rule: the range, the refrigerator, and the SINK BASE may slide during the
- * wiggle pass, but each by at most their own cap from where it was measured. A
- * sink base stays centered on the window within that cap. Everything else that
- * is not an anchor uses the normal wiggle allowance.
+ * Owner rule (Nov 12 2026): every appliance may slide during the wiggle pass,
+ * each by at most this cap from where it was measured: the range, refrigerator,
+ * sink base, and dishwasher, 3 inches each way by default. A sink base stays
+ * on its window within that cap. Windows never move. Everything else that is
+ * not an appliance uses the normal cabinet jog (`jog_max_in`).
  *
- * Before this cap, each anchor took the full jog (3 inches), which moved a
- * measured sink further off its window than the owner allows.
+ * The live number is `anchorWiggleCapIn()`, which reads the admin Kitchen Rule
+ * `anchor_wiggle_cap_in` and falls back to this default. `ANCHOR_WIGGLE_MAX_IN`
+ * in autoDesignAnchors.ts uses the same function so the two cannot drift.
+ *
+ * This supersedes the earlier wiggle-pass behavior that hard-wired the
+ * refrigerator to 0 inches (a filler closed a gap under 1.5 inches instead).
+ * The separate refrigerator bay gap-closing slide and the measured-fridge
+ * corner-seating slide are unchanged.
  */
 export const ANCHOR_WIGGLE_CAP_IN = KITCHEN_RULE_PARAMETER_DEFAULTS.anchor_wiggle_cap_in;
+
+/** Live appliance wiggle cap: the admin rule, or 3 inches when nothing is saved. */
+export function anchorWiggleCapIn(): number {
+  return kitchenRuleNumber("anchor_wiggle_cap_in");
+}
+
+const APPLIANCE_WIGGLE_KINDS = new Set(["sink", "stove", "range", "refrigerator", "dishwasher"]);
 
 /** Anchor kinds that may slide, and the cap they slide within. */
 export function anchorWiggleLimitIn(kind: string): number {
   const normalized = (kind ?? "").toLowerCase();
-  // The refrigerator is never slid to close a gap. A filler takes a gap under 1.5 inches.
-  if (normalized === "refrigerator") return 0;
-  if (normalized === "sink" || normalized === "stove" || normalized === "range") {
-    return Math.min(kitchenRuleNumber("anchor_wiggle_cap_in"), autoDesignShiftLimitIn(kind));
+  if (APPLIANCE_WIGGLE_KINDS.has(normalized)) {
+    return anchorWiggleCapIn();
   }
   return autoDesignShiftLimitIn(kind);
 }
@@ -154,7 +169,7 @@ export const DESIGNER_LAYOUT_RULES: readonly DesignerLayoutRule[] = [
     id: "wiggle-room",
     name: "wiggle room",
     phase: "wiggle",
-    summary: "During Auto-Design, slide a user-placed appliance left or right along its own wall when that yields a better cabinet fit. Ranges and dishwashers move at most 3 inches and sinks at most 3 inches. The refrigerator is never slid to close a gap. The smallest shift that works is used.",
+    summary: "During Auto-Design, slide a user-placed appliance left or right along its own wall when that yields a better cabinet fit. Every appliance — the range, refrigerator, sink base, and dishwasher — may move at most 3 inches each way from the measured center. A sink base also keeps its sink on the window within that cap. Windows never move. The smallest shift that works is used.",
   },
   {
     id: "straight-base-largest-first",
@@ -799,8 +814,9 @@ export function applyAutoDesignWiggleRoom(input: {
 }): { placed: PlacedCabinet[]; moves: AutoDesignWiggleMove[] } {
   let placed = [...input.placed];
   const cache = new Map<string, number>();
-  // A refrigerator already on the plan is a fixed anchor: it never takes the
-  // wiggle jog, so nothing slides the appliance out from under its cabinets.
+  // A cabinet or appliance listed in lockedUids / fixedUids stays put. The
+  // refrigerator itself may take the same 3 inch wiggle cap as the other
+  // appliances unless it was passed in as fixed.
   const locked = new Set([...(input.lockedUids ?? []), ...(input.fixedUids ?? [])]);
   const moves = new Map<string, AutoDesignWiggleMove>();
   const origins = [...input.origins].sort((left, right) => left.wallId.localeCompare(right.wallId) || left.originalStart - right.originalStart);
@@ -820,8 +836,9 @@ export function applyAutoDesignWiggleRoom(input: {
       if (!group) continue;
       const initialStart = alongStart(item, group.wallId, input.room);
       const entryStart = entryStarts.get(origin.uid) ?? initialStart;
-      // The range, refrigerator, and sink base slide at most 2 inches from the
-      // measured position; every other piece uses the normal wiggle allowance.
+      // Appliances (range, refrigerator, sink base, dishwasher) slide at most
+      // the anchor wiggle cap (3 inches by default) from the measured position;
+      // every other piece uses the normal cabinet jog.
       const shiftLimit = anchorWiggleLimitIn(origin.kind);
       const currentScore = layoutPenalty(placed, input.room, input.openings, input.catalog, cache);
       let bestScore = Number.POSITIVE_INFINITY;
