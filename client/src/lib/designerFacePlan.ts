@@ -4,7 +4,6 @@ import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
 import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
-import { libraryDoorFacePlan, type DoorLibraryStyleInput } from "@shared/doorLibraryProfiles";
 import { wizardDoorFacePlan } from "@shared/walzcraftDesignerPickup";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & {
@@ -94,12 +93,11 @@ export function designerFacePlan(
   if (findDlcFinishForStyle(style)) return resolveCabinetFaceImages(style, placement);
   const adopted = standardShakerDlFacePlan(style, placement);
   if (adopted) return adopted;
-  // Any distributor, any account: a shaker or raised style with no WalzCraft
-  // wizard record (the wizard path returned above) defaults onto the saved library
-  // entries. There is no DL-only gate here; DL photo crops are a separate layer
-  // that already ran.
-  const library = libraryDoorFacePlan(style as DoorLibraryStyleInput, placement);
-  if (library) return library;
+  // Door color rule (Tom, Nov 11 2026, docs/rules/DOOR_COLOR_SOURCE_RULE.md): the
+  // saved library entries are never an automatic COLOR override. A shaker or raised
+  // style with no wizard record keeps the library SHAPE (rails, stiles, panel, bevel),
+  // which the door profile carries (`designerCatalogDoorProfile`), but its face and
+  // color come from the style's own door image below, not from a library solid.
   const explicitApproved = trimmedImageUrl(style.approvedReferenceImageUrl);
   if (!explicitApproved) return resolveCabinetFaceImages(style, placement);
 

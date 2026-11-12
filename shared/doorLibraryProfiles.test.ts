@@ -174,11 +174,14 @@ describe("shaker without a wizard record -> library profile (non-DL)", () => {
     expect(doorLibraryApplicationForStyle(NON_DL_SHAKER).railIn).toBe(3);
   });
 
-  it("gives a non-DL raised style the raised-panel entry, painted solid", () => {
+  it("gives a non-DL raised style the raised-panel entry's shape, but no automatic library color", () => {
+    // Shape: the raised-panel library entry still applies automatically.
+    expect(raisedPanelApplicationForStyle(NON_DL_RAISED).source).toBe("library");
+    expect(libraryEntriesForStyle(NON_DL_RAISED).map((entry) => entry.entryId)).toEqual([DOOR_LIBRARY_ENTRY_IDS.raisedPanel]);
+    // Color: Tom's Nov 11 2026 rule (docs/rules/DOOR_COLOR_SOURCE_RULE.md). The face
+    // plan no longer carries the library's solid; the door image decides.
     const plan = designerFacePlan(NON_DL_RAISED, "base");
-    expect(plan?.dlcCrop?.slug).toBe(DOOR_LIBRARY_ENTRY_IDS.raisedPanel);
-    expect(plan?.doorUrl).toBeNull();
-    expect(plan?.dlcCrop?.solidColor?.toLowerCase()).toBe(resolveDoorColor(NON_DL_RAISED).appliedHex);
+    expect(plan?.dlcCrop?.slug).not.toBe(DOOR_LIBRARY_ENTRY_IDS.raisedPanel);
   });
 
   it("reports no wizard record, which is what allows the default", () => {

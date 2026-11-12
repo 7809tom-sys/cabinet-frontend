@@ -2,10 +2,6 @@ import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
 import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
 import type { DlcFaceCrop } from "./dlcFr26Textures";
-import {
-  libraryDoorFacePlan,
-  type DoorLibraryStyleInput,
-} from "./doorLibraryProfiles";
 import { retintGrain, standardShakerDlFacePlan, type ShakerStyleInput } from "./shakerDoorBlueprint";
 
 /**
@@ -344,13 +340,9 @@ export function resolveCabinetFaceImages(
   // 2.75 and 3 inch shakers that are not themselves a DL finish still use the DL blueprint.
   const adopted = standardShakerDlFacePlan(style as ShakerStyleInput, placement);
   if (adopted) return withResolvedDoorColor(adopted, style);
-  // Any distributor or account: a shaker or raised style with no WalzCraft wizard
-  // record defaults onto the saved library entries. The wizard's own plan is
-  // resolved by `designerFacePlan` before this function is reached, so reaching
-  // here means there is no wizard profile to win. `findDlcFinishForStyle` above
-  // only decides whether the DL photo crops are available; it never gated this.
-  const library = libraryDoorFacePlan(style as DoorLibraryStyleInput, placement);
-  if (library) return withResolvedDoorColor(library, style);
+  // No automatic library COLOR here (Tom, Nov 11 2026, DOOR_COLOR_SOURCE_RULE.md):
+  // a style the shaker blueprint above did not take falls through to its own door
+  // image. The library SHAPE still reaches the renderer through the door profile.
   const sourceKind = classifyFaceSource(style);
   const door = trimUrl(style?.doorSampleImageUrl) ?? trimUrl(style?.thumbnailImageUrl);
   const drawer = trimUrl(style?.drawerSampleImageUrl);
