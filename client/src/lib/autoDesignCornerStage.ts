@@ -1,6 +1,7 @@
 import { AUTO_DESIGN_WALL_LABELS, wallLabelToEngineWallId, type AutoBuildCatalogCandidate, type AutoDesignLayoutType, type AutoDesignOriginCorner, type AutoDesignRunDirection, type WallLabel } from "./autoDesignAutoBuild";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
-import { isBaseEndCornerCabinet, isBlindCorner, isCornerCabinet, isPlainBaseCode, wallRunFrame, wallRunJoinAt, type RoomData } from "./design";
+import { isBaseEndCornerCabinet, isPlainBaseCode, wallRunFrame, wallRunJoinAt, type RoomData } from "./design";
+import { isDesignerCornerBase, isTrueBlindCornerCode } from "./designerCornerSection";
 
 /** A real room vertex that the admin may explicitly populate after all anchors are seated. */
 export type AutoDesignCornerSlot = {
@@ -302,9 +303,7 @@ export function autoDesignCornerSlotPoint(
 export function autoBuildCornerCatalog<T extends AutoBuildCornerCandidate>(catalog: readonly T[]): T[] {
   return catalog
     .filter((candidate) => (
-      candidate.placement === "base"
-      && candidate.isCornerCabinet !== false
-      && isCornerCabinet(candidate.masterCode, candidate.description ?? undefined, candidate.cornerType ?? null)
+      isDesignerCornerBase(candidate)
       && !isBaseEndCornerCabinet({
         masterCode: candidate.masterCode,
         description: candidate.description ?? "",
@@ -315,8 +314,10 @@ export function autoBuildCornerCatalog<T extends AutoBuildCornerCandidate>(catal
 }
 
 export function isAutoDesignBlindCornerOption(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "placement" | "cornerType">): boolean {
-  return candidate.placement === "base"
-    && isBlindCorner(candidate.masterCode, candidate.description ?? undefined, candidate.cornerType ?? null);
+  // True blinds are BBC/BLIND *codes* in the Corner Base section. A stored
+  // cornerType of "blind-corner" on a normal corner base must not trigger
+  // pull, filler, or a wall-blind upper.
+  return candidate.placement === "base" && isTrueBlindCornerCode(candidate.masterCode);
 }
 
 export type AutoDesignCornerFamily = "diagonal" | "lazy-susan" | "blind" | "other";

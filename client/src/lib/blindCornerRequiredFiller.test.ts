@@ -10,7 +10,7 @@ import {
   type PlacedCabinet,
   type RoomData,
 } from "./design";
-import { buildRequiredBlindCornerFiller, isRequiredBlindCornerFillerGroupId, removePlacedCabinetWithRequiredBlindCornerFiller, requiredBlindCornerFillerGroupId, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
+import { buildRequiredBlindCornerFiller, ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId, removePlacedCabinetWithRequiredBlindCornerFiller, requiredBlindCornerFillerGroupId, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
 
 const room: RoomData = { width: 144, depth: 120 };
 const fillerCatalog = [{
@@ -311,4 +311,70 @@ describe("pulled BBC countertop wall coverage", () => {
 	    expect(blindCornerRearCountertopExtensionIn(cabinet, room)).toBe(6);
 	    expect(countertopSurfaces([cabinet], room)[0]).toMatchObject(expected);
 	  });
+});
+
+describe("ensureRequiredBlindCornerBaseFillers", () => {
+  it("adds the 3-inch filler beside a true BBC that was seated without it", () => {
+    const cabinet = bbc({ x: 0, y: 0, rotation: 0 });
+    const result = ensureRequiredBlindCornerBaseFillers({
+      placed: [cabinet],
+      room,
+      catalogFillers: fillerCatalog,
+      makeUid: () => "late-bbc-filler",
+      styleId: 330011,
+    });
+    expect(result.added).toHaveLength(1);
+    expect(result.added[0]).toMatchObject({
+      uid: "late-bbc-filler",
+      masterCode: "BF-3",
+      width: BLIND_CORNER_FILLER_WIDTH_IN,
+      fillerForCabinetUid: "bbc",
+    });
+    expect(result.placed).toHaveLength(2);
+    expect(result.notes).toEqual([]);
+  });
+
+  it("does not duplicate a filler a BBC already has, and ignores a normal Corner Base", () => {
+    const cabinet = bbc({ x: 0, y: 0, rotation: 0 });
+    const first = ensureRequiredBlindCornerBaseFillers({
+      placed: [cabinet],
+      room,
+      catalogFillers: fillerCatalog,
+      makeUid: () => "first-bbc-filler",
+      styleId: 330011,
+    });
+    const second = ensureRequiredBlindCornerBaseFillers({
+      placed: first.placed,
+      room,
+      catalogFillers: fillerCatalog,
+      makeUid: () => "second-bbc-filler",
+      styleId: 330011,
+    });
+    expect(second.added).toEqual([]);
+    expect(second.placed).toHaveLength(first.placed.length);
+
+    const lazy = bbc({ uid: "lazy", cabinetId: 88, masterCode: "LSB36", description: "Lazy Susan Corner Base", cornerType: "blind-corner" });
+    const ignored = ensureRequiredBlindCornerBaseFillers({
+      placed: [lazy],
+      room,
+      catalogFillers: fillerCatalog,
+      makeUid: () => "should-not-add",
+      styleId: 330011,
+    });
+    expect(ignored.added).toEqual([]);
+    expect(ignored.placed).toEqual([lazy]);
+  });
+
+  it("names the missing filler when the line sells no 3-inch base filler", () => {
+    const result = ensureRequiredBlindCornerBaseFillers({
+      placed: [bbc({ x: 0, y: 0, rotation: 0 })],
+      room,
+      catalogFillers: [],
+      makeUid: () => "none",
+      styleId: 330011,
+    });
+    expect(result.added).toEqual([]);
+    expect(result.notes.join(" ")).toMatch(/BBC-36/i);
+    expect(result.notes.join(" ")).toMatch(/filler/i);
+  });
 });

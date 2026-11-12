@@ -114,6 +114,7 @@ function build(input: {
   wallCabinetHeightIn?: 30 | 36 | 42;
   styleId?: number | null;
   corners?: Array<{ base: PlacedCabinet; point: { x: number; y: number; firstWallId: string } }>;
+  catalogFillers?: Parameters<typeof buildAutoDesignWallCabinets>[0]["catalogFillers"];
 }) {
   return buildAutoDesignWallCabinets({
     placed: input.placed,
@@ -124,6 +125,7 @@ function build(input: {
     styleId: input.styleId ?? 77,
     makeUid: uidFactory(),
     corners: input.corners,
+    catalogFillers: input.catalogFillers,
   });
 }
 
@@ -423,5 +425,106 @@ describe("buildAutoDesignWallCabinets", () => {
       catalog: [catalogCabinet({ id: 201, masterCode: "W2430", width: "24" })],
     });
     expect(result.skipped.join(" ")).toMatch(/do not meet/i);
+  });
+
+  it("places a Corner Wall diagonal above a normal Corner Base even when the base is stored as a blind-corner", () => {
+    const cornerBase = onTopWall(ROOM, {
+      uid: "mistagged-base", masterCode: "LSB36", placement: "base", width: 36, depth: 24, height: 34.5,
+      description: "36 inch Lazy Susan Corner Base", isCornerCabinet: true, cornerType: "blind-corner",
+      subCategory: "Corner Base",
+    }, 0);
+    const adjacentBase = onTopWall(ROOM, { uid: "straight-base", masterCode: "B36", placement: "base", width: 36, depth: 24 }, 36);
+    const result = build({
+      placed: [cornerBase, adjacentBase],
+      wallCabinetHeightIn: 36,
+      catalog: [
+        catalogCabinet({
+          id: 921, masterCode: "DCW2436", description: "24 inch Diagonal Corner Wall Cabinet",
+          width: "24", height: "36", depth: "12", subCategory: "Corner Wall", isCornerCabinet: true, cornerType: "diagonal",
+        }),
+        catalogCabinet({
+          id: 922, masterCode: "WBC36", description: "36 inch Blind Corner Wall Cabinet",
+          width: "36", height: "36", depth: "12", subCategory: "Blind Corner Wall",
+          isCornerCabinet: true, cornerType: "blind-corner", fillerRequired: true,
+        }),
+        catalogCabinet({ id: 923, masterCode: "W3636", width: "36", height: "36" }),
+      ],
+      corners: [{ base: cornerBase, point: { x: 0, y: 0, firstWallId: "top" } }],
+    });
+    expect(result.additions.map((cabinet) => cabinet.masterCode)[0]).toBe("DCW2436");
+    expect(result.additions.some((cabinet) => cabinet.masterCode === "WBC36")).toBe(false);
+    expect(result.additions.some((cabinet) => /integrated left of WBC/i.test(cabinet.description ?? ""))).toBe(false);
+  });
+
+  it("uses a Corner Wall section upper even when Cabinet Config left the drawing type blank", () => {
+    const cornerBase = onTopWall(ROOM, {
+      uid: "section-base", masterCode: "CB36", placement: "base", width: 36, depth: 24, height: 34.5,
+      description: "36 inch Corner Base", isCornerCabinet: true, subCategory: "Corner Base",
+    }, 0);
+    const adjacentBase = onTopWall(ROOM, { uid: "straight-base", masterCode: "B36", placement: "base", width: 36, depth: 24 }, 36);
+    const result = build({
+      placed: [cornerBase, adjacentBase],
+      catalog: [
+        catalogCabinet({
+          id: 931, masterCode: "CW2430", description: "24 inch Corner Wall Cabinet",
+          width: "24", height: "30", depth: "12", subCategory: "Corner Wall",
+        }),
+        catalogCabinet({ id: 932, masterCode: "W3630", width: "36" }),
+      ],
+      corners: [{ base: cornerBase, point: { x: 0, y: 0, firstWallId: "top" } }],
+    });
+    expect(result.additions.map((cabinet) => cabinet.masterCode)[0]).toBe("CW2430");
+  });
+
+  it("still places a wall blind (and its filler when required) above a true BBC base", () => {
+    const cornerBase = onTopWall(ROOM, {
+      uid: "bbc-base", masterCode: "BBC36", placement: "base", width: 36, depth: 24, height: 34.5,
+      description: "36 inch Blind Corner Base", isCornerCabinet: true, cornerType: "blind-corner",
+      subCategory: "Blind Corner Base",
+    }, 0);
+    const result = build({
+      placed: [cornerBase],
+      wallCabinetHeightIn: 36,
+      catalog: [
+        catalogCabinet({
+          id: 941, masterCode: "DCW2436", description: "24 inch Diagonal Corner Wall Cabinet",
+          width: "24", height: "36", depth: "12", subCategory: "Corner Wall", isCornerCabinet: true, cornerType: "diagonal",
+        }),
+        catalogCabinet({
+          id: 942, masterCode: "WBC36", description: "36 inch Blind Corner Wall Cabinet",
+          width: "36", height: "36", depth: "12", subCategory: "Blind Corner Wall",
+          isCornerCabinet: true, cornerType: "blind-corner", fillerRequired: true,
+        }),
+      ],
+      catalogFillers: [{
+        id: 343, masterCode: "F336", description: '3" × 36" Wall Filler',
+        category: "Accessories & Trim", subCategory: "Filler", width: 3, height: 36, depth: 0.75, catalogImageUrl: null,
+      }],
+      corners: [{ base: cornerBase, point: { x: 0, y: 0, firstWallId: "top" } }],
+    });
+    expect(result.additions.some((cabinet) => cabinet.masterCode === "WBC36")).toBe(true);
+    expect(result.additions.some((cabinet) => cabinet.masterCode === "DCW2436")).toBe(false);
+    expect(result.additions.some((cabinet) => cabinet.masterCode === "F336" && cabinet.width === 3)).toBe(true);
+  });
+
+  it("prefers a Corner Wall diagonal over a wall blind when connecting two upper runs", () => {
+    const top = onWall(ROOM, "top", { uid: "top-base", masterCode: "B24", placement: "base", width: 24, depth: 24 }, 36);
+    const left = onWall(ROOM, "left", { uid: "left-base", masterCode: "B24L", placement: "base", width: 24, depth: 24 }, 36);
+    const result = build({
+      placed: [top, left],
+      catalog: [
+        catalogCabinet({ id: 201, masterCode: "W2430", width: "24" }),
+        catalogCabinet({
+          id: 202, masterCode: "DCW2430", description: "Diagonal corner wall", width: "24",
+          subCategory: "Corner Wall", cornerType: "diagonal", isCornerCabinet: true,
+        }),
+        catalogCabinet({
+          id: 203, masterCode: "WBC27", description: "Blind corner wall", width: "27",
+          subCategory: "Blind Corner Wall", cornerType: "blind-corner", isCornerCabinet: true, fillerRequired: true,
+        }),
+      ],
+    });
+    expect(result.placed.some((item) => item.masterCode === "DCW2430")).toBe(true);
+    expect(result.placed.some((item) => item.masterCode === "WBC27")).toBe(false);
   });
 });

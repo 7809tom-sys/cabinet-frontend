@@ -1,13 +1,17 @@
 import {
   BLIND_CORNER_FILLER_WIDTH_IN,
   STD,
+  appendCollisionFreePlacements,
   blindCornerAutoFiller,
+  formatInches,
   isBaseBlindCorner,
   isBlindCorner,
+  isFillerItem,
   type PlacedCabinet,
   type RoomData,
 } from "./design";
 import { isWallBlindCornerCabinet } from "./cabinetGraphics";
+import { isTrueBlindCornerCode } from "./designerCornerSection";
 import {
   catalogFillerForGap,
   fittedCatalogFillerDescription,
@@ -183,4 +187,52 @@ export function removePlacedCabinetWithRequiredBlindCornerFiller(
   if (!groupId) return removePlacedCabinetGroup(placed, uid);
   const blindUid = groupId.replace(/^(?:bbc|wbc)-required-filler-/, "");
   return placed.filter((item) => item.uid !== blindUid && item.fillerPieceGroupId !== groupId);
+}
+
+/**
+ * Every true blind corner base (BBC / BLIND code) carries its 3-inch clearance
+ * filler. Auto Design calls this after corner seating so a BBC that was placed
+ * without its filler — or was earlier misread as not blind and therefore seated
+ * later as a BBC without the companion filler — still gets that 3" piece.
+ */
+export function ensureRequiredBlindCornerBaseFillers(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  catalogFillers: readonly CatalogFillerCandidate[];
+  makeUid: () => string;
+  styleId: number | null;
+}): { placed: PlacedCabinet[]; added: PlacedCabinet[]; notes: string[] } {
+  let working = [...input.placed];
+  const added: PlacedCabinet[] = [];
+  const notes: string[] = [];
+  for (const cabinet of input.placed) {
+    if (cabinet.placement !== "base" || !isTrueBlindCornerCode(cabinet.masterCode)) continue;
+    const groupId = requiredBlindCornerFillerGroupId(cabinet);
+    if (working.some((item) => item.fillerPieceGroupId === groupId || (item.fillerForCabinetUid === cabinet.uid && isFillerItem(item)))) {
+      continue;
+    }
+    const required = buildRequiredBlindCornerFiller(
+      cabinet,
+      input.room,
+      input.catalogFillers,
+      input.makeUid,
+      cabinet.styleId ?? input.styleId,
+    );
+    if (!required.ok) {
+      notes.push(
+        required.reason === "missing-catalog-filler"
+          ? `${cabinet.masterCode} requires its ${formatInches(BLIND_CORNER_FILLER_WIDTH_IN)} filler, which is unavailable in this cabinet line.`
+          : `${cabinet.masterCode} is missing its required ${formatInches(BLIND_CORNER_FILLER_WIDTH_IN)} filler.`,
+      );
+      continue;
+    }
+    const accepted = appendCollisionFreePlacements(working, [required.filler], input.room);
+    if (!accepted.placed.some((item) => item.uid === required.filler.uid)) {
+      notes.push(`${cabinet.masterCode} is missing its required ${formatInches(BLIND_CORNER_FILLER_WIDTH_IN)} filler because the space beside it is blocked.`);
+      continue;
+    }
+    working = accepted.placed;
+    added.push(required.filler);
+  }
+  return { placed: working, added, notes };
 }

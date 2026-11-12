@@ -7,6 +7,7 @@ import {
 } from "./autoDesignSeamFillers";
 import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
 import { cabinetDrawingType, isWallBlindCornerCabinet } from "./cabinetGraphics";
+import { isDesignerCornerWallUpper, isTrueBlindCornerCode } from "./designerCornerSection";
 import { isSingleDoorTwentyFourRow } from "./singleDoorTwentyFour";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
@@ -20,7 +21,7 @@ import {
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
   cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall,
-  STD, isBaseBlindCorner, isCornerCabinet, isFillerItem, isPanelItem, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
+  STD, isCornerCabinet, isFillerItem, isPanelItem, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, placedFootprint, roomWallRunFrames, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
 } from "./design";
@@ -324,9 +325,12 @@ export function buildAutoDesignWallCabinets(input: {
     && source.placement === "wall" && Math.abs(dim(source.height, 0) - height) <= SAME_HEIGHT_IN
     && dim(source.width, 0) > 0 && dim(source.depth, 0) > 0);
   const standard = eligible.filter((source) => isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source));
-  const corners = eligible.filter((source) => ["diagonal-corner", "l-corner", "triangle-corner"].includes(cabinetDrawingType(source)))
+  // Corner Wall section (Designer Corner Cabinets tab), not only a drawing-type
+  // guess: a diagonal/L/triangle upper in that section must be available even
+  // when Cabinet Config left cornerType or graphicType blank.
+  const corners = eligible.filter((source) => isDesignerCornerWallUpper(source))
     .sort((a, b) => dim(b.width, 0) - dim(a.width, 0));
-  const wallBlinds = eligible.filter((source) => isWallBlindCornerCabinet(source))
+  const wallBlinds = eligible.filter((source) => isWallBlindCornerCabinet(source) || isTrueBlindCornerCode(source.masterCode))
     .sort((a, b) => dim(b.width, 0) - dim(a.width, 0));
   const makeCandidate = (source: DesignCabinet): PlacedCabinet => ({
     uid: input.makeUid(), cabinetId: source.id, masterCode: source.masterCode, description: source.description,
@@ -372,9 +376,10 @@ export function buildAutoDesignWallCabinets(input: {
     let placed = false;
     if (frame) {
       const at = Math.hypot(frame.start.x - point.x, frame.start.y - point.y) <= 0.01 ? "start" : "end";
-      if (isBaseBlindCorner(base)) {
-        // The corner itself is a wall blind corner (or another true corner upper).
-        // A plain 12" wall cabinet is not a corner and is never seated in the vertex.
+      if (isTrueBlindCornerCode(base.masterCode)) {
+        // Only a true BBC/BLIND *code* gets a wall blind above it. A normal
+        // Corner Base (lazy Susan, easy reach, diagonal) is not treated as blind
+        // just because a stored cornerType says "blind-corner".
         // A base blind corner gets a wall blind corner at the same vertex, the
         // widest one that does not overhang its base, with its integrated 3″ filler.
         for (const source of placed ? [] : wallBlinds.filter((row) => dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN)) {
@@ -749,6 +754,7 @@ function connectUpperRunsWithCornerCabinets(input: {
       if (seen.has(key)) continue;
       seen.add(key);
       if (covered.some((item) => cornerUpperCoversVertex(item, vertex))) continue;
+      // Prefer Corner Wall diagonals / L / triangle uppers; wall blinds are the fallback.
       const stock = [...input.corners, ...input.wallBlinds];
       let seated = false;
       if (stock.length === 0) {
