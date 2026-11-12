@@ -248,6 +248,15 @@ describe("Auto-Design appliance-first corner stage", () => {
     expect(autoBuildCornerCatalog(catalog).map((item) => item.masterCode)).toEqual(["BBC39", "LSB36"]);
   });
 
+  it("includes Corner Base section rows that are corners by subcategory, not only by code", () => {
+    const catalog = [
+      { id: 1, masterCode: "CB36", description: "36 inch Corner Base", placement: "base" as const, subCategory: "Corner Base", width: "36", height: "34.5" },
+      { id: 2, masterCode: "B36", description: '36" Corner Base Cabinet', placement: "base" as const, subCategory: "Corner Base", width: "36", height: "34.5", isCornerCabinet: true },
+      { id: 3, masterCode: "LSB36", description: "36 inch Lazy Susan Corner Base", placement: "base" as const, subCategory: "Lazy Susan", width: "36", height: "34.5" },
+    ];
+    expect(autoBuildCornerCatalog(catalog).map((item) => item.masterCode)).toEqual(["CB36", "LSB36"]);
+  });
+
   it("does not seat a corner cabinet where two walls meet at 45 degrees", () => {
     const room = {
       width: 220,

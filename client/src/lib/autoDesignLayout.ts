@@ -14,6 +14,7 @@ import {
   type AutoDesignInputs,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
+import { ensureRequiredBlindCornerBaseFillers } from "./blindCornerRequiredFiller";
 import { isPlacedCornerCabinet, sameWidthFamily } from "./autoDesignCornerGuard";
 import {
   AUTO_DESIGN_GALLEY_WALLS,
@@ -1093,6 +1094,17 @@ export function runAutoDesignLayout(args: {
     });
     upperCorners.push({ base: seated.corner, point });
   }
+  // A true BBC always includes its 3-inch filler. If a prior pass seated the
+  // base without it (or the base was first misread as not blind), attach it now.
+  const sealedBlindFillers = ensureRequiredBlindCornerBaseFillers({
+    placed: working,
+    room,
+    catalogFillers,
+    makeUid,
+    styleId: args.styleId,
+  });
+  working = sealedBlindFillers.placed;
+  notes.push(...sealedBlindFillers.notes);
 
   // An L cabinets both legs even when they meet at 45° and therefore have no
   // corner cabinet. A 45°/135° wall that touches a run already in the build is
@@ -1527,6 +1539,15 @@ export function runAutoDesignLayout(args: {
     allowAutoFillers: false,
   });
   working = capAutoDesignFillerWidth(finishedRules.placed);
+  const finalBlindFillers = ensureRequiredBlindCornerBaseFillers({
+    placed: working,
+    room,
+    catalogFillers,
+    makeUid,
+    styleId: args.styleId,
+  });
+  working = finalBlindFillers.placed;
+  notes.push(...finalBlindFillers.notes.filter((note) => !notes.includes(note)));
   // One board per run end. Before this pass a run could collect a 1¼″ beside a
   // stock run, a 1″ beside the range and a 3″ at each window shoulder, because
   // every stage filled its own sliver. Now a stock width closes the opening when
