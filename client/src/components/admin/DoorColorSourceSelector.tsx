@@ -36,12 +36,14 @@ export type DoorColorSourceSelectorProps = {
   sherwinHex?: string | null;
   /** The hex the swatch tile paints: the confirmed pick, the pending one, or the current render hex. */
   hexSwatch?: string | null;
-  /** The existing Sherwin-Williams picker (WalzCraft wizard wheels), shown when that tile is selected. */
+  /** The Sherwin-Williams picker, when the caller keeps it inside the tile editor. Null shows a hint pointing at the WalzCraft wizard. */
   sherwinPicker?: ReactNode;
   /** The existing hex picker (hex field, color input, photo eyedropper), shown when the Hex tile is selected. */
   hexPicker?: ReactNode;
   /** Opens the existing AI render tool. It is never started from here. */
   onOpenAiMaker?: () => void;
+  /** True when the caller already draws the surrounding card (the door color panel). */
+  bare?: boolean;
   now?: () => string;
 };
 
@@ -68,6 +70,7 @@ export function DoorColorSourceSelector({
   sherwinPicker,
   hexPicker,
   onOpenAiMaker,
+  bare = false,
   now = () => new Date().toISOString(),
 }: DoorColorSourceSelectorProps) {
   const effective = effectiveDoorColorSource(draft.stored, aiAvailable ? { approvedVersionId: 1, approvedReferenceImageUrl: aiImageUrl || "accepted" } : null);
@@ -98,7 +101,7 @@ export function DoorColorSourceSelector({
     : null;
 
   return (
-    <section data-testid="door-color-source-selector" className="space-y-3 rounded-lg border border-[#d4a75a]/70 bg-[#fffaf1] px-3 py-3">
+    <section data-testid="door-color-source-selector" className={bare ? "space-y-3" : "space-y-3 rounded-lg border border-[#d4a75a]/70 bg-[#fffaf1] px-3 py-3"}>
       <div>
         <span className="text-xs font-semibold">Door color source</span>
         <p className="mt-0.5 text-xs text-muted-foreground">
@@ -213,7 +216,11 @@ export function DoorColorSourceSelector({
       {draft.active === "sherwin-williams" && (
         <div data-testid="door-color-source-sherwin-picker" className="space-y-2">
           {pendingNote && <p className="text-xs">{pendingNote}</p>}
-          {sherwinPicker}
+          {sherwinPicker ?? (
+            <p data-testid="door-color-source-sherwin-hint" className="text-xs text-muted-foreground">
+              Pick the stain or paint chip in the WalzCraft wizard below, then press Confirm here.
+            </p>
+          )}
           <button
             type="button"
             data-testid="door-color-source-sherwin-williams-confirm"

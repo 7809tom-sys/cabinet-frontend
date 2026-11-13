@@ -35,6 +35,7 @@ import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
+import { DoorBestPicturePicker } from "@/components/admin/DoorBestPicturePicker";
 import {
   doorColorSourceReducer,
   doorColorSourceSaveMessage,
@@ -348,6 +349,17 @@ function CatalogPreviewModal({
     </Dialog>
   );
 }
+
+/** Plain English for where the resolved door colour came from (not just what hex it is). */
+const DOOR_COLOR_ORIGIN_LABEL: Record<string, string> = {
+  "accepted-render": "the accepted AI render",
+  "render-hex": "a hand-set render hex",
+  "catalog-color": "the catalog colour",
+  "swatch-table": "the measured swatch",
+  walzcraft: "a WalzCraft shade",
+  estimator: "the name estimate",
+  "pre-209": "the original colour",
+};
 
 function thumb(s: AdminStyle): string | null {
   return s.roomSceneImageUrl || s.doorSampleImageUrl || s.thumbnailImageUrl || null;
@@ -1037,15 +1049,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             </div>
           </div>
 
-          <GlazingControl {...glazing} onChange={setGlazing} />
-          <DoorSkinField value={doorSkin} onChange={setDoorSkin} woodGrain={isWoodGrain} />
-          {(() => {
-            const door = walzDoor;
-            if (!door || !isWoodGrain) return null;
-            const scenes = [style.roomSceneImageUrl, ...(style.roomScenes ?? []).map((r) => r.imageUrl)].filter((u): u is string => !!u);
-            return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
-          })()}
-
+          {/* One door color panel: the tiles, the editors, the pictures and the
+              WalzCraft wizard together, so a change is seen where it is made. */}
           {/* ONE door color source selector, top of the color panel (Tom, Nov 12 2026). */}
           {(() => {
             const sherwinPicker = (
@@ -1122,7 +1127,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             );
             return (
               <>
+                <section data-testid="door-color-panel" className="space-y-3 rounded-lg border-2 border-[#d4a75a] bg-[#fffaf1] px-3 py-3">
                 <DoorColorSourceSelector
+                  bare
                   draft={colorSource}
                   dispatch={dispatchColorSource}
                   aiAvailable={aiAvailable}
@@ -1130,7 +1137,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   aiImageUrl={style.approvedReferenceImageUrl ?? null}
                   sherwinHex={sherwinHex}
                   hexSwatch={hexSwatch}
-                  sherwinPicker={colorSource.active === "sherwin-williams" ? sherwinPicker : null}
+                  sherwinPicker={null}
                   hexPicker={hexPicker}
                   onOpenAiMaker={() => openStyleAudit(style.id, style.ourName ?? "")}
                 />
@@ -1139,6 +1146,40 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     {colorSourceSaveError}
                   </p>
                 )}
+                <p data-testid="door-color-source-resolved" className="text-xs text-muted-foreground">
+                  Resolved colour: <span className="font-mono">{doorColor.appliedHex}</span> · from {DOOR_COLOR_ORIGIN_LABEL[doorColor.appliedSource] ?? doorColor.appliedSource}
+                </p>
+                <DoorBestPicturePicker
+                  pictures={[
+                    { id: "supplier", label: "Supplier photo", url: doorSampleImageUrl || style.doorSampleImageUrl || "" },
+                    { id: "brochure", label: "Brochure photo", url: walzDoor?.photo ?? "" },
+                    { id: "ai", label: "AI render", url: style.approvedReferenceImageUrl ?? "" },
+                    { id: "thumbnail", label: "Thumbnail", url: thumbnailImageUrl || style.thumbnailImageUrl || "" },
+                  ]}
+                  selectedUrl={doorSampleImageUrl || style.doorSampleImageUrl}
+                  onPick={(picture) => setDoorSampleImageUrl(picture.url)}
+                />
+                {/* The WalzCraft wizard stays visible for door profile and grain; its
+                    wheels are the single Sherwin-Williams picker, so the tile editor
+                    never mounts a second copy. */}
+                <section data-testid="door-color-source-wizard-tools" className="space-y-2 rounded-lg border border-[#d7a46c] bg-[#fffdf9] px-3 py-3">
+                  <div>
+                    <span className="text-xs font-semibold">WalzCraft wizard — door profile &amp; grain</span>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Door profile image, grain and the Sherwin-Williams wheels. A chip counts only after Confirm on the Sherwin-Williams tile above.
+                    </p>
+                  </div>
+                  {sherwinPicker}
+                </section>
+          <GlazingControl {...glazing} onChange={setGlazing} />
+          <DoorSkinField value={doorSkin} onChange={setDoorSkin} woodGrain={isWoodGrain} />
+          {(() => {
+            const door = walzDoor;
+            if (!door || !isWoodGrain) return null;
+            const scenes = [style.roomSceneImageUrl, ...(style.roomScenes ?? []).map((r) => r.imageUrl)].filter((u): u is string => !!u);
+            return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
+          })()}
+          </section>
               </>
             );
           })()}
