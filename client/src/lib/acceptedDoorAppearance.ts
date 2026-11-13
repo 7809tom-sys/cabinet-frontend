@@ -79,7 +79,10 @@ export function doorColorInputFor(style: AcceptedDoorStyleInput | null | undefin
   const accepted = hasAcceptedDoorAppearance(style);
   return {
     ...style,
-    renderHex: accepted ? style.renderHex : null,
+    // The door's own recorded colour always counts; the catalog colour must never
+    // stand in for it (Tom, Nov 13 2026). Only the approved IMAGE is gated on an
+    // accepted run, so a typed colour can never claim to be an approved render.
+    renderHex: style.renderHex ?? null,
     approvedReferenceImageUrl: accepted ? style.approvedReferenceImageUrl ?? null : null,
   };
 }

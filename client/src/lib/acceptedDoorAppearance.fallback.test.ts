@@ -56,6 +56,16 @@ describe("no acceptedAppearance writeback yet: fall back, never error", () => {
     expect(styleSampleFaceImage(UNPATCHED_STYLE)).toBe("/manus-storage/sh-sample.jpg");
   });
 
+  it("uses the style's own recorded colour instead of its catalog colour", () => {
+    // Tom, Nov 13 2026: the Designer must follow the door, never the catalog entry.
+    const withRecordedColor = { ...UNPATCHED_STYLE, renderHex: "#798764" };
+    expect(doorColorInputFor(withRecordedColor).renderHex).toBe("#798764");
+    const decision = resolveKitchenDoorColor(withRecordedColor);
+    expect(decision.appliedHex).toBe("#798764");
+    expect(decision.appliedHex).not.toBe(UNPATCHED_STYLE.color);
+    expect(decision.appliedSource).toBe("render-hex");
+  });
+
   it("also survives explicit nulls, which a patched-but-empty backend returns", () => {
     const nulls = { ...UNPATCHED_STYLE, renderHex: null, approvedVersionId: null, approvedReferenceImageUrl: null };
     expect(hasAcceptedDoorAppearance(nulls)).toBe(false);
