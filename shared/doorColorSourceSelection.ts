@@ -392,3 +392,17 @@ export function doorColorSourceReducer(state: DoorColorSourceDraft, action: Door
 export function awaitingConfirm(state: DoorColorSourceDraft): boolean {
   return needsConfirm(state.active) && state.stored?.source !== state.active;
 }
+
+/**
+ * Turns a failed save into a message an operator can act on. The door color
+ * source columns arrive with cabinet-backend migration 0280; until that SQL is
+ * run the backend reports it, and the editor says so plainly instead of showing
+ * a generic failure.
+ */
+export function doorColorSourceSaveMessage(message: string | null | undefined): string {
+  const text = (message ?? "").trim();
+  if (/0280|migration/i.test(text)) {
+    return "Door color source was not saved: the 0280 SQL has not been run yet. Run the 0280 migration (the door_styles doorColorSource columns) on the database, then save again.";
+  }
+  return text || "The door style was not saved. Try again.";
+}

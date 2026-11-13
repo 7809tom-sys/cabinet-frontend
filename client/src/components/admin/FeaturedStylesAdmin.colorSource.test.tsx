@@ -64,11 +64,12 @@ describe("Edit Door: one door color source selector", () => {
     expect(selector.compareDocumentPosition(overrides) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(dialog.querySelectorAll('[data-testid="door-color-source-selector"]').length).toBe(1);
     expect(screen.getByTestId("door-color-source-original-image").getAttribute("aria-checked")).toBe("true");
-    // The old render hex field moved into the selector; the photo pair is still there.
+    // The old render hex field moved into the selector, and the photo eyedropper
+    // now lives under the Hex tile, so neither is in the panel by default.
     expect(dialog.querySelector("#ed-render-hex")).toBeNull();
-    expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(1);
-    // The WalzCraft wizard is kept (collapsed) rather than deleted.
-    expect(dialog.querySelector('[data-testid="door-color-source-wizard-tools"]')).toBeTruthy();
+    expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(0);
+    // The duplicate WalzCraft wizard <details> is gone; its pickers live in the tile editor.
+    expect(dialog.querySelector('[data-testid="door-color-source-wizard-tools"]')).toBeNull();
   });
 
   it("Hex is stored only after Confirm, and becomes the render hex", () => {
@@ -80,6 +81,15 @@ describe("Edit Door: one door color source selector", () => {
     fireEvent.click(screen.getByTestId("door-color-source-hex-confirm"));
     expect(stored()["1"]).toMatchObject({ source: "hex", confirmed: true, hex: "#224466" });
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Hex · #224466/);
+  });
+
+  it("Hex opens the eyedropper under the Hex tile, and only there", () => {
+    const dialog = openFirst();
+    expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(0);
+    fireEvent.click(screen.getByTestId("door-color-source-hex"));
+    const slot = dialog.querySelector('[data-testid="door-color-source-hex-picker"]')!;
+    expect(slot.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(1);
+    expect(slot.querySelector('[data-testid="edit-dialog-sample-photo"]')).toBeTruthy();
   });
 
   it("Sherwin-Williams shows the existing WalzCraft wheels underneath", () => {
