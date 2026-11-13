@@ -184,6 +184,29 @@ describe("range and refrigerator spacing", () => {
   });
 });
 
+describe("refrigerator landing", () => {
+  it("flags a cabinet flush against the refrigerator (zero landing)", () => {
+    // Tom's guide: "plan for at least 15 inches of counter beside the refrigerator".
+    // A sink base butted to the fridge is landing 0, and the old check ignored
+    // anything at or below half an inch, so this shipped unreported.
+    const room = { ...DEFAULT_ROOM, width: 180 };
+    const fridge = placed({ uid: "fridge", masterCode: "FRIDGE-36", description: "36 inch refrigerator", placement: "appliance", width: 36, wallOffset: 0 });
+    const sink = placed({ uid: "sink", masterCode: "SB36", description: "Sink Base 36", placement: "base", width: 36, wallOffset: 36 });
+    const report = reviewKitchenAdjacency({ room, placed: [fridge, sink], openings: [], island: null, usage: { uses: [], skipped: true } });
+    const hit = report.findings.find((entry) => entry.id.includes("fridge-landing"));
+    expect(hit).toBeTruthy();
+    expect(hit!.detail).toMatch(/flush/i);
+  });
+
+  it("stays quiet when the landing meets the rule", () => {
+    const room = { ...DEFAULT_ROOM, width: 220 };
+    const fridge = placed({ uid: "fridge", masterCode: "FRIDGE-36", description: "36 inch refrigerator", placement: "appliance", width: 36, wallOffset: 0 });
+    const landing = placed({ uid: "landing", masterCode: "B15", description: "15 inch base", placement: "base", width: 15, wallOffset: 36 });
+    const report = reviewKitchenAdjacency({ room, placed: [fridge, landing], openings: [], island: null, usage: { uses: [], skipped: true } });
+    expect(report.findings.some((entry) => entry.id.includes("fridge-landing"))).toBe(false);
+  });
+});
+
 describe("post-shift checks", () => {
   it("lets a sink slide up to the 2 inch anchor cap and then suggests recentering it on the window", () => {
     // 122 wide: a half inch slide lets the run close exactly, which is inside the

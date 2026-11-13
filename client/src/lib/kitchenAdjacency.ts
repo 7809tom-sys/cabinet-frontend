@@ -22,7 +22,8 @@ import {
 } from "./design";
 import { kitchenAdjacencyRuleById } from "./kitchenAdjacencyRules";
 import { overRangeBridgeHeightFor, bridgeFamilyGeometry } from "./overRangeCompanion";
-import { kitchenRuleNumber } from "./kitchenRuleParameters";import {
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { fridgeLandingAdvice } from "./fridgeLandingFitAdvice";import {
   bakesALot,
   cooksALot,
   describeBakingZone,
@@ -662,8 +663,27 @@ export function reviewKitchenAdjacency(input: {
     }
     const handleLanding = Math.max(landingWidth(spans, fridge.start, "before"), landingWidth(spans, fridge.end, "after"));
     const fridgeLanding = kitchenRuleNumber("fridge_landing_in");
-    if (handleLanding > 0.5 && handleLanding < fridgeLanding - 0.05) {
-      findings.push(finding("fridge-landing", "attention", `Refrigerator landing is under ${fridgeLanding} inches`, `${fridge.item.masterCode} needs ${fridgeLanding}" of counter on the handle side.`, `:${fridge.item.uid}`));
+    // Owner: "plan for at least 15 inches of counter beside the refrigerator".
+    // A cabinet flush against the fridge is landing 0 and used to pass this check
+    // (it required more than half an inch before flagging), which is how a sink
+    // base ended up butted to the refrigerator with nothing reported.
+    if (handleLanding < fridgeLanding - 0.05) {
+      // Tom: "sometimes you have to look at the math and suggest small
+      // refrigerator or sink base." The finding names the smaller size that would
+      // free the shortfall instead of only reporting the gap.
+      const flushBase = [leftTouch, rightTouch]
+        .map((touch) => touch?.item ?? null)
+        .find((item): item is PlacedCabinet => Boolean(item && isLandingBase(item))) ?? null;
+      const advice = fridgeLandingAdvice({
+        landingIn: handleLanding,
+        requiredIn: fridgeLanding,
+        sinkBaseWidthIn: flushBase && isSinkBaseCabinet(flushBase) ? Number(flushBase.width) : null,
+        refrigeratorWidthIn: Number(fridge.item.width),
+      });
+      const detail = handleLanding <= 0.5
+        ? `${fridge.item.masterCode} has a cabinet flush against it. It needs ${fridgeLanding}" of base between the refrigerator and the next cabinet. ${advice}`
+        : `${fridge.item.masterCode} needs ${fridgeLanding}" of counter on the handle side; this run gives ${Math.round(handleLanding)}". ${advice}`;
+      findings.push(finding("fridge-landing", "attention", `Refrigerator landing is under ${fridgeLanding} inches`, detail, `:${fridge.item.uid}`));
     }
   }
 
