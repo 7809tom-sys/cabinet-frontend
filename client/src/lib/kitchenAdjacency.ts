@@ -662,8 +662,15 @@ export function reviewKitchenAdjacency(input: {
     }
     const handleLanding = Math.max(landingWidth(spans, fridge.start, "before"), landingWidth(spans, fridge.end, "after"));
     const fridgeLanding = kitchenRuleNumber("fridge_landing_in");
-    if (handleLanding > 0.5 && handleLanding < fridgeLanding - 0.05) {
-      findings.push(finding("fridge-landing", "attention", `Refrigerator landing is under ${fridgeLanding} inches`, `${fridge.item.masterCode} needs ${fridgeLanding}" of counter on the handle side.`, `:${fridge.item.uid}`));
+    // Owner: "plan for at least 15 inches of counter beside the refrigerator".
+    // A cabinet flush against the fridge is landing 0 and used to pass this check
+    // (it required more than half an inch before flagging), which is how a sink
+    // base ended up butted to the refrigerator with nothing reported.
+    if (handleLanding < fridgeLanding - 0.05) {
+      const detail = handleLanding <= 0.5
+        ? `${fridge.item.masterCode} has a cabinet flush against it. It needs ${fridgeLanding}" of base between the refrigerator and the next cabinet.`
+        : `${fridge.item.masterCode} needs ${fridgeLanding}" of counter on the handle side; this run gives ${Math.round(handleLanding)}".`;
+      findings.push(finding("fridge-landing", "attention", `Refrigerator landing is under ${fridgeLanding} inches`, detail, `:${fridge.item.uid}`));
     }
   }
 
