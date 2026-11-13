@@ -185,6 +185,20 @@ export const THREE_D_PRODUCTION_HDRI_URL = "/manus-storage/photo_studio_01_1k_5f
  * shifted; cabinet geometry, door construction, and rail direction are not
  * changed.
  */
+/**
+ * True when a door/drawer sample is a curated wood-grain photo rather than a
+ * framed-door picture. Those tile: one real board, repeated with a per-cabinet
+ * phase so neighbouring doors never show the same knot. The rule used to name
+ * rustic hickory only, which left every other real wood rendering as a flat
+ * single-copy door photo.
+ */
+export function isCuratedCabinetGrainSample(url: string | null | undefined): boolean {
+  const name = (url ?? "").trim().toLowerCase();
+  if (!name) return false;
+  return /(?:^|[/_-])(?:vertical|horizontal)[_-]?grain(?:[./_-]|$)/.test(name)
+    || /(?:^|[/_-])grain[_-](?:vertical|horizontal)(?:[./_-]|$)/.test(name);
+}
+
 export function threeDCabinetGrainTransform(
   placementUid: string | null | undefined,
   doorSampleUrl: string | null | undefined,
@@ -5655,7 +5669,7 @@ export function addCabinet(
 	  // No door photo, no grain tile, and no per-piece wood-grain crop. Stained wood
 	  // keeps its grain. `doorSampleUrl` is already cleared for a painted style above.
 	  const useDoorTexture = !paintedFinish && threeDUsesDoorSampleTexture(doorSampleUrl);
-	  const usesCuratedCabinetGrain = !paintedFinish && /rustic_hickory_vertical_grain/i.test(doorSampleUrl ?? "");
+	  const usesCuratedCabinetGrain = !paintedFinish && isCuratedCabinetGrainSample(doorSampleUrl);
 	  // Assigned once the texture exists. The loader callback runs after the
 	  // face meshes are built, which is when box skins receive the sample.
 	  let stampCabinetWoodGrain = () => {};
@@ -5742,7 +5756,7 @@ export function addCabinet(
     faceSourceKind: surfaceTextures?.faceSourceKind,
     separateFace: Boolean(surfaceTextures?.faceCrop?.faceTileDrawerIn),
   });
-  const usesCuratedDrawerGrain = !paintedFinish && /rustic_hickory_vertical_grain/i.test(drawerSampleUrl ?? "");
+  const usesCuratedDrawerGrain = !paintedFinish && isCuratedCabinetGrainSample(drawerSampleUrl);
   const drawerTexture = useDrawerTexture && drawerSampleUrl
     ? new THREE.TextureLoader().load(drawerSampleUrl)
     : null;
