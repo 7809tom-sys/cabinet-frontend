@@ -37,6 +37,7 @@ import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescripti
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
 import { DoorBestPicturePicker } from "@/components/admin/DoorBestPicturePicker";
 import {
+  awaitingConfirm,
   doorColorSourceReducer,
   doorColorSourceSaveMessage,
   hasApprovedAiImage,
@@ -707,6 +708,18 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   }
 
   async function handleSave() {
+    // A typed Hex or Sherwin-Williams pick only counts after Confirm. Saving with
+    // one still pending used to store the supplier photo silently, which looked
+    // like the tile "never moved up". Say it instead.
+    const pendingColorPick = colorSource.active === "hex"
+      ? Boolean(normalizeHex(colorSource.pendingHex))
+      : colorSource.active === "sherwin-williams" && colorSource.pendingSherwin
+        ? Boolean(colorSource.pendingSherwin)
+        : false;
+    if (pendingColorPick && awaitingConfirm(colorSource)) {
+      toast.error(`Press Confirm on the ${colorSource.active === "hex" ? "Hex" : "Sherwin-Williams"} tile before saving. Until then the door keeps its supplier photo.`);
+      return;
+    }
     const skinErr = doorSkinError(doorSkin);
     if (skinErr) { toast.error(skinErr); return; }
     if (saveLock.current) return;
