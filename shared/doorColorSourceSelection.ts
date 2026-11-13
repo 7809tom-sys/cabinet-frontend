@@ -282,10 +282,15 @@ export function selectedDoorHex(selection: DoorColorSourceSelection | null | und
 }
 
 /**
- * The style fields the color resolver should see for this choice. With the
- * supplier photo (chosen or default) a hand-typed render hex and an accepted run
- * are removed, so neither can override the image. With Hex or Sherwin-Williams the
- * confirmed hex is the render hex. With Approved AI image the style is unchanged.
+ * The style fields the color resolver should see for this choice.
+ *
+ * Original image is the DEFAULT, not an override: when the style has an accepted
+ * render, that render still wins - approval is the alternative Tom signed off on,
+ * and the supplier photo is only the fallback. A hand-typed render hex is still
+ * removed for Original image, so a typed color can never tint the photo.
+ *
+ * With Hex or Sherwin-Williams the confirmed hex is the render hex. With Approved
+ * AI image the style is unchanged.
  */
 export function styleForDoorColorSource<T extends { renderHex?: string | null; approvedVersionId?: number | null; approvedReferenceImageUrl?: string | null }>(
   style: T,
@@ -293,6 +298,10 @@ export function styleForDoorColorSource<T extends { renderHex?: string | null; a
 ): T {
   const effective = effectiveDoorColorSource(selection, style);
   if (effective.source === "original-image") {
+    const acceptedRender = style.approvedVersionId != null && (style.approvedReferenceImageUrl ?? "").trim() !== "";
+    // An accepted render survives the default: approving one is an explicit choice
+    // on its own, and the supplier photo is the fallback, not a veto.
+    if (acceptedRender) return style;
     return { ...style, renderHex: null, approvedVersionId: null, approvedReferenceImageUrl: null };
   }
   const hex = selectedDoorHex(selection);
