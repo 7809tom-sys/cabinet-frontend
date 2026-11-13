@@ -1795,6 +1795,20 @@ export function runAutoDesignLayout(args: {
       cabinetCode: base.masterCode,
     });
   }
+  // Owner rule: a blind corner base ALWAYS comes with its 3" filler. The stock
+  // closing, consolidation and normalisation passes above can reshape the runs
+  // after the earlier seal, so re-seat the mandatory filler last - the build must
+  // never return a BBC without it, and any refusal is reported with its reason.
+  const finalBlindSeal = ensureRequiredBlindCornerBaseFillers({
+    placed: working,
+    room,
+    catalogFillers,
+    makeUid,
+    styleId: args.styleId,
+  });
+  working = finalBlindSeal.placed;
+  notes.push(...finalBlindSeal.notes.filter((note) => !notes.includes(note)));
+
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
