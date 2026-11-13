@@ -160,6 +160,14 @@ export function DoorColorSourceSelector({
                     <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white" />
                   </span>
                 )}
+                {selected && needsConfirm(option) && canConfirm(option) && (
+                  <span
+                    data-testid={`door-color-source-${option}-pending`}
+                    className="absolute left-1 top-1 rounded bg-amber-500 px-1 py-0.5 text-[9px] font-bold uppercase leading-none text-white shadow"
+                  >
+                    Confirm
+                  </span>
+                )}
                 {selected && (
                   <span
                     data-testid={`door-color-source-${option}-check`}

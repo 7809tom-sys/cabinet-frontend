@@ -110,6 +110,8 @@ describe("DoorColorSourceSelector", () => {
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Original image.*waiting for Confirm/);
     fireEvent.change(screen.getByTestId("hex-in"), { target: { value: "#336699" } });
     expect(confirm.disabled).toBe(false);
+    // The tile itself says the pick is waiting for Confirm.
+    expect(screen.getByTestId("door-color-source-hex-pending").textContent).toMatch(/Confirm/i);
     fireEvent.click(confirm);
     expect(state!.stored).toMatchObject({ source: "hex", hex: "#336699", confirmed: true });
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Hex · #336699/);
