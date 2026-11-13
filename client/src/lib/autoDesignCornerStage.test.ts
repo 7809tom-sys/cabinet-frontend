@@ -47,6 +47,29 @@ describe("Auto-Design appliance-first corner stage", () => {
     ]);
   });
 
+  it("derives the L corner from the plan's own walls, not a hard-coded Wall 1 / Wall 2", () => {
+    // Tom's rule: wherever two runs meet, a corner cabinet connects them. This plan
+    // uses the right and bottom walls, so the corner is between Wall 2 and Wall 3.
+    const measured = {
+      wallIds: ["right", "bottom"],
+      room: DEFAULT_ROOM,
+      originCorner: "left" as const,
+      runDirection: "right" as const,
+    };
+    expect(autoDesignCornerSlots("l-shape", measured)).toEqual([
+      { id: "wall-2-wall-3", label: "Corner between Wall 2 and Wall 3", firstWall: "Wall 2", secondWall: "Wall 3" },
+    ]);
+
+    // The classic pair still yields exactly one corner, never two.
+    const classic = {
+      wallIds: ["top", "right"],
+      room: DEFAULT_ROOM,
+      originCorner: "left" as const,
+      runDirection: "right" as const,
+    };
+    expect(autoDesignCornerSlots("l-shape", classic).map((slot) => slot.id)).toEqual(["wall-1-wall-2"]);
+  });
+
   it("maps the L-shape Wall 1/Wall 2 choice to their actual shared engine vertex", () => {
     expect(autoDesignCornerSlotPoint(
       { id: "wall-1-wall-2", label: "Corner between Wall 1 and Wall 2", firstWall: "Wall 1", secondWall: "Wall 2" },
