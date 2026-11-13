@@ -151,13 +151,20 @@ describe("storage", () => {
 });
 
 describe("color resolution: the explicit choice wins", () => {
-  it("Original image strips a typed render hex and an accepted run", () => {
-    const stripped = styleForDoorColorSource(WITH_ACCEPTED, { source: "original-image", chosenAt: NOW });
-    expect(stripped.renderHex).toBeNull();
-    expect(stripped.approvedVersionId).toBeNull();
+  it("Original image keeps an accepted render and still strips a typed render hex", () => {
+    // Tom, Nov 13 2026: the supplier photo is the default, not a veto. Approving an
+    // AI render is itself the alternative choice, so the default must not hide it.
+    const kept = styleForDoorColorSource(WITH_ACCEPTED, { source: "original-image", chosenAt: NOW });
+    expect(kept.approvedVersionId).toBe(77);
+    expect(kept.approvedReferenceImageUrl).toBe("/uploads/accepted-ai-render.png");
     const plan = selectedDoorColorFacePlan(WITH_ACCEPTED, "base", { source: "original-image", chosenAt: NOW });
-    expect(plan?.doorUrl).toBe("/uploads/vendor-raised-door.jpg");
-    expect(plan?.drawerUrl).toBe("/uploads/vendor-raised-drawer.jpg");
+    expect(plan?.doorUrl).toBe("/uploads/accepted-ai-render.png");
+
+    // No accepted run: a typed hex is dropped, so it cannot tint the supplier photo.
+    const typed = { ...VENDOR, renderHex: "#123456" };
+    const stripped = styleForDoorColorSource(typed, { source: "original-image", chosenAt: NOW });
+    expect(stripped.renderHex).toBeNull();
+    expect(selectedDoorColorFacePlan(typed, "base", { source: "original-image", chosenAt: NOW })?.doorUrl).toBe("/uploads/vendor-raised-door.jpg");
   });
 
   it("Approved AI image uses the accepted render, or the supplier photo when none exists", () => {
