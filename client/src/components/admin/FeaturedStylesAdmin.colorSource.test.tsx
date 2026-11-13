@@ -68,8 +68,12 @@ describe("Edit Door: one door color source selector", () => {
     // now lives under the Hex tile, so neither is in the panel by default.
     expect(dialog.querySelector("#ed-render-hex")).toBeNull();
     expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(0);
-    // The WalzCraft wizard is one always-visible section (profile, grain, wheels),
-    // not a duplicate inside the tile editor.
+    // Every color tool sits in one card, so an edit and its result are seen together.
+    const panel = dialog.querySelector('[data-testid="door-color-panel"]')!;
+    expect(panel).toBeTruthy();
+    for (const id of ["door-color-source-selector", "door-color-source-resolved", "door-color-source-wizard-tools"]) {
+      expect(panel.querySelectorAll(`[data-testid="${id}"]`).length, id).toBe(1);
+    }
     expect(dialog.querySelectorAll('[data-testid="door-color-source-wizard-tools"]').length).toBe(1);
   });
 
@@ -108,6 +112,7 @@ describe("Edit Door: one door color source selector", () => {
     styles[0] = { ...styles[0], doorSampleImageUrl: "/uploads/classic-cream.jpg" };
     const dialog = openFirst();
     expect(dialog.querySelector('[data-testid="door-best-picture"]')).toBeTruthy();
+    expect(dialog.querySelector('[data-testid="door-color-panel"]')!.contains(dialog.querySelector('[data-testid="door-best-picture"]')!)).toBe(true);
     const current = screen.getByTestId("door-best-picture-supplier");
     expect(current.getAttribute("data-state")).toBe("on");
   });

@@ -42,6 +42,8 @@ export type DoorColorSourceSelectorProps = {
   hexPicker?: ReactNode;
   /** Opens the existing AI render tool. It is never started from here. */
   onOpenAiMaker?: () => void;
+  /** True when the caller already draws the surrounding card (the door color panel). */
+  bare?: boolean;
   now?: () => string;
 };
 
@@ -68,6 +70,7 @@ export function DoorColorSourceSelector({
   sherwinPicker,
   hexPicker,
   onOpenAiMaker,
+  bare = false,
   now = () => new Date().toISOString(),
 }: DoorColorSourceSelectorProps) {
   const effective = effectiveDoorColorSource(draft.stored, aiAvailable ? { approvedVersionId: 1, approvedReferenceImageUrl: aiImageUrl || "accepted" } : null);
@@ -98,7 +101,7 @@ export function DoorColorSourceSelector({
     : null;
 
   return (
-    <section data-testid="door-color-source-selector" className="space-y-3 rounded-lg border border-[#d4a75a]/70 bg-[#fffaf1] px-3 py-3">
+    <section data-testid="door-color-source-selector" className={bare ? "space-y-3" : "space-y-3 rounded-lg border border-[#d4a75a]/70 bg-[#fffaf1] px-3 py-3"}>
       <div>
         <span className="text-xs font-semibold">Door color source</span>
         <p className="mt-0.5 text-xs text-muted-foreground">

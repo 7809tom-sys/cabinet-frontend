@@ -1049,15 +1049,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             </div>
           </div>
 
-          <GlazingControl {...glazing} onChange={setGlazing} />
-          <DoorSkinField value={doorSkin} onChange={setDoorSkin} woodGrain={isWoodGrain} />
-          {(() => {
-            const door = walzDoor;
-            if (!door || !isWoodGrain) return null;
-            const scenes = [style.roomSceneImageUrl, ...(style.roomScenes ?? []).map((r) => r.imageUrl)].filter((u): u is string => !!u);
-            return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
-          })()}
-
+          {/* One door color panel: the tiles, the editors, the pictures and the
+              WalzCraft wizard together, so a change is seen where it is made. */}
           {/* ONE door color source selector, top of the color panel (Tom, Nov 12 2026). */}
           {(() => {
             const sherwinPicker = (
@@ -1134,7 +1127,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             );
             return (
               <>
+                <section data-testid="door-color-panel" className="space-y-3 rounded-lg border-2 border-[#d4a75a] bg-[#fffaf1] px-3 py-3">
                 <DoorColorSourceSelector
+                  bare
                   draft={colorSource}
                   dispatch={dispatchColorSource}
                   aiAvailable={aiAvailable}
@@ -1176,6 +1171,15 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   </div>
                   {sherwinPicker}
                 </section>
+          <GlazingControl {...glazing} onChange={setGlazing} />
+          <DoorSkinField value={doorSkin} onChange={setDoorSkin} woodGrain={isWoodGrain} />
+          {(() => {
+            const door = walzDoor;
+            if (!door || !isWoodGrain) return null;
+            const scenes = [style.roomSceneImageUrl, ...(style.roomScenes ?? []).map((r) => r.imageUrl)].filter((u): u is string => !!u);
+            return <WalzCraftErrorBoundary label="Wood grain tiles"><WoodGrainTileTool styleId={style.id} colorName={colorLabel(door)} sceneUrls={Array.from(new Set(scenes))} /></WalzCraftErrorBoundary>;
+          })()}
+          </section>
               </>
             );
           })()}
