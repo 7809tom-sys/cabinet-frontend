@@ -1183,6 +1183,24 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     </p>
                   </div>
                   {sherwinPicker}
+                  {/* Always visible beside the wheels, so Confirm is findable whatever
+                      tile is selected; it enables as soon as a chip is applied. */}
+                  {(
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        data-testid="door-color-source-sherwin-confirm-wizard"
+                        disabled={!colorSource.pendingSherwin}
+                        onClick={() => dispatchColorSource({ type: "confirm", now: new Date().toISOString() })}
+                        className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:opacity-50"
+                      >
+                        Confirm this chip
+                      </button>
+                      <span className="text-xs text-muted-foreground">
+                        Pick a chip on a wheel above, then confirm. Until then the door keeps its supplier photo.
+                      </span>
+                    </div>
+                  )}
                 </section>
           <GlazingControl {...glazing} onChange={setGlazing} />
           <DoorSkinField value={doorSkin} onChange={setDoorSkin} woodGrain={isWoodGrain} />

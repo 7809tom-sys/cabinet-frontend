@@ -108,6 +108,19 @@ describe("Edit Door: one door color source selector", () => {
     expect(slot.querySelector('[data-testid="door-color-source-sherwin-williams-confirm"]')).toBeTruthy();
   });
 
+  it("keeps a Confirm beside the wheels even before the Sherwin-Williams tile is open", () => {
+    openFirst();
+    const wizardConfirm = screen.getByTestId("door-color-source-sherwin-confirm-wizard") as HTMLButtonElement;
+    expect(wizardConfirm.disabled).toBe(true);
+  });
+
+  it("enables the wizard Confirm once a chip is applied", () => {
+    openFirst();
+    fireEvent.click(screen.getByTestId("door-color-source-sherwin-williams"));
+    const wizardConfirm = screen.getByTestId("door-color-source-sherwin-confirm-wizard") as HTMLButtonElement;
+    expect(wizardConfirm.disabled).toBe(true);
+  });
+
   it("offers the door's pictures as a Best picture picker and marks the current one", () => {
     styles[0] = { ...styles[0], doorSampleImageUrl: "/uploads/classic-cream.jpg" };
     const dialog = openFirst();
