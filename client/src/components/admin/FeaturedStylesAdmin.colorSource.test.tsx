@@ -68,8 +68,9 @@ describe("Edit Door: one door color source selector", () => {
     // now lives under the Hex tile, so neither is in the panel by default.
     expect(dialog.querySelector("#ed-render-hex")).toBeNull();
     expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(0);
-    // The duplicate WalzCraft wizard <details> is gone; its pickers live in the tile editor.
-    expect(dialog.querySelector('[data-testid="door-color-source-wizard-tools"]')).toBeNull();
+    // The WalzCraft wizard is one always-visible section (profile, grain, wheels),
+    // not a duplicate inside the tile editor.
+    expect(dialog.querySelectorAll('[data-testid="door-color-source-wizard-tools"]').length).toBe(1);
   });
 
   it("Hex is stored only after Confirm, and becomes the render hex", () => {
@@ -92,12 +93,28 @@ describe("Edit Door: one door color source selector", () => {
     expect(slot.querySelector('[data-testid="edit-dialog-sample-photo"]')).toBeTruthy();
   });
 
-  it("Sherwin-Williams shows the existing WalzCraft wheels underneath", () => {
+  it("Sherwin-Williams keeps one wheel set, in the always-visible WalzCraft wizard", () => {
     const dialog = openFirst();
     fireEvent.click(screen.getByTestId("door-color-source-sherwin-williams"));
+    const wizard = dialog.querySelector('[data-testid="door-color-source-wizard-tools"]')!;
+    expect(wizard.querySelector('[aria-label="Sherwin-Williams stain wheel"]')).toBeTruthy();
     const slot = dialog.querySelector('[data-testid="door-color-source-sherwin-picker"]')!;
-    expect(slot.querySelector('[aria-label="Sherwin-Williams stain wheel"]')).toBeTruthy();
-    expect(dialog.querySelector('[data-testid="door-color-source-wizard-tools"]')).toBeNull();
+    // The tile editor points at the one wheel set instead of mounting a second copy.
+    expect(slot.querySelector('[aria-label="Sherwin-Williams stain wheel"]')).toBeNull();
+    expect(slot.querySelector('[data-testid="door-color-source-sherwin-williams-confirm"]')).toBeTruthy();
+  });
+
+  it("offers the door's pictures as a Best picture picker and marks the current one", () => {
+    styles[0] = { ...styles[0], doorSampleImageUrl: "/uploads/classic-cream.jpg" };
+    const dialog = openFirst();
+    expect(dialog.querySelector('[data-testid="door-best-picture"]')).toBeTruthy();
+    const current = screen.getByTestId("door-best-picture-supplier");
+    expect(current.getAttribute("data-state")).toBe("on");
+  });
+
+  it("shows where the resolved colour came from, not just the hex", () => {
+    openFirst();
+    expect(screen.getByTestId("door-color-source-resolved").textContent).toMatch(/Resolved colour: #[0-9a-f]{6}/);
   });
 
   it("Approved AI image with none accepted says so and keeps the supplier photo", () => {

@@ -36,7 +36,7 @@ export type DoorColorSourceSelectorProps = {
   sherwinHex?: string | null;
   /** The hex the swatch tile paints: the confirmed pick, the pending one, or the current render hex. */
   hexSwatch?: string | null;
-  /** The existing Sherwin-Williams picker (WalzCraft wizard wheels), shown when that tile is selected. */
+  /** The Sherwin-Williams picker, when the caller keeps it inside the tile editor. Null shows a hint pointing at the WalzCraft wizard. */
   sherwinPicker?: ReactNode;
   /** The existing hex picker (hex field, color input, photo eyedropper), shown when the Hex tile is selected. */
   hexPicker?: ReactNode;
@@ -213,7 +213,11 @@ export function DoorColorSourceSelector({
       {draft.active === "sherwin-williams" && (
         <div data-testid="door-color-source-sherwin-picker" className="space-y-2">
           {pendingNote && <p className="text-xs">{pendingNote}</p>}
-          {sherwinPicker}
+          {sherwinPicker ?? (
+            <p data-testid="door-color-source-sherwin-hint" className="text-xs text-muted-foreground">
+              Pick the stain or paint chip in the WalzCraft wizard below, then press Confirm here.
+            </p>
+          )}
           <button
             type="button"
             data-testid="door-color-source-sherwin-williams-confirm"
