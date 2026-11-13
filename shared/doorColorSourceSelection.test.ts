@@ -12,6 +12,7 @@ import {
   DOOR_COLOR_SOURCE_STORAGE_KEY,
   awaitingConfirm,
   doorColorSourceReducer,
+  doorColorSourceSaveMessage,
   effectiveDoorColorSource,
   initialDoorColorSourceDraft,
   parseDoorColorSourceSelection,
@@ -270,6 +271,19 @@ describe("server fields, with localStorage as fallback/cache", () => {
       }),
     });
     expect(designerFacePlan(VENDOR, "base")?.dlcCrop?.solidColor).toBe("#0a0b0c");
+  });
+});
+
+describe("a save that needs the 0280 SQL", () => {
+  it("turns the backend's migration message into an instruction the operator can act on", () => {
+    expect(doorColorSourceSaveMessage("Run migration 0280 before saving door color source")).toMatch(/0280 SQL has not been run/);
+    expect(doorColorSourceSaveMessage("doorColorSource column missing: run 0280")).toMatch(/0280 SQL has not been run/);
+  });
+
+  it("leaves any other message alone, and never returns an empty notice", () => {
+    expect(doorColorSourceSaveMessage("Door style name is required")).toBe("Door style name is required");
+    expect(doorColorSourceSaveMessage("")).toMatch(/was not saved/);
+    expect(doorColorSourceSaveMessage(null)).toMatch(/was not saved/);
   });
 });
 

@@ -37,8 +37,10 @@ import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescripti
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
 import {
   doorColorSourceReducer,
+  doorColorSourceSaveMessage,
   hasApprovedAiImage,
   initialDoorColorSourceDraft,
+  normalizeHex,
   selectionForStyle,
   styleForDoorColorSource,
   writeDoorColorSourceSelection,
@@ -483,6 +485,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   );
   const approvedVersionId = (style as AdminStyle & { approvedVersionId?: number | null }).approvedVersionId ?? null;
   const aiAvailable = hasApprovedAiImage({ approvedVersionId, approvedReferenceImageUrl: style.approvedReferenceImageUrl });
+  /** A save that failed only because the 0280 migration is missing; shown inline, not just as a toast. */
+  const [colorSourceSaveError, setColorSourceSaveError] = useState<string | null>(null);
   /** The wizard's Apply patch, held until Sherwin-Williams is confirmed. */
   const pendingSherwinPatch = useRef<MatchSavePatch | null>(null);
   // undefined until the first effect, so a server-hydrated choice is written to the local cache on open.
@@ -569,7 +573,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   };
 
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
-    onError: (e) => toast.error(e.message),
+    onError: (e) => {
+      const message = doorColorSourceSaveMessage(e.message);
+      // Only a missing-migration failure is worth keeping on screen; everything
+      // else already reads well as the toast.
+      setColorSourceSaveError(/0280|migration/i.test(e.message ?? "") ? message : null);
+      toast.error(message);
+    },
   });
 
   /** The wizard's own Apply, unchanged: sets the editor fields and saves them. */
@@ -781,6 +791,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
 
     saveLock.current = true;
     setSavePhase("saving");
+    setColorSourceSaveError(null);
     try {
       await update.mutateAsync(payload);
       if (accepted && accepted.styleIds.length > 0) {
@@ -1084,6 +1095,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             />
             );
             const pendingHex = colorSource.pendingHex ?? "";
+            // A tile with no picture stays empty (striped placeholder + warning dot):
+            // the Hex tile only paints once a hex has been picked or confirmed.
+            const hexSwatch = normalizeHex(colorSource.pendingHex)
+              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : null);
+            const sherwinHex = colorSource.pendingSherwin?.hex
+              ?? (colorSource.stored?.source === "sherwin-williams" ? colorSource.stored.color.hex : null);
             const hexPicker = (
               <div className="space-y-1.5">
                 <Label htmlFor="ed-color-source-hex">Hex</Label>
@@ -1091,7 +1108,15 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   <Input id="ed-color-source-hex" data-testid="door-color-source-hex-input" value={pendingHex} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} placeholder={renderHex || "#2a211c"} />
                   <input aria-label="Pick hex" type="color" value={/^#[0-9a-f]{6}$/i.test(pendingHex) ? pendingHex : (/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea")} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} />
                 </div>
-                <p className="text-xs text-muted-foreground">Or click either door photo below to pick a hex.</p>
+                {/* One picker, moved under the Hex tile (Tom, Nov 12 2026). */}
+                <SampleEyedropper
+                  images={[
+                    { url: doorSampleImageUrl || style.doorSampleImageUrl || "", label: "Sample door" },
+                    ...(walzDoor?.photo ? [{ url: walzDoor.photo, label: `${walzDoor.distributor ?? "Distributor"} brochure` }] : []),
+                  ]}
+                  onPick={(hex) => dispatchColorSource({ type: "pendingHex", hex })}
+                  editedDoor={thumb(style)}
+                />
                 <p className="text-xs text-muted-foreground">Resolved for render: {doorColor.appliedHex}</p>
               </div>
             );
@@ -1103,16 +1128,16 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   aiAvailable={aiAvailable}
                   supplierPhotoUrl={doorSampleImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl || null}
                   aiImageUrl={style.approvedReferenceImageUrl ?? null}
+                  sherwinHex={sherwinHex}
+                  hexSwatch={hexSwatch}
                   sherwinPicker={colorSource.active === "sherwin-williams" ? sherwinPicker : null}
                   hexPicker={hexPicker}
                   onOpenAiMaker={() => openStyleAudit(style.id, style.ourName ?? "")}
                 />
-                {colorSource.active !== "sherwin-williams" && (
-                  <details data-testid="door-color-source-wizard-tools" className="rounded-lg border border-border px-3 py-2">
-                    <summary className="cursor-pointer text-xs font-semibold">WalzCraft wizard (profile image, grain, Sherwin-Williams wheels)</summary>
-                    <p className="mt-1 text-xs text-muted-foreground">Applying a Sherwin-Williams color here switches the selector to Sherwin-Williams; it only counts after Confirm.</p>
-                    {sherwinPicker}
-                  </details>
+                {colorSourceSaveError && (
+                  <p data-testid="door-color-source-save-error" role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+                    {colorSourceSaveError}
+                  </p>
                 )}
               </>
             );
@@ -1124,10 +1149,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             onRenderHex={setRenderHex}
             doorShape={doorShape}
             onDoorShape={setDoorShape}
-            sampleImageUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
-            editedDoorUrl={thumb(style)}
             besideEyedropper={<WalzCraftManualDoorPicker value={manualDoorId} onChange={(id) => { setManualDoorId(id); writeManualDoorId(style.id, id); }} />}
-            brochure={walzDoor ? { src: walzDoor.photo ?? null, label: `${walzDoor.distributor ?? "Distributor"} brochure` } : null}
             preview={resolveDoorShapeDecision({
               ourName,
               styleCode: style.styleCode,
@@ -1143,11 +1165,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             resolvedHex={doorColor.appliedHex}
             colorReview={doorColor.review}
             colorFromSelector
-            onPickFromPhoto={(hex) => {
-              // Picking from a photo is a Hex choice; it only counts after Confirm.
-              if (colorSource.active !== "hex") dispatchColorSource({ type: "choose", option: "hex", aiAvailable, now: new Date().toISOString() });
-              dispatchColorSource({ type: "pendingHex", hex });
-            }}
           />
 
           {/* WalzCraft match (read-only; approvals are localStorage only) */}
@@ -2622,30 +2639,20 @@ function DoorRenderOverrides({
   onRenderHex,
   doorShape,
   onDoorShape,
-  sampleImageUrl,
-  editedDoorUrl,
   besideEyedropper,
-  brochure,
   preview,
   resolvedHex,
   colorReview,
   colorFromSelector = false,
-  onPickFromPhoto,
 }: {
-  /** With the selector, a photo pick goes to its Hex option instead of the render hex. */
-  onPickFromPhoto?: (hex: string) => void;
   /** The render hex and eyedropper moved into the door color source selector. */
   colorFromSelector?: boolean;
-  brochure?: { src: string | null; label: string } | null;
   woodGrain?: { label: string; swatchUrl: string | null; horizontal: boolean } | null;
   renderHex: string;
   onRenderHex: (value: string) => void;
   doorShape: string;
   onDoorShape: (value: string) => void;
-  sampleImageUrl: string;
-  /** Photo of the door style being edited; shown directly beside the sample door. */
-  editedDoorUrl?: string | null;
-  /** Distributor-door selector, rendered right next to the eyedropper. */
+  /** Distributor-door selector, rendered where the eyedropper used to sit. */
   besideEyedropper?: import("react").ReactNode;
   preview: { shape: string; source: string };
   resolvedHex: string | null;
@@ -2732,12 +2739,7 @@ function DoorRenderOverrides({
           </p>
         </div>
       </div>
-      {/* One picker: click either door to set the color (Hex in the selector). */}
-      <SampleEyedropper
-        images={[{ url: sampleImageUrl, label: "Sample door" }, ...(brochure ? [{ url: brochure.src ?? "", label: brochure.label }] : [])]}
-        onPick={colorFromSelector && onPickFromPhoto ? onPickFromPhoto : onRenderHex}
-        editedDoor={editedDoorUrl ?? null}
-      />
+      {/* The door-photo eyedropper lives under the Hex tile now (DoorColorSourceSelector). */}
       {besideEyedropper ? <div data-testid="eyedropper-distributor-selector">{besideEyedropper}</div> : null}
     </div>
   );
@@ -2754,7 +2756,7 @@ export function openStyleAudit(styleId: number, styleName: string) {
 }
 
 function SampleEyedropper({ images, onPick, editedDoor }: { images: { url: string; label: string }[]; onPick: (hex: string) => void; editedDoor?: string | null }) {
-  const [note, setNote] = useState("Click either door to set Render hex.");
+  const [note, setNote] = useState("Click either door picture to pick the hex.");
   return (
     <div data-testid="render-color-picker" className="space-y-1">
       <div data-testid="sample-vs-brochure" className="flex flex-col gap-3 sm:flex-row sm:items-start">
@@ -2768,7 +2770,7 @@ function SampleEyedropper({ images, onPick, editedDoor }: { images: { url: strin
           )}
         </figure>
         {images.map((img, i) => (
-          <PickCanvas key={i} testId={i === 0 ? "edit-dialog-sample-photo" : "edit-dialog-brochure-photo"} {...img} onPick={(hex) => { onPick(hex); setNote(`Picked ${hex} from ${img.label} for Render hex.`); }} onNote={setNote} />
+          <PickCanvas key={i} testId={i === 0 ? "edit-dialog-sample-photo" : "edit-dialog-brochure-photo"} {...img} onPick={(hex) => { onPick(hex); setNote(`Picked ${hex} from ${img.label} for the Hex color.`); }} onNote={setNote} />
         ))}
       </div>
       <p className="text-xs text-muted-foreground">{note}</p>
