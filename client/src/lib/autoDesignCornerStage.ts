@@ -65,7 +65,26 @@ export function autoDesignCornerSlots(layoutType: AutoDesignLayoutType, measured
   // seated a blind corner between Wall 1 and Wall 2 on a galley.
   if (layoutType === "galley" || layoutType === "single-wall") return slots;
   if (layoutType === "l-shape") {
-    if (measuredPairIsTrueCorner("Wall 1", "Wall 2", measured)) add("Wall 1", "Wall 2");
+    // Tom's rule: wherever two runs meet, a corner cabinet connects them. An L is
+    // not always Wall 1 + Wall 2 - the two walls the plan uses can be any adjacent
+    // pair, and the old hard-coded pair could add a corner the plan never uses
+    // while missing the real one.
+    if (!measured) {
+      add("Wall 1", "Wall 2");
+      return slots;
+    }
+    for (let first = 0; first < AUTO_DESIGN_WALL_LABELS.length; first += 1) {
+      for (let second = first + 1; second < AUTO_DESIGN_WALL_LABELS.length; second += 1) {
+        const firstWall = AUTO_DESIGN_WALL_LABELS[first]!;
+        const secondWall = AUTO_DESIGN_WALL_LABELS[second]!;
+        const both = [firstWall, secondWall].every((label) => {
+          const ref = wallLabelToEngineWallId(label, measured.room, measured.originCorner, measured.runDirection);
+          return ref != null && measured.wallIds.includes(ref.engineWallId);
+        });
+        if (!both) continue;
+        if (measuredPairIsTrueCorner(firstWall, secondWall, measured)) add(firstWall, secondWall);
+      }
+    }
     return slots;
   }
   if (layoutType === "u-shape") {
