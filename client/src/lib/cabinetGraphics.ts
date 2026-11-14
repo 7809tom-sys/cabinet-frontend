@@ -182,6 +182,47 @@ export function twoDrawerBaseStackedRows(
   return [{ count: 1, height: row }, { count: 1, height: row }];
 }
 
+/** Straight sink bases (SB / CSB), including hyphenated codes like SB-36. Not farmhouse FSB. */
+export function isStandardSinkBaseCode(masterCode: string | null | undefined): boolean {
+  return /^(?:SB|CSB)\d/.test(compactCabinetCode(masterCode));
+}
+
+/**
+ * How many false fronts a sink base should draw. Catalog rows and Auto Design
+ * often omit or zero these non-operable fronts (`numberOfDrawers` 0). The
+ * physical two-door SB/CSB standard is still two equal-width fronts, one over
+ * each door. An authored count of 1 or more is kept.
+ */
+export function standardSinkBaseFalseFrontCount(
+  masterCode: string | null | undefined,
+  doorCount: number,
+  drawerCount: number | null | undefined,
+): number | null {
+  if (!isStandardSinkBaseCode(masterCode)) return null;
+  if (drawerCount != null && drawerCount > 0) return drawerCount;
+  return doorCount >= 2 ? 2 : 1;
+}
+
+/**
+ * Two-door sink bases use two equal-width false fronts side by side in a
+ * single top row — one over each door — not two fronts stacked in that band.
+ * A 30-inch sink base therefore gets two ~15-inch-wide fronts.
+ */
+export function standardSinkBaseTopDrawerRows(
+  masterCode: string | null | undefined,
+  availableHeight: number,
+  drawerCount: number,
+  doorCount = 2,
+): Array<{ count: number; height: number }> | null {
+  if (!isStandardSinkBaseCode(masterCode) || !(availableHeight > 0)) return null;
+  const fronts = standardSinkBaseFalseFrontCount(masterCode, doorCount, drawerCount);
+  if (fronts == null || fronts <= 0) return [];
+  if (fronts === 2 && doorCount >= 2) {
+    return [{ count: 2, height: availableHeight }];
+  }
+  return Array.from({ length: fronts }, () => ({ count: 1, height: availableHeight / fronts }));
+}
+
 /** WBC is a wall blind corner. Door side is the placement's swing, not a second SKU. */
 export function isWallBlindCornerCabinet(
   cabinet: Pick<CabinetLike, "masterCode" | "description">,

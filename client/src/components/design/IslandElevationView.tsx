@@ -41,7 +41,7 @@ import {
   STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
+import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, isStandardSinkBaseCode, type CabinetDrawingType } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { useRef, useEffect, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -389,7 +389,7 @@ export function IslandHardwareOverlay({
       items.push(piece(doorPiece as "knob" | "pull", `door-${index}`, topPct, true, index));
     }
   }
-  if (drawers > 0 && drawerPiece !== "none") {
+  if (drawers > 0 && drawerPiece !== "none" && !isStandardSinkBaseCode(masterCode)) {
     const standardTopDrawerRow = doors > 0 && !isWall && !(doorBandStartPct != null && doorBandStartPct > 0 && doorBandStartPct < 100);
     if (standardTopDrawerRow) {
       for (let column = 0; column < drawers; column++) {

@@ -63,7 +63,7 @@ import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShell
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
 import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
-import { cabinetDrawingType, fourDrawerBaseRowHeights, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseStackedRows } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType, fourDrawerBaseRowHeights, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, standardSinkBaseTopDrawerRows, threeDrawerBaseRowHeights, twoDrawerBaseStackedRows } from "@/lib/cabinetGraphics";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
@@ -3292,6 +3292,10 @@ export function resolvedThreeDDrawerRows(
     const rowHeight = availableHeight / standardBaseFace.drawerRows.length;
     return standardBaseFace.drawerRows.map((row) => ({ count: row.count, height: rowHeight }));
   }
+  // Two-door sink bases: two equal false fronts side by side in one top row,
+  // one over each door, not two stacked strips in the same six-inch band.
+  const sinkRows = standardSinkBaseTopDrawerRows(sku.masterCode, availableHeight, count, 2);
+  if (sinkRows) return sinkRows;
   if (useShallowTopDrawer && count > 1 && availableHeight > 6 * INCH) {
     const topHeight = 6 * INCH;
     const remainingHeight = (availableHeight - topHeight) / (count - 1);

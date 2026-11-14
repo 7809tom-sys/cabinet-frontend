@@ -33,7 +33,7 @@ import {
   STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
+import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, isStandardSinkBaseCode, standardSinkBaseFalseFrontCount, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { toeKickHeightForElevation } from "@/lib/elevationToeKick";
 import { drawerPanelInsetPx, elevationFrameInsetPx, isShakerElevationStyle, shakerFacePanelGeometry } from "@/lib/elevationFrameGeometry";
@@ -2425,7 +2425,9 @@ export function HardwareOverlay({
   const pieces: React.ReactNode[] = [];
   // Drawers stack from the top; doors fill the remainder below. When both are
   // present retain the typical base layout unless a source-backed pantry owns its bands.
-  const hasDrawers = drawers > 0 && drawerPiece !== "none";
+  // Standard SB/CSB false fronts are not operable drawers and must not get
+  // working-drawer pulls. Door pulls on the same cabinet stay.
+  const hasDrawers = drawers > 0 && drawerPiece !== "none" && !isStandardSinkBaseCode(masterCode);
   const hasDoors = doors > 0 && doorPiece !== "none";
   // A base with doors draws one drawer row across the top 20% (DoorFront).
   // Hardware uses that same row. The old 45% stack centered the drawer pull
@@ -3359,32 +3361,44 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
   // + 2 drawers. The old code hardcoded ONE false front and ignored the count,
   // which is why a configured top drawer never appeared.
   if (cabinetType === "sink-base") {
-    // The configured drawer count is authoritative. When the config authored no
-    // count at all (no `numberOfDrawers`, no saved `drawerLayout`), keep the
-    // historic single false tilt-out front so an unconfigured sink base looks
-    // exactly as it always did.
-    const authoredDrawerCount = numberOfDrawers != null || drawerLayout != null;
-    const drawerRowCount = authoredDrawerCount
-      ? Math.max(0, drawers ?? numberOfDrawers ?? 0)
-      : 1;
-    const falseFrontPct = 20;
+    // Two-door sink bases get two equal-width false fronts side by side in
+    // the top band, one over each door. Catalog rows and Auto Design often
+    // omit or zero those fronts; the physical SB/CSB standard is still two
+    // (a 30-inch sink base is two ~15-inch fronts). An authored count of 1
+    // stays one full-width front. Stacking two thin fronts up and down in
+    // that same band is the bug this replaces.
     const cols = Math.max(1, doorCount || 2);
     const colW = 100 / cols;
-    // A single drawer (or the historic false tilt-out front) keeps the full 20%
-    // row. More rows split that same band so the door region is unchanged.
+    const configuredDrawerCount = numberOfDrawers != null || drawerLayout != null
+      ? Math.max(0, drawers ?? numberOfDrawers ?? 0)
+      : null;
+    const frontCount = standardSinkBaseFalseFrontCount(masterCode, cols, configuredDrawerCount)
+      ?? (configuredDrawerCount != null && configuredDrawerCount > 0 ? configuredDrawerCount : 1);
+    const sideBySide = frontCount === 2 && cols >= 2;
+    const drawerRowCount = sideBySide ? 1 : frontCount;
+    const frontsPerRow = sideBySide ? 2 : 1;
+    const falseFrontPct = 20;
     const rowPct = drawerRowCount > 1 ? falseFrontPct / drawerRowCount : falseFrontPct;
     return withFace(
       <>
-        {drawerRowCount > 0 && Array.from({ length: drawerRowCount }).map((_, row) => (
+        {frontCount > 0 && Array.from({ length: drawerRowCount }).map((_, row) => (
+          Array.from({ length: frontsPerRow }).map((_, col) => (
           <div
-            key={`sink-drawer-${row}`}
-            data-sink-base-false-front={drawerRowCount === 1 ? "true" : undefined}
+            key={`sink-drawer-${row}-${col}`}
+            data-sink-base-false-front="true"
             data-sink-base-drawer-row={row + 1}
-            className="absolute left-0 right-0"
-            style={{ top: `${rowPct * row}%`, height: `${rowPct}%` }}
+            data-sink-base-drawer-col={col + 1}
+            className="absolute"
+            style={{
+              top: `${rowPct * row}%`,
+              height: `${rowPct}%`,
+              left: `${(100 / frontsPerRow) * col}%`,
+              width: `${100 / frontsPerRow}%`,
+            }}
           >
-            <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={(cabinetHeightIn ?? 34.5) * (rowPct / 100)} />
+            <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={(cabinetWidthIn ?? 24) / frontsPerRow} faceHeightIn={(cabinetHeightIn ?? 34.5) * (rowPct / 100)} />
           </div>
+          ))
         ))}
         {/* rail between the drawer row(s) and the doors */}
         <div className="absolute left-0 right-0" style={{ top: `${falseFrontPct}%`, height: 2, background: stroke }} />

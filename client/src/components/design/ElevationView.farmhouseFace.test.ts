@@ -83,9 +83,13 @@ describe("farmhouse sink base elevation face", () => {
     expect(elementsWith(byDescription, "data-farmhouse-base-door")).toHaveLength(2);
   });
 
-  it("leaves an ordinary sink base (SB36) with its false front over two doors", () => {
+  it("leaves an ordinary sink base (SB36) with two side-by-side false fronts over two doors", () => {
     const markup = render({ masterCode: "SB36", description: '36" Sink Base Cabinet', subCategory: "Sink Base" });
     expect(elementsWith(markup, "data-farmhouse-base-face")).toHaveLength(0);
-    expect(markup).toContain("data-sink-base-false-front");
+    expect(elementsWith(markup, 'data-sink-base-false-front="true"')).toHaveLength(2);
+    expect(elementsWith(markup, 'data-sink-base-drawer-col="1"')).toHaveLength(1);
+    expect(elementsWith(markup, 'data-sink-base-drawer-col="2"')).toHaveLength(1);
+    expect(elementsWith(markup, 'data-cabinet-hardware="drawer-pull"')).toHaveLength(0);
+    expect(elementsWith(markup, 'data-cabinet-hardware="door-pull"')).toHaveLength(2);
   });
 });

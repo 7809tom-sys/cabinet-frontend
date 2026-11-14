@@ -13,6 +13,9 @@ import {
   isWallBlindCornerCabinet,
   threeDrawerBaseRowHeights,
   twoDrawerBaseStackedRows,
+  isStandardSinkBaseCode,
+  standardSinkBaseFalseFrontCount,
+  standardSinkBaseTopDrawerRows,
   standardDoorCountForFaceWidth,
   baseSubGroup,
   resolvedVanityComboFaceLayout,
@@ -926,5 +929,31 @@ describe("baseSubGroup (designer Base tab ordering)", () => {
         numberOfDrawers: 2,
       }),
     ).toBe("sink");
+  });
+});
+
+describe("standard sink base false fronts", () => {
+  it("recognizes SB and CSB codes, including hyphenated ones, and ignores farmhouse FSB", () => {
+    expect(isStandardSinkBaseCode("SB36")).toBe(true);
+    expect(isStandardSinkBaseCode("SB-30")).toBe(true);
+    expect(isStandardSinkBaseCode("CSB36")).toBe(true);
+    expect(isStandardSinkBaseCode("FSB36")).toBe(false);
+    expect(isStandardSinkBaseCode("B36")).toBe(false);
+    expect(isStandardSinkBaseCode("3DB18")).toBe(false);
+  });
+
+  it("defaults a two-door sink base with a missing or zero drawer count to two fronts", () => {
+    expect(standardSinkBaseFalseFrontCount("SB36", 2, null)).toBe(2);
+    expect(standardSinkBaseFalseFrontCount("SB-30", 2, 0)).toBe(2);
+    expect(standardSinkBaseFalseFrontCount("SB36", 2, 1)).toBe(1);
+    expect(standardSinkBaseFalseFrontCount("SB36", 2, 2)).toBe(2);
+    expect(standardSinkBaseFalseFrontCount("B36", 2, 0)).toBeNull();
+  });
+
+  it("places two equal fronts side by side in one row, not stacked, so a 30-inch sink base is two 15-inch-wide fronts", () => {
+    expect(standardSinkBaseTopDrawerRows("SB30", 6, 0, 2)).toEqual([{ count: 2, height: 6 }]);
+    expect(standardSinkBaseTopDrawerRows("SB36", 6, 2, 2)).toEqual([{ count: 2, height: 6 }]);
+    expect(standardSinkBaseTopDrawerRows("SB30", 6, 1, 2)).toEqual([{ count: 1, height: 6 }]);
+    expect(standardSinkBaseTopDrawerRows("3DB18", 30, 3, 0)).toBeNull();
   });
 });
