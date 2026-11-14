@@ -58,4 +58,15 @@ describe("Google Analytics browser loader", () => {
       site_hostname: "sales-demo.cabinetdealz.com",
     });
   });
+
+  it("queues real Arguments objects in dataLayer, the only form gtag.js processes", () => {
+    expect(configureGoogleAnalytics("G-PSW1MY7HB4", "www.cabinetdealz.com")).toBe(true);
+    const dataLayer = (window as Window & { dataLayer?: unknown[] }).dataLayer ?? [];
+    expect(dataLayer.length).toBeGreaterThanOrEqual(2);
+    for (const entry of dataLayer) {
+      expect(Array.isArray(entry)).toBe(false);
+      expect(Object.prototype.toString.call(entry)).toBe("[object Arguments]");
+    }
+    expect(Array.from(dataLayer[1] as ArrayLike<unknown>)).toEqual(["config", "G-PSW1MY7HB4", { send_page_view: false }]);
+  });
 });

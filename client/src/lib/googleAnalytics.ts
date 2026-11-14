@@ -7,7 +7,7 @@ type Gtag = (...args: unknown[]) => void;
 
 declare global {
   interface Window {
-    dataLayer?: unknown[][];
+    dataLayer?: unknown[];
     gtag?: Gtag;
   }
 }
@@ -15,9 +15,12 @@ declare global {
 function ensureGtag(): Gtag {
   window.dataLayer = window.dataLayer ?? [];
   if (!window.gtag) {
-    window.gtag = (...args: unknown[]) => {
-      window.dataLayer?.push(args);
-    };
+    // Google's gtag.js only processes the native `arguments` object. A plain
+    // array (e.g. from rest params) is silently ignored, so no hits are sent.
+    window.gtag = function gtag() {
+      // eslint-disable-next-line prefer-rest-params
+      window.dataLayer?.push(arguments);
+    } as Gtag;
   }
   return window.gtag;
 }
