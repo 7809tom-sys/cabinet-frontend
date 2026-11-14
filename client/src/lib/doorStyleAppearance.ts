@@ -14,6 +14,7 @@ import {
 } from "@shared/doorStyleAppearance";
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import { isPaintedFinish } from "@shared/paintedFinish";
+import { isSolidSlabFace } from "@shared/solidSlabFace";
 import { raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { isWizardSavedDoor } from "@shared/walzcraftDesignerPickup";
 
@@ -101,7 +102,9 @@ export function designerCatalogDoorProfile(
   const raisedPanel = raisedPanelApplicationForStyle(style, { wizardProfile });
   return {
     ...appearance.profile,
-    paintedFinish: isPaintedFinish(style),
+    // A slab in a solid colour is flat too, even when nobody wrote "paint" in the
+    // finish text (Tom, Nov 14 2026: "most is a slab door with a solid color").
+    paintedFinish: isPaintedFinish(style) || isSolidSlabFace(style as never),
     raisedPanelSource: raisedPanel.source,
   };
 }
