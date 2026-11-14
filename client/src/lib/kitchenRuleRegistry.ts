@@ -519,6 +519,19 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
     locked: true,
     appliedBy: "designerFaceRules",
   },
+  {
+    key: "countertop_never_through_panel",
+    title: "Countertop never runs through a panel",
+    description: "1 turns the rule on. A dishwasher panel (about 3 inches, exposed side) takes the counter on top; every larger panel must stop the slab at its face.",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 1,
+    unit: "on/off",
+    step: 1,
+    min: 0,
+    max: 1,
+    appliedBy: "designerLayoutRules",
+  },
   // NKBA planning guidelines the Designer did not encode (Tom, Nov 13 2026).
   {
     key: "countertop_frontage_min_in",
@@ -920,6 +933,7 @@ export type KitchenRuleNumericKey =
   | "standard_hood_bottom_in"
   | "faucet_at_sink_required"
   | "window_never_moves"
+  | "countertop_never_through_panel"
   | "countertop_frontage_min_in"
   | "prep_work_area_min_in"
   | "microwave_landing_in"
@@ -989,6 +1003,7 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS: Record<KitchenRuleNumericKey, numb
   standard_hood_bottom_in: defaultNumber("standard_hood_bottom_in"),
   faucet_at_sink_required: defaultNumber("faucet_at_sink_required"),
   window_never_moves: defaultNumber("window_never_moves"),
+  countertop_never_through_panel: defaultNumber("countertop_never_through_panel"),
   countertop_frontage_min_in: defaultNumber("countertop_frontage_min_in"),
   prep_work_area_min_in: defaultNumber("prep_work_area_min_in"),
   microwave_landing_in: defaultNumber("microwave_landing_in"),
