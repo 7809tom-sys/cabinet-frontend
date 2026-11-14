@@ -15,7 +15,7 @@ import {
   type WallLabel,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
-import { ensureRequiredBlindCornerBaseFillers } from "./blindCornerRequiredFiller";
+import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
 import { isPlacedCornerCabinet, sameWidthFamily } from "./autoDesignCornerGuard";
@@ -66,6 +66,9 @@ import {
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
+import { placeSinkBridges } from "./autoDesignSinkBridge";
+import { closeRemainingRunGaps } from "./autoDesignCloseRemainingGaps";
+import { tightenRunOpenings } from "./autoDesignTightenOpenings";
 import { ensureMandatorySinkFaucets, type AutoDesignFaucetProduct } from "./autoDesignFaucet";
 import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
 import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
@@ -997,15 +1000,32 @@ export function runAutoDesignLayout(args: {
   }
   let sinkWindow: WallOpening | null = null;
   if (input.sinkWindowCenter && sinkBase) {
-    const proposedWindow = autoDesignSinkWindow({ sink: sinkBase, room, uid: makeUid() });
-    const touchesOpening = openings.some((opening) => opening.side === proposedWindow.side
-      && opening.offset < proposedWindow.offset + proposedWindow.width - COLLISION_EPSILON_IN
-      && opening.offset + opening.width > proposedWindow.offset + COLLISION_EPSILON_IN);
-    if (windowOverlapsReservation(proposedWindow, refrigeratorReservation)) {
-      notes.push("The sink window was not created: with its required 3-inch clearance it would run into the refrigerator’s cabinet above.");
-    } else if (touchesOpening) {
-      notes.push("The sink window was not created because it would overlap an existing door or window on that wall.");
-    } else sinkWindow = proposedWindow;
+    const sinkWall = cabinetWall(sinkBase, room);
+    const existingWindow = openings.find((opening) => opening.kind === "window" && opening.side === sinkWall) ?? null;
+    if (existingWindow) {
+      // Checkbox on + a window already on the sink wall: center the sink under
+      // that window and do not invent a second one. Uppers stay clear (rule 9).
+      const width = wallRunSpan(sinkBase, sinkWall, room);
+      const start = existingWindow.offset + existingWindow.width / 2 - width / 2;
+      const spot = wallPlacementAt(start, width, sinkBase.depth, sinkWall, room);
+      if (spot) {
+        const dx = spot.x - sinkBase.x;
+        const dy = spot.y - sinkBase.y;
+        working = working.map((item) => item.uid === sinkBase.uid ? { ...item, ...spot } : item);
+        sinks = sinks.map((sink) => ({ ...sink, x: sink.x + dx, y: sink.y + dy }));
+        notes.push(`The sink base was centered under the existing window on ${sinkWall}.`);
+      }
+    } else {
+      const proposedWindow = autoDesignSinkWindow({ sink: sinkBase, room, uid: makeUid() });
+      const touchesOpening = openings.some((opening) => opening.side === proposedWindow.side
+        && opening.offset < proposedWindow.offset + proposedWindow.width - COLLISION_EPSILON_IN
+        && opening.offset + opening.width > proposedWindow.offset + COLLISION_EPSILON_IN);
+      if (windowOverlapsReservation(proposedWindow, refrigeratorReservation)) {
+        notes.push("The sink window was not created: with its required 3-inch clearance it would run into the refrigerator’s cabinet above.");
+      } else if (touchesOpening) {
+        notes.push("The sink window was not created because it would overlap an existing door or window on that wall.");
+      } else sinkWindow = proposedWindow;
+    }
   }
 
   let workingOpenings = sinkWindow ? [...openings, sinkWindow] : openings;
@@ -1168,6 +1188,7 @@ export function runAutoDesignLayout(args: {
       styleId: args.styleId,
       excludedWallIds,
       allowPlaceholderFiller: Boolean(input.intake),
+      preferredBlindWallId: typeDecision.rotateBlind ? typeDecision.openWallId : null,
     });
     if (cornerPlan && cornerFirstWasPulled(cornerPlan) && !seated.ok) {
       notes.push(`${slot.label}: ${cornerPlan.source.masterCode} could not be pulled to fill the leg, so the standard corner order was used.`);
@@ -1278,6 +1299,11 @@ export function runAutoDesignLayout(args: {
   });
   working = sealedBlindFillers.placed;
   notes.push(...sealedBlindFillers.notes);
+  for (const item of working) {
+    if (isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId) && !companionKeepUids.includes(item.uid)) {
+      companionKeepUids.push(item.uid);
+    }
+  }
 
   // An L cabinets both legs even when they meet at 45° and therefore have no
   // corner cabinet. A 45°/135° wall that touches a run already in the build is
@@ -1700,6 +1726,41 @@ export function runAutoDesignLayout(args: {
     notes.push(...bridgeResult.notes);
   }
   reviewFindings.push(...bridgeResult.findings);
+  // When there is no window over the sink, a short catalog bridge (same width as
+  // the sink base, height paired to the neighboring wall cabinets like the range
+  // bridge) is seated before the upper run tiles so a full-height cabinet is never
+  // laid over the sink (Tom, Nov 14 2026, 2:01–2:02 PM CT).
+  const sinkBridgeResult = placeSinkBridges({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallCatalog: args.wallCatalog,
+    wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+    styleId: args.styleId,
+    makeUid,
+  });
+  working = sinkBridgeResult.placed;
+  notes.push(...sinkBridgeResult.notes);
+  reviewFindings.push(...sinkBridgeResult.findings);
+  if (sinkBridgeResult.added) {
+    for (const item of working) {
+      if (item.placement === "wall" && Math.abs((item.mountBottom ?? 0) - 72) <= 0.6 && !companionKeepUids.includes(item.uid)) {
+        // Keep over-sink and over-range bridges through the 15-rule retile.
+        const wall = cabinetWall(item, room);
+        const start = wallRunOffset(item, wall, room);
+        const end = start + wallRunSpan(item, wall, room);
+        const overAnchor = working.some((other) => {
+          if (other.uid === item.uid) return false;
+          if (cabinetWall(other, room) !== wall) return false;
+          if (!(isSinkBaseCabinet(other) || (other.placement === "appliance" && isRangeOrOven(other.masterCode, other.description)))) return false;
+          const otherStart = wallRunOffset(other, wall, room);
+          const otherEnd = otherStart + wallRunSpan(other, wall, room);
+          return Math.min(end, otherEnd) - Math.max(start, otherStart) > 1;
+        });
+        if (overAnchor) companionKeepUids.push(item.uid);
+      }
+    }
+  }
   // The range is otherwise left open to the design question: the microwave and hood
   // follow the add-only logic after the run is tiled.
   const upperResult = buildAutoDesignWallCabinets({
@@ -2077,6 +2138,89 @@ export function runAutoDesignLayout(args: {
     if (next) {
       working = next.placed;
       notes.push(`The 9 in ${companion.source.masterCode} was seated again beside the lazy Susan after later passes.`);
+    }
+  }
+
+  // 15-rule retile can drop the over-sink bridge; seat it again before leftover
+  // gaps and tighten so a full-height upper is never left over the sink.
+  const restoredSinkBridges = placeSinkBridges({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallCatalog: args.wallCatalog,
+    wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+    styleId: args.styleId,
+    makeUid,
+  });
+  working = restoredSinkBridges.placed;
+  notes.push(...restoredSinkBridges.notes.filter((note) => !notes.includes(note)));
+  reviewFindings.push(...restoredSinkBridges.findings);
+
+  // After leftover fill, 15-rule retile, corner seating and sink/bridge placement,
+  // close every remaining actionable gap (cabinets first, then one priced filler
+  // per leftover) and tighten openings so adjacent cabinets butt flush and
+  // appliance openings equal the appliance's nominal width (Tom, Nov 14 2026,
+  // 2:03 and 2:06 PM CT). Never fill a window or its 3 in clearance.
+  const extraWalls = working.map((item) => cabinetWall(item, room)).filter((id) => typeof id === "string" && id.length > 0) as string[];
+  const gapWallIds = Array.from(new Set<string>([...runWalls, ...extraWalls]));
+  const closedGaps = closeRemainingRunGaps({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: gapWallIds,
+    baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog],
+    wallCatalog: args.wallCatalog,
+    fillers: catalogFillers,
+    styleId: args.styleId,
+    makeUid,
+    wallHeightIn: wallDesignHeight ?? stage.input.wallCabinetHeightIn ?? 30,
+    reservedSpans: cornerReserved,
+  });
+  working = closedGaps.placed;
+  notes.push(...closedGaps.notes);
+  reviewFindings.push(...closedGaps.findings);
+  const tightened = tightenRunOpenings({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: gapWallIds,
+    fillers: catalogFillers,
+    styleId: args.styleId,
+    makeUid,
+    wallHeightIn: wallDesignHeight ?? stage.input.wallCabinetHeightIn ?? 30,
+  });
+  working = tightened.placed;
+  notes.push(...tightened.notes);
+  reviewFindings.push(...tightened.findings);
+  const closedAfterTighten = closeRemainingRunGaps({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallIds: gapWallIds,
+    baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog],
+    wallCatalog: args.wallCatalog,
+    fillers: catalogFillers,
+    styleId: args.styleId,
+    makeUid,
+    wallHeightIn: wallDesignHeight ?? stage.input.wallCabinetHeightIn ?? 30,
+    reservedSpans: cornerReserved,
+  });
+  working = closedAfterTighten.placed;
+  notes.push(...closedAfterTighten.notes.filter((note) => !notes.includes(note)));
+  reviewFindings.push(...closedAfterTighten.findings);
+  const postTightenBlindSeal = ensureRequiredBlindCornerBaseFillers({
+    placed: working,
+    room,
+    catalogFillers,
+    makeUid,
+    styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
+  });
+  working = postTightenBlindSeal.placed;
+  notes.push(...postTightenBlindSeal.notes.filter((note) => !notes.includes(note)));
+  for (const item of working) {
+    if (isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId) && !companionKeepUids.includes(item.uid)) {
+      companionKeepUids.push(item.uid);
     }
   }
 

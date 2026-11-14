@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Boxes, Droplets, Flame } from "lucide-react";
+import { Boxes, Check, Droplets, Flame } from "lucide-react";
 import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
 import { AutoDesignIntakeSection } from "./AutoDesignIntakeSection";
@@ -103,6 +103,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [dishwasherSide, setDishwasherSide] = useState<DishwasherSideChoice>("right");
   const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");
+  const [windowAboveSink, setWindowAboveSink] = useState(false);
   const [kitchenUses, setKitchenUses] = useState<KitchenUseId[]>([]);
   const [intake, setIntake] = useState<AutoDesignIntake>(() => emptyAutoDesignIntake());
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -187,8 +188,8 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
       refrigeratorWidthIn: refrigeratorWidth,
       refrigeratorPanels: "both",
       refrigeratorEnclosure: "cabinet-above",
-      sinkWindowCenter: windowCenter.trim()
-        ? { wallLabel: values.sink.wallLabel, centerOffsetIn: Number(windowCenter) }
+      sinkWindowCenter: windowAboveSink
+        ? { wallLabel: values.sink.wallLabel, centerOffsetIn: Number(windowCenter.trim() || values.sink.centerOffsetIn) }
         : null,
       overRangeAnswer,
       kitchenUsage: kitchenUses.length
@@ -304,18 +305,45 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                     {layoutWallLabels.map((wall) => <SelectItem key={wall} value={wall}>{wallWidthText(wall)}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Input
-                  className="min-w-0 w-full"
-                  id={`auto-design-${field}-center`}
-                  type="number"
-                  min="0"
-                  step="0.125"
-                  placeholder={field === "dishwasher" ? "Leave blank for sink side" : undefined}
-                  value={values[field].centerOffsetIn}
-                  onChange={(event) => setValue(field, { centerOffsetIn: event.target.value })}
-                  disabled={(field !== "sink" && omitted[field]) || (field === "dishwasher" && noDishwasher)}
-                  aria-label={`${labels[field]} center from selected wall start in inches`}
-                />
+                <div className="flex min-w-0 w-full items-center gap-2">
+                  <Input
+                    className="min-w-0 w-full"
+                    id={`auto-design-${field}-center`}
+                    type="number"
+                    min="0"
+                    step="0.125"
+                    placeholder={field === "dishwasher" ? "Leave blank for sink side" : undefined}
+                    value={values[field].centerOffsetIn}
+                    onChange={(event) => setValue(field, { centerOffsetIn: event.target.value })}
+                    disabled={(field !== "sink" && omitted[field]) || (field === "dishwasher" && noDishwasher)}
+                    aria-label={`${labels[field]} center from selected wall start in inches`}
+                  />
+                  {field === "sink" && (
+                    <label
+                      htmlFor="auto-design-sink-window"
+                      className="flex shrink-0 items-center gap-1 text-sm font-medium"
+                      data-testid="auto-design-sink-window-label"
+                    >
+                      <Checkbox
+                        id="auto-design-sink-window"
+                        checked={windowAboveSink}
+                        onCheckedChange={(checked) => {
+                          const on = checked === true;
+                          setWindowAboveSink(on);
+                          if (on) {
+                            setWindowCenter((current) => current.trim() ? current : values.sink.centerOffsetIn);
+                          } else {
+                            setWindowCenter("");
+                          }
+                        }}
+                        aria-label="window"
+                        data-testid="auto-design-sink-window"
+                      />
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                      window
+                    </label>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -438,13 +466,15 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
             </div>
           )}
 
+          {windowAboveSink && (
           <div className="space-y-1.5">
             <Label htmlFor="auto-design-window-center">Window above the sink: center from the sink wall’s starting corner (in.)</Label>
-            <Input id="auto-design-window-center" type="number" min="0" step="0.125" placeholder="Leave blank when there is no window" value={windowCenter} onChange={(event) => setWindowCenter(event.target.value)} />
+            <Input id="auto-design-window-center" type="number" min="0" step="0.125" placeholder="Uses the sink center when left blank" value={windowCenter} onChange={(event) => setWindowCenter(event.target.value)} />
             <p className="text-xs text-muted-foreground" data-testid="auto-design-window-help">
-              The sink is centered on this measurement and a window as wide as the sink base is placed above it. No wall cabinet goes above the sink, and the next cabinets start 3 inches past the window. Leave blank for nothing above the sink.
+              The sink is centered under this window (or under an existing window on the sink wall). No wall cabinet goes above the sink, and the next cabinets start 3 inches past the window.
             </p>
           </div>
+          )}
           <div className="space-y-1.5 rounded-lg border p-3" data-testid="auto-design-over-range">
             <Label htmlFor="auto-design-over-range-answer">What goes above the range?</Label>
             <Select value={overRangeAnswer} onValueChange={(value) => setOverRangeAnswer(value as "hood" | "microwave-bridge" | "open")}>

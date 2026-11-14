@@ -113,6 +113,17 @@ export function keepsOwnWallHeight(
   const wall = cabinetWall(item, room);
   const start = wallRunOffset(item, wall, room);
   const end = start + wallRunSpan(item, wall, room);
+  // A short over-sink bridge (72 in datum, centered on a sink base) keeps the
+  // height it was seated at and is never raised to the full wall-cabinet size.
+  if (item.placement === "wall" && Math.abs((item.mountBottom ?? 0) - 72) <= 0.6) {
+    const overSink = placed.some((other) => {
+      if (!isSinkBaseCabinet(other) || cabinetWall(other, room) !== wall) return false;
+      const otherStart = wallRunOffset(other, wall, room);
+      const otherEnd = otherStart + wallRunSpan(other, wall, room);
+      return Math.min(end, otherEnd) - Math.max(start, otherStart) > 1;
+    });
+    if (overSink) return true;
+  }
   return placed.some((other) => {
     if (other.uid === item.uid || !applianceOwnsUpper(other)) return false;
     if (cabinetWall(other, room) !== wall) return false;
@@ -488,8 +499,13 @@ export function buildAutoDesignWallCabinets(input: {
 
   for (const lower of input.placed) {
     if (lower.placement !== "base" && lower.placement !== "appliance") continue;
-    if (lower.placement === "base" && isSinkBaseCabinet(lower) && sinkHasWindowAbove(lower, openings, room)) {
-      skipped.push(`Left open above ${lower.masterCode}: a window is over the sink.`);
+    if (lower.placement === "base" && isSinkBaseCabinet(lower)) {
+      // A window over the sink stays clear of uppers. With no window, a short
+      // matching-width bridge is seated before this pass, so a full-height
+      // wall cabinet must not be tiled over the sink either.
+      if (sinkHasWindowAbove(lower, openings, room)) {
+        skipped.push(`Left open above ${lower.masterCode}: a window is over the sink.`);
+      }
       continue;
     }
     // Above the range the owner rule governs: an over-the-range microwave with a

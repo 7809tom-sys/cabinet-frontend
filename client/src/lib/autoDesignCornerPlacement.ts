@@ -112,6 +112,12 @@ export function seatAutoDesignCornerFromCatalog(input: {
   allowPlaceholderFiller?: boolean;
   /** Appliance/math type order. Omitted callers keep diagonal, then lazy Susan, then blind. */
   familyOrder?: readonly ReturnType<typeof autoDesignCornerFamily>[];
+  /**
+   * When a turned (27–33 in) blind must put its width on the open run, this wall
+   * is tried first so the door + drawer face sit on the exposed half and the
+   * blind half is buried against the adjoining run.
+   */
+  preferredBlindWallId?: string | null;
 }): AutoDesignCornerSeatFromCatalogResult {
   const order = autoDesignCornerSeatOrder(input.options, input.preferred, input.familyOrder);
   if (!order.length) return { ok: false, message: autoDesignMissingCornerMessage(input.slot) };
@@ -130,7 +136,8 @@ export function seatAutoDesignCornerFromCatalog(input: {
       : undefined;
     const blindWalls = blind
       ? (() => {
-        const preferred = preferredBlindRunWallId({
+        const preferred = input.preferredBlindWallId
+          ?? preferredBlindRunWallId({
           room: input.room,
           placed: input.working,
           corner: input.target,

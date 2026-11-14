@@ -3,6 +3,7 @@ import {
   STD,
   appendCollisionFreePlacements,
   blindCornerAutoFiller,
+  cabinetCollisionDetail,
   formatInches,
   isBaseBlindCorner,
   isBlindCorner,
@@ -268,6 +269,23 @@ export function ensureRequiredBlindCornerBaseFillers(input: {
     }
     const accepted = appendCollisionFreePlacements(working, [required.filler], input.room);
     if (!accepted.placed.some((item) => item.uid === required.filler.uid)) {
+      // Later leftover / tighten passes can occupy the 3 in pull slot. Evict
+      // the leftover (never the blind itself or an appliance) and reseat the
+      // required filler so a BBC never returns without it.
+      const evicted = working.filter((item) => {
+        if (item.uid === cabinet.uid) return true;
+        if (item.placement === "appliance") return true;
+        if (isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId) && item.uid !== required.filler.uid) return true;
+        return cabinetCollisionDetail(required.filler, [item]) == null;
+      });
+      const retry = appendCollisionFreePlacements(evicted, [required.filler], input.room);
+      if (retry.placed.some((item) => item.uid === required.filler.uid)) {
+        working = retry.placed;
+        added.push(required.filler);
+        notes.push(`${cabinet.masterCode}: the required ${formatInches(BLIND_CORNER_FILLER_WIDTH_IN)} filler was reseated after a leftover was cleared from its slot.`);
+        if (required.placeholder) notes.push(`${cabinet.masterCode}: ${PLACEHOLDER_BLIND_FILLER_NOTE}.`);
+        continue;
+      }
       notes.push(`${cabinet.masterCode} is missing its required ${formatInches(BLIND_CORNER_FILLER_WIDTH_IN)} filler because the space beside it is blocked.`);
       continue;
     }

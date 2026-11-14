@@ -178,10 +178,13 @@ export function resolveLeftoverGap(input: {
     };
   }
 
-  // 3) A finished end keeps a bare 1–1.5 inch gap: a sliver of filler there is not what an
-  // installer wants. This beats filler, which is the last resort everywhere else.
+  // 3) Leftover at a finished end or corner is one catalog filler (Tom, Nov 14
+  // 2026, 2:03 and 2:06 PM CT). A bare 1–1.5 inch scribe gap used to be left
+  // here; those slivers also showed up beside ranges as 31 / 31.5 in openings.
+  // The leftover now goes to a single priced filler, never into an opening or
+  // between cabinets.
   if (input.atSkin && gap >= LEFT_SKIN_BARE_GAP_MIN_IN && gap <= LEFT_SKIN_BARE_GAP_MAX_IN) {
-    return { kind: "leave-bare", widthIn: gap, startIn: start, reason: "a bare gap at a finished end reads as the scribe" };
+    if (gap <= fillerMax + COLLISION_EPSILON_IN) return { kind: "filler", widthIn: gap, startIn: start };
   }
 
   // 4) Filler, only when it fits the Auto-Design cap.

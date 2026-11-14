@@ -35,7 +35,8 @@ function render(wall: "back" | "right", cabinet: Record<string, unknown>) {
 }
 /** The hatched hidden-panel box's inline style, as rendered. */
 function blindPanelStyle(markup: string): string {
-  const match = markup.match(/<div class="absolute top-0 bottom-0" style="([^"]*)"><div class="absolute inset-\[2px\][^"]*" style="background:repeating-linear-gradient\(135deg/);
+  const match = markup.match(/data-blind-blank-panel="true"[^>]*style="([^"]*)"/)
+    ?? markup.match(/<div class="absolute top-0 bottom-0"[^>]*style="([^"]*)"><div class="absolute inset-\[2px\][^"]*" style="background:repeating-linear-gradient\(135deg/);
   if (!match) throw new Error("blind panel not rendered");
   return match[1]!;
 }
@@ -105,5 +106,35 @@ describe("blind corner base elevation: the door pull sits on the visible door, a
       } as never)),
     );
     expect(markup).not.toContain("data-blind-door-hardware");
+  });
+});
+
+
+describe("blind corner elevation: door and drawer face only on the open half", () => {
+  it("left-hand (blind on the left): blank panel on the left, door + drawer on the right open half only", () => {
+    const markup = render("right", { x: 120, y: 6, rotation: 90, wallId: "right", wallOffset: 6, swing: "right", numberOfDrawers: 1 });
+    expect(markup).toMatch(/data-blind-blank-panel="true"[^>]*data-blind-blank-side="left"/);
+    expect(markup).toMatch(/data-blind-open-face="true"[^>]*data-blind-open-side="right"/);
+    expect(markup).toContain('data-blind-open-door="true"');
+    expect(markup).toContain('data-blind-open-drawer="true"');
+    // The blank half has no door or drawer markup inside it.
+    const blank = markup.match(/data-blind-blank-panel="true"[^>]*>[\s\S]*?<\/div>/);
+    expect(blank?.[0] ?? "").not.toContain("data-blind-open-door");
+    expect(blank?.[0] ?? "").not.toContain("data-blind-open-drawer");
+  });
+
+  it("right-hand (blind on the right): blank panel on the right, door + drawer on the left open half only", () => {
+    const markup = render("back", { x: 102, y: 0, rotation: 0, wallId: "top", wallOffset: 102, swing: "left", numberOfDrawers: 1 });
+    expect(markup).toMatch(/data-blind-blank-panel="true"[^>]*data-blind-blank-side="right"/);
+    expect(markup).toMatch(/data-blind-open-face="true"[^>]*data-blind-open-side="left"/);
+    expect(markup).toContain('data-blind-open-door="true"');
+    expect(markup).toContain('data-blind-open-drawer="true"');
+  });
+
+  it("a blind with no drawers still draws only a door on the open half and a blank panel on the buried half", () => {
+    const markup = render("right", { x: 120, y: 6, rotation: 90, wallId: "right", wallOffset: 6, swing: "right", numberOfDrawers: 0 });
+    expect(markup).toContain('data-blind-blank-panel="true"');
+    expect(markup).toContain('data-blind-open-door="true"');
+    expect(markup).not.toContain('data-blind-open-drawer="true"');
   });
 });
