@@ -10707,8 +10707,8 @@ export function addIslandZone(
       materialOnlyNoGeometryChange: true,
     };
     const counter = new THREE.Mesh(
-      slab.polygon && slab.polygon.length >= 3
-        ? threeDPeninsulaCountertopGeometry(slab, slab.width, slab.depth)
+      ((slab as { polygon?: readonly unknown[] }).polygon?.length ?? 0) >= 3
+        ? threeDPeninsulaCountertopGeometry(slab as unknown as Parameters<typeof threeDPeninsulaCountertopGeometry>[0], slab.width, slab.depth)
         : new THREE.BoxGeometry(slab.width * INCH, 1.5 * INCH, slab.depth * INCH),
       counterMaterial,
     );

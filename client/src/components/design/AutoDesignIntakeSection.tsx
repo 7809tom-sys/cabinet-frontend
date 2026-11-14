@@ -74,6 +74,7 @@ export function AutoDesignIntakeSection(props: {
             type="button"
             size="sm"
             variant={intake.construction === "new" ? "default" : "outline"}
+            className={intake.construction === "new" ? "bg-[#244338] text-[#fffdf9] hover:bg-[#244338]/90" : undefined}
             aria-pressed={intake.construction === "new"}
             data-testid="intake-construction-new"
             onClick={() => onChange({ ...intake, construction: "new" })}
@@ -84,6 +85,7 @@ export function AutoDesignIntakeSection(props: {
             type="button"
             size="sm"
             variant={intake.construction === "old" ? "default" : "outline"}
+            className={intake.construction === "old" ? "bg-[#244338] text-[#fffdf9] hover:bg-[#244338]/90" : undefined}
             aria-pressed={intake.construction === "old"}
             data-testid="intake-construction-old"
             onClick={() => onChange({ ...intake, construction: "old" })}
@@ -114,6 +116,7 @@ export function AutoDesignIntakeSection(props: {
                     type="button"
                     size="sm"
                     variant={value === true ? "default" : "outline"}
+                    className={value === true ? "bg-[#244338] text-[#fffdf9] hover:bg-[#244338]/90" : undefined}
                     aria-pressed={value === true}
                     data-testid={`intake-move-${q.id}-yes`}
                     onClick={() => setCanMove(q.id, true)}
@@ -124,6 +127,7 @@ export function AutoDesignIntakeSection(props: {
                     type="button"
                     size="sm"
                     variant={value === false ? "default" : "outline"}
+                    className={value === false ? "bg-[#244338] text-[#fffdf9] hover:bg-[#244338]/90" : undefined}
                     aria-pressed={value === false}
                     data-testid={`intake-move-${q.id}-no`}
                     onClick={() => setCanMove(q.id, false)}

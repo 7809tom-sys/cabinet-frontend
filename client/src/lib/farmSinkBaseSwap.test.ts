@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixtureBelongsToCabinet, makeSinkForCabinet, type DesignCabinet, type PlacedCabinet } from "./design";
 import { matchingFarmSinkBase, swapStandardSinkBaseForFarmSink } from "./farmSinkBaseSwap";
+import { farmhouseSinkApronPastCarcassIn } from "./farmhouseSinkBaseFace";
 
 const room = { width: 144, depth: 120, ceilingHeight: 96 };
 const standard = {
@@ -27,7 +28,8 @@ describe("standard sink base to farm sink base swap", () => {
     expect(result.cabinet).toMatchObject({ uid: "sb36", x: 40, y: 0, wallId: "top", wallOffset: 40, width: 36, depth: 24 });
     expect(result.removedSinkUids).toEqual([sink.uid]);
     expect(result.sink).toMatchObject({ type: "farmhouse", apronFront: true, width: 33, cabinetUid: "sb36" });
-    expect(result.sink.y + result.sink.depth).toBeCloseTo(24, 3);
+    // Rule 6 (Nov 13 2026): the apron sits 0.5" past the door face, which is 0.63" past the box.
+    expect(result.sink.y + result.sink.depth).toBeCloseTo(24 + farmhouseSinkApronPastCarcassIn(), 3);
     expect(fixtureBelongsToCabinet(result.sink, result.cabinet)).toBe(true);
   });
 

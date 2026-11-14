@@ -8,6 +8,16 @@ import { AutoDesignDialog } from "./AutoDesignDialog";
 afterEach(cleanup);
 
 describe("AutoDesignDialog", () => {
+  it("does not build until new or old construction is answered (15-rule spec, rule 11)", () => {
+    const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("intake-construction-old"));
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({ intake: expect.objectContaining({ construction: "old" }) }));
+  });
+
   it("explains the required build order and excludes automatic specialty-base selection", () => {
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={() => ({ ok: true })} />);
     const order = screen.getByTestId("auto-design-build-order").textContent ?? "";
@@ -21,6 +31,7 @@ describe("AutoDesignDialog", () => {
   it("submits a skipped kitchen-use answer when the customer does not pick one", () => {
     const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
       kitchenUsage: { uses: [], skipped: true, acceptedSuggestionIds: [] },
@@ -31,6 +42,7 @@ describe("AutoDesignDialog", () => {
     const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
     fireEvent.click(screen.getByLabelText("Lots of baking"));
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
       kitchenUsage: { uses: ["baking"], skipped: false, acceptedSuggestionIds: [] },
@@ -42,6 +54,7 @@ describe("AutoDesignDialog", () => {
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
 
     expect(screen.getByText("Wall-cabinet height")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
 
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
@@ -61,6 +74,7 @@ describe("AutoDesignDialog", () => {
     expect(screen.getByRole("option", { name: "Left of sink" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Right of sink" })).toBeTruthy();
     fireEvent.click(screen.getByRole("option", { name: "No dishwasher" }));
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
 
     expect(onDishwasherSideChange).toHaveBeenCalledWith("none");
@@ -76,6 +90,7 @@ describe("AutoDesignDialog", () => {
     const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
     expect(screen.getByText("Sink base style")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({ sinkBaseKind: "regular" }));
   });
@@ -112,6 +127,7 @@ describe("AutoDesignDialog", () => {
     }
     expect(screen.queryByTestId("auto-design-refrigerator-options")).toBeNull();
     expect((screen.getByLabelText("Dishwasher side") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
 
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
@@ -194,6 +210,7 @@ describe("AutoDesignDialog", () => {
     }));
     render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
 
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
 
     expect(onBuild).toHaveBeenCalledTimes(1);

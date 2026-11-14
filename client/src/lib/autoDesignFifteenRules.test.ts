@@ -14,6 +14,7 @@ import {
   anchorWiggleIn,
   landingGaps,
   sinkBaseDownsizeSteps,
+  wallFitSuggestion,
   fifteenRuleFindings,
   continuousWallRuns,
   unpairedOvenCabinets,
@@ -403,5 +404,24 @@ describe("fillerCount", () => {
       lower("B12", 12, 6),
     ];
     expect(fillerCount(placed)).toBe(2);
+  });
+});
+
+describe("wallFitSuggestion (rules 7, 8, 14 when the wall is too short)", () => {
+  const base = (catalogFixture as unknown as Record<string, { base: DesignCabinet[] }>)["330014"]!.base;
+  const anchors = [
+    { wallLabel: "Wall 1" as const, kind: "refrigerator" as const, widthIn: 36 },
+    { wallLabel: "Wall 1" as const, kind: "sink" as const, widthIn: 36 },
+    { wallLabel: "Wall 1" as const, kind: "dishwasher" as const, widthIn: 24 },
+    { wallLabel: "Wall 1" as const, kind: "stove" as const, widthIn: 30 },
+  ];
+  it("suggests, never applies, the 30 in fridge and smaller sink bases on a 100 in wall and says when it still will not fit", () => {
+    const text = wallFitSuggestion({ anchors, wallLengthOf: () => 100, baseCatalog: base })!;
+    expect(text).toContain("Wall 1 is 100 in, but the refrigerator, sink base, dishwasher and range need 127.5 in.");
+    expect(text).toContain("Suggestion only, not applied: I strongly recommend a 30 inch refrigerator to optimize your area, and try SB33 (33 in)");
+    expect(text).toContain("still 15.5 in short");
+  });
+  it("returns null when everything fits", () => {
+    expect(wallFitSuggestion({ anchors, wallLengthOf: () => 144, baseCatalog: base })).toBeNull();
   });
 });

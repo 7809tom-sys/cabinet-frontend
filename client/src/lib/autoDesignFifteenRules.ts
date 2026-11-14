@@ -574,6 +574,75 @@ export function unpairedOvenCabinets(placed: readonly PlacedCabinet[]): PlacedCa
   return unpaired;
 }
 
+export type WallFitAnchor = { wallLabel: WallLabel; kind: AutoDesignKind; widthIn: number };
+/**
+ * Rules 7, 8, 14 on a wall that is too short for what was asked. Sums the requested
+ * anchor widths per wall (a refrigerator also needs 1.5 in for its two end panels) and,
+ * when a wall is over, returns ONE plain sentence block with suggestions only (never applied):
+ * "Wall 1 is 100 in, but the refrigerator, sink base, dishwasher and range need 127.5 in.
+ *  Suggestion only, not applied: <FRIDGE_RECOMMEND_TEXT or FRIDGE_ASK_TEXT>, and try SB33 (33 in), then SB30 (30 in) for the sink base (saves up to 12 in). The customer decides."
+ * Use FRIDGE_RECOMMEND_TEXT when the wall is short by more than 6 in, else FRIDGE_ASK_TEXT. Only mention the fridge when one is on that wall and wider than 30; only mention the sink base when it is on that wall and sinkBaseDownsizeSteps returns steps (include the substitute note when a step is a substitute).
+ * When the wall is still short after every suggestion, add: "Even with both, the wall is still <n> in short, so one appliance has to move to another wall or come out."
+ * Returns null when every wall fits or no wall length is known. Inch formatting: at most one decimal, drop ".0" (reuse the file's fmtIn helper). Kind names: sink -> "sink base", stove -> "range", dishwasher -> "dishwasher", refrigerator -> "refrigerator"; list in the order given, joined with ", " and " and " before the last.
+ */
+export function wallFitSuggestion(input: {
+  anchors: readonly WallFitAnchor[];
+  wallLengthOf: (label: WallLabel) => number | null;
+  baseCatalog: readonly DesignCabinet[];
+}): string | null {
+  const byWall = new Map<WallLabel, WallFitAnchor[]>();
+  for (const anchor of input.anchors) {
+    const list = byWall.get(anchor.wallLabel);
+    if (list) list.push(anchor);
+    else byWall.set(anchor.wallLabel, [anchor]);
+  }
+  for (const [wallLabel, anchors] of Array.from(byWall.entries())) {
+    const wallLength = input.wallLengthOf(wallLabel);
+    if (wallLength === null) continue;
+    let needed = 0;
+    for (const anchor of anchors) {
+      needed += anchor.widthIn;
+      if (anchor.kind === "refrigerator") needed += 1.5;
+    }
+    if (needed <= wallLength) continue;
+    const kindName = (kind: AutoDesignKind): string =>
+      kind === "sink" ? "sink base" : kind === "stove" ? "range" : kind === "dishwasher" ? "dishwasher" : "refrigerator";
+    const names = anchors.map((a) => kindName(a.kind));
+    const joined =
+      names.length <= 1
+        ? names.join("")
+        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    const parts: string[] = [];
+    const fridge = anchors.find((a) => a.kind === "refrigerator");
+    if (fridge && fridge.widthIn > 30) {
+      parts.push((wallLength - needed < -6 ? FRIDGE_RECOMMEND_TEXT : FRIDGE_ASK_TEXT).replace(/[.?]\s*$/, ""));
+    }
+    const sink = anchors.find((a) => a.kind === "sink");
+    let sinkSavings = 0;
+    if (sink) {
+      const steps = sinkBaseDownsizeSteps(sink.widthIn, input.baseCatalog);
+      if (steps.length > 0) {
+        const stepText = steps
+          .map((step) => `${step.masterCode} (${fmtIn(step.widthIn)} in)`)
+          .join(", then ");
+        sinkSavings = sink.widthIn - steps[steps.length - 1]!.widthIn;
+        const substituteNote = steps.filter((step) => step.substitute).map((step) => ` (${step.note})`).join("");
+        parts.push(`try ${stepText} for the sink base${substituteNote} (saves up to ${fmtIn(sinkSavings)} in)`);
+      }
+    }
+    let sentence = `${wallLabel} is ${fmtIn(wallLength)} in, but the ${joined} need ${fmtIn(needed)} in.`;
+    if (parts.length > 0) {
+      sentence += ` Suggestion only, not applied: ${parts.join(", and ")}. The customer decides.`;
+    }
+    const stillShort = needed - sinkSavings - (fridge && fridge.widthIn > 30 ? fridge.widthIn - 30 : 0) - wallLength;
+    if (stillShort > 0) {
+      sentence += ` Even with both, the wall is still ${fmtIn(stillShort)} in short, so one appliance has to move to another wall or come out.`;
+    }
+    return sentence;
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // All rule findings for the review list (nothing is applied)
 // ---------------------------------------------------------------------------

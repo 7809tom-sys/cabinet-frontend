@@ -1554,7 +1554,7 @@ export function supportsCenteredTopDoorPull(p: {
   description?: string | null;
   category?: string | null;
   subCategory?: string | null;
-  placement?: Placement | null;
+  placement?: Placement | string | null;
   islandFace?: IslandFace | null;
   islandCounterHeightWallCabinet?: boolean | null;
 }): boolean {

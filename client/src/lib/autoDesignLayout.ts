@@ -35,7 +35,7 @@ import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFiller
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
-import { fifteenRuleFindings, hasPreference, lockedAnchorKinds } from "./autoDesignFifteenRules";
+import { fifteenRuleFindings, hasPreference, lockedAnchorKinds, wallFitSuggestion, type WallFitAnchor } from "./autoDesignFifteenRules";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
@@ -480,6 +480,9 @@ function resolveLeftoverOpenings(input: {
       if (resolution.kind === "widen-neighbor") {
         // Never resize a corner cabinet into a wider straight base here either.
         if (isPlacedCornerCabinet(resolution.neighbor)) continue;
+        // Rule 7 (Nov 13 2026 spec): never grow or swap the sink base on its own; its size is a suggestion for the customer.
+        const neighborIsSinkBase = /sink/i.test(`${resolution.neighbor.description ?? ""} ${resolution.neighbor.subCategory ?? ""}`) || /^(?:L|F)?SB\d/i.test(resolution.neighbor.masterCode ?? "");
+        if (neighborIsSinkBase) continue;
         const depth = footprintDepth(resolution.replacement);
         const spot = boundedWallPlacementAt(resolution.startIn, resolution.widthIn, depth, wallId, input.room);
         if (!spot) continue;
@@ -661,6 +664,19 @@ function nextFittingBaseAlong(input: {
  * base runs, hood, then wall cabinets. Galley fills Wall 1 and Wall 3 and
  * never receives a corner slot.
  */
+function autoDesignWallFitSuggestion(input: AutoDesignInputs, room: RoomData, baseCatalog: readonly DesignCabinet[]): string | null {
+  const anchors: WallFitAnchor[] = [];
+  if (input.refrigerator) anchors.push({ wallLabel: input.refrigerator.wallLabel, kind: "refrigerator", widthIn: input.refrigeratorWidthIn ?? 36 });
+  anchors.push({ wallLabel: input.sink.wallLabel, kind: "sink", widthIn: input.sinkBaseWidthIn ?? 36 });
+  const noDishwasher = input.skipDishwasher || input.dishwasherSide === "none";
+  if (!noDishwasher) anchors.push({ wallLabel: input.dishwasher?.wallLabel ?? input.sink.wallLabel, kind: "dishwasher", widthIn: 24 });
+  if (input.stove) anchors.push({ wallLabel: input.stove.wallLabel, kind: "stove", widthIn: 30 });
+  return wallFitSuggestion({
+    anchors,
+    wallLengthOf: (label) => wallLabelToEngineWallId(label, room, input.originCorner, input.runDirection)?.frame.length ?? null,
+    baseCatalog,
+  });
+}
 export function runAutoDesignLayout(args: {
   input: AutoDesignInputs;
   room: RoomData;
@@ -705,7 +721,11 @@ export function runAutoDesignLayout(args: {
 }): AutoDesignLayoutResult {
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
-  const fail = (message: string): AutoDesignLayoutResult => ({ ok: false, message });
+  const fail = (message: string): AutoDesignLayoutResult => {
+    // Rules 7, 8, 14: when the asked-for appliances cannot fit, say what would help. Suggestions only.
+    const suggestion = input.intake ? autoDesignWallFitSuggestion(input, room, args.baseCatalog) : null;
+    return { ok: false, message: suggestion ? `${message} ${suggestion}` : message };
+  };
   const plan = planAutoDesignAutoBuild(input);
   if (!plan.ok) return fail(`Missing required measurement: ${plan.missing.join(", ")}.`);
   const peninsulaRequest = args.peninsula ?? (input.intake?.islandOrPeninsula === "peninsula" && input.intake.peninsulaSide ? { side: input.intake.peninsulaSide } : null);
