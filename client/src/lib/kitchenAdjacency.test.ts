@@ -150,6 +150,32 @@ describe("range and refrigerator spacing", () => {
     expect(result.flags).toEqual([]);
   });
 
+  it("honours the Setup Step 2 lock: a range the designer said cannot move stays put", () => {
+    // Tom, Nov 14 2026: the Yes/No check marks in Setup Step 2 exist so the build
+    // follows them. "No" on the range hookup locks the range, so the refrigerator
+    // has to take the jog instead of the range moving anyway.
+    const room = { ...DEFAULT_ROOM, width: 144 };
+    const range = placed({ uid: "range", masterCode: "RANGE-30", description: "30 inch range", placement: "appliance", width: 30, wallOffset: 20 });
+    const fridge = placed({ uid: "fridge", masterCode: "FRIDGE-36", description: "36 inch refrigerator", placement: "appliance", width: 36, wallOffset: 62 });
+    const result = separateRangeAndRefrigerator({
+      placed: [range, fridge],
+      room,
+      origins: [
+        { uid: "range", originalStart: wallRunOffset(range, "bottom", room) },
+        { uid: "fridge", originalStart: wallRunOffset(fridge, "bottom", room) },
+      ],
+      fixedUids: ["range"],
+    });
+    const movedRange = result.placed.find((item) => item.uid === "range")!;
+    const movedFridge = result.placed.find((item) => item.uid === "fridge")!;
+    // The locked range keeps its measured spot exactly.
+    expect(wallRunOffset(movedRange, "bottom", room)).toBeCloseTo(wallRunOffset(range, "bottom", room), 5);
+    // The refrigerator moves instead, inside its own 3 inch cap.
+    const fridgeShift = Math.abs(wallRunOffset(movedFridge, "bottom", room) - wallRunOffset(fridge, "bottom", room));
+    expect(fridgeShift).toBeGreaterThan(0);
+    expect(fridgeShift).toBeLessThanOrEqual(3.05);
+  });
+
   it("never slides a refrigerator the person already placed when opening the range gap", () => {
     const room = { ...DEFAULT_ROOM, width: 144 };
     const range = placed({ uid: "range", masterCode: "RANGE-30", description: "30 inch range", placement: "appliance", width: 30, wallOffset: 20 });
