@@ -13366,7 +13366,13 @@ export function bearsCountertop(p: {
   // the run past a dishwasher's finished end, so the top runs over it and ends
   // at the finished end of the run exactly as it would past a cabinet. Only the
   // auto-placed DWR is counter-bearing; a user-chosen decorative panel is not.
-  if (p.autoPlacedReason === DISHWASHER_RUN_END_PANEL_REASON) return true;
+  // Tom: the DWP is the dishwasher panel, about 3 inches wide on the exposed side,
+  // and the counter sits ON it. That is the only panel that bears a counter - a
+  // taller or larger panel stops the slab at its face.
+  if (p.autoPlacedReason === DISHWASHER_RUN_END_PANEL_REASON) {
+    const panelHeight = Number(p.height);
+    return !Number.isFinite(panelHeight) || panelHeight <= STD.BASE_HEIGHT + 4;
+  }
   // A knee drawer hangs in open knee space. It is not a cabinet box the
   // desktop can bear, and it must not close that opening with a slab.
   if (isKneeDrawerItem(p)) return false;
