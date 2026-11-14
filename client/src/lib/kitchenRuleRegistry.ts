@@ -519,6 +519,59 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
     locked: true,
     appliedBy: "designerFaceRules",
   },
+  // NKBA planning guidelines the Designer did not encode (Tom, Nov 13 2026).
+  {
+    key: "countertop_frontage_min_in",
+    title: "Usable countertop frontage",
+    description: "Minimum total usable counter frontage, 16 inches deep or more and excluding corner space. NKBA asks for 158 inches (132 in a kitchen under 150 sq ft, 198 over).",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 158,
+    unit: "in",
+    step: 1,
+    min: 0,
+    max: 400,
+    appliedBy: "designerLayoutRules",
+  },
+  {
+    key: "prep_work_area_min_in",
+    title: "Preparation area beside the sink",
+    description: "Continuous counter the sink needs next to it for prep work. NKBA asks for 36 inches by 24 inches immediately next to the sink.",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 36,
+    unit: "in",
+    step: 1,
+    min: 0,
+    max: 96,
+    appliedBy: "designerLayoutRules",
+  },
+  {
+    key: "microwave_landing_in",
+    title: "Microwave landing",
+    description: "Counter beside a microwave. NKBA asks for 15 inches above, below or adjacent to the handle side, or within 48 inches.",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 15,
+    unit: "in",
+    step: 1,
+    min: 0,
+    max: 48,
+    appliedBy: "designerLayoutRules",
+  },
+  {
+    key: "oven_landing_in",
+    title: "Oven landing",
+    description: "Counter beside a wall oven. NKBA asks for 15 inches next to or above the oven, or within 48 inches.",
+    category: "Sink and appliances",
+    valueType: "number",
+    defaultValue: 15,
+    unit: "in",
+    step: 1,
+    min: 0,
+    max: 48,
+    appliedBy: "designerLayoutRules",
+  },
   {
     key: "sink_base_default_in",
     title: "Default sink base width",
@@ -867,6 +920,10 @@ export type KitchenRuleNumericKey =
   | "standard_hood_bottom_in"
   | "faucet_at_sink_required"
   | "window_never_moves"
+  | "countertop_frontage_min_in"
+  | "prep_work_area_min_in"
+  | "microwave_landing_in"
+  | "oven_landing_in"
   | "sink_base_default_in"
   | "sink_dishwasher_max_gap_in"
   | "dishwasher_corner_clear_in"
@@ -932,6 +989,10 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS: Record<KitchenRuleNumericKey, numb
   standard_hood_bottom_in: defaultNumber("standard_hood_bottom_in"),
   faucet_at_sink_required: defaultNumber("faucet_at_sink_required"),
   window_never_moves: defaultNumber("window_never_moves"),
+  countertop_frontage_min_in: defaultNumber("countertop_frontage_min_in"),
+  prep_work_area_min_in: defaultNumber("prep_work_area_min_in"),
+  microwave_landing_in: defaultNumber("microwave_landing_in"),
+  oven_landing_in: defaultNumber("oven_landing_in"),
   sink_base_default_in: defaultNumber("sink_base_default_in"),
   sink_dishwasher_max_gap_in: defaultNumber("sink_dishwasher_max_gap_in"),
   dishwasher_corner_clear_in: defaultNumber("dishwasher_corner_clear_in"),

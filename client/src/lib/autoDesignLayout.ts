@@ -15,6 +15,7 @@ import {
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { ensureRequiredBlindCornerBaseFillers } from "./blindCornerRequiredFiller";
+import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { isPlacedCornerCabinet, sameWidthFamily } from "./autoDesignCornerGuard";
 import {
   AUTO_DESIGN_GALLEY_WALLS,
@@ -1581,6 +1582,10 @@ export function runAutoDesignLayout(args: {
   notes.push(...consolidated.notes);
   reviewFindings.push(...consolidated.warnings);
   reviewFillers(runWalls, working, room, stageOpenings, reviewFindings);
+  // NKBA planning guidelines that were not encoded before: total usable counter
+  // frontage, a preparation run beside the sink, and a landing for a microwave or
+  // wall oven. Each names its number on the review list rather than staying silent.
+  reviewFindings.push(...reviewNkbaPlan({ placed: working, room }));
   // HARD RULE (owner, Nov 5 2026): the bridge above the range is mandatory and is
   // already seated before the upper run tiled. What follows is the existing
   // add-only logic for the MICROWAVE and HOOD on top of that bridge: the popup
