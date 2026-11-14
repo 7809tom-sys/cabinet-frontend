@@ -121,10 +121,10 @@ describe("corner-first planning", () => {
     });
     const wastes = plan.map((candidate) => candidate.wasteIn);
     expect([...wastes].sort((left, right) => left - right)).toEqual(wastes);
-    expect(describeCornerFirst(plan[0]!)).toMatch(/BBC36|straight base/);
+    expect(describeCornerFirst(plan[0]!)).toMatch(/BBC36/);
   });
 
-  it("never offers a cabinet wider than the leg plus the allowed wiggle", () => {
+  it("never offers a straight base as the cabinet in the corner square", () => {
     const bbc = byCode("BBC36");
     const plan = planCornerFirst({
       cornerOptions: [bbc],
@@ -135,9 +135,16 @@ describe("corner-first planning", () => {
       placed: [anchor("RANGE-30", 30, 96)],
       wiggleLimitIn: 0,
     });
-    // The tightest leg is now 48", so no straight base wider than that may appear.
-    for (const candidate of plan.filter((entry) => entry.kind === "straight")) {
-      expect(candidate.widthIn).toBeLessThanOrEqual(48 + 1e-6);
-    }
+    expect(plan.every((entry) => entry.kind !== "straight")).toBe(true);
+    const empty = planCornerFirst({
+      cornerOptions: [],
+      straightBaseCatalog: straightBases(),
+      room: DEFAULT_ROOM,
+      cornerWallIds: ["top", "right"],
+      corner: TOP_RIGHT,
+      placed: [],
+      wiggleLimitIn: 3,
+    });
+    expect(empty).toEqual([]);
   });
 });

@@ -290,6 +290,8 @@ export function closeSmallOpeningsWithStock(input: {
   makeUid: () => string;
   /** Wall rows picked for a 42" design must be this tall, not the 30" SKU listed first. */
   wallHeightIn?: number | null;
+  /** Inside-corner squares a stock-width close must not grow into. */
+  reservedSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
 }): { placed: PlacedCabinet[]; closes: StockClose[]; notes: string[] } {
   let working = [...input.placed];
   const closes: StockClose[] = [];
@@ -303,6 +305,7 @@ export function closeSmallOpeningsWithStock(input: {
         const gap = smallestOpenGap({
           placed: working, room: input.room, openings: input.openings, wallId, layer,
           maxIn: input.maxOpeningIn, declined,
+          reserved: (input.reservedSpans ?? []).filter((span) => span.wallId === wallId),
         });
         if (!gap) break;
         const touching = working.filter((item) => cabinetWall(item, input.room) === wallId
@@ -368,6 +371,7 @@ function smallestOpenGap(input: {
   layer: FillerLayer;
   maxIn: number;
   declined: ReadonlySet<string>;
+  reserved?: ReadonlyArray<{ start: number; end: number }>;
 }): { startIn: number; endIn: number; widthIn: number } | null {
   const frame = wallRunFrame(input.wallId, input.room);
   if (!frame) return null;
@@ -381,7 +385,8 @@ function smallestOpenGap(input: {
   const openingZones = input.openings
     .filter((opening) => opening.side === input.wallId)
     .map((opening) => ({ start: opening.offset, end: opening.offset + opening.width }));
-  const bounds = [...items, ...openingZones].sort((left, right) => left.start - right.start);
+  const reservedZones = (input.reserved ?? []).map((span) => ({ start: span.start, end: span.end }));
+  const bounds = [...items, ...openingZones, ...reservedZones].sort((left, right) => left.start - right.start);
   const edges: Array<{ startIn: number; endIn: number; widthIn: number }> = [];
   let cursor = Math.max(0, frame.runStart);
   for (const bound of bounds) {

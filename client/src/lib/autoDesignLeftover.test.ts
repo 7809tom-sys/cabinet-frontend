@@ -124,7 +124,7 @@ describe("leftover space uses real cabinets before filler", () => {
     expect(resolution.kind).toBe("leave-bare");
   });
 
-  it("leaves a bare 1-1.5 inch gap at a skin instead of forcing a sliver", () => {
+  it("places one catalog filler for a 1-1.5 inch leftover at a skin, never a bare opening", () => {
     const resolution = resolveLeftoverGap({
       gapIn: 1.25,
       startIn: 40,
@@ -133,7 +133,8 @@ describe("leftover space uses real cabinets before filler", () => {
       room: DEFAULT_ROOM,
       atSkin: true,
     });
-    expect(resolution.kind).toBe("leave-bare");
+    expect(resolution.kind).toBe("filler");
+    expect(resolution.widthIn).toBe(1.25);
     expect(LEFT_SKIN_BARE_GAP_MAX_IN).toBe(1.5);
   });
 

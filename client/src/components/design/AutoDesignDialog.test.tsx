@@ -228,4 +228,32 @@ describe("AutoDesignDialog", () => {
     fireEvent.click(build);
     expect(onBuild).not.toHaveBeenCalled();
   });
+
+  it("places an accessible window checkbox with a check icon next to the sink measurement", () => {
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={() => ({ ok: true })} />);
+    const checkbox = screen.getByTestId("auto-design-sink-window");
+    const label = screen.getByTestId("auto-design-sink-window-label");
+    expect(label.textContent).toMatch(/window/i);
+    expect(label.getAttribute("for")).toBe("auto-design-sink-window");
+    expect(checkbox.getAttribute("id")).toBe("auto-design-sink-window");
+    expect(checkbox.getAttribute("aria-label")).toBe("window");
+    expect(screen.getByLabelText("Sink base center from selected wall start in inches")).toBeTruthy();
+    // The extra window-center field stays hidden until the box is checked.
+    expect(screen.queryByLabelText(/Window above the sink/i)).toBeNull();
+  });
+
+  it("submits sinkWindowCenter when the window box is checked and clears it when unchecked", () => {
+    const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
+    fireEvent.click(screen.getByTestId("auto-design-sink-window"));
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
+      sinkWindowCenter: expect.objectContaining({ wallLabel: "Wall 1", centerOffsetIn: 24 }),
+    }));
+    onBuild.mockClear();
+    fireEvent.click(screen.getByTestId("auto-design-sink-window"));
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({ sinkWindowCenter: null }));
+  });
 });

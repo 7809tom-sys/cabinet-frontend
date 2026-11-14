@@ -24,13 +24,13 @@ export type CornerSectionCabinet = {
 
 /**
  * A true blind corner from its master code only: BBC, WBC, BBL, BBR, WBL,
- * WBR, or BLIND in the code. A stored cornerType of "blind-corner" is not
+ * WBR, BLB, BCB, or BLIND in the code. A stored cornerType of "blind-corner" is not
  * enough — that is how a normal Corner Base was being misread as blind.
  */
 export function isTrueBlindCornerCode(masterCode: string | null | undefined): boolean {
   const code = (masterCode || "").toUpperCase();
   if (!code || isPlainBaseCode(code)) return false;
-  return /^(BBC|WBC|BBL|BBR|WBL|WBR)/.test(code) || /(?:-BLIND|BLIND)/.test(code);
+  return /^(BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB)/.test(code) || /(?:-BLIND|BLIND)/.test(code);
 }
 
 /** Same rule as the Designer's dedicated "Corner Wall" section. */

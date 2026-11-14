@@ -6563,7 +6563,7 @@ export function isCornerCabinet(masterCode: string, description?: string, corner
   // BER## = Easy-Reach corner base (Skyline naming, e.g. BER33, BER36)
   // DCSB## = Diagonal Corner Sink Base (e.g. DCSB36). Sink fronts DCFF/DCSF stay out.
   // CDB## = Corner Drawer Base.
-  if (/^(BBC|WBC|BLB|LSB?|CSB|WLS|DCW|DCB|DCSB|CDB|ER|ERB|BER|WER|WDC|KWD|AG-|AG\d|CAG)/.test(code)) return true;
+  if (/^(BBC|WBC|BLB|BCB|LSB?|CSB|WLS|DCW|DCB|DCSB|CDB|ER|ERB|BER|WER|WDC|KWD|AG-|AG\d|CAG)/.test(code)) return true;
   if (/-CNR|CORNER/.test(code)) return true;
   // No description-word fallback: "corner", "blind" or "diagonal" in a description does not make a corner.
   return cornerType != null && STORED_CORNER_TYPES.has(String(cornerType));
@@ -7888,7 +7888,7 @@ export function isBlindCorner(masterCode: string, _description?: string, cornerT
   const code = (masterCode || "").toUpperCase();
   // A plain base code (B24, B36, B42...) is never a blind corner, whatever its description or stored type says.
   if (isPlainBaseCodeRule(code)) return false;
-  if (/^(BBC|WBC|BBL|BBR|WBL|WBR)/.test(code)) return true;
+  if (/^(BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB)/.test(code)) return true;
   if (/-BLIND|BLIND/.test(code)) return true;
   // Blind status comes from the code or the stored cornerType, never from description words.
   return cornerType === "blind-corner";
@@ -7918,7 +7918,7 @@ export function blindCornerNominalWidth(
   cabinet: { masterCode?: string | null; description?: string | null; width?: string | number | null; nominalWidth?: string | number | null },
 ): number {
   const code = `${cabinet.masterCode ?? ""}`.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const codedWidth = code.match(/^(?:BBC|WBC|BBL|BBR|WBL|WBR)(\d{2})/)?.[1];
+  const codedWidth = code.match(/^(?:BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB)(\d{2})/)?.[1];
   const parsedWidth = codedWidth == null ? Number.NaN : Number(codedWidth);
   if (Number.isFinite(parsedWidth) && parsedWidth >= 12 && parsedWidth <= 96) return parsedWidth;
   const nominal = Number(cabinet.nominalWidth);

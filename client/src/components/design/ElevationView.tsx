@@ -3467,7 +3467,9 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
   // with a subtle blind panel indicator on the hidden side. The door
   // automatically flips to the EXPOSED side (away from the wall corner).
   if (cabinetType === "blind-corner") {
-    // The visible face is typically ~60% of the width; the blind portion is hidden.
+    // The open/exposed half carries the door and any drawer. The other half is
+    // a blank panel buried against the wall / adjoining run — no door, no drawer
+    // (Tom, Nov 14 2026, 2:08 PM CT). The visible face is typically ~60%.
     const visiblePct = 60;
     // blindOnLeft defaults to true (blind on left, door on right).
     // When false, the corner is on the right so we flip: door on left, blind on right.
@@ -3475,10 +3477,14 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
     const integratedWbcFiller = isWallBlindCornerCabinet({ masterCode, description: null });
     const integratedFillerPct = integratedWbcFiller ? Math.min(35, (3 / Math.max(3, faceWidth)) * 100) : 0;
     const blindPct = Math.max(0, 100 - visiblePct - integratedFillerPct);
+    const openDrawerCount = Math.max(0, drawers ?? numberOfDrawers ?? 0);
+    const drawerBandPct = openDrawerCount > 0 ? Math.min(32, 16 * openDrawerCount) : 0;
     return withFace(
       <>
-        {/* Blind (hidden) portion: subtle hatched/darker area */}
+        {/* Blind half: blank / hatched panel, no door or drawer */}
         <div
+          data-blind-blank-panel="true"
+          data-blind-blank-side={bLeft ? "left" : "right"}
           className="absolute top-0 bottom-0"
           style={bLeft ? { left: 0, width: `${integratedWbcFiller ? blindPct : 100 - visiblePct}%` } : { right: 0, width: `${100 - visiblePct}%` }}
         >
@@ -3503,13 +3509,26 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
             }}
           />
         )}
-        {/* Visible door portion */}
+        {/* Open / exposed half: door, plus drawer(s) when the SKU has them */}
         <div
+          data-blind-open-face="true"
+          data-blind-open-side={bLeft ? "right" : "left"}
           className="absolute top-0 bottom-0"
           style={bLeft ? { left: `${100 - visiblePct}%`, width: `${visiblePct}%` } : { left: 0, width: `${visiblePct}%` }}
         >
           <div className={`absolute top-0 bottom-0 ${bLeft ? 'left-0' : 'right-0'}`} style={{ width: 2, background: stroke }} />
-          <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={faceWidth * (visiblePct / 100)} faceHeightIn={faceHeight} />
+          {openDrawerCount > 0 && (
+            <div data-blind-open-drawer="true" className="absolute left-0 right-0 top-0" style={{ height: `${drawerBandPct}%` }}>
+              {Array.from({ length: openDrawerCount }).map((_, row) => (
+                <div key={`blind-open-drawer-${row}`} className="absolute left-0 right-0" style={{ top: `${(row / openDrawerCount) * 100}%`, height: `${100 / openDrawerCount}%` }}>
+                  <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} />
+                </div>
+              ))}
+            </div>
+          )}
+          <div data-blind-open-door="true" className="absolute left-0 right-0 bottom-0" style={{ height: `${100 - drawerBandPct}%` }}>
+            <SingleDoorPanel kind={kind} edge={edge} face={face} stroke={stroke} doorSampleUrl={doorSampleUrl} isWall={isWall} frameInsetPx={frameInsetPx} faceWidthIn={faceWidth * (visiblePct / 100)} faceHeightIn={faceHeight * ((100 - drawerBandPct) / 100)} />
+          </div>
         </div>
       </>
     );

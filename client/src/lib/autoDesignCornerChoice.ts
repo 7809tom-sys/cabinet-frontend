@@ -102,7 +102,7 @@ export function cornerTypeOf(candidate: AutoBuildCornerCandidate): CornerType {
     return "diagonal";
   }
   if (stored === "corner-drawer" || /^CDB/.test(code) || /corner drawer/.test(text)) return "corner-drawer";
-  if (isWallBlindCornerCabinet(candidate) || stored === "blind-corner" || /^(?:BBC|WBC|BBL|BBR)/.test(code) || /blind\s*corner/.test(text)) {
+  if (isWallBlindCornerCabinet(candidate) || stored === "blind-corner" || /^(?:BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB)/.test(code) || /blind\s*corner/.test(text)) {
     return "blind";
   }
   // An L-shaped corner with a door on each wall.
@@ -181,7 +181,7 @@ export function isCornerChoiceCandidate(
   if (candidate.isCornerCabinet === true) return true;
   if (candidate.cornerType) return true;
   const code = (candidate.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return /^(?:LSB|LS|ERB|BER|DCB|DCW|WDC|BBC|WBC|BBL|BBR|CDB|AG)/.test(code);
+  return /^(?:LSB|LS|ERB|BER|DCB|DCW|WDC|BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB|CDB|AG)/.test(code);
 }
 
 /**

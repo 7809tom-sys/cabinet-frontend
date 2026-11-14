@@ -1388,6 +1388,8 @@ describe("blind corner fillers", () => {
     expect(isBlindCorner("BBC-36")).toBe(true);
     expect(isBlindCorner("WBC-24-30")).toBe(true);
     expect(isBlindCorner("BBL-42")).toBe(true);
+    expect(isBlindCorner("BLB42")).toBe(true);
+    expect(isBlindCorner("BCB42")).toBe(true);
     expect(isBlindCorner("W-30-30")).toBe(false);
     expect(isBlindCorner("B-24")).toBe(false);
   });
