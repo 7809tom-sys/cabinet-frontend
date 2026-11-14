@@ -328,8 +328,9 @@ export function placeCompanionBesideCorner(input: {
 
 /**
  * Decide the corner TYPE from the available run (appliance-first), then let
- * the catalog supply the SKU. Intake door-line preference does not override
- * a measured band.
+ * the catalog supply the SKU. The customer's lazy Susan / blind corner pick
+ * goes first when the measured run can take it; it never overrides a band
+ * the pick cannot physically fit.
  */
 export function decideAutoDesignCornerTypeOrder(input: {
   room: RoomData;
@@ -344,8 +345,6 @@ export function decideAutoDesignCornerTypeOrder(input: {
   preferBlind?: boolean;
 }): CornerTypeDecision {
   void input.wiggleLimitIn;
-  void input.preferLazySusan;
-  void input.preferBlind;
   const legs = cornerLegAvailability(input);
   const need = twoLegCornerNeedIn(input.options);
   const tighter = [...legs].sort((left, right) => left.availableIn - right.availableIn)[0];
@@ -358,12 +357,38 @@ export function decideAutoDesignCornerTypeOrder(input: {
     return length > 0 && leg.clearIn < length - 0.5;
   });
 
-  const finish = (
+  // The customer's corner pick (intake "Lazy Susan" / "Blind corner cabinet")
+  // goes first whenever the measured run can physically take it and the line
+  // sells one. The measured band still decides when the pick cannot fit: a
+  // lazy Susan wider than the run, or a blocked corner, is never forced.
+  const customerOrder = (
     band: CornerBandId,
     order: AutoDesignCornerFamily[],
     reason: string,
+  ): { order: AutoDesignCornerFamily[]; reason: string } => {
+    if (band === "blocked" || order.length === 0) return { order, reason };
+    const wanted: AutoDesignCornerFamily | null = input.preferLazySusan ? "lazy-susan" : input.preferBlind ? "blind" : null;
+    if (!wanted || order[0] === wanted) return { order, reason };
+    const fits = wanted === "lazy-susan"
+      ? band !== "rotated-blind" && lazySusanFitting(input.options, availableIn).length > 0
+      : input.options.some((option) => autoDesignCornerFamily(option) === "blind");
+    if (!fits) {
+      return { order, reason: `${reason} The customer asked for a ${wanted === "blind" ? "blind corner" : "lazy Susan"}, but none in this line fits the ${fmt(availableIn)}" run, so the measured type is used.` };
+    }
+    return {
+      order: [wanted, ...order.filter((family) => family !== wanted)],
+      reason: `${reason} The customer asked for a ${wanted === "blind" ? "blind corner" : "lazy Susan"} and it fits, so it is used first.`,
+    };
+  };
+
+  const finish = (
+    band: CornerBandId,
+    measuredOrder: AutoDesignCornerFamily[],
+    measuredReason: string,
     extras: Partial<Pick<CornerTypeDecision, "companionNine" | "rotateBlind" | "blocked" | "tightness">> = {},
-  ): CornerTypeDecision => ({
+  ): CornerTypeDecision => {
+    const { order, reason } = customerOrder(band, measuredOrder, measuredReason);
+    return {
     band,
     availableIn,
     relevantWallId,
@@ -375,7 +400,8 @@ export function decideAutoDesignCornerTypeOrder(input: {
     companionNine: extras.companionNine ?? false,
     rotateBlind: extras.rotateBlind ?? false,
     blocked: extras.blocked ?? false,
-  });
+    };
+  };
 
   const catalogFitOrder = (): AutoDesignCornerFamily[] => {
     const fitting = lazySusanFitting(input.options, availableIn);
