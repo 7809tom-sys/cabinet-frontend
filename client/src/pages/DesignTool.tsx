@@ -315,6 +315,7 @@ import { dropDuplicateAutoWindows, moveWindowsWithWallTops } from "@/lib/windowO
 import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
+import { postBuildFixturePrompts, productFromOpeningPick } from "@/lib/autoDesignOpeningFixturePick";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
@@ -1098,6 +1099,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    * rule needs the rows at build time (never at render time).
    */
   const autoDesignFaucetProductsRef = useRef<AutoDesignFaucetProduct[]>([]);
+  const autoDesignSinkProductsRef = useRef<AutoDesignSinkProduct[]>([]);
+  const applyOpeningSinkAfterBuildRef = useRef<(hostUid: string, product: AutoDesignSinkProduct) => void>(() => {});
   const autoDesignFaucetPromptedRef = useRef(new Set<string>());
   const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
   roomRef.current = room;
@@ -2291,10 +2294,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const autoDesignAnchoredRefrigeratorRef = useRef<PlacedCabinet | null>(null);
   const rememberAutoDesignSink = useCallback((sink: SinkFixture, openingOverride?: readonly WallOpening[]): SinkFixture => {
     if (!autoDesignSessionRef.current) return sink;
-    const result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
+    let result = ensureAutoDesignFaucet(sink, defaultAutoDesignFaucetRef.current);
     // Auto Design fills a faucet so the drawing is complete, then asks which one
-    // the shopper wants. The filled faucet is not billed; only a pick is.
-    if (result.sink.autoDesignFaucet && !autoDesignFaucetPromptedRef.current.has(result.sink.uid)) {
+    // the shopper wants — unless they already picked one in the designer-open
+    // pop-up. That choice is applied here and is not asked again at the end.
+    const openingFaucet = productFromOpeningPick(autoDesignFaucetProductsRef.current, fixturePickRef.current.faucetId);
+    if (openingFaucet) {
+      result = { sink: applyChosenAutoDesignFaucet(result.sink, openingFaucet), attached: true };
+      autoDesignOwnedFaucetIdsRef.current.add(openingFaucet.id);
+      autoDesignFaucetPromptedRef.current.add(result.sink.uid);
+      const surface = catalogFaucetSurface(openingFaucet);
+      setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+    } else if (result.sink.autoDesignFaucet && !autoDesignFaucetPromptedRef.current.has(result.sink.uid)) {
       autoDesignFaucetPromptedRef.current.add(result.sink.uid);
       queueAutoDesignFaucetPrompt(result.sink.uid);
     }
@@ -4917,13 +4928,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // design questions is saved with the layout, and the add-only over-range pass
     // (below, and on every load) applies it, so nobody is asked twice.
     if (run.bareRangeUid && readOverRangeAnswer(input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
-    // The layout is built. Now ask which sink, then the faucet on it. The build
-    // itself never auto-places a sink, so pushing one before the build cannot
-    // change the plan or switch Auto-Design off.
+    // The layout is built. If the shopper already picked a sink and faucet in
+    // the designer-open pop-up, apply those choices and do not ask again. Only
+    // the fixture they skipped at the start is asked about now.
     const builtSinkBase = run.sinks[0]?.cabinetUid ?? null;
     if (builtSinkBase) {
-      autoDesignFaucetQueueAfterSinkRef.current = autoDesignFaucetPrompt;
-      promptAutoDesignSinkAfterBuild(builtSinkBase);
+      const openingPick = fixturePickRef.current;
+      const prompts = postBuildFixturePrompts(openingPick);
+      if (!prompts.askFaucet) {
+        autoDesignFaucetQueueAfterSinkRef.current = null;
+      } else {
+        autoDesignFaucetQueueAfterSinkRef.current = autoDesignFaucetPrompt;
+      }
+      if (!prompts.askSink && openingPick.sinkId != null) {
+        const product = productFromOpeningPick(autoDesignSinkProductsRef.current, openingPick.sinkId);
+        autoDesignSinkPromptedRef.current.add(builtSinkBase);
+        if (product) applyOpeningSinkAfterBuildRef.current(builtSinkBase, product);
+      } else {
+        promptAutoDesignSinkAfterBuild(builtSinkBase);
+      }
     }
     return { ok: true as const };
     }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, autoPanelCatalog, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
@@ -11260,6 +11283,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     || autoDesignCornerStage != null
     || autoDesignFaucetPrompt != null
     || fixturePickOpen
+    || fixturePick.faucetId != null
     || sinks.some((sink) => sink.autoDesignFaucet)
   );
   const {
@@ -11487,6 +11511,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     || autoDesignCornerStage != null
     || autoDesignSinkPrompt != null
     || fixturePickOpen
+    || fixturePick.sinkId != null
   );
   const {
     data: pelicanSinkCatalog,
@@ -11543,6 +11568,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     for (const item of recommendedSinkCatalog ?? []) add(item, true);
     return Array.from(merged.values()).sort((left, right) => left.name.localeCompare(right.name) || left.id - right.id);
   }, [pelicanSinkCatalog, recommendedSinkCatalog]);
+  useEffect(() => { autoDesignSinkProductsRef.current = autoDesignSinkProducts; }, [autoDesignSinkProducts]);
   const autoDesignSinkCatalogLoading = autoDesignSinkCatalogEnabled && (pelicanSinkCatalogLoading || recommendedSinkCatalogLoading);
   const autoDesignSinkCatalogUnavailable = autoDesignSinkCatalogEnabled
     && !autoDesignSinkCatalogLoading
@@ -11558,11 +11584,30 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (!autoDesignAvailable) return;
     setAutoDesignSinkPrompt({ mode, sinkUid });
   }, [autoDesignAvailable]);
+  const applyOpeningFaucetOrPrompt = (placedSinkUid: string | null) => {
+    const openingFaucet = productFromOpeningPick(autoDesignFaucetProductsRef.current, fixturePickRef.current.faucetId);
+    if (openingFaucet && placedSinkUid) {
+      autoDesignFaucetPromptedRef.current.add(placedSinkUid);
+      autoDesignOwnedFaucetIdsRef.current.add(openingFaucet.id);
+      setSinks((current) => current.map((sink) => sink.uid === placedSinkUid ? applyChosenAutoDesignFaucet(sink, openingFaucet) : sink));
+      const surface = catalogFaucetSurface(openingFaucet);
+      setSelectedSurfaces((previous) => previous.some((item) => item.id === surface.id) ? previous : [...previous, surface]);
+      setAutoDesignFaucetPrompt(null);
+      autoDesignFaucetQueueAfterSinkRef.current = null;
+      return;
+    }
+    if (autoDesignFaucetQueueAfterSinkRef.current) {
+      setAutoDesignFaucetPrompt(autoDesignFaucetQueueAfterSinkRef.current);
+      autoDesignFaucetQueueAfterSinkRef.current = null;
+      return;
+    }
+    if (placedSinkUid) setAutoDesignFaucetPrompt({ sinkUid: placedSinkUid, queue: [] });
+  };
   const keepAutoDesignSinkDefault = useCallback(() => {
+    const queuedUid = autoDesignFaucetQueueAfterSinkRef.current?.sinkUid ?? null;
     setAutoDesignSinkPrompt(null);
-    // Keeping the neutral basin still needs a faucet behind it.
-    setAutoDesignFaucetPrompt((current) => current ?? autoDesignFaucetQueueAfterSinkRef.current);
-    autoDesignFaucetQueueAfterSinkRef.current = null;
+    // Keeping the opening-pop-up faucet, if any, means no second faucet question.
+    applyOpeningFaucetOrPrompt(queuedUid);
   }, []);
   /**
    * Auto-place the picked sink. There is no manual placement step, including for
@@ -11570,12 +11615,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    * a new base is seated in the next free span. The faucet is then re-seated on
    * the countertop behind the basin, never inside it.
    */
-  const chooseAutoDesignSink = useCallback((product: AutoDesignSinkProduct, applyToAllSinks: boolean) => {
+  const chooseAutoDesignSink = useCallback((product: AutoDesignSinkProduct, applyToAllSinks: boolean, options?: { hostUid?: string | null }) => {
     const prompt = autoDesignSinkPrompt;
+    let placedSinkUid: string | null = null;
     setAutoDesignSinkPicks((previous) => previous.some((entry) => entry.id === product.id) ? previous : [...previous, product]);
     // The pop-up is opened either from the auto-designer setup (replace the
     // measured base's basin) or from a row's own "Sink" button (that base first).
-    const preferredHostUid = prompt?.sinkUid ?? null;
+    const preferredHostUid = options?.hostUid ?? prompt?.sinkUid ?? null;
     const plan = planAutoDesignSinkPlacement({
       product,
       mode: prompt?.mode === "add" || applyToAllSinks ? "add" : "replace",
@@ -11595,12 +11641,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     if (plan.kind === "reuse") {
       const fixture = adoptAutoDesignSinkRef.current(plan.sink);
+      placedSinkUid = fixture.uid;
       setSinks((current) => [...current.filter((sink) => sink.cabinetUid !== plan.hostUid), fixture]);
       setSelectedSinkUid(fixture.uid);
     } else if (plan.kind === "swap-base") {
       setPlaced((current) => current.map((cabinet) => cabinet.uid === plan.hostUid ? plan.cabinet : cabinet));
       placedRef.current = placedRef.current.map((cabinet) => cabinet.uid === plan.hostUid ? plan.cabinet : cabinet);
       const fixture = adoptAutoDesignSinkRef.current(plan.sink);
+      placedSinkUid = fixture.uid;
       setSinks((current) => [
         ...current.filter((sink) => !plan.removedSinkUids.includes(sink.uid) && sink.cabinetUid !== plan.hostUid),
         fixture,
@@ -11644,6 +11692,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         size: product.size ?? null,
       }, seated, room));
       setSinks((current) => [...current.filter((sink) => sink.cabinetUid !== seated.uid), fixture]);
+      placedSinkUid = fixture.uid;
       setSelectedSinkUid(fixture.uid);
       toast.success(`${product.name} placed in ${seated.masterCode}, centered in the base.`);
     }
@@ -11661,17 +11710,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     };
     setSelectedSurfaces((previous) => previous.some((entry) => entry.id === surface.id) ? previous : [...previous, surface]);
     setAutoDesignSinkPrompt(null);
-    // The faucet step follows the sink, on the basin this placed: the pop-up for
-    // the sink that now carries the auto faucet.
-    const placedSink = sinks.find((sink) => sink.uid === autoDesignFaucetQueueAfterSinkRef.current?.sinkUid)
-      ?? null;
-    if (autoDesignFaucetQueueAfterSinkRef.current) {
-      setAutoDesignFaucetPrompt(autoDesignFaucetQueueAfterSinkRef.current);
-      autoDesignFaucetQueueAfterSinkRef.current = null;
-    } else if (placedSink?.autoDesignFaucet) {
-      setAutoDesignFaucetPrompt({ sinkUid: placedSink.uid, queue: [] });
-    }
+    // The opening pop-up faucet, if any, is applied here. Otherwise the faucet
+    // question follows on the basin just placed.
+    applyOpeningFaucetOrPrompt(placedSinkUid);
   }, [autoDesignSinkPrompt, autoDesignWallIds, liveMasterCabinets, openings, room, sinks, styleId]);
+  applyOpeningSinkAfterBuildRef.current = (hostUid, product) => {
+    chooseAutoDesignSink(product, false, { hostUid });
+  };
   // Tall oven / pantry boxes the selected line sells, for the tall-cabinet
   // pop-up. Same catalog the palette reads; nothing is invented locally.
   const autoDesignTallProductsList = useMemo(() => {
