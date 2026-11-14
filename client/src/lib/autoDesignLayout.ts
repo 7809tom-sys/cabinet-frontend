@@ -1200,6 +1200,10 @@ export function runAutoDesignLayout(args: {
     room,
     origins: stage.anchorOrigins,
     fixedRefrigeratorUids: anchoredUids,
+    // The Setup Step 2 answers: a locked range or refrigerator must not be slid by
+    // this stage either. It only protected a pre-existing refrigerator before, so a
+    // "No" on the range hookup was still overruled here.
+    fixedUids: fixedAnchorUids,
   });
   working = separated.placed;
   let reservation = stage.refrigeratorReservation;

@@ -287,6 +287,14 @@ export function separateRangeAndRefrigerator(input: {
    * reach 15 inches is flagged rather than moving the refrigerator.
    */
   fixedRefrigeratorUids?: readonly string[];
+  /**
+   * Anchors the designer said cannot move (the Setup Step 2 answers). A locked
+   * range or refrigerator takes no part of the jog; the other one moves instead,
+   * and a gap that still cannot open is flagged rather than moving a locked
+   * appliance. Tom, Nov 14 2026: "let the designer know follow the rules that was
+   * selected - that's why the check mark".
+   */
+  fixedUids?: readonly string[];
 }): { placed: PlacedCabinet[]; moves: RangeFridgeMove[]; flags: string[] } {
   let placed = [...input.placed];
   const moves: RangeFridgeMove[] = [];
@@ -349,7 +357,8 @@ export function separateRangeAndRefrigerator(input: {
         if (gap >= kitchenRuleNumber("range_fridge_min_cabinet_in") - 0.05) continue;
         let shortfall = kitchenRuleNumber("range_fridge_min_cabinet_in") - gap;
         const fixedFridge = new Set(input.fixedRefrigeratorUids ?? []);
-        const movable = (span: Span) => !fixedFridge.has(span.item.uid);
+        const lockedAnchors = new Set(input.fixedUids ?? []);
+        const movable = (span: Span) => !fixedFridge.has(span.item.uid) && !lockedAnchors.has(span.item.uid);
         // A fixed refrigerator is never shifted, so its whole budget is zero and
         // the range takes the rest of the jog on its own.
         const leftBudget = movable(left) ? remaining(left.item.uid, left.start) : 0;
