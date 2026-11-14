@@ -66,7 +66,7 @@ import { trpc } from "@/lib/trpc";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
-import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer } from "@/lib/overRangeFill";
+import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer, resolveAutoDesignOverRangeAnswer } from "@/lib/overRangeFill";
 import {
   affiliateSlugForStoreScope,
   cartPathForStoreScope,
@@ -319,7 +319,7 @@ import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRang
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
-import { designerReviewLines, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
+import { overRangeDefaultedFinding, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignAngledNeighborWallIds, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
@@ -4866,12 +4866,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ...current.filter((item) => !isSinkBasePlacement(item) && !run.placed.some((built) => built.uid === item.uid)),
       ...run.placed,
     ]);
+    // A missing over-range answer uses the kitchen-rules default (microwave and
+    // bridge) instead of a second end-of-flow question. The report lists that
+    // default when it was used, and the shopper can still change it.
+    const overRangeResolved = resolveAutoDesignOverRangeAnswer(input.overRangeAnswer);
     setRoom((current) => ({
       ...current,
       kitchenUsage: normalizeKitchenUsage(input.kitchenUsage),
       // The answer given in the design questions is saved with the layout, and the
       // add-only over-range pass applies it once the plan is committed.
-      overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, input.overRangeAnswer),
+      overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, overRangeResolved.value),
     }));
     setOverRangeEpoch((epoch) => epoch + 1);
     // A freshly built plan gets its mandatory faucet in the same pass.
@@ -4906,17 +4910,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 8000 });
     for (const warning of run.warnings) toast.warning(warning, { duration: 7000 });
-    // Rule 14: anything the design questions could not honor stays on a reviewable list.
-    if (run.reviewFindings.length) {
-      setAutoDesignReviewFindings(run.reviewFindings);
-      const named = run.reviewFindings.filter((finding) => finding.severity === "warning");
-      if (named.length) toast.warning(`${named.length} design question${named.length === 1 ? "" : "s"} need review`, { description: named.map((finding) => finding.title).join(" · "), duration: 10000 });
+    // Rule 14: anything the design questions could not honor, plus any default
+    // the build used in place of an end-of-flow question, stays on the report.
+    const reviewFindings = overRangeResolved.defaulted && run.bareRangeUid
+      ? [...run.reviewFindings, overRangeDefaultedFinding()]
+      : run.reviewFindings;
+    if (reviewFindings.length) {
+      setAutoDesignReviewFindings(reviewFindings);
     }
     if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
-    // Ask only when the kitchen has no answer to remember. The answer given in the
-    // design questions is saved with the layout, and the add-only over-range pass
-    // (below, and on every load) applies it, so nobody is asked twice.
-    if (run.bareRangeUid && readOverRangeAnswer(input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
+    // Do not open the post-build "What goes above the range?" pop-up. A missing
+    // answer already used the default above, and the add-only over-range pass
+    // (below, and on every load) applies it.
     // The layout is built. Now ask which sink, then the faucet on it. The build
     // itself never auto-places a sink, so pushing one before the build cannot
     // change the plan or switch Auto-Design off.
@@ -5260,12 +5265,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (stage.sinkWindow) {
       toast.info(`A ${formatInches(stage.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
     }
-    // A range with nothing above it asks what belongs there: hood, bridge + microwave,
-    // or nothing — but only while no answer is saved with the layout. With an answer,
-    // the add-only over-range pass applies it instead of asking again.
+    // A range with nothing above it uses the kitchen-rules default when the
+    // design questions left no answer, and the report lists that default.
+    // Do not open the post-build "What goes above the range?" pop-up.
     const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
       && autoDesignRangeNeedsVentilation(working, item));
-    if (bareRange && readOverRangeAnswer(stage.input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
+    const overRangeResolved = resolveAutoDesignOverRangeAnswer(stage.input.overRangeAnswer);
+    if (bareRange && overRangeResolved.defaulted) {
+      setRoom((current) => ({
+        ...current,
+        overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, overRangeResolved.value),
+      }));
+      setOverRangeEpoch((epoch) => epoch + 1);
+      setAutoDesignReviewFindings((current) => [...current, overRangeDefaultedFinding()]);
+    }
     return { ok: true as const };
   }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings, sinks]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
@@ -20768,7 +20781,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          )}
 	          {autoDesignReviewFindings.length > 0 && (
 	            <AutoDesignReviewList
-	              lines={designerReviewLines({ findings: autoDesignReviewFindings, allHonored: false })}
+	              findings={autoDesignReviewFindings}
 	              onDismiss={() => setAutoDesignReviewFindings([])}
 	            />
 	          )}

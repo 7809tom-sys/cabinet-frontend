@@ -71,11 +71,62 @@ export function buildDesignerReviewList(findings: readonly DesignerReviewFinding
   };
 }
 
-/** Plain lines for the review dialog, one per finding. */
+/** Plain lines for the Auto Design report, one per finding. */
 export function designerReviewLines(list: DesignerReviewList): string[] {
-  return list.findings.map((finding) => (
-    finding.wallLabel
-      ? `${finding.title} (${finding.wallLabel}) — ${finding.detail}`
-      : `${finding.title} — ${finding.detail}`
-  ));
+  return list.findings.map(autoDesignReportFindingLine);
+}
+
+/** One report sentence for a finding, including the wall when the build named one. */
+export function autoDesignReportFindingLine(finding: DesignerReviewFinding): string {
+  return finding.wallLabel
+    ? `${finding.title} (${finding.wallLabel}) — ${finding.detail}`
+    : `${finding.title} — ${finding.detail}`;
+}
+
+export type AutoDesignRulesReport = {
+  /** Warnings: a rule or design question could not be met. */
+  unmet: string[];
+  /** Info: a rule was applied, adjusted, or noted. */
+  applied: string[];
+  /** Defaults used because a question was not answered; the shopper can still change these. */
+  changeable: string[];
+};
+
+const CHANGEABLE_CODES = new Set(["over-range-defaulted"]);
+
+/** Groups findings into the Auto Design report sections. Empty sections are omitted by the panel. */
+export function buildAutoDesignRulesReport(
+  findings: readonly DesignerReviewFinding[],
+): AutoDesignRulesReport {
+  const unmet: string[] = [];
+  const applied: string[] = [];
+  const changeable: string[] = [];
+  for (const finding of findings) {
+    const line = autoDesignReportFindingLine(finding);
+    if (CHANGEABLE_CODES.has(finding.code)) changeable.push(line);
+    else if (finding.severity === "warning") unmet.push(line);
+    else applied.push(line);
+  }
+  return { unmet, applied, changeable };
+}
+
+export function autoDesignRulesReportIsEmpty(report: AutoDesignRulesReport): boolean {
+  return report.unmet.length + report.applied.length + report.changeable.length === 0;
+}
+
+/**
+ * Listed on the Auto Design report when the end-of-flow "what goes above the
+ * range" question was skipped and the kitchen-rules default was used instead.
+ */
+export function overRangeDefaultedFinding(): DesignerReviewFinding {
+  return makeReviewFinding({
+    ruleId: "microwave-bridge-in-build",
+    code: "over-range-defaulted",
+    severity: "info",
+    title: "What goes above the range",
+    detail: "No answer was given, so the build used a microwave and a bridge cabinet. You can change this after the build.",
+    wallLabel: null,
+    cabinetUid: null,
+    cabinetCode: null,
+  });
 }
