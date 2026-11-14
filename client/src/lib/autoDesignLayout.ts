@@ -15,6 +15,7 @@ import {
   type WallLabel,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
+import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -1956,6 +1957,14 @@ export function runAutoDesignLayout(args: {
     }
     notes.push(...repack.notes);
     fifteenRepackMoves.push(...repack.moves);
+    // The repack tiles the base and wall levels as separate runs; put a
+    // matching-width upper back over each straight base (B27 -> W27).
+    const matchedAfterRepack = matchUppersToBases({
+      placed: working, room, openings: stageOpenings, wallCatalog: args.wallCatalog,
+      heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+    });
+    working = matchedAfterRepack.placed;
+    notes.push(...matchedAfterRepack.notes);
     // The openings and dead corners named before this pass were re-planned; keep only what is still true.
     const stale = new Set(["leftover-real-cabinets-first", "real-cabinets-before-filler"]);
     for (let i = reviewFindings.length - 1; i >= 0; i--) {
@@ -2224,6 +2233,36 @@ export function runAutoDesignLayout(args: {
     }
   }
 
+  // Last word on upper widths: the gap and tighten passes above can re-tile a
+  // span; uppers still line up with the base under them where the line allows.
+  const matchedFinal = matchUppersToBases({
+    placed: working, room, openings: workingOpenings, wallCatalog: args.wallCatalog,
+    heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+  });
+  working = matchedFinal.placed;
+  notes.push(...matchedFinal.notes);
+  reviewFindings.push(...matchedFinal.findings);
+  if (matchedFinal.notes.length > 0) {
+    // Re-matching can leave a seam sliver (at most a seam filler wide) where an
+    // old upper reached past the bases; close it with the line's own filler
+    // like every other leftover, so the run still closes and never overflows.
+    const closedAfterMatch = closeRemainingRunGaps({
+      placed: working,
+      room,
+      openings: stageOpenings,
+      wallIds: gapWallIds,
+      baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog],
+      wallCatalog: args.wallCatalog,
+      fillers: catalogFillers,
+      styleId: args.styleId,
+      makeUid,
+      wallHeightIn: wallDesignHeight ?? stage.input.wallCabinetHeightIn ?? 30,
+      reservedSpans: cornerReserved,
+    });
+    working = closedAfterMatch.placed;
+    notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
+    reviewFindings.push(...closedAfterMatch.findings);
+  }
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.

@@ -139,6 +139,17 @@ function rejectsSingleDoorTwentyFour(row: DesignCabinet): boolean {
 }
 
 /**
+ * The ordinary wall cabinets the build tiles with at one real catalog height:
+ * the same rows `buildAutoDesignWallCabinets` uses for its aligned run.
+ */
+export function autoDesignStandardUpperRows(catalog: readonly DesignCabinet[], heightIn: number): DesignCabinet[] {
+  return catalog.filter((source) => source.id > 0
+    && source.placement === "wall" && Math.abs(dim(source.height, 0) - heightIn) <= SAME_HEIGHT_IN
+    && dim(source.width, 0) > 0 && dim(source.depth, 0) > 0
+    && isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source));
+}
+
+/**
  * When the design is 42" uppers, an ordinary wall cabinet that is not that
  * tall is replaced by the same-width 42" SKU. If that width is not sold at
  * 42", the closest 42" width within the 3" filler cap is used and named.
