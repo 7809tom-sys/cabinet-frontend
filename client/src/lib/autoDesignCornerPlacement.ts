@@ -48,17 +48,24 @@ function byWidthDesc<T extends AutoBuildCornerCandidate>(options: readonly T[]):
 export function autoDesignCornerSeatOrder<T extends AutoBuildCornerCandidate>(
   options: readonly T[],
   preferred?: T | null,
+  /** When set, families are tried in this order (the appliance/math decision). */
+  familyOrder?: readonly ReturnType<typeof autoDesignCornerFamily>[],
 ): T[] {
   const usable = options.filter((option) => !isSinkBaseCabinet(option));
   const rest = preferred ? usable.filter((option) => option.id !== preferred.id) : usable;
   const of = (family: ReturnType<typeof autoDesignCornerFamily>) => byWidthDesc(rest.filter((option) => autoDesignCornerFamily(option) === family));
-  return [
-    ...(preferred && !isSinkBaseCabinet(preferred) ? [preferred] : []),
-    ...of("diagonal"),
-    ...of("lazy-susan"),
-    ...of("blind"),
-    ...of("other"),
-  ];
+  const families = familyOrder?.length
+    ? [...familyOrder, "other" as const]
+    : (["diagonal", "lazy-susan", "blind", "other"] as const);
+  const seen = new Set<ReturnType<typeof autoDesignCornerFamily>>();
+  const ordered: T[] = [];
+  if (preferred && !isSinkBaseCabinet(preferred)) ordered.push(preferred);
+  for (const family of families) {
+    if (seen.has(family)) continue;
+    seen.add(family);
+    ordered.push(...of(family));
+  }
+  return ordered;
 }
 
 function fallbackNote(slotLabel: string, seated: AutoBuildCornerCandidate, tried: readonly AutoBuildCornerCandidate[]): string | null {
@@ -75,10 +82,11 @@ function fallbackNote(slotLabel: string, seated: AutoBuildCornerCandidate, tried
 
 /**
  * Seats one required corner before any straight run on the adjoining walls.
- * Tries a source-priced diagonal, then the largest lazy Susan, then a blind
- * corner whose blind side runs along the wall with more room. The blind
- * corner keeps its configured pull and its required filler. The error is
- * returned only when no blind corner in the line can be seated.
+ * Tries families in `familyOrder` when the appliance/math decision supplies
+ * one; otherwise a source-priced diagonal, then the largest lazy Susan, then a
+ * blind corner. The blind corner keeps its configured pull and its required
+ * filler. The error is returned only when no corner cabinet in the line can be
+ * seated — never a straight base.
  */
 export function seatAutoDesignCornerFromCatalog(input: {
   slot: AutoDesignCornerSlot;
@@ -102,8 +110,10 @@ export function seatAutoDesignCornerFromCatalog(input: {
   excludedWallIds?: readonly string[];
   /** Tom Nov 13: seat a BBC even when the line sells no filler SKU, with the flagged unpriced FILL-3 placeholder. */
   allowPlaceholderFiller?: boolean;
+  /** Appliance/math type order. Omitted callers keep diagonal, then lazy Susan, then blind. */
+  familyOrder?: readonly ReturnType<typeof autoDesignCornerFamily>[];
 }): AutoDesignCornerSeatFromCatalogResult {
-  const order = autoDesignCornerSeatOrder(input.options, input.preferred);
+  const order = autoDesignCornerSeatOrder(input.options, input.preferred, input.familyOrder);
   if (!order.length) return { ok: false, message: autoDesignMissingCornerMessage(input.slot) };
   const excluded = new Set(input.excludedWallIds ?? []);
   const allowedWalls = input.cornerWallIds.filter((wallId) => !excluded.has(wallId));

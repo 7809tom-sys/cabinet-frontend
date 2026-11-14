@@ -5,8 +5,9 @@
  *
  *   - a blind corner at its configured pull,
  *   - the same blind corner pulled further (a 36" blind base pulled 6" fills a 42" leg),
- *   - a straight base in the corner square,
  *   - and the same options after the allowed 3" appliance wiggle.
+ * A straight base is never a corner plan (Tom, Nov 14 2026): if no corner SKU
+ * seats, the square stays blocked and `corner-cabinet-not-seated` is raised.
  *
  * "Waste" is the dead corner area no cabinet body fills: the inches a box takes along its run
  * beyond the 24" depth it reaches into the perpendicular run, less any deliberate blind pull.
@@ -64,8 +65,8 @@ export type CornerFirstCandidate = {
 export type CornerFirstPlanInput = {
   /** Real base-corner catalog rows of the selected line. */
   cornerOptions: readonly DesignCabinet[];
-  /** Real straight base rows, for the straight-base fallback. */
-  straightBaseCatalog: readonly DesignCabinet[];
+  /** Unused. Kept so existing callers compile; a straight base is never a corner plan. */
+  straightBaseCatalog?: readonly DesignCabinet[];
   room: RoomData;
   /** The two engine walls that meet at this corner. */
   cornerWallIds: readonly string[];
@@ -177,26 +178,8 @@ export function planCornerFirst(input: CornerFirstPlanInput): CornerFirstCandida
     }
   }
 
-  // Straight base in the corner square: the largest real base that fits the tighter leg.
-  const tightest = Math.min(...legs.map((leg) => leg.clearIn));
-  for (const source of input.straightBaseCatalog) {
-    const width = dim(source.width, 0);
-    const depth = Math.max(0, dim(source.depth, STD.BASE_DEPTH));
-    if (!(width > 0)) continue;
-    if (width > tightest + wiggleLimit + 0.05) continue;
-    const remainders = legRemainders(legs, Object.fromEntries(legs.map((leg) => [leg.wallId, width])));
-    const partial = {
-      kind: "straight" as const,
-      source,
-      widthIn: width,
-      pullIn: 0,
-      runWallId: legs[0]!.wallId,
-      legRemainders: remainders,
-      wasteIn: cornerDeadInches(width, depth, 0),
-      requiresWiggle: legs.some((leg) => leg.clearIn + 0.05 < width),
-    };
-    candidates.push({ ...partial, score: scoreOf(partial) });
-  }
+  // A straight base is never offered as the cabinet in this square.
+  void input.straightBaseCatalog;
 
   return candidates.sort((left, right) => (
     left.score - right.score
@@ -205,9 +188,9 @@ export function planCornerFirst(input: CornerFirstPlanInput): CornerFirstCandida
 }
 
 /**
- * The single corner plan the build uses: least waste, and a fitting blind corner beats a straight
- * base. Null means neither can close this corner, so the caller lists it for review instead of
- * substituting something.
+ * The single corner plan the build uses: least waste among fitting blind (or
+ * pulled) options. Null means no corner cabinet can close this square, so the
+ * caller lists it for review instead of substituting a straight base.
  */
 export function pickCornerFirst(input: CornerFirstPlanInput): CornerFirstCandidate | null {
   return planCornerFirst(input)[0] ?? null;

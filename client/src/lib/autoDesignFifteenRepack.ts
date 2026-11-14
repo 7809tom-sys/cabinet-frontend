@@ -21,6 +21,8 @@ import {
   dim,
   placedHeight,
   blocksFloorRun,
+  isWindowBelowCountertop,
+  WALL_OPENING_CLEARANCE_IN,
 } from "./design";
 import {
   type AutoDesignIntake,
@@ -192,9 +194,28 @@ function projectInward(
   return { alongLo, alongHi, inLo, inHi };
 }
 
-function openingAlong(o: WallOpening, frame: NonNullable<ReturnType<typeof wallRunFrame>>): { start: number; end: number } {
-  const a = frame.tangent.x + frame.tangent.y > 0 ? o.offset : frame.length - o.offset - o.width;
-  return { start: a, end: a + o.width };
+/**
+ * Opening span along a wall run, in the same inches-from-wall-start convention
+ * as `freeSegmentsOnWall` / `wallRunOffset` (`opening.offset`). Wall-cabinet
+ * calls pad 3 inches on each side; base-layer calls do not. Do not compare a
+ * window sill (elevation) to cabinet depth — that is how a 42" sill was treated
+ * as not blocking the upper layer.
+ */
+function openingRunSpan(
+  o: WallOpening,
+  frame: NonNullable<ReturnType<typeof wallRunFrame>>,
+  level: Level,
+): { start: number; end: number } | null {
+  if (o.kind === "window") {
+    if (level === "base" && !isWindowBelowCountertop(o)) return null;
+  } else if (!blocksFloorRun(o.kind)) {
+    return null;
+  }
+  const clearance = level === "wall" ? WALL_OPENING_CLEARANCE_IN : 0;
+  const start = Math.max(frame.runStart, o.offset - clearance);
+  const end = Math.min(frame.runEnd, o.offset + o.width + clearance);
+  if (end <= start + EPS) return null;
+  return { start, end };
 }
 
 function mostCommon<T>(values: T[]): T | null {
@@ -746,15 +767,9 @@ function buildBlocked(
   }
   for (const o of openings) {
     if (o.side !== side) continue;
-    if (level === "base") {
-      if (!blocksFloorRun(o.kind)) continue;
-    } else {
-      const sill = o.kind === "door" ? 0 : o.sill;
-      const top = sill + o.height;
-      if (!overlaps(sill, top, 0, depthLimit)) continue;
-    }
-    const iv = openingAlong(o, frame);
-    out.push({ start: Math.max(frame.runStart, iv.start), end: Math.min(frame.runEnd, iv.end) });
+    const iv = openingRunSpan(o, frame, level);
+    if (!iv) continue;
+    out.push({ start: iv.start, end: iv.end });
   }
   return mergeIntervals(out);
 }
@@ -787,6 +802,8 @@ export function repackFifteenRuleLayout(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
   openings: readonly WallOpening[];
+  /** Inside-corner squares that a straight base or upper must not fill. */
+  reservedSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
   intake: AutoDesignIntake;
   baseCatalog: readonly DesignCabinet[];
   wallCatalog: readonly DesignCabinet[];
@@ -945,7 +962,10 @@ export function repackFifteenRuleLayout(input: {
     // Build base blocks
     const baseBlocks = buildBaseBlocks(groups, frame, baseHeight, side, input.room);
     for (const b of extraBaseBlocks) baseBlocks.push(b);
-    const baseBlocked = buildBlocked(allItems, side, input.room, frame, input.openings, "base", 23.5);
+    const baseBlocked = mergeIntervals([
+      ...buildBlocked(allItems, side, input.room, frame, input.openings, "base", 23.5),
+      ...((input.reservedSpans ?? []).filter((span) => span.wallId === side).map((span) => ({ start: span.start, end: span.end }))),
+    ]);
 
     const panelRowBase = pickPanelRow(panelStock, baseHeight, 24);
     const panelInBase = panelRowBase ? PANEL_IN : 0;
@@ -1186,7 +1206,10 @@ export function repackFifteenRuleLayout(input: {
       }
       for (const b of extraUpperBlocks) upperBlocks.push(b);
 
-      const upperBlocked = buildBlocked(allItems, side, input.room, frame, input.openings, "wall", D - 0.5);
+      const upperBlocked = mergeIntervals([
+        ...buildBlocked(allItems, side, input.room, frame, input.openings, "wall", D - 0.5),
+        ...((input.reservedSpans ?? []).filter((span) => span.wallId === side).map((span) => ({ start: span.start, end: span.end }))),
+      ]);
 
       // Uppers only hang over base cabinets: block intervals with no base support
       const baseSupport: { start: number; end: number }[] = [];

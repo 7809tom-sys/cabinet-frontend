@@ -8,12 +8,14 @@ import {
 } from "./designerCornerSection";
 
 describe("isTrueBlindCornerCode", () => {
-  it("recognizes BBC, WBC, and BLIND codes only", () => {
+  it("recognizes BBC, WBC, BLB, BCB, and BLIND codes", () => {
     expect(isTrueBlindCornerCode("BBC36")).toBe(true);
     expect(isTrueBlindCornerCode("BBC-36")).toBe(true);
     expect(isTrueBlindCornerCode("WBC2742")).toBe(true);
     expect(isTrueBlindCornerCode("BBL42")).toBe(true);
     expect(isTrueBlindCornerCode("WBL30")).toBe(true);
+    expect(isTrueBlindCornerCode("BLB42")).toBe(true);
+    expect(isTrueBlindCornerCode("BCB42")).toBe(true);
     expect(isTrueBlindCornerCode("BC-BLIND-36")).toBe(true);
     expect(isTrueBlindCornerCode("LSB36")).toBe(false);
     expect(isTrueBlindCornerCode("DCB36")).toBe(false);

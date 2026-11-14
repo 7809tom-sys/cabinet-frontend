@@ -348,7 +348,7 @@ export function autoDesignCornerFamily(candidate: Pick<AutoBuildCornerCandidate,
   if (isPlainBaseCode(code)) return "other";
   if (candidate.cornerType === "diagonal" || candidate.cornerType === "pie-cut" || /^(?:DCB|DCW|WDC)/.test(code)) return "diagonal";
   if (candidate.cornerType === "lazy-susan" || candidate.cornerType === "easy-reach" || /^(?:LSB|LS|ERB|BER)/.test(code)) return "lazy-susan";
-  if (candidate.cornerType === "blind-corner" || /^(?:BBC|WBC|BBL|BBR)/.test(code)) return "blind";
+  if (candidate.cornerType === "blind-corner" || /^(?:BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB)/.test(code)) return "blind";
   return "other";
 }
 

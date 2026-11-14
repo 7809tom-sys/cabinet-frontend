@@ -74,6 +74,13 @@ import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQ
 import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
+import {
+  autoDesignInsideCornerReservations,
+  cornerReservationsOnWall,
+  decideAutoDesignCornerTypeOrder,
+  describeCornerTypeDecision,
+  subtractInsideCornerReservations,
+} from "./autoDesignCornerDecision";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
 import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "./framelessWallTopAlignment";
@@ -221,10 +228,12 @@ function absorbOpenBaseGaps(
   walls: readonly WallSide[],
   styleId: number | null,
   makeUid: () => string,
+  cornerReserved: ReadonlyArray<{ wallId: string; start: number; end: number }> = [],
 ): PlacedCabinet[] {
   let working = placed;
   for (const wallId of walls) {
-    const gaps = freeSegmentsOnWall(wallId, room, working, [], 3.05, 0, "base", false);
+    const rawGaps = freeSegmentsOnWall(wallId, room, working, [], 3.05, 0, "base", false);
+    const gaps = subtractInsideCornerReservations(rawGaps, cornerReservationsOnWall(wallId, cornerReserved), 3.05);
     for (const gap of gaps) {
       if (gap.length <= autoDesignFillerMaxIn() + 0.05 || gap.length > 9.05) continue;
       const edgeNeighbors = working.filter((item) => item.placement === "base" && !/filler|scribe/i.test(item.masterCode)
@@ -457,12 +466,14 @@ function resolveLeftoverOpenings(input: {
   styleId: number | null;
   makeUid: () => string;
   reviewFindings: DesignerReviewFinding[];
+  cornerReserved?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
 }): { placed: PlacedCabinet[]; notes: string[] } {
   let working = [...input.placed];
   const notes: string[] = [];
   for (const wallId of input.walls) {
     const reservations = refrigeratorLimitIn({ placed: working, room: input.room, wallId });
-    const gaps = freeSegmentsOnWall(wallId, input.room, working, [], autoDesignFillerMaxIn() + 0.05, 0, "base", false, undefined, STD.BASE_DEPTH);
+    const rawGaps = freeSegmentsOnWall(wallId, input.room, working, [], autoDesignFillerMaxIn() + 0.05, 0, "base", false, undefined, STD.BASE_DEPTH);
+    const gaps = subtractInsideCornerReservations(rawGaps, cornerReservationsOnWall(wallId, input.cornerReserved ?? []), autoDesignFillerMaxIn() + 0.05);
     for (const gap of gaps) {
       const gapStart = gap.start;
       const gapEnd = gap.start + gap.length;
@@ -1049,9 +1060,9 @@ export function runAutoDesignLayout(args: {
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
   const wantedCornerFamily = hasPreference(input.intake, "lazy-susan") ? "lazy-susan" : hasPreference(input.intake, "blind-corner") ? "blind" : null;
-  const preferredCornerOptions = wantedCornerFamily ? stage.cornerOptions.filter((option) => autoDesignCornerFamily(option) === wantedCornerFamily) : [];
-  const cornerOptionsForBuild = preferredCornerOptions.length > 0 ? preferredCornerOptions : stage.cornerOptions;
-  if (wantedCornerFamily && preferredCornerOptions.length === 0) notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the standard corner order was used.`);
+  if (wantedCornerFamily && !stage.cornerOptions.some((option) => autoDesignCornerFamily(option) === wantedCornerFamily)) {
+    notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the type is chosen from the appliances and the run math.`);
+  }
   for (const slot of stage.slots) {
     const firstWall = wallLabelToEngineWallId(slot.firstWall, room, input.originCorner, input.runDirection);
     const secondWall = wallLabelToEngineWallId(slot.secondWall, room, input.originCorner, input.runDirection);
@@ -1070,6 +1081,18 @@ export function runAutoDesignLayout(args: {
       notes.push(`${slot.label}: the refrigerator already occupies this corner. A corner cabinet is not seated on top of it.`);
       continue;
     }
+    const typeDecision = decideAutoDesignCornerTypeOrder({
+      room,
+      cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
+      corner: point,
+      placed: working,
+      options: stage.cornerOptions,
+      wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
+      preferLazySusan: wantedCornerFamily === "lazy-susan",
+      preferBlind: wantedCornerFamily === "blind",
+    });
+    notes.push(describeCornerTypeDecision(slot.label, typeDecision));
+    const cornerOptionsForBuild = stage.cornerOptions;
     const fit = evaluateAutoDesignCornerFit({
       options: cornerOptionsForBuild,
       room,
@@ -1080,30 +1103,28 @@ export function runAutoDesignLayout(args: {
       openings: stageOpenings,
     });
     if (fit.fallbackNote) notes.push(fit.fallbackNote);
-    // Rule 2: plan the corner against the anchors before any other cabinet on these runs.
-    // Blind corner (at its pull and pulled further), straight base, and the 3" wiggle are costed
-    // by dead corner inches; the least waste wins and a fitting blind corner beats a straight base.
-    const cornerPlan = pickCornerFirst({
-      cornerOptions: stage.pool.filter((row) => cornerOptionsForBuild.some((option) => option.id === row.id)),
-      straightBaseCatalog: stage.straightBaseCatalog,
-      room,
-      cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
-      corner: point,
-      placed: working,
-      wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
-    });
+    // Rule 2: plan a fitting blind (and its pull) against the anchors. A straight
+    // base is never a corner plan; the type comes from the appliances and the math.
+    const cornerPlan = typeDecision.order[0] === "blind" || typeDecision.order.includes("blind")
+      ? pickCornerFirst({
+        cornerOptions: stage.pool.filter((row) => cornerOptionsForBuild.some((option) => option.id === row.id && autoDesignCornerFamily(option) === "blind")),
+        room,
+        cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
+        corner: point,
+        placed: working,
+        wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
+      })
+      : null;
     if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
-    // A blind corner the planner chose overrides the generic widest-first order.
-    const plannedBlind = wantedCornerFamily === "lazy-susan"
-      ? null
-      : cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
-        ? cornerOptionsForBuild.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
-        : null;
+    const plannedBlind = typeDecision.order[0] === "blind" && cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
+      ? cornerOptionsForBuild.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
+      : null;
     const seated = seatAutoDesignCornerFromCatalog({
       slot,
       options: cornerOptionsForBuild,
       pool: stage.pool,
       preferred: plannedBlind,
+      familyOrder: typeDecision.order,
       target: point,
       cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
       working,
@@ -1286,6 +1307,9 @@ export function runAutoDesignLayout(args: {
     const seatText = fit.seat === "end" ? " at the end of the run" : fit.seat === "start" ? " at the start of the run" : "";
     notes.push(`${product.masterCode} placed as a ${product.widthIn}″ × ${product.heightIn}″ tall cabinet${seatText}.`);
   }
+  // Reserve every inside-corner square of the cabineted runs before the base
+  // fill (and every later leftover / "use every inch" / intake-repack pass).
+  const cornerReserved = autoDesignInsideCornerReservations(room, runWalls);
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
@@ -1293,6 +1317,7 @@ export function runAutoDesignLayout(args: {
     const reservations = [
       ...(reservation?.wall === wallId ? [{ start: reservation.start, end: reservation.end }] : []),
       ...(peninsulaHold ? [{ start: peninsulaHold.reserveStart, end: peninsulaHold.reserveEnd }] : []),
+      ...cornerReservationsOnWall(wallId, cornerReserved),
     ];
     for (const segment of subtractAnchorRunReservations(rawSegments, reservations)) {
       const beside = (edge: "start" | "end") => working.some((other) => other.placement === "appliance"
@@ -1416,7 +1441,7 @@ export function runAutoDesignLayout(args: {
       }
     }
   }
-  working = absorbOpenBaseGaps(working, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
+  working = absorbOpenBaseGaps(working, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid, cornerReserved);
   // Owner rule: a real base cabinet stands on EACH side of the range, and the
   // range is wiggled along its own wall (by the 1/8" difference) so both sides
   // land on a stock width. A side that is already a stock width needs no move.
@@ -1538,7 +1563,7 @@ export function runAutoDesignLayout(args: {
     styleId: args.styleId, corners: upperCorners.map((entry) => entry.point),
     preserveHeavyCookLandings: heavyCook, maxFillerIn: autoDesignFillerMaxIn(),
   });
-  working = absorbOpenBaseGaps(seamResult.placed, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid);
+  working = absorbOpenBaseGaps(seamResult.placed, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid, cornerReserved);
   notes.push(...seamResult.notes, ...separated.flags);
   // Rule 3: a 9–12 inch hole beside the range is closed with a REAL cabinet — the adjoining
   // cabinet grows to a wider SKU of the same family, or a real narrow cabinet plus a small filler
@@ -1551,6 +1576,7 @@ export function runAutoDesignLayout(args: {
     styleId: args.styleId,
     makeUid,
     reviewFindings,
+    cornerReserved,
   });
   working = leftover.placed;
   notes.push(...leftover.notes);
@@ -1623,6 +1649,7 @@ export function runAutoDesignLayout(args: {
     styleId: args.styleId,
     makeUid,
     wallHeightIn: wallDesignHeight,
+    reservedSpans: cornerReserved,
   });
   working = stockClosed.placed;
   notes.push(...stockClosed.notes);
@@ -1740,6 +1767,7 @@ export function runAutoDesignLayout(args: {
       placed: working,
       room,
       openings: stageOpenings,
+      reservedSpans: cornerReserved,
       intake: input.intake,
       baseCatalog: args.baseCatalog,
       wallCatalog: args.wallCatalog,
