@@ -35,7 +35,10 @@ describe("a faucet is placed on every build path", () => {
   });
 
   it("feeds the faucet catalog into the engine build", () => {
-    expect(designTool).toContain("faucetCatalog: autoDesignFaucetProducts");
+    // 15-rule spec, rule 1: a faucet picked in the designer-open pop-up is the one fed in;
+    // otherwise the full faucet catalog is.
+    expect(designTool).toContain("faucetCatalog: (() => {");
+    expect(designTool).toContain("return picked ? [picked] : autoDesignFaucetProductsRef.current;");
   });
 
   it("runs as its own pass in the Designer, after build and on load", () => {

@@ -226,6 +226,10 @@ afterEach(() => {
 describe("canvas-only Esc handling", () => {
   it("publishes the flag on the toggle and takes it back only for an Esc that is ours", { timeout: 120_000 }, async () => {
     await renderDesigner();
+    // The faucet & sink pop-up opens with a kitchen (15-rule spec, rule 1). It owns Esc while
+    // it is open, so close it the way a customer would before testing canvas-only Esc.
+    const skipFixturePick = screen.queryByTestId("fixture-pick-skip");
+    if (skipFixturePick) fireEvent.click(skipFixturePick);
     expect(canvasOnlyPublished()).toBe(false);
     expect(screen.queryByTestId("designer-toolbar")).toBeTruthy();
 

@@ -428,7 +428,8 @@ describe("AutoDesignDialog keeps the four measured appliance anchor rows", () =>
       ["Dishwasher — Optional exact dishwasher center", "Dishwasher — place on wall when using an exact center"],
       ["Refrigerator", "Refrigerator — place on wall"],
     ] as const) {
-      expect(screen.getByText(label)).toBeTruthy();
+      // "Sink base" also names the intake utility question (15-rule spec, rule 2).
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
       expect(screen.getByLabelText(wallPicker)).toBeTruthy();
       expect(screen.getByLabelText(`${label} center from selected wall start in inches`)).toBeTruthy();
     }
