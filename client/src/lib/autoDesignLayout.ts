@@ -70,6 +70,7 @@ import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeig
 import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
 import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
 import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
+import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
@@ -142,6 +143,8 @@ export type AutoDesignLayoutSuccess = {
   notes: string[];
   warnings: string[];
   wiggleMoves: AutoDesignWiggleMove[];
+  /** 15-rule pass moves (range/sink shifted for the 15" fridge minimum or the 3" wiggle). */
+  fifteenRepackMoves?: { uid: string; kind: string; wallId: string; deltaAlongIn: number }[];
   applianceMoves: { label: string; shiftIn: number; centerAlongIn: number }[];
   skippedUppers: string[];
   cornerSlots: AutoDesignCornerSlot[];
@@ -1111,6 +1114,7 @@ export function runAutoDesignLayout(args: {
       makeUid,
       styleId: args.styleId,
       excludedWallIds,
+      allowPlaceholderFiller: Boolean(input.intake),
     });
     if (cornerPlan && cornerFirstWasPulled(cornerPlan) && !seated.ok) {
       notes.push(`${slot.label}: ${cornerPlan.source.masterCode} could not be pulled to fill the leg, so the standard corner order was used.`);
@@ -1151,6 +1155,7 @@ export function runAutoDesignLayout(args: {
     catalogFillers,
     makeUid,
     styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
   });
   working = sealedBlindFillers.placed;
   notes.push(...sealedBlindFillers.notes);
@@ -1594,6 +1599,7 @@ export function runAutoDesignLayout(args: {
     catalogFillers,
     makeUid,
     styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
   });
   working = finalBlindFillers.placed;
   notes.push(...finalBlindFillers.notes.filter((note) => !notes.includes(note)));
@@ -1712,8 +1718,55 @@ export function runAutoDesignLayout(args: {
   // base run is removed. Filler inside the run (and beside a window or corner) stays.
   const endTrim = trimWallFillersOutsideRun({ placed: working, room });
   working = endTrim.placed;
+  // 15-rule pass (Tom, Nov 13): 15" fridge minimums, 3" wiggle, every opening
+  // re-tiled with stock cabinets bigger-first, fillers last, end panels on
+  // exposed sides. Runs only for builds that answered the upfront intake.
+  const fifteenRepackMoves: { uid: string; kind: string; wallId: string; deltaAlongIn: number }[] = [];
+  if (input.intake) {
+    const repack = repackFifteenRuleLayout({
+      placed: working,
+      room,
+      openings: stageOpenings,
+      intake: input.intake,
+      baseCatalog: args.baseCatalog,
+      wallCatalog: args.wallCatalog,
+      fillerCatalog: args.fillers,
+      panelCatalog: [...(args.panelCatalog ?? []), ...args.fillers, ...args.refrigeratorEndPanels],
+      styleId: args.styleId,
+      makeUid,
+    });
+    working = repack.placed;
+    // Earlier passes' notes about openings, fillers and short neighbors described the run before it
+    // was re-planned; the repack names whatever is still open or filled.
+    const staleNote = /opening on the .* wall is wider than|No source-priced filler is sold for the|The run beside the range is only|still have .* between them after the 3" shift|became W\d+ to close a|slid .* to open a real cabinet on|filled a .* opening on|filled the opening on/;
+    for (let i = notes.length - 1; i >= 0; i--) {
+      if (staleNote.test(notes[i]!)) notes.splice(i, 1);
+    }
+    const keptCodes = new Set(working.map((item) => item.masterCode));
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const raised = /^(\S+) was raised to meet the frameless/.exec(notes[i]!);
+      if (raised && !keptCodes.has(raised[1]!)) notes.splice(i, 1);
+    }
+    notes.push(...repack.notes);
+    fifteenRepackMoves.push(...repack.moves);
+    // The openings and dead corners named before this pass were re-planned; keep only what is still true.
+    const stale = new Set(["leftover-real-cabinets-first", "real-cabinets-before-filler"]);
+    for (let i = reviewFindings.length - 1; i >= 0; i--) {
+      if (stale.has(reviewFindings[i]!.ruleId)) reviewFindings.splice(i, 1);
+    }
+    // A sink the repack gave a counter landing is no longer jammed against the tall unit. With the
+    // intake, 15" is the hard minimum and 18" only preferred (rule 13 already notes under-18 as info).
+    const stillShort = new Set(sinkLandingGaps(working, room, Math.min(15, sinkTallLandingIn())).map((gap) => gap.sinkUid));
+    for (let i = reviewFindings.length - 1; i >= 0; i--) {
+      const finding = reviewFindings[i]!;
+      if (finding.ruleId === "sink-landing-before-tall" && finding.cabinetUid && !stillShort.has(finding.cabinetUid)) {
+        reviewFindings.splice(i, 1);
+      }
+    }
+    reviewFindings.push(...repack.findings);
+  }
   // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
-  const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls });
+  const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls, wallEndsCovered: Boolean(input.intake) });
   reviewFindings.push(...exposedPanelFindings(panelRequirements, new Set()));
   // Rule 8: the design-question door spec applies to every cabinet.
   const doorSpec: DesignQuestionDoorSpec | null = stage.input.designQuestionDoorStyleId == null
@@ -1854,6 +1907,7 @@ export function runAutoDesignLayout(args: {
     catalogFillers,
     makeUid,
     styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
   });
   working = finalBlindSeal.placed;
   notes.push(...finalBlindSeal.notes.filter((note) => !notes.includes(note)));
@@ -1881,6 +1935,7 @@ export function runAutoDesignLayout(args: {
     notes,
     warnings,
     wiggleMoves: reportedWiggleMoves,
+    fifteenRepackMoves,
     applianceMoves,
     skippedUppers: upperResult.skipped,
     cornerSlots: stage.slots,

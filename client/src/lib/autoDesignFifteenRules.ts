@@ -13,6 +13,7 @@ import {
   isSinkBaseCabinet,
   isRefrigerator,
   isRangeOrOven,
+  isPanelItem,
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
@@ -504,6 +505,7 @@ export function smallerFirstViolations(
     if (c.placement !== "base") continue;
     if (isSinkBaseCabinet(c)) continue;
     if (isFillerCabinet(c)) continue;
+    if (isPanelItem(c)) continue;
     if (isCornerBaseCode(c.masterCode)) continue;
     const wallId = c.wallId ?? null;
     if (!isWallSide(wallId)) continue;
@@ -534,6 +536,9 @@ export function smallerFirstViolations(
     for (let i = 0; i < list.length - 1; i++) {
       const a = list[i];
       const b = list[i + 1];
+      // Only physically touching cabinets count: two small cabinets split by a sink base or an
+      // appliance could not have been one bigger cabinet.
+      if (b.start - (a.start + a.width) > 0.1) continue;
       if (a.width < 18 && b.width < 18 && a.width + b.width <= 36) {
         flagged = true;
         break;

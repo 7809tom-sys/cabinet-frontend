@@ -21,8 +21,14 @@ import {
 import { installedFillerVerticalSpec, removePlacedCabinetGroup } from "./smallGapFiller";
 
 export type RequiredBlindCornerFillerResult =
-  | { ok: true; filler: PlacedCabinet }
+  | { ok: true; filler: PlacedCabinet; placeholder?: boolean }
   | { ok: false; reason: "not-blind" | "missing-catalog-filler" | "invalid-corner" };
+
+export const PLACEHOLDER_BLIND_FILLER_NOTE = "Line sells no filler SKU: unpriced 3\" placeholder, order a 3\" filler";
+
+export function isPlaceholderBlindCornerFiller(item: Pick<PlacedCabinet, "cabinetId" | "masterCode" | "fieldModificationNote">): boolean {
+  return item.cabinetId === 0 && /^FILL-/i.test(item.masterCode) && item.fieldModificationNote === PLACEHOLDER_BLIND_FILLER_NOTE;
+}
 
 function finite(value: unknown, fallback: number): number {
   const parsed = Number(value);
@@ -195,12 +201,38 @@ export function removePlacedCabinetWithRequiredBlindCornerFiller(
  * without its filler — or was earlier misread as not blind and therefore seated
  * later as a BBC without the companion filler — still gets that 3" piece.
  */
+export function buildRequiredBlindCornerFillerOrPlaceholder(
+  blind: PlacedCabinet,
+  room: RoomData,
+  candidates: readonly CatalogFillerCandidate[],
+  makeUid: () => string,
+  styleId: number | null,
+): RequiredBlindCornerFillerResult & { placeholder?: boolean } {
+  const required = buildRequiredBlindCornerFiller(blind, room, candidates, makeUid, styleId);
+  if (required.ok || required.reason !== "missing-catalog-filler" || !isBaseBlindCorner(blind)) {
+    return required;
+  }
+  const layout = blindCornerAutoFiller(blind, room, makeUid);
+  if (!layout.filler) return required;
+  return {
+    ok: true,
+    filler: {
+      ...layout.filler,
+      styleId,
+      fillerForCabinetUid: blind.uid,
+      fieldModificationNote: PLACEHOLDER_BLIND_FILLER_NOTE,
+    },
+    placeholder: true,
+  };
+}
+
 export function ensureRequiredBlindCornerBaseFillers(input: {
   placed: PlacedCabinet[];
   room: RoomData;
   catalogFillers: readonly CatalogFillerCandidate[];
   makeUid: () => string;
   styleId: number | null;
+  allowPlaceholder?: boolean;
 }): { placed: PlacedCabinet[]; added: PlacedCabinet[]; notes: string[] } {
   let working = [...input.placed];
   const added: PlacedCabinet[] = [];
@@ -211,13 +243,21 @@ export function ensureRequiredBlindCornerBaseFillers(input: {
     if (working.some((item) => item.fillerPieceGroupId === groupId || (item.fillerForCabinetUid === cabinet.uid && isFillerItem(item)))) {
       continue;
     }
-    const required = buildRequiredBlindCornerFiller(
-      cabinet,
-      input.room,
-      input.catalogFillers,
-      input.makeUid,
-      cabinet.styleId ?? input.styleId,
-    );
+    const required = input.allowPlaceholder
+      ? buildRequiredBlindCornerFillerOrPlaceholder(
+          cabinet,
+          input.room,
+          input.catalogFillers,
+          input.makeUid,
+          cabinet.styleId ?? input.styleId,
+        )
+      : buildRequiredBlindCornerFiller(
+          cabinet,
+          input.room,
+          input.catalogFillers,
+          input.makeUid,
+          cabinet.styleId ?? input.styleId,
+        );
     if (!required.ok) {
       notes.push(
         required.reason === "missing-catalog-filler"
@@ -233,6 +273,9 @@ export function ensureRequiredBlindCornerBaseFillers(input: {
     }
     working = accepted.placed;
     added.push(required.filler);
+    if (required.placeholder) {
+      notes.push(`${cabinet.masterCode}: ${PLACEHOLDER_BLIND_FILLER_NOTE}.`);
+    }
   }
   return { placed: working, added, notes };
 }

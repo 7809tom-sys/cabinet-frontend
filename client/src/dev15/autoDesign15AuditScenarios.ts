@@ -128,6 +128,7 @@ export function runAuditScenario(scenario: AuditScenario): AuditResult {
     appliancePalette: PALETTE,
     refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(pack.wall, pack.surround?.deepAbove ?? []),
     refrigeratorEndPanels: pack.surround?.endPanels ?? [],
+    panelCatalog: [...pack.accessory, ...(pack.surround?.endPanels ?? []), ...((pack.surround as { smoothPanels?: DesignCabinet[] } | undefined)?.smoothPanels ?? [])],
     styleId: Number(scenario.styleId),
     makeUid: () => `a-${++uid}`,
   });
@@ -150,6 +151,6 @@ export function runAuditScenario(scenario: AuditScenario): AuditResult {
     fridgeWidth: run.placed.find((item) => /^FRIDGE-/.test(item.masterCode))?.width ?? null,
     corners: run.seatedCorners.map((corner) => `${corner.label}: ${corner.masterCode} (${corner.family})`),
     peninsula: run.peninsula != null,
-    wiggleMoves: run.wiggleMoves.map((move) => ({ kind: move.kind, deltaAlongIn: move.deltaAlongIn })),
+    wiggleMoves: [...run.wiggleMoves.map((move) => ({ kind: move.kind, deltaAlongIn: move.deltaAlongIn })), ...(run.fifteenRepackMoves ?? []).map((move) => ({ kind: move.kind, deltaAlongIn: move.deltaAlongIn }))],
   };
 }
