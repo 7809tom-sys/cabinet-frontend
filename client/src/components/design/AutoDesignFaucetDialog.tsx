@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatPrice } from "@/lib/pelican";
@@ -15,6 +15,8 @@ type Props = {
   products: readonly AutoDesignFaucetProduct[];
   loading: boolean;
   catalogUnavailable: boolean;
+  /** The faucet the customer picked in the designer-open pop-up (rule 1); offered first. */
+  preferredProductId?: number | null;
   onKeepDefault: () => void;
   onChoose: (product: AutoDesignFaucetProduct, applyToAll: boolean) => void;
 };
@@ -26,11 +28,18 @@ export function AutoDesignFaucetDialog({
   products,
   loading,
   catalogUnavailable,
+  preferredProductId,
   onKeepDefault,
   onChoose,
 }: Props) {
   const [brand, setBrand] = useState("All");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open || preferredProductId == null) return;
+    if (products.some((product) => product.id === preferredProductId)) {
+      setSelectedId(preferredProductId);
+    }
+  }, [open, preferredProductId, products]);
   const groups = useMemo(() => groupFaucetsByBrand(products), [products]);
   const brands = groups.map((group) => group.brand);
   const visible = brand === "All" ? groups : groups.filter((group) => group.brand === brand);

@@ -1,4 +1,8 @@
-import { buildRequiredBlindCornerFiller, requiresConfiguredBlindCornerFiller } from "./blindCornerRequiredFiller";
+import {
+  buildRequiredBlindCornerFiller,
+  buildRequiredBlindCornerFillerOrPlaceholder,
+  requiresConfiguredBlindCornerFiller,
+} from "./blindCornerRequiredFiller";
 import { measuredRefrigeratorCornerShiftLimitIn, refrigeratorShiftLimitIn } from "./designerLayoutRules";
 import type { CatalogFillerCandidate } from "./catalogFiller";
 import {
@@ -157,6 +161,11 @@ export function seatAutoDesignCorner(input: {
    * the plan when Auto-Design started. The corner is designed around it.
    */
   immovableApplianceUids?: readonly string[];
+  /**
+   * Tom Nov 13: seat a BBC even when the line sells no filler SKU, with the
+   * flagged unpriced FILL-3 placeholder.
+   */
+  allowPlaceholderFiller?: boolean;
 }): AutoDesignCornerSeatResult {
   const { source, slotLabel, target, room, openings } = input;
   const code = source.masterCode;
@@ -210,7 +219,9 @@ export function seatAutoDesignCorner(input: {
     }
     let placed = committed.placed;
     if (requiresConfiguredBlindCornerFiller(corner)) {
-      const required = buildRequiredBlindCornerFiller(corner, room, input.catalogFillers, input.makeUid, corner.styleId ?? null);
+      const required = input.allowPlaceholderFiller
+        ? buildRequiredBlindCornerFillerOrPlaceholder(corner, room, input.catalogFillers, input.makeUid, corner.styleId ?? null)
+        : buildRequiredBlindCornerFiller(corner, room, input.catalogFillers, input.makeUid, corner.styleId ?? null);
       if (!required.ok) {
         return { ok: false, message: required.reason === "missing-catalog-filler"
           ? `${code} requires its configured ${formatInches(BLIND_CORNER_FILLER_WIDTH_IN)} filler, which is unavailable in this cabinet line.`

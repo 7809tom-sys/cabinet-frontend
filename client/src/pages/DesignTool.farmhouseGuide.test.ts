@@ -23,6 +23,7 @@ import {
   isAutoFilledFaucet,
 } from "@/lib/autoDesignFaucet";
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
+import { farmhouseSinkApronPastCarcassIn } from "@/lib/farmhouseSinkBaseFace";
 import {
   faucetCartQuantities,
   faucetRowFitsBase,
@@ -111,7 +112,8 @@ describe("a farmhouse sink base takes the regular sink-base path", () => {
     expect(placed.sink.type).toBe("farmhouse");
     expect(placed.sink.apronFront).toBe(true);
     // The apron sits flush with the room-facing cabinet front.
-    expect(placed.sink.y + placed.sink.depth).toBeCloseTo(FSB.depth, 6);
+    // Rule 6 (Nov 13 2026): the apron sits 0.5" past the door face, which is 0.63" past the box.
+    expect(placed.sink.y + placed.sink.depth).toBeCloseTo(FSB.depth + farmhouseSinkApronPastCarcassIn(), 6);
   });
 
   it("shows the same option set as a regular sink base", () => {

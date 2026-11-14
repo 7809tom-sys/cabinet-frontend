@@ -153,6 +153,8 @@ export function planRealCabinetFixes(input: {
     // A seated corner cabinet keeps its own footprint and its corner seat. Only
     // a run cabinet may grow, and only into a wider row of its own family.
     if (isPlacedCornerCabinet(neighbor)) continue;
+    // Rule 7 (Nov 13 2026 spec): the sink base size is the customer's call. Never grow or swap it automatically.
+    if (/sink/i.test(`${neighbor.description ?? ""} ${neighbor.subCategory ?? ""}`) || /^(?:L|F)?SB\d/i.test(neighbor.masterCode ?? "")) continue;
     const targetWidth = Math.round((Number(neighbor.width) + input.gapIn) * 8) / 8;
     const family = /^([A-Z]+)/i.exec(neighbor.masterCode ?? "")?.[1]?.toUpperCase();
     const wider = family

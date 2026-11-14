@@ -12,6 +12,7 @@ import {
   autoDesignWallNameByEngineId,
   wallLabelToEngineWallId,
   type AutoDesignInputs,
+  type WallLabel,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { ensureRequiredBlindCornerBaseFillers } from "./blindCornerRequiredFiller";
@@ -36,6 +37,7 @@ import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFiller
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
+import { fifteenRuleFindings, hasPreference, lockedAnchorKinds, wallFitSuggestion, type WallFitAnchor } from "./autoDesignFifteenRules";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
@@ -70,6 +72,7 @@ import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeig
 import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
 import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
 import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
+import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
 import { refrigeratorLimitIn } from "./autoDesignAnchors";
@@ -142,6 +145,8 @@ export type AutoDesignLayoutSuccess = {
   notes: string[];
   warnings: string[];
   wiggleMoves: AutoDesignWiggleMove[];
+  /** 15-rule pass moves (range/sink shifted for the 15" fridge minimum or the 3" wiggle). */
+  fifteenRepackMoves?: { uid: string; kind: string; wallId: string; deltaAlongIn: number }[];
   applianceMoves: { label: string; shiftIn: number; centerAlongIn: number }[];
   skippedUppers: string[];
   cornerSlots: AutoDesignCornerSlot[];
@@ -373,6 +378,7 @@ function slideSinkForLanding(input: {
   room: RoomData;
   notes: string[];
   reviewFindings: DesignerReviewFinding[];
+  lockedUids?: readonly string[];
 }): { placed: PlacedCabinet[] } {
   let working = [...input.placed];
   const landingIn = sinkTallLandingIn();
@@ -382,6 +388,18 @@ function slideSinkForLanding(input: {
     const gap = gaps[0]!;
     const sink = working.find((item) => item.uid === gap.sinkUid);
     if (!sink) break;
+    if (input.lockedUids?.includes(sink.uid)) {
+      input.reviewFindings.push({
+        ruleId: "auto-design-rule-2",
+        code: "sink-locked-no-slide",
+        severity: "info",
+        title: `${gap.sinkCode} stays put`,
+        detail: "The customer said the sink base cannot move, so it was not slid for a counter landing.",
+        cabinetUid: sink.uid,
+        cabinetCode: sink.masterCode,
+      });
+      break;
+    }
     const slides = planSinkLandingSlides({ sink, placed: working, room: input.room, landingIn });
     const slide = slides[0];
     if (!slide) {
@@ -467,6 +485,9 @@ function resolveLeftoverOpenings(input: {
       if (resolution.kind === "widen-neighbor") {
         // Never resize a corner cabinet into a wider straight base here either.
         if (isPlacedCornerCabinet(resolution.neighbor)) continue;
+        // Rule 7 (Nov 13 2026 spec): never grow or swap the sink base on its own; its size is a suggestion for the customer.
+        const neighborIsSinkBase = /sink/i.test(`${resolution.neighbor.description ?? ""} ${resolution.neighbor.subCategory ?? ""}`) || /^(?:L|F)?SB\d/i.test(resolution.neighbor.masterCode ?? "");
+        if (neighborIsSinkBase) continue;
         const depth = footprintDepth(resolution.replacement);
         const spot = boundedWallPlacementAt(resolution.startIn, resolution.widthIn, depth, wallId, input.room);
         if (!spot) continue;
@@ -648,6 +669,19 @@ function nextFittingBaseAlong(input: {
  * base runs, hood, then wall cabinets. Galley fills Wall 1 and Wall 3 and
  * never receives a corner slot.
  */
+function autoDesignWallFitSuggestion(input: AutoDesignInputs, room: RoomData, baseCatalog: readonly DesignCabinet[]): string | null {
+  const anchors: WallFitAnchor[] = [];
+  if (input.refrigerator) anchors.push({ wallLabel: input.refrigerator.wallLabel, kind: "refrigerator", widthIn: input.refrigeratorWidthIn ?? 36 });
+  anchors.push({ wallLabel: input.sink.wallLabel, kind: "sink", widthIn: input.sinkBaseWidthIn ?? 36 });
+  const noDishwasher = input.skipDishwasher || input.dishwasherSide === "none";
+  if (!noDishwasher) anchors.push({ wallLabel: input.dishwasher?.wallLabel ?? input.sink.wallLabel, kind: "dishwasher", widthIn: 24 });
+  if (input.stove) anchors.push({ wallLabel: input.stove.wallLabel, kind: "stove", widthIn: 30 });
+  return wallFitSuggestion({
+    anchors,
+    wallLengthOf: (label) => wallLabelToEngineWallId(label, room, input.originCorner, input.runDirection)?.frame.length ?? null,
+    baseCatalog,
+  });
+}
 export function runAutoDesignLayout(args: {
   input: AutoDesignInputs;
   room: RoomData;
@@ -692,9 +726,14 @@ export function runAutoDesignLayout(args: {
 }): AutoDesignLayoutResult {
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
-  const fail = (message: string): AutoDesignLayoutResult => ({ ok: false, message });
+  const fail = (message: string): AutoDesignLayoutResult => {
+    // Rules 7, 8, 14: when the asked-for appliances cannot fit, say what would help. Suggestions only.
+    const suggestion = input.intake ? autoDesignWallFitSuggestion(input, room, args.baseCatalog) : null;
+    return { ok: false, message: suggestion ? `${message} ${suggestion}` : message };
+  };
   const plan = planAutoDesignAutoBuild(input);
   if (!plan.ok) return fail(`Missing required measurement: ${plan.missing.join(", ")}.`);
+  const peninsulaRequest = args.peninsula ?? (input.intake?.islandOrPeninsula === "peninsula" && input.intake.peninsulaSide ? { side: input.intake.peninsulaSide } : null);
   const pool = args.baseCatalog;
   const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
   const drawerBaseCatalog = autoBuildDrawerBaseCatalog(pool);
@@ -1000,8 +1039,19 @@ export function runAutoDesignLayout(args: {
   const applianceMoves: AutoDesignLayoutSuccess["applianceMoves"] = [];
   const seatedCorners: AutoDesignSeatedCorner[] = [];
   const anchoredUids = anchoredRefrigerator ? [anchoredRefrigerator.uid] : [];
+  const lockedKinds = lockedAnchorKinds(input.intake);
+  const lockedUids = lockedKinds.flatMap((kind) => {
+    const anchor = anchorsByKind.get(kind);
+    return anchor ? [anchor.uid] : [];
+  });
+  const fixedAnchorUids = Array.from(new Set([...anchoredUids, ...lockedUids]));
+  if (lockedKinds.length > 0) notes.push(`Utilities that cannot move stay at their measured spot (no 3″ wiggle): ${lockedKinds.join(", ")}.`);
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
+  const wantedCornerFamily = hasPreference(input.intake, "lazy-susan") ? "lazy-susan" : hasPreference(input.intake, "blind-corner") ? "blind" : null;
+  const preferredCornerOptions = wantedCornerFamily ? stage.cornerOptions.filter((option) => autoDesignCornerFamily(option) === wantedCornerFamily) : [];
+  const cornerOptionsForBuild = preferredCornerOptions.length > 0 ? preferredCornerOptions : stage.cornerOptions;
+  if (wantedCornerFamily && preferredCornerOptions.length === 0) notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the standard corner order was used.`);
   for (const slot of stage.slots) {
     const firstWall = wallLabelToEngineWallId(slot.firstWall, room, input.originCorner, input.runDirection);
     const secondWall = wallLabelToEngineWallId(slot.secondWall, room, input.originCorner, input.runDirection);
@@ -1021,7 +1071,7 @@ export function runAutoDesignLayout(args: {
       continue;
     }
     const fit = evaluateAutoDesignCornerFit({
-      options: stage.cornerOptions,
+      options: cornerOptionsForBuild,
       room,
       placed: working,
       corner: point,
@@ -1034,7 +1084,7 @@ export function runAutoDesignLayout(args: {
     // Blind corner (at its pull and pulled further), straight base, and the 3" wiggle are costed
     // by dead corner inches; the least waste wins and a fitting blind corner beats a straight base.
     const cornerPlan = pickCornerFirst({
-      cornerOptions: stage.pool.filter((row) => stage.cornerOptions.some((option) => option.id === row.id)),
+      cornerOptions: stage.pool.filter((row) => cornerOptionsForBuild.some((option) => option.id === row.id)),
       straightBaseCatalog: stage.straightBaseCatalog,
       room,
       cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
@@ -1044,12 +1094,14 @@ export function runAutoDesignLayout(args: {
     });
     if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
     // A blind corner the planner chose overrides the generic widest-first order.
-    const plannedBlind = cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
-      ? stage.cornerOptions.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
-      : null;
+    const plannedBlind = wantedCornerFamily === "lazy-susan"
+      ? null
+      : cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
+        ? cornerOptionsForBuild.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
+        : null;
     const seated = seatAutoDesignCornerFromCatalog({
       slot,
-      options: stage.cornerOptions,
+      options: cornerOptionsForBuild,
       pool: stage.pool,
       preferred: plannedBlind,
       target: point,
@@ -1064,6 +1116,7 @@ export function runAutoDesignLayout(args: {
       makeUid,
       styleId: args.styleId,
       excludedWallIds,
+      allowPlaceholderFiller: Boolean(input.intake),
     });
     if (cornerPlan && cornerFirstWasPulled(cornerPlan) && !seated.ok) {
       notes.push(`${slot.label}: ${cornerPlan.source.masterCode} could not be pulled to fill the leg, so the standard corner order was used.`);
@@ -1104,6 +1157,7 @@ export function runAutoDesignLayout(args: {
     catalogFillers,
     makeUid,
     styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
   });
   working = sealedBlindFillers.placed;
   notes.push(...sealedBlindFillers.notes);
@@ -1138,7 +1192,7 @@ export function runAutoDesignLayout(args: {
     catalog: stage.straightBaseCatalog,
     origins: stage.anchorOrigins,
     lockedUids: [],
-    fixedUids: anchoredUids,
+    fixedUids: fixedAnchorUids,
   });
   working = wiggle.placed;
   const separated = separateRangeAndRefrigerator({
@@ -1155,7 +1209,7 @@ export function runAutoDesignLayout(args: {
   }
   const usage = normalizeKitchenUsage(stage.input.kitchenUsage);
   const heavyCook = cooksALot(usage);
-  const preferDrawers = heavyCook || bakesALot(usage);
+  const preferDrawers = heavyCook || bakesALot(usage) || hasPreference(stage.input.intake, "lots-of-drawers");
   // Tall oven / pantry cabinets are picked in the tall pop-up and never dropped
   // into a run unasked. They are seated as run anchors BEFORE the base runs tile
   // the walls, so a pantry reserves its span the same way a measured appliance
@@ -1231,7 +1285,7 @@ export function runAutoDesignLayout(args: {
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
-    const peninsulaHold = args.peninsula && wallId === "bottom" ? autoDesignPeninsulaAttachment(room, args.peninsula.side) : null;
+    const peninsulaHold = peninsulaRequest && wallId === "bottom" ? autoDesignPeninsulaAttachment(room, peninsulaRequest.side) : null;
     const reservations = [
       ...(reservation?.wall === wallId ? [{ start: reservation.start, end: reservation.end }] : []),
       ...(peninsulaHold ? [{ start: peninsulaHold.reserveStart, end: peninsulaHold.reserveEnd }] : []),
@@ -1500,7 +1554,7 @@ export function runAutoDesignLayout(args: {
   // refrigerator. The base runs and the tall picks are both down, so a slide that
   // opens the landing is known exactly. The sink base slides (within its own
   // anchor cap); nothing else moves. A sink that still has no landing is named.
-  const landingFix = slideSinkForLanding({ placed: working, room, notes, reviewFindings });
+  const landingFix = slideSinkForLanding({ placed: working, room, notes, reviewFindings, lockedUids });
   working = landingFix.placed;
   // HARD RULE (owner, Nov 5 2026): a real bridge wall cabinet is placed above the
   // range on EVERY build, and it goes in BEFORE the upper run tiles. Seating it
@@ -1547,6 +1601,7 @@ export function runAutoDesignLayout(args: {
     catalogFillers,
     makeUid,
     styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
   });
   working = finalBlindFillers.placed;
   notes.push(...finalBlindFillers.notes.filter((note) => !notes.includes(note)));
@@ -1672,8 +1727,63 @@ export function runAutoDesignLayout(args: {
   // base run is removed. Filler inside the run (and beside a window or corner) stays.
   const endTrim = trimWallFillersOutsideRun({ placed: working, room });
   working = endTrim.placed;
+  // 15-rule pass (Tom, Nov 13): 15" fridge minimums, 3" wiggle, every opening
+  // re-tiled with stock cabinets bigger-first, fillers last, end panels on
+  // exposed sides. Runs only for builds that answered the upfront intake.
+  const fifteenRepackMoves: { uid: string; kind: string; wallId: string; deltaAlongIn: number }[] = [];
+  if (input.intake) {
+    const repack = repackFifteenRuleLayout({
+      placed: working,
+      room,
+      openings: stageOpenings,
+      intake: input.intake,
+      baseCatalog: args.baseCatalog,
+      wallCatalog: args.wallCatalog,
+      fillerCatalog: args.fillers,
+      panelCatalog: [...(args.panelCatalog ?? []), ...args.fillers, ...args.refrigeratorEndPanels],
+      styleId: args.styleId,
+      makeUid,
+    });
+    working = repack.placed;
+    // Earlier passes' notes about openings, fillers and short neighbors described the run before it
+    // was re-planned; the repack names whatever is still open or filled.
+    const staleNote = /opening on the .* wall is wider than|No source-priced filler is sold for the|The run beside the range is only|still have .* between them after the 3" shift|became W\d+ to close a|slid .* to open a real cabinet on|filled a .* opening on|filled the opening on/;
+    for (let i = notes.length - 1; i >= 0; i--) {
+      if (staleNote.test(notes[i]!)) notes.splice(i, 1);
+    }
+    const keptCodes = new Set(working.map((item) => item.masterCode));
+    for (let i = notes.length - 1; i >= 0; i--) {
+      const raised = /^(\S+) was raised to meet the frameless/.exec(notes[i]!);
+      if (raised && !keptCodes.has(raised[1]!)) notes.splice(i, 1);
+    }
+    // A blind corner whose pull the repack changed (Tom's ~1.8" corner filler) gets a new pull note.
+    const pullNotes = repack.notes.filter((note) => / blind pull .* so the corner filler is /.test(note)).length;
+    const seatPullNotes = notes.filter((note) => /blind corner pulled /.test(note)).length;
+    if (pullNotes > 0 && pullNotes >= seatPullNotes) {
+      for (let i = notes.length - 1; i >= 0; i--) {
+        if (/blind corner pulled /.test(notes[i]!)) notes.splice(i, 1);
+      }
+    }
+    notes.push(...repack.notes);
+    fifteenRepackMoves.push(...repack.moves);
+    // The openings and dead corners named before this pass were re-planned; keep only what is still true.
+    const stale = new Set(["leftover-real-cabinets-first", "real-cabinets-before-filler"]);
+    for (let i = reviewFindings.length - 1; i >= 0; i--) {
+      if (stale.has(reviewFindings[i]!.ruleId)) reviewFindings.splice(i, 1);
+    }
+    // A sink the repack gave a counter landing is no longer jammed against the tall unit. With the
+    // intake, 15" is the hard minimum and 18" only preferred (rule 13 already notes under-18 as info).
+    const stillShort = new Set(sinkLandingGaps(working, room, Math.min(15, sinkTallLandingIn())).map((gap) => gap.sinkUid));
+    for (let i = reviewFindings.length - 1; i >= 0; i--) {
+      const finding = reviewFindings[i]!;
+      if (finding.ruleId === "sink-landing-before-tall" && finding.cabinetUid && !stillShort.has(finding.cabinetUid)) {
+        reviewFindings.splice(i, 1);
+      }
+    }
+    reviewFindings.push(...repack.findings);
+  }
   // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
-  const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls });
+  const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls, wallEndsCovered: Boolean(input.intake) });
   reviewFindings.push(...exposedPanelFindings(panelRequirements, new Set()));
   // Rule 8: the design-question door spec applies to every cabinet.
   const doorSpec: DesignQuestionDoorSpec | null = stage.input.designQuestionDoorStyleId == null
@@ -1723,9 +1833,9 @@ export function runAutoDesignLayout(args: {
   let peninsulaSummary: AutoDesignPeninsulaSummary | null = null;
   let peninsulaRuns: import("./design").PeninsulaRun[] = [];
   let furniture: PlacedFurniture[] = [];
-  if (args.peninsula) {
+  if (peninsulaRequest) {
     const built = buildAutoDesignPeninsula({
-      request: args.peninsula,
+      request: peninsulaRequest,
       room,
       placed: working,
       sinks,
@@ -1814,6 +1924,7 @@ export function runAutoDesignLayout(args: {
     catalogFillers,
     makeUid,
     styleId: args.styleId,
+    allowPlaceholder: Boolean(input.intake),
   });
   working = finalBlindSeal.placed;
   notes.push(...finalBlindSeal.notes.filter((note) => !notes.includes(note)));
@@ -1825,6 +1936,10 @@ export function runAutoDesignLayout(args: {
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
+  const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
+  // The 15-rule findings (spacing, suggested downsizes, oven pairing, intake picks) are
+  // suggestions only and run when the build was given the upfront intake.
+  if (input.intake) reviewFindings.push(...fifteenRuleFindings({ placed: working, room, baseCatalog: args.baseCatalog, intake: input.intake, wallLabelOf: (wallId) => wallNames[wallId] ?? null, peninsulaBuilt: peninsulaSummary != null }));
   return {
     ok: true,
     // The plan the build returns is the whole plan, including any fixed anchor
@@ -1837,6 +1952,7 @@ export function runAutoDesignLayout(args: {
     notes,
     warnings,
     wiggleMoves: reportedWiggleMoves,
+    fifteenRepackMoves,
     applianceMoves,
     skippedUppers: upperResult.skipped,
     cornerSlots: stage.slots,

@@ -1,4 +1,5 @@
 import { isThreeDrawerBaseCatalog } from "./kitchenUsage";
+import type { AutoDesignIntake } from "./autoDesignFifteenRules";
 import { STD, dim, formatEighthInches, isCornerCabinet, isFarmerSinkBase, isSinkBaseCabinet, wallRunFrame, type RoomData, type WallRunFrame } from "./design";
 import type { KitchenUsageProfile } from "./kitchenUsage";
 import { baseSubGroup, cabinetDrawingType, type CabinetLike } from "./cabinetGraphics";
@@ -220,6 +221,8 @@ export type AutoDesignInputs = {
   layoutType: AutoDesignLayoutType;
   originCorner: AutoDesignOriginCorner;
   runDirection: AutoDesignRunDirection;
+  /** Rules 2, 11, 12: the upfront intake (construction, utility wiggle answers, customer picks). Absent = old behavior. */
+  intake?: AutoDesignIntake | null;
   /** Height selected for source-priced wall cabinets in the generated kitchen. */
   wallCabinetHeightIn?: 30 | 36 | 42;
   sink: AutoDesignMeasurement;

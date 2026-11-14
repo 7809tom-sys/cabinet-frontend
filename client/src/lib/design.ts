@@ -3,6 +3,8 @@
 import { baseAngleEndCountertopLocalPoints, isBaseAngleEndCabinet, type BaseAngleEndHand } from "@/lib/baseAngleEndLayout";
 import { isWallAngleEndCabinet, wallAngleEndHandFromRun, type WallAngleEndHand } from "@/lib/wallAngleEndLayout";
 import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freestandingRun";
+import { apronFrontRemovedArea, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
+import { farmhouseSinkApronPastCarcassIn } from "@/lib/farmhouseSinkBaseFace";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
 import {
   REFRIGERATOR_PANEL_LIMIT_EPSILON_IN,
@@ -1516,6 +1518,11 @@ export function resolveCabinetHardwarePosition(p: {
   // retired Center option; treat it as Automatic so every hinged door returns
   // to the applicable opening-edge stile without mutating the saved cabinet.
   if (p.hardwarePosition === "center") return "auto";
+  // "Top center" used to be written onto ordinary doors and drew a horizontal
+  // bar in the panel. Re-placing a cabinet drops the field and looks right.
+  // Keep it only where it is still a real choice: tray dividers, pull-outs,
+  // and a B15/B18 the customer explicitly set.
+  if (p.hardwarePosition === "top-center" && !supportsCenteredTopDoorPull(p)) return "auto";
   if (
     p.hardwarePosition === "auto" ||
     p.hardwarePosition === "left" ||
@@ -1547,7 +1554,7 @@ export function supportsCenteredTopDoorPull(p: {
   description?: string | null;
   category?: string | null;
   subCategory?: string | null;
-  placement?: Placement | null;
+  placement?: Placement | string | null;
   islandFace?: IslandFace | null;
   islandCounterHeightWallCabinet?: boolean | null;
 }): boolean {
@@ -7772,6 +7779,7 @@ export function countertopArea(
   island?: IslandZone | null,
   islandSlabs?: readonly CountertopSlabMeasurement[] | null,
   room?: RoomData | null,
+  sinks?: readonly { type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number; wallSide?: string | null }[] | null,
 ): CountertopMeasurement {
   const hasExplicitIslandFaces = island ? placed.some((item) => item.islandFace != null) : false;
   const isIslandMember = (item: PlacedCabinet) => island != null && (
@@ -7783,13 +7791,13 @@ export function countertopArea(
     .filter((p) => bearsCountertop(p) && !peninsulaRunIds.has(cabinetWall(p, room ?? DEFAULT_ROOM)));
   const straightRunInches = straightBases
     .reduce((sum, p) => sum + rotatedSize(p).w, 0);
-  const straightCountertopSquareIn = straightBases
+  let straightCountertopSquareIn = straightBases
     .reduce((sum, p) => sum + rotatedSize(p).w * (room ? countertopDepthForRunItem(p, perimeterPlaced, room) : countertopDepthForCabinet(p)), 0);
   const peninsulaSurfaces = room
     ? countertopSurfaces(perimeterPlaced, room).filter((surface) => Boolean(surface.peninsulaRunId))
     : [];
   const peninsulaRunInches = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.runLinearInches ?? surface.linearInches ?? 0), 0);
-  const peninsulaSquareIn = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.areaInches ?? 0), 0);
+  let peninsulaSquareIn = peninsulaSurfaces.reduce((sum, surface) => sum + (surface.areaInches ?? 0), 0);
   const runInches = straightRunInches + peninsulaRunInches;
   let squareIn = straightCountertopSquareIn + peninsulaSquareIn;
   let islandSquareIn = 0;
@@ -7847,7 +7855,13 @@ export function countertopArea(
       waterfallSqIn += STD.BASE_HEIGHT * terminalDepth;
     }
   }
-  squareIn += waterfallSqIn;
+  if (room && sinks?.some(isApronFrontSink)) {
+    const removed = apronFrontRemovedArea(countertopSurfaces(placed, room, island), sinks);
+    straightCountertopSquareIn = Math.max(0, straightCountertopSquareIn - removed.straight);
+    peninsulaSquareIn = Math.max(0, peninsulaSquareIn - removed.peninsula);
+    islandSquareIn = Math.max(0, islandSquareIn - removed.island);
+  }
+  squareIn = straightCountertopSquareIn + peninsulaSquareIn + islandSquareIn + waterfallSqIn;
   const waterfallSqFt = Math.ceil((waterfallSqIn / 144) * 10) / 10;
   const perimeterSquareFeet = Math.ceil(((straightCountertopSquareIn + peninsulaSquareIn + waterfallSqIn) / 144) * 10) / 10;
   const islandSquareFeet = Math.ceil((islandSquareIn / 144) * 10) / 10;
@@ -15709,23 +15723,30 @@ export function makeSinkForCabinet(
   const footprint = placedFootprint(cabinet);
   const centeredX = Math.max(cabinet.x, Math.min(cabinet.x + footprint.w - plan.width, cabinet.x + footprint.w / 2 - plan.width / 2));
   const centeredY = Math.max(cabinet.y, Math.min(cabinet.y + footprint.d - plan.depth, cabinet.y + footprint.d / 2 - plan.depth / 2));
-  // Farmhouse sinks are countertop-mounted but their apron is flush with the
-  // room-facing cabinet front. Keep the run axis centered while moving only the
-  // wall-normal axis to that front edge.
-  const x = type === "farmhouse"
+  // A farmhouse apron is the front of the run. Keep the sink centered along the
+  // run, then move only the wall-normal axis until the apron face is proud of
+  // the doors. The countertop notch, not this box, keeps stone off that front.
+  const apronPastCarcassIn = type === "farmhouse" ? farmhouseSinkApronPastCarcassIn() : 0;
+  let x = type === "farmhouse"
     ? side === "left"
       ? cabinet.x + footprint.w - plan.width
       : side === "right"
         ? cabinet.x
         : centeredX
     : centeredX;
-  const y = type === "farmhouse"
+  let y = type === "farmhouse"
     ? side === "top"
       ? cabinet.y + footprint.d - plan.depth
       : side === "bottom"
         ? cabinet.y
         : centeredY
     : centeredY;
+  if (apronPastCarcassIn > 0) {
+    if (side === "top") y += apronPastCarcassIn;
+    else if (side === "bottom") y -= apronPastCarcassIn;
+    else if (side === "left") x += apronPastCarcassIn;
+    else if (side === "right") x -= apronPastCarcassIn;
+  }
 	  const deckPlacement = type === "farmhouse"
 	    ? null
 	    : nonApronSinkDeckPlacement(cabinet, room, { width: rawWidth, depth: rawDepth }, options?.frontSetbackIn);
@@ -16628,6 +16649,29 @@ export function restoredFurniture(rows: unknown): PlacedFurniture[] {
  * Cabinets come back at the coordinates that were saved. This pass does not
  * reseat them, snap them, or push them off a toilet or tub.
  */
+/**
+ * Drop a saved pull position that the current rules no longer honor.
+ * Left, right, and paired choices stay. A top-rail pull stays on a tray,
+ * pull-out, or B15/B18 that still offers that choice. `handleSide` of
+ * "top" or "bottom" was the older centered-pull alias and is not a hinge.
+ */
+export function normalizeStoredDoorHardwareChoice<T extends Parameters<typeof supportsCenteredTopDoorPull>[0] & {
+  hardwarePosition?: CabinetHardwarePosition | null;
+  handleSide?: "left" | "right" | "top" | "bottom" | null;
+}>(cabinet: T): T {
+  const staleTopCenter = cabinet.hardwarePosition === "top-center"
+    && !requiresCenteredTopDoorPull(cabinet)
+    && !supportsCenteredTopDoorPull(cabinet);
+  const staleCenter = cabinet.hardwarePosition === "center";
+  const staleHandleSide = cabinet.handleSide === "top" || cabinet.handleSide === "bottom";
+  if (!staleTopCenter && !staleCenter && !staleHandleSide) return cabinet;
+  return {
+    ...cabinet,
+    ...(staleTopCenter || staleCenter ? { hardwarePosition: null } : {}),
+    ...(staleHandleSide ? { handleSide: null } : {}),
+  };
+}
+
 export function restoreSavedDesignerPlan(snapshot: {
   room: RoomData;
   placed?: PlacedCabinet[] | null;
@@ -16635,7 +16679,7 @@ export function restoreSavedDesignerPlan(snapshot: {
 }): { room: RoomData; placed: PlacedCabinet[]; furniture: PlacedFurniture[] } {
   const embedded = snapshot.room?.persistedEntities?.furniture;
   const furniture = restoredFurniture(Array.isArray(snapshot.furniture) ? snapshot.furniture : embedded);
-  const placed = (Array.isArray(snapshot.placed) ? snapshot.placed : []).map((cabinet) => ({ ...cabinet }));
+  const placed = (Array.isArray(snapshot.placed) ? snapshot.placed : []).map((cabinet) => normalizeStoredDoorHardwareChoice({ ...cabinet }));
   return { room: snapshot.room, placed, furniture };
 }
 

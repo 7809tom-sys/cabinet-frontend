@@ -100,6 +100,8 @@ export function seatAutoDesignCornerFromCatalog(input: {
   makeUid: () => string;
   styleId: number | null;
   excludedWallIds?: readonly string[];
+  /** Tom Nov 13: seat a BBC even when the line sells no filler SKU, with the flagged unpriced FILL-3 placeholder. */
+  allowPlaceholderFiller?: boolean;
 }): AutoDesignCornerSeatFromCatalogResult {
   const order = autoDesignCornerSeatOrder(input.options, input.preferred);
   if (!order.length) return { ok: false, message: autoDesignMissingCornerMessage(input.slot) };
@@ -146,6 +148,7 @@ export function seatAutoDesignCornerFromCatalog(input: {
         makeUid: input.makeUid,
         styleId: input.styleId,
         measuredApplianceUids: input.measuredApplianceUids,
+        allowPlaceholderFiller: input.allowPlaceholderFiller,
         immovableApplianceUids: input.immovableApplianceUids,
       });
       if (!trial.ok) {

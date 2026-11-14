@@ -2,6 +2,7 @@ import { FlooringRotationControl } from "@/components/design/FlooringLayoutPicke
 import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "@/components/design/PlacedItemContextMenu";
 import { WallActionsMenu } from "@/components/design/WallActionsMenu";
 import { doorOpeningAppearance, roomDoorSwing, supportsRoomDoorSwing } from "@/lib/doorOpeningAppearance";
+import { applyApronFrontCountertopNotches } from "@/lib/farmSinkCountertopNotch";
 import { flooringPlanPatternStyle, flooringPlanRotationLayerStyle, type FlooringRotationDegrees } from "@/lib/flooringLayout";
 import { MosaicFloorField, type MosaicFloorFieldInput } from "./MosaicFloorField";
 import { MosaicFloorPatternControl } from "./MosaicFloorPatternDialog";
@@ -655,8 +656,11 @@ export function PlanCanvas({
   const snapshotCabinets = countertopGeometry?.cabinets ?? cabinets;
   const snapshotIsland = countertopGeometry ? countertopGeometry.island : island;
   const faucetCountertops = useMemo(
-    () => countertopSurfaces(snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls),
-    [snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls],
+    () => applyApronFrontCountertopNotches(
+      countertopSurfaces(snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls),
+      sinks,
+    ),
+    [snapshotCabinets, snapshotRoom, snapshotIsland, ponyWalls, sinks],
   );
   const [faucetDragWarning, setFaucetDragWarning] = useState<{ uid: string; message: string } | null>(null);
   const countertopShapes = useMemo(() => {
@@ -669,8 +673,8 @@ export function PlanCanvas({
           ...islandRaisedBarRects(geometryIsland, snapshotCabinets).map((surface) => ({ ...surface, kind: "island" as const, raisedBar: true, raisedBarOverhangIn: geometryIsland.raisedBarOverhang === 12 ? 12 : 15, countertopHeightIn: 42 })),
         ]
       : [];
-    return [...perimeterSurfaces, ...islandSurfaces];
-  }, [countertopMaterialId, snapshotRoom, snapshotCabinets, snapshotIsland, ponyWalls]);
+    return applyApronFrontCountertopNotches([...perimeterSurfaces, ...islandSurfaces], sinks);
+  }, [countertopMaterialId, snapshotRoom, snapshotCabinets, snapshotIsland, ponyWalls, sinks]);
   const dimensionUnitSystem: FloorPlanDimensionUnit = room.dimensionLabelStyle?.unitSystem === "metric" ? "metric" : "imperial";
   const formatDisplayDimension = (inches: number) => formatFloorPlanDimension(inches, dimensionUnitSystem);
   // View-only preference: hide annotations without changing saved geometry or

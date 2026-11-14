@@ -10,11 +10,14 @@
 import {
   STD,
   cabinetWall,
+  isCornerCabinet,
   isFillerItem,
   isPanelItem,
+  isPlainBaseCode,
   isRefrigerator,
   isRefrigeratorEndPanel,
   isSinkBaseCabinet,
+  placedFootprint,
   placedHeight,
   wallRunFrame,
   wallRunOffset,
@@ -76,6 +79,11 @@ export function exposedPanelRequirements(input: {
   room: RoomData;
   /** Walls the build actually cabinets; a run end on one of these is exposed. */
   buildWallIds?: readonly string[];
+  /**
+   * A run end flush with the room wall's end meets the next wall, so it is not a visible side
+   * (rectangular rooms).
+   */
+  wallEndsCovered?: boolean;
 }): ExposedPanelRequirement[] {
   const requirements: ExposedPanelRequirement[] = [];
   const owned = input.placed.filter((item) => (
@@ -94,25 +102,100 @@ export function exposedPanelRequirements(input: {
     const height = placedHeight(cabinet);
     const depth = Number(cabinet.depth) || 0;
     const others = input.placed.filter((item) => item.uid !== cabinet.uid && cabinetWall(item, input.room) === wallId);
-    const covers = (side: ExposedSide) => others.some((other) => {
-      const otherStart = wallRunOffset(other, wallId, input.room);
-      const otherEnd = otherStart + wallRunSpan(other, wallId, input.room);
-      const meetsEdge = side === "start"
-        ? Math.abs(otherEnd - start) <= 0.06
-        : Math.abs(otherStart - end) <= 0.06;
-      if (!meetsEdge) return false;
-      if (isPanelItem(other) || isFillerItem(other)) return true;
-      const otherHeight = placedHeight(other);
-      const otherDepth = Number(other.depth) || 0;
-      return otherHeight >= height - 0.01 && otherDepth >= depth - 0.01;
-    });
+    const isCorner = !isPlainBaseCode(cabinet.masterCode ?? "")
+      && isCornerCabinet(cabinet.masterCode ?? "", cabinet.description ?? undefined, cabinet.cornerType ?? undefined);
+    const isCornerSide = isCorner;
+    const covers = (side: ExposedSide) => {
+      const meeting = others.filter((other) => {
+        const otherStart = wallRunOffset(other, wallId, input.room);
+        const otherEnd = otherStart + wallRunSpan(other, wallId, input.room);
+        return side === "start"
+          ? Math.abs(otherEnd - start) <= 0.06
+          : Math.abs(otherStart - end) <= 0.06;
+      });
+      if (meeting.some((other) => isPanelItem(other) || isFillerItem(other))) return true;
+      // A tall panel whose near face sits just off the edge (e.g. a refrigerator end panel with a
+      // 1/2 inch panel gap beside the cabinet above the refrigerator) finishes the side.
+      if (others.some((other) => (
+        isPanelItem(other)
+        && other.placement === "tall"
+        && (side === "start"
+          ? Math.abs(wallRunOffset(other, wallId, input.room) + wallRunSpan(other, wallId, input.room) - start) <= 1.0
+          : Math.abs(wallRunOffset(other, wallId, input.room) - end) <= 1.0)
+      ))) return true;
+      // Stacked neighbors: the union of the meeting neighbors' vertical spans (at least as deep as
+      // this cabinet) must contain this cabinet's span.
+      // A corner cabinet's leg is a standard run depth even when its box is listed deeper (36x36 lazy Susan).
+      const sideDepth = input.wallEndsCovered === true && isCornerSide
+        ? Math.min(depth, cabinet.placement === "wall" ? 12 : 24)
+        : depth;
+      const thisBottom = Number(cabinet.mountBottom) || 0;
+      const thisTop = thisBottom + height;
+      const spans = meeting
+        .filter((other) => (Number(other.depth) || 0) >= sideDepth - 0.01)
+        .map((other) => {
+          const bottom = Number(other.mountBottom) || 0;
+          return [bottom, bottom + placedHeight(other)] as const;
+        })
+        .sort((a, b) => a[0] - b[0]);
+      let coveredTo = thisBottom;
+      for (const [bottom, top] of spans) {
+        if (bottom > coveredTo + 0.05) break;
+        if (top > coveredTo) coveredTo = top;
+        if (coveredTo >= thisTop - 0.05) return true;
+      }
+      return false;
+    };
     const panelPresent = (side: ExposedSide) => others.some((other) => (
       isPanelItem(other)
       && other.autoPlacedForUid === cabinet.uid
       && other.autoPlacedSide === side
     ));
+    const wallEndCovered = (side: ExposedSide) => (
+      input.wallEndsCovered === true
+      && (wallId === "top" || wallId === "right" || wallId === "bottom" || wallId === "left")
+      && (side === "start"
+        ? start <= 0.06
+        : end >= frame.length - 0.06)
+    );
+    // A side also counts as covered when it butts a cabinet on ANOTHER wall run (typically the
+    // perpendicular run's corner wall cabinet occupying the corner square).
+    const crossWallCovered = (side: ExposedSide) => {
+      if (input.wallEndsCovered !== true) return false;
+      const along = side === "start" ? start - 0.5 : end + 0.5;
+      const inwardDist = Math.min(depth, 12) / 2;
+      const p = {
+        x: frame.start.x + frame.tangent.x * along + frame.inward.x * inwardDist,
+        y: frame.start.y + frame.tangent.y * along + frame.inward.y * inwardDist,
+      };
+      const thisBottom = Number(cabinet.mountBottom) || 0;
+      const thisTop = thisBottom + height;
+      const halfHeight = height / 2;
+      return input.placed.some((item) => {
+        if (item.uid === cabinet.uid) return false;
+        if (cabinetWall(item, input.room) === wallId) return false;
+        const bottom = Number(item.mountBottom) || 0;
+        const top = bottom + placedHeight(item);
+        const overlap = Math.min(top, thisTop) - Math.max(bottom, thisBottom);
+        if (overlap < halfHeight) return false;
+        const footprint = placedFootprint(item);
+        return p.x >= item.x - 0.05
+          && p.x <= item.x + footprint.w + 0.05
+          && p.y >= item.y - 0.05
+          && p.y <= item.y + footprint.d + 0.05;
+      });
+    };
+    // A corner cabinet's corner-facing side tucks into the corner box behind the next run.
+    const cornerSideHidden = (side: ExposedSide) => (
+      input.wallEndsCovered === true
+      && isCorner
+      && (side === "start" ? start <= 30 : end >= frame.length - 30)
+    );
     for (const side of ["start", "end"] as const) {
       if (panelPresent(side)) continue;
+      if (wallEndCovered(side)) continue;
+      if (crossWallCovered(side)) continue;
+      if (cornerSideHidden(side)) continue;
       if (covers(side)) continue;
       const atRunEdge = side === "start" ? start <= 0.06 : end >= frame.length - 0.06;
       const isFridgeSide = others.some((other) => (

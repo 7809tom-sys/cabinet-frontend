@@ -153,10 +153,10 @@ describe("non-apron sink countertop-deck placement", () => {
     expect(normalized.faucetDeckConflict).toBeUndefined();
   });
 
-  it("leaves farmhouse/apron-front placement unchanged", () => {
+  it("keeps a farmhouse sink off the undermount deck setback and proud of the cabinet face", () => {
     const farmhouse = makeSinkForCabinet("farmhouse", topWallSinkBase, DEFAULT_ROOM, { width: 30, depth: 20 });
 
-    expect(farmhouse.y).toBe(4);
+    expect(farmhouse.y).toBeCloseTo(4 + 1.13, 5);
     expect(farmhouse.frontSetbackIn).toBeUndefined();
     expect(farmhouse.faucetRearDeckOffsetIn).toBeUndefined();
   });

@@ -22,9 +22,11 @@ describe("Plan and 3D cabinet hardware parity", () => {
     expect(planCabinetHardwarePosition(b12({ hardwarePosition: "center" }))).toBe("right");
   });
 
-  it("preserves explicit B-12 handle sides and top-centered hardware", () => {
+  it("preserves explicit B-12 handle sides and retires top-center on an ordinary door (rule 5, Nov 13 2026)", () => {
     expect(planCabinetHardwarePosition(b12({ hardwarePosition: "left" }))).toBe("left");
-    expect(planCabinetHardwarePosition(b12({ hardwarePosition: "top-center" }))).toBe("top-center");
+    // Top center is kept only where it is a real choice (tray dividers, pull-outs, B15/B18).
+    // On a plain B-12 door it drew a horizontal bar, so it returns to the opposite-hinge side like 3D.
+    expect(planCabinetHardwarePosition(b12({ hardwarePosition: "top-center" }))).toBe(planCabinetHardwarePosition(b12({ hardwarePosition: "auto" })));
   });
 });
 

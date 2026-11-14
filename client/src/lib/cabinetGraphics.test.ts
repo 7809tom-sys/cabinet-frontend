@@ -7,9 +7,12 @@ import {
   cabinetTypeLabel,
   resolveConfiguredFaceCounts,
   resolveDoorDrawerCounts,
+  drawerOnlyFrontRowHeightsIn,
+  fourDrawerBaseRowHeights,
   isEqualHeightTwoDrawerBase,
   isWallBlindCornerCabinet,
   threeDrawerBaseRowHeights,
+  twoDrawerBaseStackedRows,
   standardDoorCountForFaceWidth,
   baseSubGroup,
   resolvedVanityComboFaceLayout,
@@ -51,6 +54,49 @@ describe("two-drawer base family", () => {
   it("does not change standard three-drawer or door-and-drawer bases", () => {
     expect(isEqualHeightTwoDrawerBase({ masterCode: "3-DB30", numberOfDrawers: 3 })).toBe(false);
     expect(isEqualHeightTwoDrawerBase({ masterCode: "B-30", numberOfDrawers: 1 })).toBe(false);
+    expect(isEqualHeightTwoDrawerBase({ masterCode: "T2DB2494", numberOfDrawers: 2 }, 2)).toBe(false);
+  });
+
+  it.each(["2DB24", "2-DB30", "2DBID24", "2VDB18", "2VDBID30", "RB2DB36", "RB-2DB-30"])(
+    "stacks %s as two equal full-width fronts",
+    (masterCode) => {
+      expect(twoDrawerBaseStackedRows({ masterCode, numberOfDrawers: 2 }, 30)).toEqual([
+        { count: 1, height: 15 },
+        { count: 1, height: 15 },
+      ]);
+    },
+  );
+
+  it("keeps a wrongly stored door count from turning a drawer base into doors", () => {
+    const cases = [
+      ["2DB24", 2],
+      ["2-DB30", 2],
+      ["2DBID18", 2],
+      ["2VDB24", 2],
+      ["RB2DB30", 2],
+      ["3DB30", 3],
+      ["3VDB24", 3],
+      ["RB3DB30", 3],
+      ["4DB18", 4],
+    ] as const;
+    for (const [masterCode, drawers] of cases) {
+      const counts = resolveDoorDrawerCounts({
+        masterCode,
+        description: "Drawer base",
+        width: 30,
+        numberOfDoors: 2,
+        numberOfDrawers: drawers,
+        drawerLayout: JSON.stringify([{ count: 2, height: 30 }]),
+      });
+      expect(counts, masterCode).toEqual({ doors: 0, drawers });
+    }
+    expect(resolveDoorDrawerCounts({
+      masterCode: "T2DB2494",
+      description: "Tall Two Door Cabinet with Two Drawers",
+      width: 24,
+      numberOfDoors: 2,
+      numberOfDrawers: 2,
+    }).doors).toBe(2);
   });
 });
 
@@ -66,6 +112,17 @@ describe("three-drawer base family", () => {
     expect(threeDrawerBaseRowHeights({ masterCode: "2-DB30", numberOfDrawers: 2 }, 30)).toBeNull();
     expect(threeDrawerBaseRowHeights({ masterCode: "CDB36", numberOfDrawers: 3 }, 30)).toBeNull();
     expect(threeDrawerBaseRowHeights({ masterCode: "B-30", numberOfDrawers: 1 }, 30)).toBeNull();
+  });
+
+  it("uses the same 6-inch top drawer on vanity and range three-drawer bases", () => {
+    expect(threeDrawerBaseRowHeights({ masterCode: "3VDB30", numberOfDrawers: 3 }, 30)).toEqual([6, 12, 12]);
+    expect(threeDrawerBaseRowHeights({ masterCode: "RB3DB24", numberOfDrawers: 3 }, 30)).toEqual([6, 12, 12]);
+  });
+
+  it("splits a four-drawer base into four equal full-width fronts", () => {
+    expect(fourDrawerBaseRowHeights({ masterCode: "4DB30", numberOfDrawers: 4 }, 30)).toEqual([7.5, 7.5, 7.5, 7.5]);
+    expect(drawerOnlyFrontRowHeightsIn({ masterCode: "4-DB24", numberOfDrawers: 4 }, 28)).toEqual([7, 7, 7, 7]);
+    expect(fourDrawerBaseRowHeights({ masterCode: "T2DB2494", numberOfDrawers: 4 }, 30)).toBeNull();
   });
 });
 

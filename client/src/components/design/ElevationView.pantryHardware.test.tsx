@@ -1,8 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { TALL_DOOR_PULL_FLOOR_HEIGHT_IN } from "@/lib/hardware";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { HardwareOverlay } from "./ElevationView";
+import { IslandHardwareOverlay } from "./IslandElevationView";
 
 type PantryLayout = NonNullable<ReturnType<typeof pantryDrawerFrontLayout>>;
 
@@ -171,5 +173,37 @@ describe("HardwareOverlay pantry drawer hardware", () => {
     });
     expect(hardwareTops(markup, "drawer-pull")).toEqual([]);
     expect(hardwareTops(markup, "door-pull")).toEqual([]);
+  });
+});
+
+describe("full-height tall door pulls", () => {
+  function tallMarkup(kind: "elevation" | "island") {
+    const shared = {
+      doors: 1,
+      drawers: 0,
+      doorPiece: "pull" as const,
+      drawerPiece: "pull" as const,
+      accent: "#1a2744",
+      hardwarePosition: "auto" as const,
+      swing: "left" as const,
+      isWall: false,
+      faceWidthIn: 24,
+      raisedDoorPullOnRail: true,
+    };
+    return kind === "elevation"
+      ? renderToStaticMarkup(createElement(HardwareOverlay, { ...shared, cabinetHeightIn: 90 }))
+      : renderToStaticMarkup(createElement(IslandHardwareOverlay, { ...shared, faceHeightIn: 90 }));
+  }
+
+  it("keeps a 90 inch tall door pull vertical on the opening edge at a 42 inch reach", () => {
+    for (const markup of [tallMarkup("elevation"), tallMarkup("island")]) {
+      expect(markup).toContain('data-hardware-orientation="vertical"');
+      expect(markup).toContain('data-hardware-center-in="22.5"');
+      const [top] = hardwareTops(markup, "door-pull");
+      const centerFloor = 90 * (1 - top / 100);
+      expect(centerFloor).toBeCloseTo(TALL_DOOR_PULL_FLOOR_HEIGHT_IN, 1);
+      expect(top).toBeGreaterThan(40);
+      expect(top).toBeLessThan(65);
+    }
   });
 });
