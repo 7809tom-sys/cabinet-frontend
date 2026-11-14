@@ -320,7 +320,7 @@ import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/auto
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { designerReviewLines, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
-import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
+import { ensureBudgetFriendlyDrawerBase, ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignAngledNeighborWallIds, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
@@ -4721,8 +4721,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setSelectedOpeningUid((cur) => (cur === uid ? null : cur));
   }, []);
 
-  // A refrigerator is a source-priced assembly. Load the selected line's
-  // buyable caps and end panels before the auto-build seats its anchors.
+  // A refrigerator is a source-priced assembly. The selected line's buyable caps
+  // and end panels load in the background. The auto-build does not wait on this
+  // query: empty arrays mean still loading or unavailable. On a budget-friendly
+  // run the layout then skips the fridge and keeps building; other runs still fail.
   const { data: refrigeratorSurroundCatalog } = trpc.design.surroundForFridge.useQuery(
     { styleId: designStyleId ?? 0 },
     { enabled: designStyleId != null },
@@ -5168,10 +5170,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
     // Every layout has at least one three-drawer base (Tom, Oct 31): convert the best-fitting base run when the
     // planner's range split did not place one. A line with no drawer base only warns.
-    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
-    working = drawerRule.placed;
-    if (drawerRule.note) rangeNeighborNotes.push(drawerRule.note);
-    if (drawerRule.warning) rangeNeighborNotes.push(drawerRule.warning);
+    // Budget-friendly runs first swap a same-width priced drawer-base SKU when none was placed.
+    const budgetFriendly = stage.input.intake?.preferences.includes("budget-friendly") === true;
+    if (budgetFriendly) {
+      const drawerRule = ensureBudgetFriendlyDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
+      working = drawerRule.placed;
+      if (drawerRule.note) rangeNeighborNotes.push(drawerRule.note);
+    } else {
+      const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
+      working = drawerRule.placed;
+      if (drawerRule.note) rangeNeighborNotes.push(drawerRule.note);
+      if (drawerRule.warning) rangeNeighborNotes.push(drawerRule.warning);
+    }
     // Standard designer rules, including the small-gap filler, run on the seated
     // lowers before the wider seam helper closes anything they left behind.
     const baseRules = applyDesignerLayoutRules({
@@ -5224,6 +5234,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid, styleId: styleIdRef.current ?? null,
     });
     working = finishedRules.placed;
+    if (budgetFriendly) {
+      const lateDrawer = ensureBudgetFriendlyDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: styleIdRef.current ?? null });
+      working = lateDrawer.placed;
+      if (lateDrawer.note && !rangeNeighborNotes.includes(lateDrawer.note)) rangeNeighborNotes.push(lateDrawer.note);
+      if (lateDrawer.warning && !rangeNeighborNotes.includes(lateDrawer.warning)) rangeNeighborNotes.push(lateDrawer.warning);
+    }
     // The selected door, on uppers, bases, talls, and fillers.
     working = stampAutoDesignSingleFinish(working, styleIdRef.current ?? null);
     placedRef.current = working;

@@ -36,7 +36,7 @@ import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLa
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
 import { fifteenRuleFindings, hasPreference, lockedAnchorKinds, wallFitSuggestion, type WallFitAnchor } from "./autoDesignFifteenRules";
-import { ensureDrawerBase } from "./autoDesignDrawerRule";
+import { ensureBudgetFriendlyDrawerBase, ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import {
@@ -172,9 +172,18 @@ export type AutoDesignLayoutSuccess = {
    */
   reviewFindings: DesignerReviewFinding[];
   reviewAllHonored: boolean;
+  /**
+   * Budget-friendly only: the measured refrigerator was left unchecked because its
+   * source-priced cabinet or end panels were still loading or unavailable.
+   */
+  skippedRefrigerator?: boolean;
 };
 
 export type AutoDesignLayoutResult = AutoDesignLayoutSuccess | { ok: false; message: string };
+
+/** Warning when a budget-friendly run skips the 36-inch refrigerator because its cabinet or end panels are missing. */
+export const BUDGET_FRIENDLY_FRIDGE_SKIP_WARNING =
+  "Budget friendly: the 36-inch refrigerator was skipped because its source-priced cabinet and end panels were still loading or unavailable. It was left unchecked, and the rest of the plan was built without it so that wall space could be used for cabinets.";
 
 /** 24 inch refrigerator caps from the wall pool, then the surround query. W362324 lives only on the wall pool. */
 export function mergeAutoDesignRefrigeratorCaps(
@@ -769,10 +778,6 @@ export function runAutoDesignLayout(args: {
     dishwasher: args.appliancePalette.find((item) => item.masterCode === "DW-24"),
     refrigerator: args.appliancePalette.find((item) => item.masterCode === "FRIDGE-36"),
   };
-  const requestedApplianceKinds = plan.plan.anchors.filter((anchor) => anchor.kind !== "sink").map((anchor) => anchor.kind);
-  if (requestedApplianceKinds.some((kind) => !applianceByKind[kind])) {
-    return fail("The kitchen appliance palette is still loading. Wait for the source-priced cabinet catalog, then try again.");
-  }
   const baseSource = straightBaseCatalog.find((item) => Math.abs(dim(item.width, 0) - 24) < 0.1) ?? straightBaseCatalog[0];
   if (!baseSource) return fail("No source-priced standard base cabinet is available for the selected line. Choose a compatible door style, then try again.");
   // A refrigerator already on the plan is a fixed anchor: it is never moved and
@@ -782,8 +787,24 @@ export function runAutoDesignLayout(args: {
     ? args.anchoredRefrigerator
     : null;
   const refrigeratorRequested = plan.plan.anchors.some((anchor) => anchor.kind === "refrigerator");
+  const budgetFriendly = hasPreference(input.intake, "budget-friendly");
+  // Missing caps or end panels must not stall a budget-friendly run. The fridge
+  // is treated as optional: it is skipped (unchecked) and the wall is filled
+  // with cabinets. Other runs still fail, same as before. The build never waits
+  // on the surround catalog here; empty arrays mean still loading or unavailable.
+  let skipBudgetFriendlyFridge = false;
   if (refrigeratorRequested && !anchoredRefrigerator && (!args.refrigeratorCaps.length || !args.refrigeratorEndPanels.length)) {
-    return fail("The selected line’s source-priced 36-inch refrigerator cabinet and two end panels are still loading or unavailable. The measured build was not changed.");
+    if (budgetFriendly) {
+      skipBudgetFriendlyFridge = true;
+    } else {
+      return fail("The selected line’s source-priced 36-inch refrigerator cabinet and two end panels are still loading or unavailable. The measured build was not changed.");
+    }
+  }
+  const requestedApplianceKinds = plan.plan.anchors
+    .filter((anchor) => anchor.kind !== "sink" && !(skipBudgetFriendlyFridge && anchor.kind === "refrigerator"))
+    .map((anchor) => anchor.kind);
+  if (requestedApplianceKinds.some((kind) => !applianceByKind[kind])) {
+    return fail("The kitchen appliance palette is still loading. Wait for the source-priced cabinet catalog, then try again.");
   }
 
   // A pushed sink (or any other pre-existing fixture) must not stop the build.
@@ -816,8 +837,9 @@ export function runAutoDesignLayout(args: {
     notes.push("The refrigerator already on the plan is a fixed anchor: it keeps its position, and the cabinets are designed around it.");
   }
   for (const anchor of plan.plan.anchors) {
-    // Already seated from the plan above.
-    if (anchor.kind === "refrigerator" && anchoredRefrigerator) continue;
+    // Already seated from the plan above, or skipped on a budget-friendly run
+    // when the source-priced cabinet or end panels were still loading or unavailable.
+    if (anchor.kind === "refrigerator" && (anchoredRefrigerator || skipBudgetFriendlyFridge)) continue;
     const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind]!;
     const width = anchor.kind === "sink" ? sinkBaseWidth : anchor.kind === "refrigerator" ? refrigeratorWidth : dim(source.width, 24);
     const depth = dim(source.depth, 24);
@@ -865,6 +887,7 @@ export function runAutoDesignLayout(args: {
   }
 
   const refrigeratorBayWarnings: string[] = [];
+  if (skipBudgetFriendlyFridge) refrigeratorBayWarnings.push(BUDGET_FRIENDLY_FRIDGE_SKIP_WARNING);
   const drawerRuleWarnings: string[] = [];
   const reviewFindings: DesignerReviewFinding[] = [];
   const refrigerator = anchorsByKind.get("refrigerator");
@@ -1466,10 +1489,19 @@ export function runAutoDesignLayout(args: {
     for (const side of panelPlan.unspaced) notes.push(describeUnfinishedFlank(side));
   }  // Every layout has at least one three-drawer base (Tom, Oct 31). The planner already splits a wide door base beside
   // the range; if no drawer base landed anywhere, convert the best-fitting base run. A line with no drawer base only warns.
-  const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
-  working = drawerRule.placed;
-  if (drawerRule.note) notes.push(drawerRule.note);
-  if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
+  // Budget-friendly runs first try a same-width swap to a priced drawer-base SKU the line already sells.
+  // Non-budget runs keep the existing convert-or-warn path only.
+  if (budgetFriendly) {
+    const drawerRule = ensureBudgetFriendlyDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
+    working = drawerRule.placed;
+    if (drawerRule.note) notes.push(drawerRule.note);
+    // Warn only after the late pass, so later base fills can still receive a swap.
+  } else {
+    const drawerRule = ensureDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
+    working = drawerRule.placed;
+    if (drawerRule.note) notes.push(drawerRule.note);
+    if (drawerRule.warning) drawerRuleWarnings.push(drawerRule.warning);
+  }
   // A run end is finished, not gapped: no filler is appended at the end of a run,
   // and one board per run is the most Auto-Design ever places. The small-gap pass
   // is therefore off here (the measured build fills only a genuine sliver below).
@@ -1923,6 +1955,14 @@ export function runAutoDesignLayout(args: {
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
+  // Budget-friendly: try the same-width drawer swap again after later fills, so a
+  // B24 (or similar) that appeared after the early pass still becomes a priced drawer base.
+  if (budgetFriendly) {
+    const lateDrawer = ensureBudgetFriendlyDrawerBase({ placed: working, room, catalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog], makeUid, styleId: args.styleId });
+    working = lateDrawer.placed;
+    if (lateDrawer.note && !notes.includes(lateDrawer.note)) notes.push(lateDrawer.note);
+    if (lateDrawer.warning && !drawerRuleWarnings.includes(lateDrawer.warning)) drawerRuleWarnings.push(lateDrawer.warning);
+  }
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
@@ -1962,5 +2002,6 @@ export function runAutoDesignLayout(args: {
     usedDefaultFaucet: mandatoryFaucet.usedDefault,
     reviewFindings: buildDesignerReviewList(reviewFindings).findings,
     reviewAllHonored: buildDesignerReviewList(reviewFindings).allHonored,
+    skippedRefrigerator: skipBudgetFriendlyFridge,
   };
 }

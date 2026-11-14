@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import catalogFixture from "./__fixtures__/autoDesignRealCatalog.json";
 import { autoBuildDrawerBaseCatalog, autoBuildStraightBaseCatalog } from "./autoDesignAutoBuild";
-import { ensureDrawerBase } from "./autoDesignDrawerRule";
+import { BUDGET_FRIENDLY_DRAWER_BASE_MISSING_WARNING, ensureDrawerBase, swapSameWidthDrawerBase } from "./autoDesignDrawerRule";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { isThreeDrawerBaseCatalog, pickDoorDrawerSplit, splitWideDoorBaseBesideRange } from "./kitchenUsage";
 import { wallPlacementAt, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
@@ -114,5 +114,71 @@ describe("a finished layout has at least one drawer base when the line sells one
     const result = ensureDrawerBase({ placed: [sink], room, catalog, makeUid, styleId: 1 });
     expect(result.converted).toBe(false);
     expect(result.warning).not.toBeNull();
+  });
+});
+
+describe("budget-friendly same-width drawer-base swap", () => {
+  const makeUid = (() => { let i = 0; return () => `swap-${++i}`; })();
+  const place = (source: DesignCabinet, along: number): PlacedCabinet => {
+    const width = Number(source.width);
+    const spot = wallPlacementAt(along, width, Number(source.depth) || 24, "top", room);
+    return {
+      uid: `${source.masterCode}-${along}`, cabinetId: source.id, masterCode: source.masterCode, description: source.description,
+      category: source.category, subCategory: source.subCategory, placement: "base", ...spot, width, depth: Number(source.depth) || 24,
+      height: Number(source.height) || 34.5, numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers,
+    } as PlacedCabinet;
+  };
+  const bySku = (catalog: DesignCabinet[], code: string) => catalog.find((row) => row.masterCode === code)!;
+
+  it("swaps a standard base for the same-width priced drawer-base SKU when none was placed", () => {
+    const catalog = line("330011");
+    const placed = [place(bySku(catalog, "B24"), 10), place(bySku(catalog, "B18"), 34)];
+    const result = swapSameWidthDrawerBase({ placed, room, catalog, makeUid, styleId: 1 });
+    expect(result.converted).toBe(true);
+    expect(result.hasDrawerBase).toBe(true);
+    expect(result.warning).toBeNull();
+    const base = result.placed.filter((item) => item.placement === "base");
+    expect(base.some((item) => item.masterCode === "3DB24")).toBe(true);
+    expect(base.some((item) => item.masterCode === "B24")).toBe(false);
+    expect(base.reduce((sum, item) => sum + item.width, 0)).toBeCloseTo(24 + 18, 5);
+    expect(result.note).toMatch(/B24 was swapped for the same-width drawer base 3DB24/);
+  });
+
+  it("leaves a layout that already has a drawer base alone", () => {
+    const catalog = line("330011");
+    const placed = [place(bySku(catalog, "B24"), 10), place(bySku(catalog, "3DB18"), 34)];
+    const result = swapSameWidthDrawerBase({ placed, room, catalog, makeUid, styleId: 1 });
+    expect(result.converted).toBe(false);
+    expect(result.hasDrawerBase).toBe(true);
+    expect(result.placed).toEqual(placed);
+  });
+
+  it("does not invent a drawer-base SKU the line does not sell", () => {
+    const catalog = noDrawers(line("330011"));
+    const placed = [place(bySku(line("330011"), "B24"), 10)];
+    const result = swapSameWidthDrawerBase({ placed, room, catalog, makeUid, styleId: 1 });
+    expect(result.converted).toBe(false);
+    expect(result.hasDrawerBase).toBe(false);
+    expect(result.placed).toEqual(placed);
+    expect(result.warning).toBe(BUDGET_FRIENDLY_DRAWER_BASE_MISSING_WARNING);
+  });
+
+  it("does not use a drawer-base row that carries an explicit unpriced value", () => {
+    const catalog = line("330011").map((row) => (
+      isThreeDrawerBaseCatalog(row) ? { ...row, unitPrice: null } as DesignCabinet : row
+    ));
+    const placed = [place(bySku(catalog, "B24"), 10)];
+    const result = swapSameWidthDrawerBase({ placed, room, catalog, makeUid, styleId: 1 });
+    expect(result.converted).toBe(false);
+    expect(result.hasDrawerBase).toBe(false);
+    expect(result.placed).toEqual(placed);
+  });
+
+  it("never converts a sink base", () => {
+    const catalog = line("330011");
+    const sink = { ...place(bySku(catalog, "B24"), 10), masterCode: "SB24", description: "24 sink base", numberOfDoors: 2 } as PlacedCabinet;
+    const result = swapSameWidthDrawerBase({ placed: [sink], room, catalog, makeUid, styleId: 1 });
+    expect(result.converted).toBe(false);
+    expect(result.hasDrawerBase).toBe(false);
   });
 });
