@@ -46,6 +46,7 @@ import {
   overRangeMicrowaveFor,
   planOverRangeCompanions,
   rangeWallCeiling,
+  DEFAULT_OVER_RANGE_ANSWER,
   type OverRangeAnswer,
 } from "./overRangeCompanion";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
@@ -92,6 +93,21 @@ export function isOverRangeAnswer(value: unknown): value is OverRangeAnswerValue
 /** A stored answer, or null. Anything unrecognised is treated as "never asked". */
 export function readOverRangeAnswer(value: unknown): OverRangeAnswerValue | null {
   return isOverRangeAnswer(value) ? value : null;
+}
+
+/**
+ * Auto Design no longer asks what goes above the range at the end of a build.
+ * A saved or entered answer is kept; otherwise the kitchen-rules default
+ * (microwave and bridge) is used so the add-only pass can dress the range,
+ * and the report lists that default as something the shopper can still change.
+ */
+export function resolveAutoDesignOverRangeAnswer(value: unknown): {
+  value: OverRangeAnswerValue;
+  defaulted: boolean;
+} {
+  const read = readOverRangeAnswer(value);
+  if (read) return { value: read, defaulted: false };
+  return { value: DEFAULT_OVER_RANGE_ANSWER, defaulted: true };
 }
 
 /**

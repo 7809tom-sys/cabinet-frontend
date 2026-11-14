@@ -66,7 +66,7 @@ import { trpc } from "@/lib/trpc";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
-import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer } from "@/lib/overRangeFill";
+import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer, resolveAutoDesignOverRangeAnswer } from "@/lib/overRangeFill";
 import {
   affiliateSlugForStoreScope,
   cartPathForStoreScope,
@@ -320,7 +320,7 @@ import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRang
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
-import { designerReviewLines, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
+import { autoDesignRunNotice, overRangeDefaultedFinding, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
 import { autoBuildCornerCatalog, autoDesignAngledNeighborWallIds, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
@@ -2257,11 +2257,45 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [autoDesignLayoutNotes, setAutoDesignLayoutNotes] = useState<string[]>([]);
   /** Rule 14: named warnings for design questions the build could not honor. */
   const [autoDesignReviewFindings, setAutoDesignReviewFindings] = useState<DesignerReviewFinding[]>([]);
+  const [autoDesignReportOpen, setAutoDesignReportOpen] = useState(false);
+  const autoDesignReportCollectingRef = useRef(false);
+  const autoDesignReportNotesRef = useRef<DesignerReviewFinding[]>([]);
+  const autoDesignReportPublishedRef = useRef(false);
   const autoDesignWallLabelsRef = useRef<Record<string, string>>({});
   const lastFaucetWindowNotesRef = useRef<FaucetWindowClearanceNote[]>([]);
+  const startAutoDesignReportRun = useCallback(() => {
+    autoDesignReportCollectingRef.current = true;
+    autoDesignReportPublishedRef.current = false;
+    autoDesignReportNotesRef.current = [];
+    setAutoDesignReviewFindings([]);
+    setAutoDesignReportOpen(false);
+  }, []);
+  const publishAutoDesignReport = useCallback((findings: readonly DesignerReviewFinding[]) => {
+    const all = [...findings, ...autoDesignReportNotesRef.current];
+    autoDesignReportPublishedRef.current = true;
+    setAutoDesignReviewFindings(all);
+    setAutoDesignReportOpen(all.length > 0);
+    toast.success("Auto Design finished.");
+  }, []);
   const announceFaucetWindowNotes = useCallback((notes: readonly FaucetWindowClearanceNote[]) => {
     lastFaucetWindowNotesRef.current = [...notes];
     // Window rule: a window only changes as a last resort, so the person always sees it as a warning.
+    // During an Auto Design run those warnings go on the end-of-run report, not a toast.
+    if (autoDesignReportCollectingRef.current) {
+      const additions = notes.map((note) => autoDesignRunNotice({ text: note.text, kind: "warning", code: "faucet-window" }));
+      if (additions.length === 0) return;
+      autoDesignReportNotesRef.current.push(...additions);
+      if (autoDesignReportPublishedRef.current) {
+        setAutoDesignReviewFindings((current) => {
+          const existing = new Set(current.map((finding) => finding.title));
+          const fresh = additions.filter((finding) => !existing.has(finding.title));
+          if (fresh.length === 0) return current;
+          setAutoDesignReportOpen(true);
+          return [...current, ...fresh];
+        });
+      }
+      return;
+    }
     for (const note of notes) toast.warning(note.text, { duration: 8000 });
   }, []);
   const layoutHasRefrigerator = useMemo(() => placed.some(isRefrigeratorAppliance), [placed]);
@@ -4862,6 +4896,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid,
     }));
     if (!run.ok) return fail(run.message);
+    startAutoDesignReportRun();
     if (run.sinks[0]) {
       const remembered = rememberAutoDesignSink(run.sinks[0], run.openings);
       setSinks(keepSingleAutoDesignSink([remembered], remembered.cabinetUid ?? run.sinks[0].cabinetUid ?? ""));
@@ -4877,12 +4912,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       ...current.filter((item) => !isSinkBasePlacement(item) && !run.placed.some((built) => built.uid === item.uid)),
       ...run.placed,
     ]);
+    // A missing over-range answer uses the kitchen-rules default (microwave and
+    // bridge) instead of a second end-of-flow question. The report lists that
+    // default when it was used, and the shopper can still change it.
+    const overRangeResolved = resolveAutoDesignOverRangeAnswer(input.overRangeAnswer);
     setRoom((current) => ({
       ...current,
       kitchenUsage: normalizeKitchenUsage(input.kitchenUsage),
       // The answer given in the design questions is saved with the layout, and the
       // add-only over-range pass applies it once the plan is committed.
-      overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, input.overRangeAnswer),
+      overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, overRangeResolved.value),
     }));
     setOverRangeEpoch((epoch) => epoch + 1);
     // A freshly built plan gets its mandatory faucet in the same pass.
@@ -4901,33 +4940,60 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setViewMode("threeD");
     setSelectedUid(null);
     setAutoDesignCornerStage(null);
-    toast.success(`Placed ${run.cornerCount} selected corners, ${run.basePieceCount} regular base-run pieces, ${run.fillerCount} filler pieces closing every gap, and ${run.upperCount} aligned wall cabinets and fillers.`);
+    const reviewFindings: DesignerReviewFinding[] = [...run.reviewFindings];
+    reviewFindings.push(autoDesignRunNotice({
+      text: `Placed ${run.cornerCount} selected corners, ${run.basePieceCount} regular base-run pieces, ${run.fillerCount} filler pieces closing every gap, and ${run.upperCount} aligned wall cabinets and fillers.`,
+      kind: "info",
+      code: "placed-summary",
+    }));
     const preliminaryFaucetNotes = new Set(run.faucetWindowNotes.map((note) => note.text));
     const announcedFaucetNotes = new Set(lastFaucetWindowNotesRef.current.map((note) => note.text));
     for (const note of run.notes) {
       if (preliminaryFaucetNotes.has(note) && announcedFaucetNotes.size > 0) continue;
-      if (preliminaryFaucetNotes.has(note)) { toast.warning(note, { duration: 8000 }); continue; }
-      toast.info(note, { duration: 8000 });
+      reviewFindings.push(autoDesignRunNotice({
+        text: note,
+        kind: preliminaryFaucetNotes.has(note) ? "warning" : "info",
+        code: preliminaryFaucetNotes.has(note) ? "faucet-window" : "run-note",
+      }));
     }
     for (const move of run.applianceMoves) {
-      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 7000 });
+      reviewFindings.push(autoDesignRunNotice({
+        text: `Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`,
+        kind: "info",
+        code: "appliance-move",
+      }));
     }
     if (run.heightUsedIn != null && Math.abs(run.heightUsedIn - run.requestedUpperIn) > 0.005) {
-      toast.info(`This cabinet line sells its ${run.requestedUpperIn}″ class as ${formatInches(run.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
+      reviewFindings.push(autoDesignRunNotice({
+        text: `This cabinet line sells its ${run.requestedUpperIn}″ class as ${formatInches(run.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`,
+        kind: "info",
+        code: "upper-height",
+      }));
     }
-    if (run.skippedUppers.length) toast.info(`Upper review: ${run.skippedUppers.join(" ")}`, { duration: 8000 });
-    for (const warning of run.warnings) toast.warning(warning, { duration: 7000 });
-    // Rule 14: anything the design questions could not honor stays on a reviewable list.
-    if (run.reviewFindings.length) {
-      setAutoDesignReviewFindings(run.reviewFindings);
-      const named = run.reviewFindings.filter((finding) => finding.severity === "warning");
-      if (named.length) toast.warning(`${named.length} design question${named.length === 1 ? "" : "s"} need review`, { description: named.map((finding) => finding.title).join(" · "), duration: 10000 });
+    if (run.skippedUppers.length) {
+      reviewFindings.push(autoDesignRunNotice({
+        text: `Upper review: ${run.skippedUppers.join(" ")}`,
+        kind: "info",
+        code: "upper-review",
+      }));
     }
-    if (run.sinkWindow) toast.info(`A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
-    // Ask only when the kitchen has no answer to remember. The answer given in the
-    // design questions is saved with the layout, and the add-only over-range pass
-    // (below, and on every load) applies it, so nobody is asked twice.
-    if (run.bareRangeUid && readOverRangeAnswer(input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: run.bareRangeUid });
+    for (const warning of run.warnings) {
+      reviewFindings.push(autoDesignRunNotice({ text: warning, kind: "warning", code: "run-warning" }));
+    }
+    // Rule 14: anything the design questions could not honor, plus any default
+    // the build used in place of an end-of-flow question, stays on the report.
+    if (overRangeResolved.defaulted && run.bareRangeUid) reviewFindings.push(overRangeDefaultedFinding());
+    if (run.sinkWindow) {
+      reviewFindings.push(autoDesignRunNotice({
+        text: `A ${formatInches(run.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`,
+        kind: "info",
+        code: "sink-window",
+      }));
+    }
+    publishAutoDesignReport(reviewFindings);
+    // Do not open the post-build "What goes above the range?" pop-up. A missing
+    // answer already used the default above, and the add-only over-range pass
+    // (below, and on every load) applies it.
     // The layout is built. If the shopper already picked a sink and faucet in
     // the designer-open pop-up, apply those choices and do not ask again. Only
     // the fixture they skipped at the start is asked about now.
@@ -4949,7 +5015,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
     }
     return { ok: true as const };
-    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, autoPanelCatalog, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, tallCabPool, wallCabPool, wallCabPoolLoading]);
+    }, [appliancePalette, autoDesignTallPicks, autoFillCabinets, autoFillCabinetsLoading, autoDesignAvailable, autoDesignBlockingPlacements.length, autoPanelCatalog, catalogFillers, dishwasherSidePreference, liveMasterCabinets, openings, placedRef, promptAutoDesignSinkAfterBuild, publishAutoDesignReport, refrigeratorSurroundCatalog, room, roomType, setCountertop, setOpenings, setPlaced, setRoom, startAutoDesignReportRun, tallCabPool, wallCabPool, wallCabPoolLoading]);
 
   /**
    * The second half of an Auto-Design build. Measured appliances are already
@@ -4975,6 +5041,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       return fail(message);
     };
     if (!stage) return fail("The measured appliance stage is no longer active. Start the Auto-Design build again from an empty plan.");
+    startAutoDesignReportRun();
     autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, stage.input.originCorner, stage.input.runDirection);
 
     let working = [...stage.anchorPlaced];
@@ -5228,10 +5295,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid,
     });
     if (mandatoryBridge.added) working = mandatoryBridge.placed;
-    for (const note of mandatoryBridge.notes) toast.info(note, { duration: 8000 });
+    const reviewFindings: DesignerReviewFinding[] = [];
+    for (const note of mandatoryBridge.notes) {
+      reviewFindings.push(autoDesignRunNotice({ text: note, kind: "info", code: "mandatory-bridge-note" }));
+    }
     // A bridge that could not seat is a blocking finding on the review list, never a
     // silent skip.
-    if (mandatoryBridge.findings.length) setAutoDesignReviewFindings((current) => [...current, ...mandatoryBridge.findings]);
+    reviewFindings.push(...mandatoryBridge.findings);
     // The range is otherwise left open to the design question; the microwave and hood
     // follow the add-only logic once the run is tiled.
     // Wall boxes are last. Match the completed lower projections, retaining
@@ -5266,31 +5336,70 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     announceFaucetWindowNotes(raisedWindows.notes);
     setAutoDesignCornerStage(null);
     setViewMode("threeD");
-    toast.success(`Placed ${selectedCornerCount} selected corners, ${surrounding.length} regular base-run pieces, ${seamResult.additions.length} filler pieces closing every gap, and ${upperResult.additions.length} aligned wall cabinets and fillers.`);
-    for (const note of [...seamResult.notes, ...rangeNeighborNotes]) toast.info(note, { duration: 8000 });
+    reviewFindings.push(autoDesignRunNotice({
+      text: `Placed ${selectedCornerCount} selected corners, ${surrounding.length} regular base-run pieces, ${seamResult.additions.length} filler pieces closing every gap, and ${upperResult.additions.length} aligned wall cabinets and fillers.`,
+      kind: "info",
+      code: "placed-summary",
+    }));
+    for (const note of [...seamResult.notes, ...rangeNeighborNotes]) {
+      reviewFindings.push(autoDesignRunNotice({ text: note, kind: "info", code: "seam-note" }));
+    }
     for (const move of applianceMoves) {
-      toast.info(`Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`, { duration: 7000 });
+      reviewFindings.push(autoDesignRunNotice({
+        text: `Moved the ${move.label} ${formatInches(move.shiftIn)} away from the corner to fit the required corner cabinet. Its measured center is now ${formatInches(move.centerAlongIn)} along the wall.`,
+        kind: "info",
+        code: "appliance-move",
+      }));
     }
     const requestedUpperIn = stage.input.wallCabinetHeightIn ?? 30;
     if (upperResult.heightUsedIn != null && Math.abs(upperResult.heightUsedIn - requestedUpperIn) > 0.005) {
-      toast.info(`This cabinet line sells its ${requestedUpperIn}″ class as ${formatInches(upperResult.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`);
+      reviewFindings.push(autoDesignRunNotice({
+        text: `This cabinet line sells its ${requestedUpperIn}″ class as ${formatInches(upperResult.heightUsedIn)} wall cabinets, so those exact source SKUs were used.`,
+        kind: "info",
+        code: "upper-height",
+      }));
     }
-    if (upperResult.skipped.length) toast.info(`Upper review: ${upperResult.skipped.join(" ")}`, { duration: 8000 });
+    if (upperResult.skipped.length) {
+      reviewFindings.push(autoDesignRunNotice({
+        text: `Upper review: ${upperResult.skipped.join(" ")}`,
+        kind: "info",
+        code: "upper-review",
+      }));
+    }
     const shiftReview = reviewAfterShift({ placed: working, room, openings: stageOpenings, usage: stage.input.kitchenUsage });
-    for (const entry of shiftReview.findings.filter((entry) => entry.severity === "attention")) {
-      toast.warning(entry.title, { description: entry.description, duration: 7000 });
+    for (const entry of shiftReview.findings.filter((item) => item.severity === "attention")) {
+      reviewFindings.push(autoDesignRunNotice({
+        text: entry.description,
+        kind: "warning",
+        code: "shift-review",
+        title: entry.title,
+        detail: entry.description,
+      }));
     }
     if (stage.sinkWindow) {
-      toast.info(`A ${formatInches(stage.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`);
+      reviewFindings.push(autoDesignRunNotice({
+        text: `A ${formatInches(stage.sinkWindow.width)} window was placed above the sink as entered; no wall cabinet goes over it.`,
+        kind: "info",
+        code: "sink-window",
+      }));
     }
-    // A range with nothing above it asks what belongs there: hood, bridge + microwave,
-    // or nothing — but only while no answer is saved with the layout. With an answer,
-    // the add-only over-range pass applies it instead of asking again.
+    // A range with nothing above it uses the kitchen-rules default when the
+    // design questions left no answer, and the report lists that default.
+    // Do not open the post-build "What goes above the range?" pop-up.
     const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description)
       && autoDesignRangeNeedsVentilation(working, item));
-    if (bareRange && readOverRangeAnswer(stage.input.overRangeAnswer) == null) setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid });
+    const overRangeResolved = resolveAutoDesignOverRangeAnswer(stage.input.overRangeAnswer);
+    if (bareRange && overRangeResolved.defaulted) {
+      setRoom((current) => ({
+        ...current,
+        overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, overRangeResolved.value),
+      }));
+      setOverRangeEpoch((epoch) => epoch + 1);
+      reviewFindings.push(overRangeDefaultedFinding());
+    }
+    publishAutoDesignReport(reviewFindings);
     return { ok: true as const };
-  }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, room, setPlaced, setOpenings, sinks]);
+  }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, publishAutoDesignReport, room, setPlaced, setOpenings, sinks, startAutoDesignReportRun]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
@@ -20813,8 +20922,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          )}
 	          {autoDesignReviewFindings.length > 0 && (
 	            <AutoDesignReviewList
-	              lines={designerReviewLines({ findings: autoDesignReviewFindings, allHonored: false })}
-	              onDismiss={() => setAutoDesignReviewFindings([])}
+	              findings={autoDesignReviewFindings}
+	              open={autoDesignReportOpen}
+	              onDismiss={() => setAutoDesignReportOpen(false)}
+	              onReopen={() => setAutoDesignReportOpen(true)}
 	            />
 	          )}
 	          {placementNotice.visible && placementWarning && (

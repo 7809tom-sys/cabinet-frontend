@@ -37,6 +37,7 @@ import {
   placeMandatoryOverRangeBridges,
   rangesInPlan,
   readOverRangeAnswer,
+  resolveAutoDesignOverRangeAnswer,
 } from "./overRangeFill";
 import { isBridgeOverRangeCabinet, overRangeBridgeFor } from "./overRangeCompanion";
 
@@ -437,3 +438,14 @@ describe("the bridge is 12 inches over 30 inch uppers, not 24", () => {
     expect(seated.findings).toEqual([]);
   });
 });
+
+describe("resolveAutoDesignOverRangeAnswer", () => {
+  it("keeps a given answer and defaults a missing one to microwave and bridge", () => {
+    expect(resolveAutoDesignOverRangeAnswer("hood")).toEqual({ value: "hood", defaulted: false });
+    expect(resolveAutoDesignOverRangeAnswer("open")).toEqual({ value: "open", defaulted: false });
+    expect(resolveAutoDesignOverRangeAnswer("microwave-bridge")).toEqual({ value: "microwave-bridge", defaulted: false });
+    expect(resolveAutoDesignOverRangeAnswer(null)).toEqual({ value: "microwave-bridge", defaulted: true });
+    expect(resolveAutoDesignOverRangeAnswer(undefined)).toEqual({ value: "microwave-bridge", defaulted: true });
+  });
+});
+

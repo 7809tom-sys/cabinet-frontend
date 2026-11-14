@@ -59,7 +59,7 @@ describe("the add-only over-range pass", () => {
   });
 
   it("surfaces a blocked bridge on the review list instead of skipping it", () => {
-    expect(designTool).toContain("setAutoDesignReviewFindings((current) => [...current, ...mandatoryBridge.findings])");
+    expect(designTool).toContain("reviewFindings.push(...mandatoryBridge.findings)");
     expect(designTool).toContain("const overRangeFillRanRef = useRef");
   });
 
@@ -89,7 +89,7 @@ describe("the add-only over-range pass", () => {
   });
 
   it("seeds the answer from the design questions and restores it on load", () => {
-    expect(designTool).toContain("overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, input.overRangeAnswer)");
+    expect(designTool).toContain("overRangeAnswer: overRangeAnswerToPersist(current.overRangeAnswer, overRangeResolved.value)");
     expect(designTool).toContain("overRangeAnswer: readOverRangeAnswer(d.room?.overRangeAnswer)");
   });
 

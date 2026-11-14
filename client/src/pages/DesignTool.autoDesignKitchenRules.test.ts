@@ -39,12 +39,14 @@ describe("Auto-Design kitchen rules wiring", () => {
     expect(complete.indexOf("setOpenings((previous)")).toBeGreaterThan(complete.indexOf("seatAutoDesignCornerFromCatalog"));
   });
 
-  it("asks what goes above a bare range after the build, offering a hood or a bridge cabinet with microwave", () => {
+  it("does not open a post-build range question; a missing answer is defaulted and listed on the Auto Design report", () => {
     expect(complete).toContain("autoDesignRangeNeedsVentilation(working, item)");
-    // The question is asked only while no answer is saved with the layout; with an
-    // answer, the add-only over-range pass applies it instead of asking again.
-    expect(complete).toContain("readOverRangeAnswer(stage.input.overRangeAnswer) == null");
-    expect(complete).toContain("setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid })");
+    // A missing answer uses the kitchen-rules default; the report lists it as
+    // something the shopper can still change. The start-of-flow Auto-Design
+    // dialog still asks "What goes above the range?"
+    expect(complete).toContain("resolveAutoDesignOverRangeAnswer(stage.input.overRangeAnswer)");
+    expect(complete).toContain("overRangeDefaultedFinding()");
+    expect(complete).not.toContain("setAutoDesignRangeVentPrompt({ rangeUid: bareRange.uid })");
     expect(designTool).toContain("What goes above the range?");
     expect(designTool).toContain("Add a range hood");
     expect(designTool).toContain("Add a bridge cabinet and microwave");
@@ -54,7 +56,7 @@ describe("Auto-Design kitchen rules wiring", () => {
     expect(hood).toContain("appendCollisionFreePlacements(placedRef.current, [built.hood], room)");
     const bridge = between(designTool, "const offerAutoDesignBridgeAndMicrowave = useCallback", "const addWscSpiceStackUpper = useCallback");
     expect(bridge).toContain("rangeCompanionProposal(");
-    expect(bridge).toContain("setRangeCompanionPrompt({ rangeUid: range.uid, proposal: aligned, microwaveAlreadyPlaced: false })");
+    expect(bridge).toContain("setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false })");
   });
 
   it("shows the window field for every layout, including galley, and explains what it does", () => {
