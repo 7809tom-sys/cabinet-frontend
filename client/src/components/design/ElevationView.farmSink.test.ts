@@ -65,6 +65,14 @@ describe("farmhouse sink base elevation geometry", () => {
     expect(markup).toContain("bottom:104px");
     expect(markup).toContain("height:46px");
     expect(markup).toContain("z-index:23");
+    // The counter band stops at the apron's sides. Stone does not cross its front.
+    const runs = [...markup.matchAll(/data-countertop-run="([0-9.]+):([0-9.]+)"/g)].map((match) => ({
+      start: Number(match[1]),
+      end: Number(match[2]),
+    }));
+    expect(runs.length).toBeGreaterThan(0);
+    const apronCenter = 18;
+    expect(runs.some((run) => apronCenter > run.start + 0.2 && apronCenter < run.end - 0.2)).toBe(false);
   });
 
   it("preserves the counter-mounted apron and exposed toe kick at desktop and mobile elevation scales", () => {

@@ -27,6 +27,7 @@ import {
 } from "@/lib/design";
 import { inferredIslandFace, islandCountertopRect, islandFaceLength, islandOffsetForPlaced } from "@/lib/islandScene";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
+import { subtractRunIntervals } from "@/lib/farmSinkCountertopNotch";
 import {
   type HardwareStyleId,
   hardwareStyle as resolveHardwareStyle,
@@ -40,7 +41,7 @@ import {
   STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
+import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, type CabinetDrawingType } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { useRef, useEffect, useState } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -78,7 +79,7 @@ function RecessedPanel({
 }
 
 function DoorFront({
-  kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, facePattern, frameInsetPx, farmhouseSinkBase = false, cabinetWidthIn,
+  kind, edge, face, doors, drawers, isWall, doorSampleUrl, drawerSampleUrl, cabinetType, blindOnLeft, cabinetHeightIn, facePattern, frameInsetPx, farmhouseSinkBase = false, cabinetWidthIn, masterCode,
 }: {
   kind: DoorPanelKind; edge: string; face: string;
   doors: number; drawers: number; isWall: boolean;
@@ -91,6 +92,7 @@ function DoorFront({
   frameInsetPx?: number | null;
   farmhouseSinkBase?: boolean;
   cabinetWidthIn?: number;
+  masterCode?: string | null;
 }) {
   void drawerSampleUrl; // reserved for future drawer-front photo rendering in island view
   // A real farmhouse (apron-front) sink base has no top rail and no false drawer
@@ -169,6 +171,35 @@ function DoorFront({
       </div>
     );
   }
+  if (drawers > 0 && doors === 0) {
+    const available = Math.max(1, cabinetHeightIn - (isWall ? 0 : 4.5));
+    const heights = drawerOnlyFrontRowHeightsIn({ masterCode, numberOfDrawers: drawers }, available, drawers);
+    const total = heights.reduce((sum, height) => sum + height, 0) || 1;
+    let top = 0;
+    return (
+      <div className="absolute inset-0" data-island-drawer-stack="true">
+        {heights.map((height, index) => {
+          const pct = (height / total) * 100;
+          const row = (
+            <div
+              key={`island-drawer-${index}`}
+              data-island-drawer-front={index + 1}
+              className="absolute left-0 right-0"
+              style={{ top: `${top}%`, height: `${pct}%` }}
+            >
+              <DoorFront
+                kind={kind} edge={edge} face={face} doors={1} drawers={0} isWall={isWall}
+                doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} cabinetType={null}
+                blindOnLeft={blindOnLeft} cabinetHeightIn={height} frameInsetPx={frameInsetPx}
+              />
+            </div>
+          );
+          top += pct;
+          return row;
+        })}
+      </div>
+    );
+  }
   const railBevel: React.CSSProperties = {
     boxShadow: `inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 0 ${edge}55, inset 1px 0 0 rgba(255,255,255,0.2), inset -1px 0 0 ${edge}44`,
   };
@@ -240,7 +271,7 @@ function DoorFront({
 }
 
 export function IslandHardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct, isWall = false, faceHeightIn,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, faceWidthIn, frameStileIn, raisedDoorPullOnRail = false, doorBandStartPct, isWall = false, faceHeightIn, masterCode,
 }: {
   doors: number; drawers: number;
   doorPiece: "knob" | "pull" | "none";
@@ -255,6 +286,7 @@ export function IslandHardwareOverlay({
   doorBandStartPct?: number;
   isWall?: boolean;
   faceHeightIn?: number | null;
+  masterCode?: string | null;
 }) {
   const metal = `linear-gradient(135deg, color-mix(in srgb, ${accent} 55%, #ffffff) 0%, ${accent} 38%, color-mix(in srgb, ${accent} 70%, #000000) 72%, color-mix(in srgb, ${accent} 88%, #ffffff) 100%)`;
   const metalShadow = "0 1px 1.5px rgba(0,0,0,0.35), inset 0 0.5px 0 rgba(255,255,255,0.55)";
@@ -325,18 +357,30 @@ export function IslandHardwareOverlay({
     const standardTopDrawerRow = drawers > 0 && !isWall && bandStart === 0;
     const regionTop = standardTopDrawerRow ? STANDARD_BASE_DRAWER_ROW_PCT : bandStart;
     const regionHeight = standardTopDrawerRow ? 100 - STANDARD_BASE_DRAWER_ROW_PCT : 100 - bandStart;
-    const verticalAnchor = raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
     const resolvedFaceHeight = Number(faceHeightIn);
+    // Same reach rule as the wall elevation: a full-height tall door does not
+    // keep its pull on the top rail just because it stands on the floor.
+    const tallFullHeightReach = !isWall && raisedDoorPullOnRail
+      && Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight >= 60
+      && regionHeight >= 80;
+    const verticalAnchor = tallFullHeightReach
+      ? "reach" as const
+      : raisedDoorPullOnRail
+        ? "top" as const
+        : isWall
+          ? "bottom" as const
+          : "top" as const;
     const inchPlacedTop = Number.isFinite(resolvedFaceHeight) && resolvedFaceHeight > 0 && regionHeight > 0
       ? regionTop + regionHeight / 2 - (doorPullCenterOffsetFromFaceCenterIn({
         faceHeightIn: resolvedFaceHeight * regionHeight / 100,
         pullLengthIn: resolvedFaceHeight * 0.28,
         anchor: verticalAnchor,
+        doorCenterFloorIn: tallFullHeightReach ? resolvedFaceHeight / 2 : undefined,
       }) / resolvedFaceHeight) * 100
       : null;
     const edgeFraction = normalizedDoorPosition === "top-center" && !raisedDoorPullOnRail
       ? 0.13
-      : verticalAnchor === "bottom" ? 0.82 : raisedDoorPullOnRail ? 0.13 : 0.18;
+      : verticalAnchor === "bottom" ? 0.82 : verticalAnchor === "reach" ? 0.53 : raisedDoorPullOnRail ? 0.13 : 0.18;
     const topPct = inchPlacedTop ?? regionTop + regionHeight * edgeFraction;
     const visibleDoorPieces = normalizedDoorPosition === "paired" || (normalizedDoorPosition === "auto" && doors > 1)
       ? Math.min(doors, 2)
@@ -351,10 +395,20 @@ export function IslandHardwareOverlay({
       for (let column = 0; column < drawers; column++) {
         items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${column}`, STANDARD_BASE_DRAWER_ROW_PCT / 2, false, column, drawers));
       }
+    } else if (doors === 0) {
+      const available = Math.max(1, (Number(faceHeightIn) || 34.5) - (isWall ? 0 : 4.5));
+      const heights = drawerOnlyFrontRowHeightsIn({ masterCode, numberOfDrawers: drawers }, available, drawers);
+      const total = heights.reduce((sum, height) => sum + height, 0) || 1;
+      let cursor = 0;
+      heights.forEach((height, index) => {
+        const pct = (height / total) * 100;
+        items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${index}`, cursor + pct / 2));
+        cursor += pct;
+      });
     } else {
-      const drawerH = 100 / (drawers + (doors > 0 ? 1 : 0));
+      const drawerH = 100 / (drawers + 1);
       for (let i = 0; i < drawers; i++) {
-        const topPct = (doors > 0 ? drawerH : 0) + drawerH * i + drawerH / 2;
+        const topPct = drawerH + drawerH * i + drawerH / 2;
         items.push(piece(drawerPiece as "knob" | "pull" | "cup", `drawer-${i}`, topPct));
       }
     }
@@ -375,6 +429,8 @@ interface Props {
   attributesTargetUid?: string | null;
   onSelect: (uid: string | null) => void;
   countertopMaterialId?: string | null;
+  /** Installed sinks. An apron-front sink opens the counter band across its front. */
+  sinks?: readonly { cabinetUid?: string | null; type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number }[];
   finish?: FinishColors;
   crown?: boolean;
   toeKick?: boolean;
@@ -406,6 +462,7 @@ const TOL = 2;
 export function IslandElevationView({
   room, cabinets, island, face = "front", selectedUid, attributesTargetUid = null, onSelect,
   countertopMaterialId = null,
+  sinks = [],
   finish = DEFAULT_FINISH_COLORS,
   crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", hardwareStyleId = null, hardwareAccent = "#1a2744",
@@ -579,6 +636,7 @@ export function IslandElevationView({
               blindOnLeft={blindLeft}
               cabinetHeightIn={height}
               cabinetWidthIn={cabSizeAlong}
+              masterCode={p.masterCode}
               facePattern={p.facePattern ?? null}
               frameInsetPx={cabPanelKind === "slim-shaker" ? cabFrameInset ?? 4 : undefined}
               farmhouseSinkBase={Boolean(farmhouseFace)}
@@ -598,6 +656,7 @@ export function IslandElevationView({
               frameStileIn={cabFrameStileIn}
               isWall={isWall}
               faceHeightIn={height}
+              masterCode={p.masterCode}
               doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
             />
           )}
@@ -763,15 +822,34 @@ export function IslandElevationView({
                 runs.push({ start: s.start, end: s.end });
               }
             }
+            const farmSinkGaps = sorted.filter((cabinet) => isFarmerSinkBase(cabinet)).map((cabinet) => {
+              const geometry = islandFarmhouseSinkElevationGeometry(sizeAlong(cabinet));
+              const origin = posAlong(cabinet);
+              let start = origin + geometry.sideInsetIn;
+              let end = start + geometry.apronWidthIn;
+              const sink = sinks.find((item) => item.cabinetUid === cabinet.uid && (item.apronFront || item.type === "farmhouse"));
+              if (sink && (face === "front" || face === "back")) {
+                const sinkStart = reverseFace
+                  ? planSpan - (sink.x - island.x) - sink.width
+                  : sink.x - island.x;
+                start = Math.min(start, sinkStart);
+                end = Math.max(end, sinkStart + sink.width);
+              }
+              return { start, end };
+            });
             return (
               <>
-                {runs.map((r, i) => (
+                {runs.flatMap((r, i) => subtractRunIntervals([r], farmSinkGaps).map((piece, pieceIndex) => {
+                  const pieceLeft = Math.abs(piece.start - r.start) < 0.05 ? OVERHANG_IN : 0;
+                  const pieceRight = Math.abs(piece.end - r.end) < 0.05 ? OVERHANG_IN : 0;
+                  return (
                   <div
-                    key={`ctr${i}`}
+                    key={`ctr${i}-${pieceIndex}`}
+                    data-countertop-run={`${piece.start.toFixed(3)}:${piece.end.toFixed(3)}`}
                     className="absolute z-20 pointer-events-none rounded-[1px]"
                     style={{
-                      left: (r.start - OVERHANG_IN) * ppi,
-                      width: (r.end - r.start + OVERHANG_IN * 2) * ppi,
+                      left: (piece.start - pieceLeft) * ppi,
+                      width: (piece.end - piece.start + pieceLeft + pieceRight) * ppi,
                       // Flush on top of 34.5" base cabinets; slab extends up 1.5" to 36".
                       bottom: STD.BASE_HEIGHT * ppi,
                       height: THICKNESS_IN * ppi,
@@ -783,7 +861,8 @@ export function IslandElevationView({
                       boxShadow: "0 2px 4px rgba(0,0,0,0.24), inset 0 1px 0 rgba(255,255,255,0.55)",
                     }}
                   />
-                ))}
+                  );
+                }))}
               </>
             );
 	          })()}

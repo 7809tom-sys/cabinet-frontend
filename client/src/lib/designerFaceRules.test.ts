@@ -94,13 +94,13 @@ describe("rule 11: uppers hang at 54 and land on the 84/90/96 line", () => {
   });
 });
 
-describe("rule 5: two-drawer bases show drawers side by side", () => {
-  it("lays a 2DB out as one row of two", () => {
+describe("rule 5: two-drawer bases stack two equal full-width fronts", () => {
+  it("lays a 2DB out as two stacked drawers", () => {
     const drawerBase = base("2DB24", 24, 0, { numberOfDoors: 0, numberOfDrawers: 2 }) as PlacedCabinet;
     expect(isTwoDrawerBase(drawerBase)).toBe(true);
     const layout = twoDrawerRowLayout(drawerBase);
-    expect(layout.sideBySide).toBe(true);
-    expect(layout.rows).toEqual([{ count: 2, height: 34.5 }]);
+    expect(layout.sideBySide).toBe(false);
+    expect(layout.rows).toEqual([{ count: 1, height: 17.25 }, { count: 1, height: 17.25 }]);
   });
 
   it("never treats a door base as a two-drawer base", () => {

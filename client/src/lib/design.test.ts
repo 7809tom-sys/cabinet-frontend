@@ -4182,11 +4182,11 @@ describe("sink base + sink fixture handling (Design Tool fixes)", () => {
 	    expect(paletteActiveWallPlacement("top", ROOM_12x10, fullTopWall, [], 36, 24, "base")).toBeNull();
 	  });
 
-	  it("seats a farmhouse sink at the countertop opening with its apron flush to the room-facing cabinet front", () => {
+	  it("seats a farmhouse sink proud of the cabinet face, centered on the run", () => {
 	    const base = cab({ masterCode: "FSB-36", description: '36" Farmhouse Sink Base', x: 24, y: 0, width: 36, depth: 24, rotation: 0, placement: "base" });
 	    const sink = makeSinkForCabinet("farmhouse", base, ROOM_12x10, { width: 32.625, depth: 18 });
 	    expect(sink.x).toBeCloseTo(25.6875, 8);
-	    expect(sink.y + sink.depth).toBe(24);
+	    expect(sink.y + sink.depth).toBeCloseTo(24 + 1.13, 5);
 	  });
 
   it("does NOT mistake look-alike non-sink families for sink bases", () => {

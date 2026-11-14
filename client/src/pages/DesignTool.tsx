@@ -7245,7 +7245,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ).reduce((total, segment) => total + ((segment.end - segment.start) * (segment.top - segment.bottom)) / 144, 0)) * 10) / 10;
     const flooringSqFt = Math.round(((room.width * room.depth) / 144) * 10) / 10;
     const countertopMeasurement = countertop
-	      ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room)
+	      ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room, sinks)
       : null;
     const areas = {
       backsplashSqFt,
@@ -7256,7 +7256,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       flooringPattern,
     };
     return buildSurfaceCartLines(selectedPlanSurfaces, DESIGN_TIER_TO_SHARED[tier], areas, placedFixtureQuantityByProduct) as CartItem[];
-  }, [selectedPlanSurfaces, tier, placed, openings, room, island, countertop, backsplashHeightMode, countertopBacksplashHeightIn, placedFixtureQuantityByProduct, flooringPattern]);
+  }, [selectedPlanSurfaces, tier, placed, openings, room, island, countertop, backsplashHeightMode, countertopBacksplashHeightIn, placedFixtureQuantityByProduct, flooringPattern, sinks]);
 
   // Final cart lines = cabinets + required source panels + roll-out shelves + priced trim + surfaces &
   // fixtures. Trim/surfaces are folded in here (aggregated by masterCode+styleId)
@@ -7536,8 +7536,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   }, [hasBaseRun]);
   // Countertop measurement (base run + island), shown as a quote request.
   const counter = useMemo(
-	    () => (countertop ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room) : null),
-	    [countertop, placed, island, room]
+	    () => (countertop ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room, sinks) : null),
+	    [countertop, placed, island, room, sinks]
   );
 
   // Countertop fabrication sheet: everything the shop needs, read from the live
@@ -21187,6 +21187,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              wall={activeWall}
 	              onSelectWall={(wall) => { setActiveWall(wall as WallSide); setPlacementTarget("wall"); }}
               countertopMaterialId={countertop ? countertopMaterialId : null}
+              sinks={sinks}
               backsplashMaterialId={backsplashEnabled ? backsplashMaterialId : null}
               backsplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
               backsplashProductName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}
@@ -21234,6 +21235,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	                attributesTargetUid={attributesTargetUid}
 	                onSelect={selectCabinet}
 	                countertopMaterialId={countertop ? island.countertopMaterialId ?? countertopMaterialId : null}
+	                sinks={sinks}
 	                finish={designFinish}
 	                crown={crown}
 	                toeKick={toeKick}
@@ -21395,6 +21397,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                   wall={activeWall}
                   onSelectWall={(wall) => setActiveWall(wall as WallSide)}
                   countertopMaterialId={countertop ? countertopMaterialId : null}
+                  sinks={sinks}
                   backsplashMaterialId={backsplashEnabled ? backsplashMaterialId : null}
               backsplashImageUrl={backsplashEnabled ? threeDSurfaceTextureUrls.backsplash : null}
               backsplashProductName={backsplashEnabled ? threeDSurfaceProductNames.backsplash : null}

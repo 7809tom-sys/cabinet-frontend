@@ -33,7 +33,7 @@ import {
   STANDARD_BASE_DRAWER_ROW_PCT,
 } from "@/lib/hardware";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, isWallBlindCornerCabinet, threeDrawerBaseRowHeights, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
+import { resolveConfiguredFaceCounts, resolveDoorDrawerCounts, cabinetDrawingType, drawerOnlyFrontRowHeightsIn, isWallBlindCornerCabinet, type CabinetDrawingType, type CabinetLike } from "@/lib/cabinetGraphics";
 import { standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
 import { toeKickHeightForElevation } from "@/lib/elevationToeKick";
 import { drawerPanelInsetPx, elevationFrameInsetPx, isShakerElevationStyle, shakerFacePanelGeometry } from "@/lib/elevationFrameGeometry";
@@ -41,6 +41,7 @@ import { isCustomCabinetProfile } from "@/lib/customCabinetProfiles";
 import { resolveCustomCabinetRender } from "@/lib/customCabinetRender";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
+import { subtractRunIntervals } from "@/lib/farmSinkCountertopNotch";
 import { createContext, useContext, useRef, useEffect, useState, useCallback } from "react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { masterTracFinishColor, masterTracProduct } from "@/lib/closet";
@@ -71,6 +72,8 @@ interface Props {
   backsplashProductName?: string | null;
   backsplashProductSize?: string | null;
   openings?: WallOpening[];
+  /** Installed sinks. An apron-front sink opens the counter band across its front. */
+  sinks?: readonly { cabinetUid?: string | null; type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number }[];
   finish?: FinishColors;
   crown?: boolean;
   toeKick?: boolean;
@@ -272,7 +275,7 @@ export function farmhouseSinkElevationGeometry(cabinetWidthIn: number) {
 }
 
 export function ElevationView({
-  room, cabinets, selectedUid, attributesTargetUid = null, onSelect, wall, onSelectWall, countertopMaterialId = null, backsplashMaterialId = null, backsplashImageUrl = null, backsplashProductName = null, backsplashProductSize = null, openings = [],
+  room, cabinets, selectedUid, attributesTargetUid = null, onSelect, wall, onSelectWall, countertopMaterialId = null, backsplashMaterialId = null, backsplashImageUrl = null, backsplashProductName = null, backsplashProductSize = null, openings = [], sinks = [],
   finish = DEFAULT_FINISH_COLORS, crown = false, toeKick = false, batten = false, lightRail = false,
   panelKind = "shaker", mirror = false, hideSwitcher = false,
   hardwareStyleId = null, hardwareAccent = "#1a2744",
@@ -799,6 +802,7 @@ export function ElevationView({
                 frameRailIn={cabFrameMetrics?.railInches}
                 cabinetHeightIn={faceHeightIn}
                 doorBandStartPct={farmhouseFace ? farmhouseFace.apronZonePct : undefined}
+                masterCode={p.masterCode}
                 pantryLayout={pantryDrawerFrontLayout({ ...p, placementType: p.placement, graphicType: customProfile, numberOfDoors: displayCounts.doors, numberOfDrawers: displayCounts.drawers }, faceHeightIn)}
               />
             );
@@ -1393,18 +1397,38 @@ export function ElevationView({
             const hi = Math.max(edge, far);
             return refrigeratorPanels.some((panel) => lo < panel.end - 1e-6 && hi > panel.start + 1e-6);
           };
+          const horizontalRun = side === "top" || side === "bottom";
+          const farmSinkGaps = sorted.filter((cabinet) => isFarmerSinkBase(cabinet)).map((cabinet) => {
+            const pos = wallRunOffset(cabinet, side, room);
+            const span = wallRunSpan(cabinet, side, room);
+            const face = farmhouseSinkBaseFaceLayout(span, cabinet.height || STD.BASE_HEIGHT);
+            let start = pos + face.sideInsetIn;
+            let end = start + face.apronWidthIn;
+            const sink = sinks.find((item) => item.cabinetUid === cabinet.uid && (item.apronFront || item.type === "farmhouse"));
+            if (sink) {
+              const sinkStart = horizontalRun ? sink.x : sink.y;
+              const sinkEnd = sinkStart + (horizontalRun ? sink.width : sink.depth);
+              start = Math.min(start, sinkStart);
+              end = Math.max(end, sinkEnd);
+            }
+            return { start, end };
+          });
           return (
             <>
-              {runs.map((r, i) => {
+              {runs.flatMap((r, i) => {
                 const leftOverhang = overhangCrossesPanel(r.start, -1) ? 0 : OVERHANG_IN;
                 const rightOverhang = overhangCrossesPanel(r.end, 1) ? 0 : OVERHANG_IN;
+                return subtractRunIntervals([r], farmSinkGaps).map((piece, pieceIndex) => {
+                const pieceLeft = Math.abs(piece.start - r.start) < 0.05 ? leftOverhang : 0;
+                const pieceRight = Math.abs(piece.end - r.end) < 0.05 ? rightOverhang : 0;
                 return (
                 <div
-                  key={`ct${i}`}
+                  key={`ct${i}-${pieceIndex}`}
+                  data-countertop-run={`${piece.start.toFixed(3)}:${piece.end.toFixed(3)}`}
                   className="absolute z-20 pointer-events-none rounded-[1px]"
                   style={{
-                    left: (r.start - leftOverhang) * ppi,
-                    width: (r.end - r.start + leftOverhang + rightOverhang) * ppi,
+                    left: (piece.start - pieceLeft) * ppi,
+                    width: (piece.end - piece.start + pieceLeft + pieceRight) * ppi,
                     bottom: Math.ceil(STD.BASE_HEIGHT * ppi),
                     height: THICKNESS_IN * ppi,
                     ...(realistic ? {
@@ -1425,7 +1449,7 @@ export function ElevationView({
                   }}
                   title={t("dt_ev_countertop", { material: mat.name })}
                 />
-              );})}
+              );});})}
             </>
           );
         })()}
@@ -2272,7 +2296,7 @@ export function ElevationView({
 // Pieces are tiny CSS shapes positioned by percentage so they scale with zoom.
 //   knob → small filled circle   pull → short horizontal bar   cup → half-moon
 export function HardwareOverlay({
-  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, isWall = false, faceWidthIn, frameStileIn, frameRailIn, cabinetHeightIn, raisedDoorPullOnRail = false, pantryLayout, doorBandStartPct,
+  doors, drawers, doorPiece, drawerPiece, accent, hardwarePosition, swing, isWall = false, faceWidthIn, frameStileIn, frameRailIn, cabinetHeightIn, raisedDoorPullOnRail = false, pantryLayout, doorBandStartPct, masterCode,
 }: {
   doors: number;
   drawers: number;
@@ -2290,6 +2314,7 @@ export function HardwareOverlay({
   pantryLayout?: ReturnType<typeof pantryDrawerFrontLayout>;
   /** Doors start this many percent below the top of the face (farmhouse sink apron zone). */
   doorBandStartPct?: number;
+  masterCode?: string | null;
 }) {
   // Brushed-metal sheen: diagonal light streak over accent color with crisp
   // top highlight and soft drop shadow so pieces read as real metal hardware.
@@ -2414,6 +2439,16 @@ export function HardwareOverlay({
       for (let column = 0; column < drawers; column++) {
         pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${column}`, drawerBand / 2, false, column, drawers));
       }
+    } else if (!hasDoors) {
+      const available = Math.max(1, (Number(cabinetHeightIn) || 34.5) - (isWall ? 0 : 4.5));
+      const heights = drawerOnlyFrontRowHeightsIn({ masterCode, numberOfDrawers: drawers }, available, drawers);
+      const total = heights.reduce((sum, height) => sum + height, 0) || 1;
+      let cursor = 0;
+      heights.forEach((height, index) => {
+        const pct = (height / total) * drawerBand;
+        pieces.push(piece(drawerPiece as "knob" | "pull" | "cup", `dr-${index}`, cursor + pct / 2, false));
+        cursor += pct;
+      });
     } else {
       for (let i = 0; i < drawers; i++) {
         const sliceH = drawerBand / drawers;
@@ -2435,15 +2470,30 @@ export function HardwareOverlay({
     const topRailCenterPct = Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight > 0
       ? (resolvedRail > 0 ? resolvedRail : 3) / 2 / (resolvedCabinetHeight * (doorHeightPct / 100)) * doorHeightPct
       : doorHeightPct * 0.06;
-    const verticalAnchor = pantryLayout ? "bottom" as const : raisedDoorPullOnRail ? "top" as const : isWall ? "bottom" as const : "top" as const;
+    // A floor-seated wall cabinet is short, so "raised" means the top rail.
+    // A full-height tall door is not: the same flag used to pin its pull near
+    // the ceiling. That pull belongs at a 42" reach, matching the 3D view.
+    const tallFullHeightReach = !pantryLayout && !isWall && raisedDoorPullOnRail
+      && Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight >= 60
+      && doorHeightPct >= 80;
+    const verticalAnchor = pantryLayout
+      ? "bottom" as const
+      : tallFullHeightReach
+        ? "reach" as const
+        : raisedDoorPullOnRail
+          ? "top" as const
+          : isWall
+            ? "bottom" as const
+            : "top" as const;
     const inchPlacedTop = Number.isFinite(resolvedCabinetHeight) && resolvedCabinetHeight > 0 && doorHeightPct > 0
       ? doorBandTop + doorHeightPct / 2 - (doorPullCenterOffsetFromFaceCenterIn({
         faceHeightIn: resolvedCabinetHeight * doorHeightPct / 100,
         pullLengthIn: resolvedCabinetHeight * verticalDoorPullHeightPct / 100,
         anchor: verticalAnchor,
+        doorCenterFloorIn: tallFullHeightReach ? resolvedCabinetHeight / 2 : undefined,
       }) / resolvedCabinetHeight) * 100
       : null;
-    const fallbackFraction = verticalAnchor === "bottom" ? 0.82 : raisedDoorPullOnRail ? 0.13 : 0.18;
+    const fallbackFraction = verticalAnchor === "bottom" ? 0.82 : verticalAnchor === "reach" ? 0.53 : raisedDoorPullOnRail ? 0.13 : 0.18;
     const requestedDoorTop = normalizedDoorPosition === "top-center" && !raisedDoorPullOnRail
       ? doorBandTop + topRailCenterPct
       : inchPlacedTop ?? doorBandTop + doorHeightPct * fallbackFraction;
@@ -3934,16 +3984,16 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
       );
     }
     // Drawer-only bases share the same family rules as thumbnails, selected
-    // details, and final 3D: 2-DB is 50/50; 3-DB is 6in over equal lower rows.
+    // details, and final 3D: 2-DB is two equal full-width fronts; 3-DB is 6in
+    // over equal lower rows; 4-DB is four equal fronts.
     const availableDrawerFaceIn = Math.max(1, (cabinetHeightIn ?? 34.5) - (isWall ? 0 : 4.5));
-    const verifiedThreeDrawerRows = threeDrawerBaseRowHeights(
+    const drawerRowHeightsIn = drawerOnlyFrontRowHeightsIn(
       { masterCode, numberOfDrawers: drawerCount },
       availableDrawerFaceIn,
       drawerCount,
     );
-    const allDrawerRowHeights: number[] = verifiedThreeDrawerRows
-      ? verifiedThreeDrawerRows.map((height) => (height / availableDrawerFaceIn) * 100)
-      : Array.from({ length: drawerCount }, () => 100 / drawerCount);
+    const drawerRowTotal = drawerRowHeightsIn.reduce((sum, height) => sum + height, 0) || 1;
+    const allDrawerRowHeights: number[] = drawerRowHeightsIn.map((height) => (height / drawerRowTotal) * 100);
     return withFace(
       <>
         {Array.from({ length: drawerCount }).map((_, i) => {
@@ -3957,7 +4007,7 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
               {i > 0 && (
                 <div className="absolute left-0 right-0 top-0" style={{ height: 2, background: stroke }} />
               )}
-              <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={verifiedThreeDrawerRows?.[i] ?? availableDrawerFaceIn / drawerCount} />
+              <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={drawerRowHeightsIn[i] ?? availableDrawerFaceIn / drawerCount} />
             </div>
           );
         })}

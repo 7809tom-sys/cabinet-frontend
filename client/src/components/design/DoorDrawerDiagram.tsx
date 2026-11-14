@@ -16,7 +16,7 @@
  */
 
 import React from "react";
-import { cabinetDrawingType, isEqualHeightTwoDrawerBase, resolveDoorDrawerCounts, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType, resolveDoorDrawerCounts, threeDrawerBaseRowHeights, twoDrawerBaseStackedRows } from "@/lib/cabinetGraphics";
 import type { CabinetLike } from "@/lib/cabinetGraphics";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
 import { standardBaseFaceReference, standardBaseRenderedCounts } from "@/lib/genericCabinetDrawerReference";
@@ -1011,10 +1011,11 @@ export function DoorDrawerDiagram({ cabinet, width = 180, className }: Props) {
       doorIdx += doorsInThisRow;
     }
   } else if (effectiveDrawers > 0 && effectiveDoors === 0) {
-    // 2-DB products always have two equal fronts, shown SIDE BY SIDE in one row
-    // (rule 5). Legacy or supplier-authored drawerLayout rows must not turn them
-    // into a short top and tall bottom.
-    const twoDrawerRow = twoDrawerBaseSideBySideRows(cabinet, effectiveDrawers);
+    // 2-DB products always have two equal full-width fronts, stacked.
+    // Legacy or supplier-authored drawerLayout rows must not turn them
+    // into a short top and tall bottom, or into a side-by-side pair.
+    const faceHeightIn = Math.max(1, (toNum(cabinet.height) ?? 34.5) - 4.5);
+    const twoDrawerRow = twoDrawerBaseStackedRows(cabinet, faceHeightIn, effectiveDrawers);
     const parsedDrawerRows = twoDrawerRow != null
       ? twoDrawerRow
       : parseDrawerLayout(cabinet.drawerLayout, effectiveDrawers);

@@ -56,13 +56,14 @@ import {
 export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
-import { farmhouseSinkBaseFaceLayout } from "@/lib/farmhouseSinkBaseFace";
+import { farmhouseSinkBaseFaceLayout, FARMHOUSE_SINK_APRON_PROUD_IN } from "@/lib/farmhouseSinkBaseFace";
+import { applyApronFrontCountertopNotches } from "@/lib/farmSinkCountertopNotch";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShellVertices, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
 import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
-import { cabinetDrawingType, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseSideBySideRows } from "@/lib/cabinetGraphics";
+import { cabinetDrawingType, fourDrawerBaseRowHeights, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseStackedRows } from "@/lib/cabinetGraphics";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
@@ -3253,9 +3254,19 @@ export function resolvedThreeDDrawerRows(
 ) {
   const count = Math.max(0, fallbackCount);
   if (isEqualHeightTwoDrawerBase(sku, fallbackCount)) {
-    // Rule 5: a two-drawer base shows its two drawers side by side, never stacked.
-    return twoDrawerBaseSideBySideRows(sku, availableHeight, fallbackCount)
-      ?? [{ count: 2, height: availableHeight }];
+    // A two-drawer base is two equal full-width fronts, one above the other.
+    const faceIn = availableHeight / INCH;
+    const rows = twoDrawerBaseStackedRows(sku, faceIn, fallbackCount)
+      ?? [{ count: 1, height: faceIn / 2 }, { count: 1, height: faceIn / 2 }];
+    return rows.map((row) => ({ count: row.count, height: row.height * INCH }));
+  }
+  const verifiedFourDrawerRows = fourDrawerBaseRowHeights(sku, availableHeight / INCH, count);
+  if (verifiedFourDrawerRows) {
+    return verifiedFourDrawerRows.map((heightIn) => ({ count: 1, height: heightIn * INCH }));
+  }
+  const verifiedThreeDrawerRows = threeDrawerBaseRowHeights(sku, availableHeight / INCH, count);
+  if (verifiedThreeDrawerRows) {
+    return verifiedThreeDrawerRows.map((heightIn) => ({ count: 1, height: heightIn * INCH }));
   }
   try {
     const parsed = JSON.parse(sku.drawerLayout ?? "null");
@@ -3280,12 +3291,6 @@ export function resolvedThreeDDrawerRows(
     if (!standardBaseFace.drawerRows.length || !(availableHeight > 0)) return [];
     const rowHeight = availableHeight / standardBaseFace.drawerRows.length;
     return standardBaseFace.drawerRows.map((row) => ({ count: row.count, height: rowHeight }));
-  }
-  const verifiedThreeDrawerRows = useShallowTopDrawer
-    ? threeDrawerBaseRowHeights(sku, availableHeight / INCH, count)
-    : null;
-  if (verifiedThreeDrawerRows) {
-    return verifiedThreeDrawerRows.map((heightIn) => ({ count: 1, height: heightIn * INCH }));
   }
   if (useShallowTopDrawer && count > 1 && availableHeight > 6 * INCH) {
     const topHeight = 6 * INCH;
@@ -7692,9 +7697,10 @@ export function addCabinet(
         new THREE.BoxGeometry(apronWidth, apronHeight, apronDepth),
         new THREE.MeshStandardMaterial({ color: "#ece9e1", roughness: 0.34, metalness: 0.04 }),
       );
-      // The apron hangs from the top of the face and stands a hair proud of the
-      // door slabs (about 3/8"), never recessed behind them.
-      apron.position.set(0, carcassTopY - apronHeight / 2, 0.052 - apronDepth / 2);
+      // Door slab front is at half its 0.045 ft thickness. The apron stands the
+      // shared 1/2" proud of that face, never recessed inside the frame.
+      const apronFrontZ = 0.045 / 2 + FARMHOUSE_SINK_APRON_PROUD_IN * INCH;
+      apron.position.set(0, carcassTopY - apronHeight / 2, apronFrontZ - apronDepth / 2);
       apron.userData = { specialtyProfile: "farmhouse-sink", farmhouseApronFront: true, cabinetFront: true };
       frontGroup.add(apron);
       const basinMaterial = new THREE.MeshStandardMaterial({ color: "#d5d8d9", roughness: 0.22, metalness: 0.62 });
@@ -8716,8 +8722,12 @@ export function addThreeDPeninsulaCountertops(
   placed: PlacedCabinet[],
   counterColor: string,
   countertopTexture?: THREE.Texture | null,
+  sinks: readonly { type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number; wallSide?: string | null }[] = [],
 ) {
-  const surfaces = countertopSurfaces(placed, room).filter((surface) => Boolean(surface.peninsulaRunId));
+  const surfaces = applyApronFrontCountertopNotches(
+    countertopSurfaces(placed, room).filter((surface) => Boolean(surface.peninsulaRunId)),
+    sinks,
+  );
   for (const surface of surfaces) {
     const run = room.peninsulaRuns?.find((candidate) => candidate.id === surface.peninsulaRunId);
     if (!run) continue;
@@ -8865,8 +8875,12 @@ export function addThreeDMeasuredWallMiterCountertops(
   placed: PlacedCabinet[],
   counterColor: string,
   countertopTexture?: THREE.Texture | null,
+  sinks: readonly { type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number; wallSide?: string | null }[] = [],
 ) {
-  const surfaces = countertopSurfaces(placed, room).filter((surface) => Boolean(surface.customWallId));
+  const surfaces = applyApronFrontCountertopNotches(
+    countertopSurfaces(placed, room).filter((surface) => Boolean(surface.customWallId)),
+    sinks,
+  );
   for (const surface of surfaces) {
     const length = Math.max(0.1, surface.linearInches ?? surface.width);
     const depth = Math.max(0.1, surface.depth);
@@ -8992,8 +9006,12 @@ export function addThreeDStandardCountertops(
   countertopTexture?: THREE.Texture | null,
   island?: IslandZone | null,
   ponyWalls: PonyWall[] = [],
+  sinks: readonly { type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number; wallSide?: string | null }[] = [],
 ) {
-  const surfaces = threeDStandardCountertopSurfaces(room, placed, island, ponyWalls);
+  const surfaces = applyApronFrontCountertopNotches(
+    threeDStandardCountertopSurfaces(room, placed, island, ponyWalls),
+    sinks,
+  );
   for (const surface of surfaces) {
     // `linearInches` is the along-wall takeoff. On a side wall it is the Z run
     // length, not the slab's physical X width; use the plan surface dimensions.
@@ -10636,6 +10654,7 @@ export function addIslandZone(
   placed: PlacedCabinet[],
   counterColor: string,
   countertopTexture?: THREE.Texture | null,
+  sinks: readonly { type?: string | null; apronFront?: boolean | null; x: number; y: number; width: number; depth: number; wallSide?: string | null }[] = [],
 ) {
   const transform = islandZoneTransform(island);
   const group = new THREE.Group();
@@ -10660,9 +10679,13 @@ export function addIslandZone(
   guideGroup.add(back, front, left, right);
   group.add(guideGroup);
 	  const slabs = islandCountertopVisibleRects(island, placed);
+	  const notchedSlabs = applyApronFrontCountertopNotches(
+	    slabs.map((slab) => ({ ...slab, kind: "island" as const })),
+	    sinks,
+	  );
 	  const raisedBarSlabs = islandRaisedBarRects(island, placed);
 	  const waterfallSlabs = islandCountertopRects(island, placed);
-	  slabs.forEach((slab, slabIndex) => {
+	  notchedSlabs.forEach((slab, slabIndex) => {
     const mappedCountertopTexture = threeDTextureForCountertopMesh(countertopTexture ?? null, {
       centerXIn: slab.x + slab.width / 2,
       centerZIn: slab.y + slab.depth / 2,
@@ -10684,7 +10707,9 @@ export function addIslandZone(
       materialOnlyNoGeometryChange: true,
     };
     const counter = new THREE.Mesh(
-      new THREE.BoxGeometry(slab.width * INCH, 1.5 * INCH, slab.depth * INCH),
+      slab.polygon && slab.polygon.length >= 3
+        ? threeDPeninsulaCountertopGeometry(slab, slab.width, slab.depth)
+        : new THREE.BoxGeometry(slab.width * INCH, 1.5 * INCH, slab.depth * INCH),
       counterMaterial,
     );
     counter.position.set((slab.x + slab.width / 2) * INCH - transform.x, transform.counterTop, (slab.y + slab.depth / 2) * INCH - transform.z);
@@ -13909,10 +13934,10 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      if (toeKick && continuousToeKickSegments.length > 0) {
 	        addThreeDContinuousToeKicks(catalogRoot, continuousToeKickSegments, room, visibleCabinetFinishOverrides, finish);
 	      }
-	      addThreeDStandardCountertops(catalogRoot, room, renderedPlaced, materialDefaults.countertop, countertopTexture, island, ponyWalls);
+	      addThreeDStandardCountertops(catalogRoot, room, renderedPlaced, materialDefaults.countertop, countertopTexture, island, ponyWalls, sinks);
 	      if (roomOverride) {
-	        addThreeDMeasuredWallMiterCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture);
-	        addThreeDPeninsulaCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture);
+	        addThreeDMeasuredWallMiterCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture, sinks);
+	        addThreeDPeninsulaCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture, sinks);
 	      }
 	      addThreeDGlassStackerRearSupports(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish);
 	      if (crown) addThreeDCrownMolding(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish);
@@ -13935,7 +13960,10 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      if (!showRoomContext && opening.kind === "door" && opening.doorStyle === "bifold") continue;
       addWallOpening(catalogRoot, opening, room, undefined, windowSceneKind, windowFrameStyle);
 	    }
-    const faucetCountertops = countertopSurfaces(renderedPlaced, room, island, ponyWalls);
+    const faucetCountertops = applyApronFrontCountertopNotches(
+      countertopSurfaces(renderedPlaced, room, island, ponyWalls),
+      sinks,
+    );
     for (const sink of sinks) addSinkFixture(catalogRoot, sink, resolveDeckFaucetPlacement(sink, room, openings, faucetCountertops));
     for (const potFiller of potFillers) {
       const mountedRange = potFillerMountedRange(potFiller, placed, room, island);
@@ -13947,6 +13975,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 		      placed,
 		      catalogIslandCountertopColor ?? materialDefaults.countertop,
 		      islandCountertopTexture,
+		      sinks,
 		    );
 	    for (const ponyWall of ponyWalls) addPonyWall(catalogRoot, ponyWall, room, ponyWalls);
     for (const furnitureItem of furniture) addFurniture(catalogRoot, furnitureItem, furnitureItem.uid === selectedFurnitureUid, furniture);

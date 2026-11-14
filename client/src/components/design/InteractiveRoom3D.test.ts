@@ -5290,7 +5290,7 @@ describe("interactive 3D room scene helpers", () => {
     expect(drawerPulls.map((pull) => pull.position.x)).toEqual([0, 0, 0]);
   });
 
-  it("renders 2-DB24 as two equal drawer fronts SIDE BY SIDE with centered horizontal pulls", () => {
+  it("renders 2-DB24 as two equal stacked drawer fronts with centered horizontal pulls", () => {
     const cabinet = {
       uid: "affiliate-two-db24",
       cabinetId: 9400174,
@@ -5306,7 +5306,7 @@ describe("interactive 3D room scene helpers", () => {
       numberOfDoors: 0,
       numberOfDrawers: 2,
       drawerLayout: JSON.stringify([{ count: 1, height: 6 }, { count: 1, height: 24 }]),
-      hardwarePosition: "right",
+      hardwarePosition: "top-center",
     } as never;
     const root = new THREE.Group();
     addCabinetWithBarPulls(root, existingCabinetSku(cabinet), null, {}, 144, 120, "#eee9dd", "#ffffff", { doorStyle: "Shaker", doorPanelType: null }, existingCabinetTransform(cabinet));
@@ -5319,12 +5319,21 @@ describe("interactive 3D room scene helpers", () => {
 
     expect(drawers).toHaveLength(2);
     const heights = drawers.map((drawer) => (drawer.geometry as THREE.BoxGeometry).parameters.height);
-    // Rule 5: equal heights in ONE row, so the two fronts share a vertical center.
-    expect(heights[0]).toBeCloseTo(heights[1], 12);
-    expect(drawers[0]!.position.y).toBeCloseTo(drawers[1]!.position.y, 12);
-    expect(drawers[0]!.position.x).not.toBeCloseTo(drawers[1]!.position.x, 6);
+    const widths = drawers.map((drawer) => (drawer.geometry as THREE.BoxGeometry).parameters.width);
+    const sorted = [...drawers].sort((a, b) => b.position.y - a.position.y);
+    expect(heights[0]).toBeCloseTo(heights[1]!, 12);
+    expect(widths[0]).toBeCloseTo(widths[1]!, 12);
+    expect(sorted[0]!.position.x).toBeCloseTo(sorted[1]!.position.x, 6);
+    expect(sorted[0]!.position.y).toBeGreaterThan(sorted[1]!.position.y + 0.2);
     expect(drawerPulls).toHaveLength(2);
-    expect(drawerPulls.every((pull) => !pull.userData.verticalPull && pull.userData.hardwarePosition === "center")).toBe(true);
+    expect(drawerPulls.every((pull) => !pull.userData.verticalPull && pull.userData.hardwarePosition === "center" && pull.userData.pullEdge === "center")).toBe(true);
+    for (const drawer of drawers) {
+      const pull = drawerPulls.find((candidate) => Math.abs(candidate.position.y - drawer.position.y) < 0.02);
+      expect(pull).toBeDefined();
+      expect(pull!.position.x).toBeCloseTo(drawer.position.x, 6);
+      const pullSize = (pull as THREE.Mesh).geometry as THREE.BoxGeometry;
+      expect(pullSize.parameters.width).toBeGreaterThan(pullSize.parameters.height);
+    }
   });
 
   it("keeps the reported adjacent 36-inch island cabinets visually edge-to-edge when their saved offsets already touch", () => {
@@ -5437,7 +5446,7 @@ describe("interactive 3D room scene helpers", () => {
     ]);
   });
 
-  it("keeps 2-DB24 authoritative as two equal drawers SIDE BY SIDE despite a stale unequal saved layout", () => {
+  it("keeps 2-DB24 authoritative as two equal stacked drawers despite a stale unequal saved layout", () => {
     const availableHeight = 34.5 / 12 - 0.08;
     const sku = {
       masterCode: "2-DB24",
@@ -5446,9 +5455,9 @@ describe("interactive 3D room scene helpers", () => {
       drawerLayout: JSON.stringify([{ count: 1, height: 6 }, { count: 1, height: 24 }]),
     };
     expect(isEqualHeightTwoDrawerBase(sku, 2)).toBe(true);
-    // Rule 5: one row of two, never one above the other.
     expect(resolvedThreeDDrawerRows(sku, availableHeight, 2, true)).toEqual([
-      { count: 2, height: availableHeight },
+      { count: 1, height: availableHeight / 2 },
+      { count: 1, height: availableHeight / 2 },
     ]);
     expect(isEqualHeightTwoDrawerBase({ ...sku, numberOfDoors: 2 }, 2)).toBe(true);
     expect(isEqualHeightTwoDrawerBase({ ...sku, masterCode: "3-DB24", numberOfDrawers: 3 }, 3)).toBe(false);
@@ -5474,9 +5483,9 @@ describe("interactive 3D room scene helpers", () => {
     });
     expect(drawerZone).toBeCloseTo(29 / 12, 12);
     expect(usableHeight - drawerZone).toBeLessThan(0.01);
-    // Rule 5: the two fronts sit side by side in one full-height row.
     expect(resolvedThreeDDrawerRows(sku, drawerZone, 2, true)).toEqual([
-      { count: 2, height: drawerZone },
+      { count: 1, height: drawerZone / 2 },
+      { count: 1, height: drawerZone / 2 },
     ]);
 
     const root = new THREE.Group();
@@ -5502,12 +5511,78 @@ describe("interactive 3D room scene helpers", () => {
     });
     expect(drawers).toHaveLength(2);
     const meshHeights = drawers.map((drawer) => (drawer.geometry as THREE.BoxGeometry).parameters.height);
+    const meshWidths = drawers.map((drawer) => (drawer.geometry as THREE.BoxGeometry).parameters.width);
     expect(meshHeights[0]).toBeCloseTo(meshHeights[1]!, 12);
-    // Side by side: the same vertical center, different columns.
-    expect(drawers[0]!.position.y).toBeCloseTo(drawers[1]!.position.y, 12);
-    expect(drawers[0]!.position.x).not.toBeCloseTo(drawers[1]!.position.x, 6);
+    expect(meshWidths[0]).toBeCloseTo(meshWidths[1]!, 12);
+    expect(drawers[0]!.position.x).toBeCloseTo(drawers[1]!.position.x, 6);
+    expect(Math.abs(drawers[0]!.position.y - drawers[1]!.position.y)).toBeGreaterThan(0.2);
     expect(pulls).toHaveLength(2);
-    expect(pulls.every((pull) => pull.userData.hardwarePosition === "center")).toBe(true);
+    expect(pulls.every((pull) => pull.userData.hardwarePosition === "center" && !pull.userData.verticalPull)).toBe(true);
+    expect(pulls.map((pull) => pull.position.x)).toEqual([0, 0]);
+  });
+
+  it("centers one horizontal pull on every drawer of a 2-, 3-, and 4-drawer base for every hardware style", () => {
+    const styles = ["knob", "bar-pull", "cup-pull", "knob-and-pull"] as const;
+    const cabinets = [
+      { masterCode: "2DB24", width: 24, drawers: 2 },
+      { masterCode: "2DB30", width: 30, drawers: 2 },
+      { masterCode: "3DB30", width: 30, drawers: 3 },
+      { masterCode: "4DB30", width: 30, drawers: 4 },
+      { masterCode: "RB2DB36", width: 36, drawers: 2 },
+      { masterCode: "2VDB18", width: 18, drawers: 2 },
+    ] as const;
+    for (const style of styles) {
+      for (const cabinet of cabinets) {
+        const root = new THREE.Group();
+        const args = [
+          root,
+          {
+            distributorSkuId: -1,
+            cabinetId: 1,
+            masterCode: cabinet.masterCode,
+            description: `${cabinet.masterCode} drawer base`,
+            placementType: "base",
+            width: cabinet.width,
+            height: 34.5,
+            depth: 24,
+            numberOfDoors: 2,
+            numberOfDrawers: cabinet.drawers,
+            hardwarePosition: "top-center",
+            drawerLayout: JSON.stringify([{ count: 2, height: 30 }]),
+          },
+          null,
+          {},
+          144,
+          120,
+          "#d1ba8f",
+          "#ffffff",
+          { doorStyle: "Shaker", doorPanelType: null },
+        ] as unknown as Parameters<typeof addCabinet>;
+        args[12] = { hardwareStyleId: style };
+        addCabinet(...args);
+        const fronts: THREE.Mesh[] = [];
+        const pulls: THREE.Object3D[] = [];
+        root.traverse((node) => {
+          if (node instanceof THREE.Mesh && node.userData.cabinetDrawerFront) fronts.push(node);
+          if (node.userData.cabinetHardware && node.userData.hardwareStyleId === style) pulls.push(node);
+        });
+        expect(fronts, `${style} ${cabinet.masterCode}`).toHaveLength(cabinet.drawers);
+        expect(pulls, `${style} ${cabinet.masterCode}`).toHaveLength(cabinet.drawers);
+        const xs = fronts.map((front) => front.position.x);
+        expect(new Set(xs.map((x) => x.toFixed(4))).size, `${style} ${cabinet.masterCode}`).toBe(1);
+        const ys = [...fronts.map((front) => front.position.y)].sort((a, b) => b - a);
+        for (let index = 1; index < ys.length; index += 1) {
+          expect(ys[index - 1]! - ys[index]!, `${style} ${cabinet.masterCode}`).toBeGreaterThan(0.15);
+        }
+        for (const front of fronts) {
+          const pull = pulls.find((candidate) => Math.abs(candidate.position.y - front.position.y) < 0.04);
+          expect(pull, `${style} ${cabinet.masterCode}`).toBeDefined();
+          expect(pull!.position.x).toBeCloseTo(front.position.x, 5);
+          expect(pull!.userData.hardwarePosition).toBe("center");
+          expect(pull!.userData.verticalPull).toBe(false);
+        }
+      }
+    }
   });
 
   it("uses the existing single-oven 2D drawer contract despite stale saved drawer rows", () => {

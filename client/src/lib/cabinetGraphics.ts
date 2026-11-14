@@ -134,29 +134,52 @@ function lc(v: string | null | undefined): string {
   return (v ?? "").toLowerCase();
 }
 
+function compactCabinetCode(masterCode: string | null | undefined): string {
+  return String(masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * A base whose whole face is drawer fronts: 2DB / 2-DB / 2DBID / 2VDB / RB2DB,
+ * and the 3- and 4-drawer equivalents. Tall pantries such as T2DB2494 start
+ * with T and stay door cabinets.
+ */
+export function isDrawerBaseFamilyCode(masterCode: string | null | undefined): boolean {
+  return drawerBaseFamilyDrawerCount(masterCode) != null;
+}
+
+/** 2, 3, or 4 for a drawer-base family code. Tall T2DB pantries do not match. */
+export function drawerBaseFamilyDrawerCount(masterCode: string | null | undefined): number | null {
+  const match = compactCabinetCode(masterCode).match(/^(?:RB|ADA)?([234])(?:DB|VDB)(?:ID)?\d/);
+  return match ? Number(match[1]) : null;
+}
+
 /** The 2-DB family always has exactly two equal-height drawer fronts. */
 export function isEqualHeightTwoDrawerBase(
   cabinet: Pick<CabinetLike, "masterCode" | "numberOfDrawers">,
   fallbackCount = 0,
 ): boolean {
-  const code = String(cabinet.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const code = compactCabinetCode(cabinet.masterCode);
   const drawerCount = Math.max(0, Number(cabinet.numberOfDrawers) || fallbackCount);
-  return /^2DB\d/.test(code) && drawerCount === 2;
+  return /^(?:RB|ADA)?2(?:DB|VDB)(?:ID)?\d/.test(code) && drawerCount === 2;
 }
 
 /**
- * Rule 5: a two-drawer base shows its drawers SIDE BY SIDE in one full-height row,
- * never stacked one above the other. This is the shared row contract for the
- * elevation, the schematic and the 3D front, so all three agree.
+ * A two-drawer base is two full-width fronts stacked one above the other,
+ * equal height. This is the shared row contract for the elevation, the
+ * schematic, the island, and the 3D front, so all of them agree. A saved
+ * unequal drawerLayout does not turn the pair into a short drawer over a
+ * tall one, and it never puts the two fronts side by side.
  */
-export function twoDrawerBaseSideBySideRows(
+export function twoDrawerBaseStackedRows(
   cabinet: Pick<CabinetLike, "masterCode" | "numberOfDrawers">,
   availableFaceHeightIn: number,
   fallbackCount = 0,
 ): Array<{ count: number; height: number }> | null {
   if (!isEqualHeightTwoDrawerBase(cabinet, fallbackCount)) return null;
   const height = Number(availableFaceHeightIn);
-  return [{ count: 2, height: Number.isFinite(height) && height > 0 ? height : 30 }];
+  const face = Number.isFinite(height) && height > 0 ? height : 30;
+  const row = face / 2;
+  return [{ count: 1, height: row }, { count: 1, height: row }];
 }
 
 /** WBC is a wall blind corner. Door side is the placement's swing, not a second SKU. */
@@ -179,12 +202,47 @@ export function threeDrawerBaseRowHeights(
   availableFaceHeightIn: number,
   fallbackCount = 0,
 ): number[] | null {
-  const code = String(cabinet.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const code = compactCabinetCode(cabinet.masterCode);
   const drawerCount = Math.max(0, Number(cabinet.numberOfDrawers) || fallbackCount);
-  if (!/^3DB\d/.test(code) || drawerCount !== 3 || !(availableFaceHeightIn > 0)) return null;
+  if (!/^(?:RB|ADA)?3(?:DB|VDB)(?:ID)?\d/.test(code) || drawerCount !== 3 || !(availableFaceHeightIn > 0)) return null;
   const top = Math.min(6, availableFaceHeightIn / 3);
   const lower = (availableFaceHeightIn - top) / 2;
   return [top, lower, lower];
+}
+
+/** A 4-drawer base is four equal full-width fronts. No catalog row uses a short top drawer. */
+export function fourDrawerBaseRowHeights(
+  cabinet: Pick<CabinetLike, "masterCode" | "numberOfDrawers">,
+  availableFaceHeightIn: number,
+  fallbackCount = 0,
+): number[] | null {
+  const code = compactCabinetCode(cabinet.masterCode);
+  const drawerCount = Math.max(0, Number(cabinet.numberOfDrawers) || fallbackCount);
+  if (!/^(?:RB|ADA)?4(?:DB|VDB)(?:ID)?\d/.test(code) || drawerCount !== 4 || !(availableFaceHeightIn > 0)) return null;
+  const row = availableFaceHeightIn / 4;
+  return [row, row, row, row];
+}
+
+/**
+ * Drawer-only face heights, top to bottom, in inches. Two-drawer bases are
+ * equal. Three-drawer bases are a 6-inch top over two equal drawers.
+ * Four-drawer bases are four equal fronts. Any other drawer count splits the
+ * face equally. Each height is one full-width front.
+ */
+export function drawerOnlyFrontRowHeightsIn(
+  cabinet: Pick<CabinetLike, "masterCode" | "numberOfDrawers">,
+  availableFaceHeightIn: number,
+  fallbackCount = 0,
+): number[] {
+  const count = Math.max(0, Number(cabinet.numberOfDrawers) || fallbackCount);
+  if (!count || !(availableFaceHeightIn > 0)) return [];
+  const two = twoDrawerBaseStackedRows(cabinet, availableFaceHeightIn, count);
+  if (two) return two.map((row) => row.height);
+  const three = threeDrawerBaseRowHeights(cabinet, availableFaceHeightIn, count);
+  if (three) return three;
+  const four = fourDrawerBaseRowHeights(cabinet, availableFaceHeightIn, count);
+  if (four) return four;
+  return Array.from({ length: count }, () => availableFaceHeightIn / count);
 }
 
 const WORD_NUM: Record<string, number> = {
@@ -224,6 +282,15 @@ function resolveDoorDrawerCountsUncorrected(cab: CabinetLike & { cabinetConfigAu
 } {
   // If the user explicitly marked this cabinet as "no door", render as open box.
   if (cab.noDoor) return { doors: 0, drawers: 0 };
+
+  const familyDrawers = drawerBaseFamilyDrawerCount(cab.masterCode);
+  const describedDoors = /\b(?:single|double|two|three|four|\d+)\s*[- ]?doors?\b/.test(lc(cab.description));
+  // 2DB / 3DB / 4DB (and vanity, range, and inner-drawer variants) are drawer
+  // fronts only. A stored numberOfDoors of 2, or a saved side-by-side
+  // drawerLayout, must not turn them into a door cabinet.
+  if (familyDrawers != null && !describedDoors) {
+    return { doors: 0, drawers: familyDrawers };
+  }
 
   const nomenclature = parseCatalogNomenclature(cab.masterCode ?? "");
   const desc = lc(cab.description);
@@ -337,7 +404,9 @@ function resolveDoorDrawerCountsUncorrected(cab: CabinetLike & { cabinetConfigAu
     !hasDoorMentionInDesc &&
     (/^(?:drawer base|\d+\s*drawer base|\w+\s+drawer base)/.test(sub) ||
       /^(?:db|bd)[-_]\d/.test(lc(cab.masterCode ?? "")) ||
-      /^\d+db\d/i.test(lc(cab.masterCode ?? "")));
+      /^\d+db\d/i.test(lc(cab.masterCode ?? "")) ||
+      isDrawerBaseFamilyCode(cab.masterCode) ||
+      /^(?:DB|BD)\d/.test(compactCabinetCode(cab.masterCode)));
   if (isPureDrawerBase) {
     return { doors: 0, drawers };
   }

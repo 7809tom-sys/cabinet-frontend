@@ -18,6 +18,18 @@
 export const FARMHOUSE_SINK_APRON_DROP_IN = 8.5;
 /** The installed apron projects at most about 1" past the door face. */
 export const FARMHOUSE_SINK_APRON_PROUD_IN = 0.5;
+/**
+ * How far the 3D door face sits past the carcass box.
+ * The front group is seated at carcassFront + 0.052/2 + 0.004 ft, and the
+ * farmhouse door slab is 0.045 ft thick, so its outer face is 0.63" past the box.
+ * The apron front is this far past the box, plus `FARMHOUSE_SINK_APRON_PROUD_IN`.
+ */
+export const FARMHOUSE_SINK_DOOR_FACE_PAST_CARCASS_IN = 0.63;
+
+/** Apron front face, measured past the sink-base carcass (box) front. */
+export function farmhouseSinkApronPastCarcassIn(): number {
+  return FARMHOUSE_SINK_DOOR_FACE_PAST_CARCASS_IN + FARMHOUSE_SINK_APRON_PROUD_IN;
+}
 /** Doors are only used from this width up as a pair; narrower bases get one door. */
 export const FARMHOUSE_SINK_TWO_DOOR_MIN_WIDTH_IN = 27;
 
