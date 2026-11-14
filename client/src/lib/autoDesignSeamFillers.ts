@@ -1,3 +1,4 @@
+import { isBlindCorner } from "./design";
 import { autoFillSpan, makeFiller, type FillItem } from "./autofill";
 import { searchFewestFillerOpening } from "./autoDesignGapSolver";
 import {
@@ -64,6 +65,30 @@ function isLayerItem(item: PlacedCabinet, layer: SeamLayer): boolean {
 }
 
 /** Which wall ends sit at a vertex that a chosen corner cabinet owns (its pocket is never a gap). */
+/**
+ * A run end that a corner owns is only DELIBERATE when that corner is blind: the
+ * blind box needs its pull pocket, so a gap there must stay empty. A lazy susan,
+ * diagonal or easy-reach corner needs no pocket, so a small gap at its end is a
+ * build gap and takes a filler (Tom, Nov 13 2026: "there is no blind corner in
+ * this plan", pointing at a 2-inch gap beside an LS36).
+ */
+function blindCornerAtPoint(placed: readonly PlacedCabinet[], point: { x: number; y: number }): boolean {
+  const distanceToRect = (item: PlacedCabinet) => {
+    const x1 = item.x;
+    const y1 = item.y;
+    const x2 = item.x + (item.rotation === 90 || item.rotation === 270 ? Number(item.depth) : Number(item.width));
+    const y2 = item.y + (item.rotation === 90 || item.rotation === 270 ? Number(item.width) : Number(item.depth));
+    const dx = Math.max(x1 - point.x, 0, point.x - x2);
+    const dy = Math.max(y1 - point.y, 0, point.y - y2);
+    return Math.hypot(dx, dy);
+  };
+  return placed.some((item) =>
+    item.placement !== "wall"
+    && isBlindCorner(item.masterCode, item.description, item.cornerType ?? null)
+    && distanceToRect(item) <= 1,
+  );
+}
+
 function cornerOwnsWallEnd(wall: string, room: RoomData, corners: readonly { x: number; y: number }[], at: "start" | "end"): boolean {
   const frame = wallRunFrame(wall, room);
   if (!frame) return false;
@@ -163,14 +188,20 @@ export function findAutoDesignSeams(input: {
         if ((side === "left" ? trimmedStart : trimmedEnd).has(Math.round(at * 1000))) return "item";
         if (zones.some((zone) => Math.abs((side === "left" ? zone.end : zone.start) - at) <= EDGE_TOL_IN)) return "zone";
         if (side === "left" && Math.abs(at - frame.runStart) <= EDGE_TOL_IN) {
-          return cornerOwnsWallEnd(wall, room, corners, "start") ? "blocked" : "wall";
+          if (!cornerOwnsWallEnd(wall, room, corners, "start")) return "wall";
+          return blindCornerAtPoint(placed, frame.start) ? "blocked" : "corner-gap";
         }
         if (side === "right" && Math.abs(at - frame.runEnd) <= EDGE_TOL_IN) {
-          return cornerOwnsWallEnd(wall, room, corners, "end") ? "blocked" : "wall";
+          if (!cornerOwnsWallEnd(wall, room, corners, "end")) return "wall";
+          return blindCornerAtPoint(placed, frame.end) ? "blocked" : "corner-gap";
         }
         return "blocked";
       };
       if (edge("left") === "blocked" || edge("right") === "blocked") continue;
+      // A corner gap wider than the widest filler is the corner cabinet's own
+      // pocket or a run shortfall, not a seam: leave it and let review name it.
+      const cornerGapEnds = [edge("left"), edge("right")].filter((value) => value === "corner-gap").length;
+      if (cornerGapEnds > 0 && piece.end - piece.start > autoDesignFillerMaxIn() + 0.05) continue;
       const leftKey = left ? assemblyKey(left) : null;
       if (leftKey && leftKey === (right ? assemblyKey(right) : null)) continue;
       seams.push({ wall, start: piece.start, end: piece.end, left, right });
