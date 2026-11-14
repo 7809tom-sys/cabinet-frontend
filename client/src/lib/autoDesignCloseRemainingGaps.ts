@@ -324,6 +324,16 @@ export function closeRemainingRunGaps(input: {
         const start = gap.start;
         const span = Math.round(gap.length * 1000) / 1000;
         const narrowWidth = layer === "base" ? narrowBasePlusFillerWidth(span, catalog) : null;
+        if (layer === "base" && narrowWidth == null
+          && span >= kitchenRuleNumber("narrow_cabinet_max_in") - COLLISION && span <= autoDesignCloseGapWithCabinetMaxIn() + COLLISION) {
+          findings.push({
+            ruleId: "close-remaining-run-gaps",
+            code: "narrow-base-missing",
+            severity: "warning",
+            title: `${formatFillerInches(span)} base opening on ${wallId}`,
+            detail: `This line sells no base cabinet that leaves ${formatFillerInches(autoDesignFillerMaxIn())} or less for a filler in a ${formatFillerInches(span)} opening, so the narrow-base-plus-filler rule could not close it.`,
+          });
+        }
         if (gap.trimmed && narrowWidth == null) {
           // Beside a reserved corner square, range or sink span only the
           // narrow-base-plus-filler rule fills; anything else keeps the old
