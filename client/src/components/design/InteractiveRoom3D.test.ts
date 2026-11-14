@@ -1,7 +1,5 @@
 import { buildPublicDesignViewUrl } from "@/lib/designShare";
 import { describe, expect, it, vi } from "vitest";
-import { dlcPhotoLightCompensation } from "@shared/dlcFr26Textures";
-import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
 import { readFileSync } from "node:fs";
 import { ALL_PELICAN_BATHROOM_FIXTURE_PROFILES, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import * as THREE from "three";
@@ -15,6 +13,7 @@ import { threeDFurnitureHitFromIntersections, threeDFurnitureHitFromObject } fro
 import { threeDDesignParitySnapshot, threeDExactPlanGeometryLock } from "./InteractiveRoom3D";
 import { resolvedThreeDCountertopFinish, shouldEmitThreeDPresentation, threeDPresentationEmissionKey, threeDPlacedWall } from "./InteractiveRoom3D";
 import { threeDCornerBodyDimensions } from "./InteractiveRoom3D";
+import { threeDDesignerRoomPhotoCompensation } from "./InteractiveRoom3D";
 import { pathTraceCompatibleMaterial } from "./InteractiveRoom3D";
 import { threeDFittedFillerToeKickSuppressionUids } from "./InteractiveRoom3D";
 import { constrainedThreeDCameraShareView, parseThreeDCameraShareView, serializeThreeDCameraShareView, THREE_D_CAMERA_VIEW_QUERY_PARAM, threeDCameraPresetPosition, threeDCameraRoomFrameKey, threeDScreenHorizontalPlanDelta, threeDShouldRestoreCameraView } from "./InteractiveRoom3D";
@@ -9895,9 +9894,10 @@ describe("Forest Rust photo face tone mapping", () => {
   const doorPhoto = "/manus-storage/forest-rust-door-1740x2496.webp";
   const drawerPhoto = "/manus-storage/forest-rust-drawer.webp";
 
+  // Photo faces are drawn with tone mapping off and divided by the light the
+  // designer room rig actually puts on a front (threeDDesignerRoomCompensationRig).
   function compensationHex(finish: string) {
-    const rig = isVeryDarkCabinetStain(finish) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS;
-    return dlcPhotoLightCompensation(rig, relativeLuminance(finish)).hex.replace("#", "");
+    return threeDDesignerRoomPhotoCompensation(finish).hex.replace("#", "");
   }
 
   function renderCabinet(profile: typeof shaker & { styleId?: number; styleCode?: string | null; distributorId?: number | null; exposedSidesMatchDoorFace?: boolean }, finish = "#73482a", drawerSampleUrl: string | null = drawerPhoto) {
