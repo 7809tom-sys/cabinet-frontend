@@ -56,6 +56,7 @@ export const KITCHEN_RULE_APPLIED_BY_LABEL: Record<string, string> = {
   smallGapFiller: "Filler prompt and auto-filler",
   autoDesignSeamFillers: "Auto-Design seam filler",
   autoDesignLeftover: "Auto-Design leftover fill",
+  autoDesignCloseRemainingGaps: "Auto-Design last gap closing",
   automaticDesigner: "Auto-Design and plan review",
   kitchenAdjacency: "Range bridge and plan review",
   autoDesignRangeHood: "Auto-Design hood height",
@@ -236,6 +237,20 @@ export const KITCHEN_RULE_DEFINITIONS: readonly KitchenRuleSettingDefinition[] =
     min: 0,
     max: 24,
     appliedBy: "autoDesignLeftover",
+  },
+  {
+    key: "close_gap_with_cabinet_max_in",
+    title: "Widest base opening closed with one narrow cabinet plus filler",
+    description:
+      "A base opening from the narrowest-cabinet width up to this width gets a new real base cabinet (the widest the line sells that leaves no more than the seam-filler width) plus one filler trimmed to the rest: 14 in is a 12 in base and a 2 in filler, 14.5 in is a 12 in base and a 2.5 in filler. The neighbouring cabinets are not grown to close it.",
+    category: "Cabinet widths",
+    valueType: "number",
+    defaultValue: 14.5,
+    unit: "in",
+    step: 0.25,
+    min: 0,
+    max: 24,
+    appliedBy: "autoDesignCloseRemainingGaps",
   },
   {
     key: "undersized_cabinet_in",
@@ -912,6 +927,7 @@ export type KitchenRuleNumericKey =
   | "auto_place_filler_max_in"
   | "seam_filler_max_in"
   | "narrow_cabinet_max_in"
+  | "close_gap_with_cabinet_max_in"
   | "undersized_cabinet_in"
   | "range_fridge_min_cabinet_in"
   | "range_landing_short_in"
@@ -982,6 +998,7 @@ export const KITCHEN_RULE_PARAMETER_DEFAULTS: Record<KitchenRuleNumericKey, numb
   auto_place_filler_max_in: defaultNumber("auto_place_filler_max_in"),
   seam_filler_max_in: defaultNumber("seam_filler_max_in"),
   narrow_cabinet_max_in: defaultNumber("narrow_cabinet_max_in"),
+  close_gap_with_cabinet_max_in: defaultNumber("close_gap_with_cabinet_max_in"),
   undersized_cabinet_in: defaultNumber("undersized_cabinet_in"),
   range_fridge_min_cabinet_in: defaultNumber("range_fridge_min_cabinet_in"),
   range_landing_short_in: defaultNumber("range_landing_short_in"),
