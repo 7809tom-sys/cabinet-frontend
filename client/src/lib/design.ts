@@ -13378,13 +13378,13 @@ export function bearsCountertop(p: {
 	  // supported cabinets. It closes the visible face only; it is never allowed
 	  // to create or enlarge a countertop support footprint over the rear pocket.
 	  if (p.fillerTransitionKind === "front-miter-pair") return false;
-	  const installedFillerWidth = Number(p.fillerTotalWidth);
-  const isInstalledBaseFiller = Boolean(
-    p.fillerPieceGroupId &&
-    p.fillerPlacementMode &&
-    Number.isFinite(installedFillerWidth) &&
-    installedFillerWidth > 0,
-  );
+	  // An installed filler (one with a filler-piece group) sits BETWEEN two runs and
+  // the countertop runs over it. Requiring the saved total width and placement mode
+  // as well meant every filler created by a pass that does not write those fields -
+  // the sub-1.5" filler, the adjoining-filler pass, the attached/frameless/corner
+  // fillers - broke the counter into two slabs and left a bare gap (Tom, Nov 13
+  // 2026: "counter top over filler"). The group id alone is the "installed" marker.
+  const isInstalledBaseFiller = Boolean(p.fillerPieceGroupId);
   if (isInstalledBaseFiller) return true;
   // Sink bases ARE counter-bearing even though their tops are cut for the sink.
   if (isSinkBaseCabinet(p) || isBaseHeightAppliance(p)) return true;
