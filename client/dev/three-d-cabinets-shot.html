@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  3D cabinets harness: renders the REAL InteractiveRoom3D with a real Auto Design
+  kitchen (fixture catalog) or a manually placed cabinet, so a headless browser
+  can confirm every 2D cabinet reaches the 3D scene. ?scenario=N picks the seeded
+  Auto Design scenario; ?scenario=manual draws one hand-placed B24; ?bad=1 adds a
+  cabinet with broken geometry. Served by the Vite dev server at
+  /dev/three-d-cabinets-shot.html; not part of the app bundle.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>3D cabinets check</title>
+    <style>html, body { margin: 0; height: 100%; } #root { position: relative; width: 100vw; height: 100vh; }</style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/threeDCabinetsHarness.tsx"></script>
+  </body>
+</html>

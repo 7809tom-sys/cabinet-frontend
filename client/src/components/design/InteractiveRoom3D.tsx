@@ -12438,6 +12438,130 @@ export function threeDSceneInputDiagnostics(
   };
 }
 
+/** One saved cabinet (or one scene pass) the 3D view could not draw. */
+export type ThreeDCabinetBuildFailure = {
+  uid: string | null;
+  masterCode: string | null;
+  stage: string;
+  message: string;
+};
+
+const THREE_D_REQUIRED_CABINET_NUMBERS = ["x", "y", "width"] as const;
+const THREE_D_OPTIONAL_CABINET_NUMBERS = ["depth", "height", "rotation", "mountBottom"] as const;
+
+/**
+ * Geometry a cabinet must carry before the 3D builder can place it. A missing
+ * or non-numeric position or width (or a depth/height/rotation/mount height that
+ * is present but not a number) used to reach three.js as NaN: an invisible,
+ * un-pickable box, or a throw inside the scene build. Optional sizes that are
+ * simply absent keep their existing catalog defaults. Returns why the cabinet
+ * cannot be drawn, or null when it can.
+ */
+export function threeDCabinetGeometryProblem(cabinet: Partial<PlacedCabinet> | null | undefined): string | null {
+  if (!cabinet || typeof cabinet !== "object") return "the cabinet record is empty";
+  const record = cabinet as Record<string, unknown>;
+  const notNumber = (raw: unknown) => typeof raw === "boolean" || typeof raw === "object" || !Number.isFinite(Number(raw));
+  const bad = [
+    ...THREE_D_REQUIRED_CABINET_NUMBERS.filter((key) => record[key] == null || record[key] === "" || notNumber(record[key])),
+    ...THREE_D_OPTIONAL_CABINET_NUMBERS.filter((key) => record[key] != null && record[key] !== "" && notNumber(record[key])),
+  ];
+  return bad.length > 0 ? `missing or invalid ${bad.join(", ")}` : null;
+}
+
+function threeDFailureMessage(error: unknown) {
+  if (error instanceof Error) return error.message || error.name;
+  return String(error);
+}
+
+function disposeThreeDSubtree(node: THREE.Object3D) {
+  node.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    mesh.geometry?.dispose?.();
+    const materials = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+    for (const material of materials) material?.dispose?.();
+  });
+}
+
+/**
+ * Builds ONE saved cabinet into `root`. A cabinet with bad geometry is skipped,
+ * and a builder that throws has whatever it half-added removed, so one bad row
+ * never stops the rest of the kitchen from rendering (Tom, Nov 14 2026: every
+ * cabinet vanished from 3D while the 2D plan still showed them). Returns the
+ * failure to surface, or null when the cabinet was drawn.
+ */
+export function addThreeDSceneCabinetSafely(
+  root: THREE.Object3D,
+  cabinet: PlacedCabinet,
+  build: () => void,
+): ThreeDCabinetBuildFailure | null {
+  const uid = typeof cabinet?.uid === "string" ? cabinet.uid : cabinet?.uid != null ? String(cabinet.uid) : null;
+  const masterCode = typeof cabinet?.masterCode === "string" && cabinet.masterCode ? cabinet.masterCode : null;
+  const problem = threeDCabinetGeometryProblem(cabinet);
+  if (problem) return { uid, masterCode, stage: "cabinet", message: problem };
+  const before = new Set(root.children);
+  try {
+    build();
+    return null;
+  } catch (error) {
+    for (const child of [...root.children]) {
+      if (before.has(child)) continue;
+      root.remove(child);
+      disposeThreeDSubtree(child);
+    }
+    return { uid, masterCode, stage: "cabinet", message: threeDFailureMessage(error) };
+  }
+}
+
+/**
+ * Runs one whole-scene pass (countertops, toe kicks, crown, openings...). A
+ * throw is recorded and anything the pass half-added is removed; the cabinets
+ * already built stay in the scene.
+ */
+export function runThreeDScenePass(
+  root: THREE.Object3D,
+  stage: string,
+  failures: ThreeDCabinetBuildFailure[],
+  pass: () => void,
+) {
+  const before = new Set(root.children);
+  try {
+    pass();
+  } catch (error) {
+    for (const child of [...root.children]) {
+      if (before.has(child)) continue;
+      root.remove(child);
+      disposeThreeDSubtree(child);
+    }
+    failures.push({ uid: null, masterCode: null, stage, message: threeDFailureMessage(error) });
+  }
+}
+
+/** Computes a scene input, falling back (and recording why) when it throws. */
+export function threeDSceneInputOrFallback<T>(stage: string, failures: ThreeDCabinetBuildFailure[], compute: () => T, fallback: T): T {
+  try {
+    return compute();
+  } catch (error) {
+    failures.push({ uid: null, masterCode: null, stage, message: threeDFailureMessage(error) });
+    return fallback;
+  }
+}
+
+/** Short, plain notice for the 3D canvas; null when nothing failed. */
+export function threeDCabinetBuildFailureNotice(failures: readonly ThreeDCabinetBuildFailure[]): string | null {
+  const cabinets = failures.filter((failure) => failure.stage === "cabinet");
+  const passes = failures.filter((failure) => failure.stage !== "cabinet");
+  const parts: string[] = [];
+  if (cabinets.length > 0) {
+    const names = cabinets.slice(0, 4).map((failure) => failure.masterCode ?? failure.uid ?? "unnamed cabinet");
+    const more = cabinets.length > 4 ? ` and ${cabinets.length - 4} more` : "";
+    parts.push(`${cabinets.length === 1 ? "1 cabinet" : `${cabinets.length} cabinets`} could not be drawn in 3D: ${names.join(", ")}${more}. It is still in the 2D plan.`);
+  }
+  if (passes.length > 0) {
+    parts.push(`Some 3D details were skipped (${Array.from(new Set(passes.map((failure) => failure.stage))).join(", ")}).`);
+  }
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
 /**
  * Rendering-only compatibility repair for legacy saved refrigerator cap
  * fillers. The source plan stays untouched; this returns the exact same
@@ -13086,6 +13210,8 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
   const [cabinetMoveResult, setCabinetMoveResult] = useState<ThreeDCabinetMoveResult | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [doorTextureState, setDoorTextureState] = useState<"not-requested" | "loading" | "loaded" | "failed">("not-requested");
+  const [threeDCabinetBuildFailures, setThreeDCabinetBuildFailures] = useState<ThreeDCabinetBuildFailure[]>([]);
+  const threeDCabinetBuildNotice = threeDCabinetBuildFailureNotice(threeDCabinetBuildFailures);
   const [backsplashTextureWarning, setBacksplashTextureWarning] = useState<string | null>(null);
   // Declared here, with every other hook, because the render below returns early
   // for an empty room and for a failed WebGL start. Declaring it after those
@@ -13366,7 +13492,22 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    const room = roomOverride
 	      ? { ...roomOverride, ceilingHeight: wallHeightIn }
 	      : { ...dimensions(scene.roomShape?.defaultDimensions), ceilingHeight: wallHeightIn };
-	    const renderedPlaced = renderExistingDesign ? threeDRenderPlacements(placed, room, openings) : placed;
+	    const sceneBuildFailures: ThreeDCabinetBuildFailure[] = [];
+	    const renderedPlacedSource = renderExistingDesign
+	      ? threeDSceneInputOrFallback("filler cleanup", sceneBuildFailures, () => threeDRenderPlacements(placed, room, openings), placed)
+	      : placed;
+	    // A cabinet with no usable position or size is left out of every 3D pass
+	    // (cabinet, countertop, toe kick, crown...) and named on the canvas,
+	    // instead of feeding NaN geometry into the shared slabs and trims.
+	    const renderedPlaced = renderExistingDesign
+	      ? renderedPlacedSource.filter((cabinet) => {
+	        const problem = threeDCabinetGeometryProblem(cabinet);
+	        if (!problem) return true;
+	        sceneBuildFailures.push({ uid: cabinet?.uid != null ? String(cabinet.uid) : null, masterCode: cabinet?.masterCode || null, stage: "cabinet", message: problem });
+	        return false;
+	      })
+	      : renderedPlacedSource;
+	    let cabinetsDrawn = 0;
 
     const roomFrameKey = threeDCameraRoomFrameKey(room);
 	    const canvasWidth = Math.max(280, mount.clientWidth);
@@ -13848,10 +13989,10 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 		    const finish = resolvedCabinetFinish;
 		    const visibleCabinetFinishOverrides = selectedCabinetPreviewFinish ? undefined : cabinetFinishOverrides;
 	    const fittedFillerToeKickSuppressions = renderExistingDesign
-	      ? threeDFittedFillerToeKickSuppressionUids(renderedPlaced)
+	      ? threeDSceneInputOrFallback("toe kick", sceneBuildFailures, () => threeDFittedFillerToeKickSuppressionUids(renderedPlaced), new Set<string>())
 	      : new Set<string>();
 	    const continuousToeKickSegments = renderExistingDesign && toeKick
-	      ? threeDContinuousToeKickSegments(renderedPlaced, room)
+	      ? threeDSceneInputOrFallback("toe kick", sceneBuildFailures, () => threeDContinuousToeKickSegments(renderedPlaced, room), [] as ThreeDContinuousToeKickSegment[])
 	      : [];
 	    const continuousToeKickMemberUids = new Set(continuousToeKickSegments.flatMap((segment) => segment.memberUids));
 	    const hasAnyDoorSample = Boolean(activeDoorTexture || Object.values(cabinetDoorSampleUrls ?? {}).some(Boolean));
@@ -13878,9 +14019,16 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       if (!disposed) setDoorTextureState(state);
 	    };
 	    if (renderExistingDesign) {
-	      const sharedStandardCountertopSurfaces = threeDStandardCountertopSurfaces(room, renderedPlaced, island, ponyWalls);
+	      const sharedStandardCountertopSurfaces = threeDSceneInputOrFallback("countertops", sceneBuildFailures, () => threeDStandardCountertopSurfaces(room, renderedPlaced, island, ponyWalls), [] as ReturnType<typeof threeDStandardCountertopSurfaces>);
 	      for (const cabinet of renderedPlaced) {
-	        if (!shouldRenderSavedSceneCabinet(cabinet, renderedPlaced)) continue;
+	        let renderThisCabinet = true;
+	        try {
+	          renderThisCabinet = shouldRenderSavedSceneCabinet(cabinet, renderedPlaced);
+	        } catch {
+	          renderThisCabinet = true;
+	        }
+	        if (!renderThisCabinet) continue;
+	        const cabinetFailure = addThreeDSceneCabinetSafely(catalogRoot, cabinet, () => {
 	        const baseSku = existingCabinetSku(cabinet, room, renderedPlaced);
 	        const transitionFootprint = angledWallTransitionFootprint(cabinet, room, renderedPlaced);
         const sku = {
@@ -13930,17 +14078,20 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	            && board.masterTracTowerBayIndex === cabinet.masterTracTowerBayIndex && board.masterTracTowerRole === "fixed-top")?.mountBottom;
 		          addMasterTracConceptStorage(catalogRoot, cabinet, room, fixedTopIn ?? undefined);
 		        }
+	        });
+	        if (cabinetFailure) sceneBuildFailures.push(cabinetFailure);
+	        else cabinetsDrawn += 1;
 		      }
 	      if (toeKick && continuousToeKickSegments.length > 0) {
-	        addThreeDContinuousToeKicks(catalogRoot, continuousToeKickSegments, room, visibleCabinetFinishOverrides, finish);
+	        runThreeDScenePass(catalogRoot, "toe kick", sceneBuildFailures, () => addThreeDContinuousToeKicks(catalogRoot, continuousToeKickSegments, room, visibleCabinetFinishOverrides, finish));
 	      }
-	      addThreeDStandardCountertops(catalogRoot, room, renderedPlaced, materialDefaults.countertop, countertopTexture, island, ponyWalls, sinks);
+	      runThreeDScenePass(catalogRoot, "countertops", sceneBuildFailures, () => addThreeDStandardCountertops(catalogRoot, room, renderedPlaced, materialDefaults.countertop, countertopTexture, island, ponyWalls, sinks));
 	      if (roomOverride) {
-	        addThreeDMeasuredWallMiterCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture, sinks);
-	        addThreeDPeninsulaCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture, sinks);
+	        runThreeDScenePass(catalogRoot, "countertops", sceneBuildFailures, () => addThreeDMeasuredWallMiterCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture, sinks));
+	        runThreeDScenePass(catalogRoot, "peninsula countertop", sceneBuildFailures, () => addThreeDPeninsulaCountertops(catalogRoot, roomOverride, renderedPlaced, materialDefaults.countertop, countertopTexture, sinks));
 	      }
-	      addThreeDGlassStackerRearSupports(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish);
-	      if (crown) addThreeDCrownMolding(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish);
+	      runThreeDScenePass(catalogRoot, "glass stacker supports", sceneBuildFailures, () => addThreeDGlassStackerRearSupports(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish));
+	      if (crown) runThreeDScenePass(catalogRoot, "crown molding", sceneBuildFailures, () => addThreeDCrownMolding(catalogRoot, renderedPlaced, room, visibleCabinetFinishOverrides, finish));
 	    } else {
       for (const suggestion of validSuggestions) {
         if (!suggestion.sku) continue;
@@ -13948,37 +14099,54 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      }
 	    }
 	    if (countertopUpstandSegments.length > 0) {
-	      addThreeDCountertopUpstands(catalogRoot, countertopUpstandSegments, backsplashRoom, countertopTexture, materialDefaults.countertop);
+	      runThreeDScenePass(catalogRoot, "countertop upstand", sceneBuildFailures, () => addThreeDCountertopUpstands(catalogRoot, countertopUpstandSegments, backsplashRoom, countertopTexture, materialDefaults.countertop));
 	    }
 	    if (backsplashTexture && backsplashSegments.length > 0 && !backsplashImageFailed) {
-	      addThreeDBacksplash(catalogRoot, backsplashSegments, backsplashRoom, backsplashTexture);
+	      runThreeDScenePass(catalogRoot, "backsplash", sceneBuildFailures, () => addThreeDBacksplash(catalogRoot, backsplashSegments, backsplashRoom, backsplashTexture));
 	    }
-	    if (renderExistingDesign && renderedPlaced.length > 0) addThreeDBaseboards(catalogRoot, renderedPlaced, openings, backsplashRoom);
+	    if (renderExistingDesign && renderedPlaced.length > 0) runThreeDScenePass(catalogRoot, "baseboards", sceneBuildFailures, () => addThreeDBaseboards(catalogRoot, renderedPlaced, openings, backsplashRoom));
 	    for (const opening of openings) {
 	      // The clear-view control must reveal the narrow reach-in behind its four
 	      // architectural leaves. Keep every ordinary kitchen/window opening intact.
 	      if (!showRoomContext && opening.kind === "door" && opening.doorStyle === "bifold") continue;
-      addWallOpening(catalogRoot, opening, room, undefined, windowSceneKind, windowFrameStyle);
+	      runThreeDScenePass(catalogRoot, "window or door", sceneBuildFailures, () => addWallOpening(catalogRoot, opening, room, undefined, windowSceneKind, windowFrameStyle));
 	    }
-    const faucetCountertops = applyApronFrontCountertopNotches(
-      countertopSurfaces(renderedPlaced, room, island, ponyWalls),
-      sinks,
-    );
-    for (const sink of sinks) addSinkFixture(catalogRoot, sink, resolveDeckFaucetPlacement(sink, room, openings, faucetCountertops));
-    for (const potFiller of potFillers) {
-      const mountedRange = potFillerMountedRange(potFiller, placed, room, island);
-      if (mountedRange) addPotFillerFixture(catalogRoot, potFiller, mountedRange, room);
-    }
-		    if (island) addIslandZone(
-		      catalogRoot,
-		      island,
-		      placed,
-		      catalogIslandCountertopColor ?? materialDefaults.countertop,
-		      islandCountertopTexture,
-		      sinks,
-		    );
-	    for (const ponyWall of ponyWalls) addPonyWall(catalogRoot, ponyWall, room, ponyWalls);
-    for (const furnitureItem of furniture) addFurniture(catalogRoot, furnitureItem, furnitureItem.uid === selectedFurnitureUid, furniture);
+	    const faucetCountertops = threeDSceneInputOrFallback("faucet", sceneBuildFailures, () => applyApronFrontCountertopNotches(
+	      countertopSurfaces(renderedPlaced, room, island, ponyWalls),
+	      sinks,
+	    ), [] as ReturnType<typeof applyApronFrontCountertopNotches<ReturnType<typeof countertopSurfaces>[number]>>);
+	    for (const sink of sinks) runThreeDScenePass(catalogRoot, "sink", sceneBuildFailures, () => addSinkFixture(catalogRoot, sink, resolveDeckFaucetPlacement(sink, room, openings, faucetCountertops)));
+	    for (const potFiller of potFillers) {
+	      runThreeDScenePass(catalogRoot, "pot filler", sceneBuildFailures, () => {
+	        const mountedRange = potFillerMountedRange(potFiller, placed, room, island);
+	        if (mountedRange) addPotFillerFixture(catalogRoot, potFiller, mountedRange, room);
+	      });
+	    }
+	    if (island) runThreeDScenePass(catalogRoot, "island", sceneBuildFailures, () => addIslandZone(
+	      catalogRoot,
+	      island,
+	      placed,
+	      catalogIslandCountertopColor ?? materialDefaults.countertop,
+	      islandCountertopTexture,
+	      sinks,
+	    ));
+	    for (const ponyWall of ponyWalls) runThreeDScenePass(catalogRoot, "pony wall", sceneBuildFailures, () => addPonyWall(catalogRoot, ponyWall, room, ponyWalls));
+	    for (const furnitureItem of furniture) runThreeDScenePass(catalogRoot, "furniture", sceneBuildFailures, () => addFurniture(catalogRoot, furnitureItem, furnitureItem.uid === selectedFurnitureUid, furniture));
+	    catalogRoot.userData.cabinetBuildFailures = sceneBuildFailures;
+	    if (sceneBuildFailures.length > 0) {
+	      console.error("[3D] Some of the plan could not be drawn; the rest of the room is shown.", sceneBuildFailures);
+	    }
+	    setThreeDCabinetBuildFailures((current) => (
+	      current.length === 0 && sceneBuildFailures.length === 0 ? current : sceneBuildFailures
+	    ));
+	    if (import.meta.env.DEV && typeof window !== "undefined") {
+	      (window as unknown as Record<string, unknown>).__threeDCabinetsRendered = {
+	        planCount: renderedPlacedSource.length,
+	        cabinetsDrawn,
+	        rootChildren: catalogRoot.children.length,
+	        failures: sceneBuildFailures,
+	      };
+	    }
 	    threeScene.add(catalogRoot);
 	    threeScene.traverse((node) => {
 	      node.castShadow = false;
@@ -15676,6 +15844,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 		        {catalogDragMeasurement && <div data-testid="three-d-catalog-drag-highlight" aria-hidden="true" className={`pointer-events-none absolute inset-1 z-20 rounded-xl border-4 transition-colors ${catalogDragMeasurement.fit.status === "valid" ? "border-emerald-500 shadow-[inset_0_0_32px_rgba(16,185,129,0.2)]" : "border-rose-500 shadow-[inset_0_0_32px_rgba(244,63,94,0.2)]"}`} />}
 		        {catalogDragMeasurement && <div data-testid="three-d-catalog-drag-measurement" role="status" aria-live="polite" className={`pointer-events-none absolute left-3 top-14 z-30 max-w-[calc(100%-1.5rem)] rounded-lg border px-3 py-2 text-xs font-semibold shadow-lg backdrop-blur ${catalogDragMeasurement.fit.status === "valid" ? "border-emerald-600 bg-emerald-50/95 text-emerald-950" : "border-rose-600 bg-rose-50/95 text-rose-950"}`}><span className="block text-[10px] font-bold uppercase tracking-wide">{catalogDragMeasurement.fit.status === "valid" ? (catalogDragMeasurement.freehand ? "Shift freehand space" : "Valid snap space") : "Invalid drop space"} · {catalogDragMeasurement.wall} wall · 0&quot; overlap required</span><span>{threeDCatalogDragFitText(catalogDragMeasurement.item, catalogDragMeasurement.fit)}</span></div>}
 		        {catalogDragMeasurement?.fit.status === "valid" && <ThreeDRemainingSpaceLine before={catalogDragMeasurement.fit.before} after={catalogDragMeasurement.fit.after} />}
+		        {threeDCabinetBuildNotice && <div data-testid="three-d-cabinet-build-failures" role="alert" className="pointer-events-none absolute left-3 right-16 top-14 z-30 max-w-xl rounded-lg border border-rose-300 bg-rose-50/95 px-3 py-2 text-xs font-semibold text-rose-950 shadow-sm backdrop-blur">{threeDCabinetBuildNotice}</div>}
 		        {hybridPlanUnderlay && <div data-testid="three-d-plan-underlay-badge" className="pointer-events-none absolute left-3 top-3 z-20 rounded-md border border-[#d9c196] bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-[#634b20] shadow-sm backdrop-blur">3D over plan · same placement rules</div>}
 	        {temporaryPreviewMessage && <div data-testid="three-d-preview-fade" aria-hidden="true" className={`pointer-events-none absolute inset-0 z-10 bg-background transition-opacity duration-200 motion-reduce:hidden ${temporaryPreviewFading ? "opacity-40" : "opacity-0"}`} />}
         {embedded && onDoorStyleChange && isFullscreen && <div className="absolute bottom-3 left-3 z-30 flex max-w-[calc(100%-1.5rem)]" onPointerDown={(event) => event.stopPropagation()} onPointerUp={(event) => event.stopPropagation()}><ColorStyleQuickPicker testId="three-d-color-style-picker" styles={doorStyleChoices} value={selectedDoorStyleId} onChange={onDoorStyleChange} /></div>}
