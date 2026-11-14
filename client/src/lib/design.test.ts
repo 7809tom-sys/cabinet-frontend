@@ -2355,6 +2355,9 @@ describe("bearsCountertop", () => {
   it("is true only for a base filler carrying confirmed small-gap installation metadata", () => {
     expect(bearsCountertop({ placement: "base", masterCode: "FILL-3", description: '3" Filler', subCategory: "Filler", fillerPieceGroupId: "fill-group", fillerTotalWidth: 2.5, fillerPlacementMode: "split" })).toBe(true);
     expect(bearsCountertop({ placement: "base", masterCode: "BF3", description: '3" Base Filler', subCategory: "Filler", fillerPieceGroupId: "supplier-fill-group", fillerTotalWidth: 3, fillerPlacementMode: "right" })).toBe(true);
+    // Installed fillers that do not carry the saved total width / placement mode
+    // still sit between two runs, so the countertop must run over them too.
+    expect(bearsCountertop({ placement: "base", masterCode: "BF3", description: '3" Base Filler', subCategory: "Filler", fillerPieceGroupId: "sub-1-5-fill" })).toBe(true);
     expect(bearsCountertop({ placement: "base", masterCode: "BF3", description: '3" Base Filler', subCategory: "Filler" })).toBe(false);
     expect(bearsCountertop({ placement: "base", masterCode: "F396", description: '3" Tall Filler', subCategory: "Filler", fillerPieceGroupId: "miter-group", fillerTotalWidth: 22, fillerPlacementMode: "left", fillerTransitionKind: "front-miter-pair" })).toBe(false);
     expect(bearsCountertop({ placement: "wall", masterCode: "FILL-3", description: '3" Filler', subCategory: "Filler", fillerPieceGroupId: "fill-group", fillerTotalWidth: 2.5, fillerPlacementMode: "split" })).toBe(false);
