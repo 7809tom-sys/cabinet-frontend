@@ -11,6 +11,18 @@ export type RunBlock = {
   role: "refrigerator" | "range" | "sink" | "corner" | "tall" | "other";
   coversStart: boolean;
   coversEnd: boolean;
+  /**
+   * When set, an offset moves only that edge of the block; the other edge stays
+   * put and the block grows/shrinks. Used for a blind corner block stretched to
+   * the run end: its pull changes how far it reaches out of the corner.
+   */
+  movingEdge?: "start" | "end";
+  /**
+   * The corner filler this block wants on its open side (the edge facing the
+   * run). For movingEdge "start" that is the start edge, for "end" the end
+   * edge; if movingEdge is unset, whichever edge is not at runStart/runEnd.
+   */
+  fillerTargetIn?: number;
 };
 
 export type RunSpec = {
@@ -199,6 +211,17 @@ function sortBlocks(blocks: RunBlock[]): SortedBlock[] {
 
 type Placed = { startE: number; endE: number };
 
+/** Shifted start/end of a block: a movingEdge offset moves only that edge. */
+function shiftedSpan(
+  s: SortedBlock,
+  off: number,
+): { startE: number; endE: number } {
+  const me = s.block.movingEdge;
+  if (me === "start") return { startE: s.startE + off, endE: s.endE };
+  if (me === "end") return { startE: s.startE, endE: s.endE + off };
+  return { startE: s.startE + off, endE: s.endE + off };
+}
+
 function isValid(
   sorted: SortedBlock[],
   offsets: Candidate[],
@@ -210,8 +233,7 @@ function isValid(
   for (let i = 0; i < sorted.length; i++) {
     const s = sorted[i];
     const off = offsets[i];
-    const startE = s.startE + off;
-    const endE = s.endE + off;
+    const { startE, endE } = shiftedSpan(s, off);
     if (startE < runStartE - EPS_E) return false;
     if (endE > runEndE + EPS_E) return false;
     if (startE < prevEnd - EPS_E) return false;
@@ -246,9 +268,10 @@ function buildGaps(
   for (let i = 0; i < sorted.length; i++) {
     const s = sorted[i];
     const off = offsets[i];
+    const { startE, endE } = shiftedSpan(s, off);
     obstacles.push({
-      startE: s.startE + off,
-      endE: s.endE + off,
+      startE,
+      endE,
       blockId: s.block.id,
       coversStart: s.block.coversStart,
       coversEnd: s.block.coversEnd,
@@ -369,9 +392,27 @@ function buildGaps(
           sorted.find((s) => s.block.id === endObs.blockId)?.block.role ===
             "tall"));
 
+    // A block with a corner-filler target wins the filler on its open edge.
+    const startTargetE =
+      startObs && startObs.blockId !== null
+        ? toE(
+            sorted.find((s) => s.block.id === startObs.blockId)?.block
+              .fillerTargetIn ?? 0,
+          )
+        : 0;
+    const endTargetE =
+      endObs && endObs.blockId !== null
+        ? toE(
+            sorted.find((s) => s.block.id === endObs.blockId)?.block
+              .fillerTargetIn ?? 0,
+          )
+        : 0;
+
     let fillerAtStart = false;
     if (fillerE > 0) {
-      if (endQualifies) fillerAtStart = false;
+      if (endTargetE > 0) fillerAtStart = false;
+      else if (startTargetE > 0) fillerAtStart = true;
+      else if (endQualifies) fillerAtStart = false;
       else if (startQualifies) fillerAtStart = true;
       else fillerAtStart = false;
     }
@@ -428,7 +469,7 @@ function computeLanding(
   for (let i = 0; i < sorted.length; i++) {
     const s = sorted[i];
     const off = offsets[i];
-    pos.set(s.block.id, { startE: s.startE + off, endE: s.endE + off });
+    pos.set(s.block.id, shiftedSpan(s, off));
   }
   const out: { a: string; b: string; gapIn: number; minIn: number }[] = [];
   for (const pair of spec.landingPairs) {
@@ -482,13 +523,40 @@ function scorePlan(
   for (let i = 0; i < sorted.length; i++) {
     absOffE += Math.abs(offsets[i]);
   }
-  void sorted;
+  // Corner-filler target deviation: a missing corner filler costs the whole target.
+  let cornerTargetDevE = 0;
+  for (const s of sorted) {
+    const target = s.block.fillerTargetIn;
+    if (target === undefined) continue;
+    const targetE = toE(eighths(target));
+    const me = s.block.movingEdge;
+    const openEdge: "start" | "end" =
+      me === "start"
+        ? "start"
+        : me === "end"
+          ? "end"
+          : Math.abs(s.startE - toE(spec.runStart)) <= EPS_E
+            ? "end"
+            : "start";
+    let wE = 0;
+    for (const g of gaps) {
+      const touches =
+        openEdge === "start"
+          ? g.endNeighbor === s.block.id
+          : g.startNeighbor === s.block.id;
+      if (!touches) continue;
+      if (g.filler) wE = toE(g.filler.width);
+      break;
+    }
+    cornerTargetDevE += Math.abs(wE - targetE);
+  }
   // Bare floor is never acceptable, so openings outrank a landing that cannot reach 15" anyway.
   return [
     openGaps,
     fromE(totalOpenE),
     fromE(landingShortE),
     droppedPanels,
+    fromE(cornerTargetDevE),
     fillers,
     smallPieces,
     totalPieces,

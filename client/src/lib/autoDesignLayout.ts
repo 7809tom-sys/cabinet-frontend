@@ -1747,6 +1747,14 @@ export function runAutoDesignLayout(args: {
       const raised = /^(\S+) was raised to meet the frameless/.exec(notes[i]!);
       if (raised && !keptCodes.has(raised[1]!)) notes.splice(i, 1);
     }
+    // A blind corner whose pull the repack changed (Tom's ~1.8" corner filler) gets a new pull note.
+    const pullNotes = repack.notes.filter((note) => / blind pull .* so the corner filler is /.test(note)).length;
+    const seatPullNotes = notes.filter((note) => /blind corner pulled /.test(note)).length;
+    if (pullNotes > 0 && pullNotes >= seatPullNotes) {
+      for (let i = notes.length - 1; i >= 0; i--) {
+        if (/blind corner pulled /.test(notes[i]!)) notes.splice(i, 1);
+      }
+    }
     notes.push(...repack.notes);
     fifteenRepackMoves.push(...repack.moves);
     // The openings and dead corners named before this pass were re-planned; keep only what is still true.

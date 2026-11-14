@@ -74,4 +74,65 @@ describe("planRun", () => {
     const openTotal = plan.gaps.reduce((acc, g) => acc + g.openIn, 0);
     expect(openTotal).toBe(0);
   });
+
+  it("aims a blind corner's filler at its target by moving the corner's open edge", () => {
+    const spec: RunSpec = {
+      runStart: 0,
+      runEnd: 137,
+      blocked: [],
+      widths: [9, 12, 15, 18, 21, 24, 30, 33, 36],
+      fillerMaxIn: 6,
+      panelIn: 0,
+      step: 0.125,
+      landingPairs: [{ a: "fridge", b: "range", minIn: 15 }],
+      blocks: [
+        {
+          id: "fridge",
+          start: 0,
+          end: 37.25,
+          ranges: null,
+          role: "refrigerator",
+          coversStart: true,
+          coversEnd: true,
+        },
+        {
+          id: "range",
+          start: 44.25,
+          end: 74.25,
+          ranges: [{ lo: 8, hi: 11 }],
+          role: "range",
+          coversStart: false,
+          coversEnd: false,
+        },
+        {
+          id: "corner",
+          start: 101,
+          end: 137,
+          ranges: [{ lo: 0, hi: 3 }],
+          role: "corner",
+          coversStart: true,
+          coversEnd: true,
+          movingEdge: "start",
+          fillerTargetIn: 1.8,
+        },
+      ],
+    };
+
+    const plan = planRun(spec);
+
+    const openTotal = plan.gaps.reduce((sum, g) => sum + g.openIn, 0);
+    expect(openTotal).toBe(0);
+
+    const landing = plan.landing.find((l) => l.a === "fridge" && l.b === "range");
+    expect(landing).toBeDefined();
+    expect(landing!.gapIn).toBeGreaterThanOrEqual(15);
+
+    const cornerGap = plan.gaps.find((g) => g.endNeighbor === "corner");
+    expect(cornerGap).toBeDefined();
+    expect(cornerGap!.filler).not.toBeNull();
+    expect(cornerGap!.filler!.width).toBe(1.75);
+    expect(cornerGap!.filler!.start + cornerGap!.filler!.width).toBe(
+      101 + plan.offsets.corner,
+    );
+  });
 });

@@ -16,6 +16,8 @@ import {
   isFillerItem,
   isPanelItem,
   isCornerCabinet,
+  isBaseBlindCorner,
+  blindPullRange,
   dim,
   placedHeight,
   blocksFloorRun,
@@ -54,6 +56,13 @@ const EPS = 0.01;
 const WIGGLE = 3;
 const FILLER_MAX = 6;
 const PANEL_IN = 0.75;
+
+/**
+ * Tom 11/13: a blind corner base gets a ~1.8 in corner filler on its open side;
+ * the planner aims for it by moving the blind pull within its range, the 3 in
+ * wiggle, and stock choice.
+ */
+export const BLIND_CORNER_FILLER_TARGET_IN = 1.8;
 
 type Level = "base" | "wall";
 
@@ -653,6 +662,25 @@ function buildBaseBlocks(
     const ranges: { lo: number; hi: number }[] = [];
     if (g.wiggle) ranges.push(g.wiggle);
     if (g.landing) ranges.push(g.landing);
+    let movingEdge: RunBlock["movingEdge"];
+    let fillerTargetIn: RunBlock["fillerTargetIn"];
+    if (g.kind === "corner") {
+      const anchor = g.baseMembers.find((m) => m.uid === g.id);
+      if (anchor && isBaseBlindCorner(anchor) && typeof anchor.blindPull === "number") {
+        const pull = anchor.blindPull;
+        const range = blindPullRange(anchor);
+        if (range) {
+          if (Math.abs(end - frame.runEnd) <= EPS) {
+            movingEdge = "start";
+            ranges.push({ lo: -(range.max - pull), hi: pull - range.min });
+          } else if (Math.abs(start - frame.runStart) <= EPS) {
+            movingEdge = "end";
+            ranges.push({ lo: -(pull - range.min), hi: range.max - pull });
+          }
+          if (movingEdge) fillerTargetIn = BLIND_CORNER_FILLER_TARGET_IN;
+        }
+      }
+    }
     const role: RunBlock["role"] =
       g.kind === "refrigerator"
         ? "refrigerator"
@@ -673,6 +701,8 @@ function buildBaseBlocks(
       role,
       coversStart,
       coversEnd,
+      ...(movingEdge ? { movingEdge } : {}),
+      ...(fillerTargetIn !== undefined ? { fillerTargetIn } : {}),
     });
   }
   return blocks;
@@ -933,14 +963,69 @@ export function repackFifteenRuleLayout(input: {
     };
     const basePlan = planLevel(baseSpec);
 
+    // Exact-target pass: nudge a blind corner block so its corner filler lands
+    // exactly on the target (the search grid may stop just short).
+    for (const b of baseBlocks) {
+      if (b.fillerTargetIn === undefined || !b.movingEdge) continue;
+      const target = b.fillerTargetIn;
+      const off = basePlan.offsets[b.id] ?? 0;
+      const openEdge = b.movingEdge === "start" ? "start" : "end";
+      const blockStart = b.movingEdge === "start" ? b.start + off : b.start;
+      const blockEnd = b.movingEdge === "end" ? b.end + off : b.end;
+      const gap = basePlan.gaps.find((gp) => {
+        if (!gp.filler) return false;
+        if (openEdge === "start") {
+          return gp.endNeighbor === b.id && Math.abs(gp.end - blockStart) <= EPS;
+        }
+        return gp.startNeighbor === b.id && Math.abs(gp.start - blockEnd) <= EPS;
+      });
+      if (!gap || !gap.filler) continue;
+      const diff = target - gap.filler.width;
+      if (Math.abs(diff) < EPS || Math.abs(diff) >= 0.125) continue;
+      const newOff = off + (b.movingEdge === "start" ? diff : -diff);
+      const inRange =
+        !b.ranges ||
+        b.ranges.some((r) => newOff >= r.lo - EPS && newOff <= r.hi + EPS);
+      if (!inRange) continue;
+      basePlan.offsets[b.id] = newOff;
+      if (b.movingEdge === "start") {
+        // Filler sits before the block: its start is unchanged, width grows.
+        gap.filler.width = target;
+      } else {
+        // Filler sits after the block: its end is fixed, start moves.
+        gap.filler.start = gap.filler.start - diff;
+        gap.filler.width = target;
+      }
+    }
+
     // Apply offsets
     const groupById = new Map(groups.map((g) => [g.id, g]));
     for (const [gid, delta] of Object.entries(basePlan.offsets)) {
       if (Math.abs(delta) < EPS) continue;
       const g = groupById.get(gid);
       if (!g) continue;
+      const block = baseBlocks.find((b) => b.id === gid);
+      let pullUpdate: { uid: string; pull: number } | null = null;
+      if (block && block.fillerTargetIn !== undefined && block.movingEdge) {
+        const anchor = g.members.find((m) => m.uid === g.id) ?? g.members[0];
+        if (anchor && typeof anchor.blindPull === "number") {
+          const oldPull = anchor.blindPull;
+          const newPull =
+            Math.round(
+              (block.movingEdge === "start" ? oldPull - delta : oldPull + delta) *
+                1000,
+            ) / 1000;
+          pullUpdate = { uid: anchor.uid, pull: newPull };
+          notes.push(
+            `${anchor.masterCode} blind pull ${fmt(oldPull)}" → ${fmt(newPull)}" so the corner filler is ${fmt(block.fillerTargetIn)}" (Tom's ~1.8" corner filler).`,
+          );
+        }
+      }
+      const withPull = (m: PlacedCabinet): PlacedCabinet => (
+        pullUpdate && m.uid === pullUpdate.uid ? { ...m, blindPull: pullUpdate.pull } : m
+      );
       for (let i = 0; i < g.members.length; i++) {
-        g.members[i] = shiftItem(g.members[i], delta, frame);
+        g.members[i] = withPull(shiftItem(g.members[i], delta, frame));
       }
       for (let i = 0; i < g.baseMembers.length; i++) {
         g.baseMembers[i] = shiftItem(g.baseMembers[i], delta, frame);

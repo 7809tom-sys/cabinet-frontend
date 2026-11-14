@@ -17,6 +17,7 @@ import {
   isRefrigerator,
   isRefrigeratorEndPanel,
   isSinkBaseCabinet,
+  placedFootprint,
   placedHeight,
   wallRunFrame,
   wallRunOffset,
@@ -157,6 +158,33 @@ export function exposedPanelRequirements(input: {
         ? start <= 0.06
         : end >= frame.length - 0.06)
     );
+    // A side also counts as covered when it butts a cabinet on ANOTHER wall run (typically the
+    // perpendicular run's corner wall cabinet occupying the corner square).
+    const crossWallCovered = (side: ExposedSide) => {
+      if (input.wallEndsCovered !== true) return false;
+      const along = side === "start" ? start - 0.5 : end + 0.5;
+      const inwardDist = Math.min(depth, 12) / 2;
+      const p = {
+        x: frame.start.x + frame.tangent.x * along + frame.inward.x * inwardDist,
+        y: frame.start.y + frame.tangent.y * along + frame.inward.y * inwardDist,
+      };
+      const thisBottom = Number(cabinet.mountBottom) || 0;
+      const thisTop = thisBottom + height;
+      const halfHeight = height / 2;
+      return input.placed.some((item) => {
+        if (item.uid === cabinet.uid) return false;
+        if (cabinetWall(item, input.room) === wallId) return false;
+        const bottom = Number(item.mountBottom) || 0;
+        const top = bottom + placedHeight(item);
+        const overlap = Math.min(top, thisTop) - Math.max(bottom, thisBottom);
+        if (overlap < halfHeight) return false;
+        const footprint = placedFootprint(item);
+        return p.x >= item.x - 0.05
+          && p.x <= item.x + footprint.w + 0.05
+          && p.y >= item.y - 0.05
+          && p.y <= item.y + footprint.d + 0.05;
+      });
+    };
     // A corner cabinet's corner-facing side tucks into the corner box behind the next run.
     const cornerSideHidden = (side: ExposedSide) => (
       input.wallEndsCovered === true
@@ -166,6 +194,7 @@ export function exposedPanelRequirements(input: {
     for (const side of ["start", "end"] as const) {
       if (panelPresent(side)) continue;
       if (wallEndCovered(side)) continue;
+      if (crossWallCovered(side)) continue;
       if (cornerSideHidden(side)) continue;
       if (covers(side)) continue;
       const atRunEdge = side === "start" ? start <= 0.06 : end >= frame.length - 0.06;
