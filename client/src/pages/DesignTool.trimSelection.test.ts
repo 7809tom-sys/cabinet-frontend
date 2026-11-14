@@ -11,6 +11,11 @@ describe("DesignTool decorative trim selection", () => {
     expect(source).not.toMatch(/setCrown\(true\)/);
   });
 
+  it("turns crown on from Auto Design only when the customer picked crown molding in the intake", () => {
+    expect(source).toContain("const customerCrownPick = autoDesignTrimFromIntake(input.intake).crown;");
+    expect(source).toMatch(/if \(customerCrownPick\) \{\s*trimOverride\.current\.crown = true;\s*setCrown\(customerCrownPick\);/);
+  });
+
   it("does not restore crown from legacy automatic drafts", () => {
     expect(source).toContain('setCrown(wasManuallyChosen("crown") && d.crown === true);');
     expect(source).toContain('if (wasManuallyChosen("crown")) trimOverride.current.crown = true;');

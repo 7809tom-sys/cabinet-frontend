@@ -16,6 +16,7 @@ import {
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
+import { applyGlassUpperPreference } from "./autoDesignFormOptions";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -2266,6 +2267,16 @@ export function runAutoDesignLayout(args: {
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
+  // Rule 12: "Glass cabinets above" gives the ordinary uppers the line's own
+  // GD (glass door) version of the same box, never an invented SKU.
+  const glassUppers = applyGlassUpperPreference({
+    placed: working,
+    wallCatalog: args.wallCatalog,
+    intake: input.intake,
+    wallHeightIn: upperResult.heightUsedIn,
+  });
+  working = glassUppers.placed;
+  reviewFindings.push(...glassUppers.findings);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
