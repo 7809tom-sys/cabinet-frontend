@@ -27,6 +27,7 @@ const WALL_H = 96;
 const FINISH = new URLSearchParams(location.search).get("hex") ?? "#f2f0ea";
 const RIG = new URLSearchParams(location.search).get("rig") ?? "live";
 const ENV_KIND = new URLSearchParams(location.search).get("envkind") ?? "live";
+const CROP = new URLSearchParams(location.search).get("crop") === "1";
 const ENV = Number(new URLSearchParams(location.search).get("env") ?? "1");
 
 const STYLE = {
@@ -106,7 +107,7 @@ function run() {
         rotation: at.rotation,
         ...(isWallCabinet ? { bottom: 54 } : {}),
       };
-      addCabinet(root, sku as never, null, { back: 0, left: 0, right: 0, front: 0 }, ROOM_W, ROOM_D, FINISH, "#e9e7e2", profile as never, transform, null, undefined, {});
+      addCabinet(root, sku as never, null, { back: 0, left: 0, right: 0, front: 0 }, ROOM_W, ROOM_D, FINISH, "#e9e7e2", profile as never, transform, null, undefined, CROP ? { faceCrop: { solidColor: FINISH, doorSize: [1, 1], drawerSize: null, drawerSolidColor: FINISH, grainUrl: null } } : {});
       root.children.slice(count).forEach((child) => owners.set(child, sku.placementUid));
     }
   }

@@ -376,6 +376,30 @@ export function createThreeDDesignerRoomEnvironment(): { scene: THREE.Scene; dis
 }
 
 /**
+ * The light the designer room rig (`addThreeDDesignerRoomLights`) actually puts on
+ * a cabinet front, in the shape `dlcPhotoLightCompensation` reads: the hemisphere,
+ * and the mirrored white key pair at its real angle. Both pair lights reach a
+ * back-wall front at the same angle and one of them reaches a side-wall front
+ * head-on at the same total, so this sum holds on every wall.
+ *
+ * Faces drawn with tone mapping off (DLC solid fronts, DLC/listed photo faces and
+ * their sides) are divided by this sum. Compensating against the door-sample studio
+ * rig instead (key above-front at 1.5, a different angle from any room light) left
+ * those faces with the wrong brightness in the room.
+ */
+export function threeDDesignerRoomCompensationRig(studioLights: DoorLightRig): DoorLightRig {
+  const pairIntensity = (studioLights.key.intensity + studioLights.fill.intensity) / 2;
+  const pairLight = { color: THREE_D_ROOM_LIGHT_COLOR, intensity: pairIntensity, position: THREE_D_ROOM_KEY_DIRECTION };
+  return { ...studioLights, key: pairLight, fill: pairLight };
+}
+
+/** DLC / photo-face light compensation for a finish, against the room rig that finish is lit by. */
+export function threeDDesignerRoomPhotoCompensation(finishHex: string | null | undefined) {
+  const studioLights = isVeryDarkCabinetStain(finishHex ?? "") ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS;
+  return dlcPhotoLightCompensation(threeDDesignerRoomCompensationRig(studioLights), relativeLuminance(finishHex ?? null));
+}
+
+/**
  * The live designer room lights: hemisphere, a mirrored neutral key pair and the
  * room point light. Room width/depth are in inches; `wallHeight` is in scene units.
  * The pair splits the rig's key + fill energy, so overall brightness is unchanged.
@@ -2949,6 +2973,24 @@ export function threeDDoorMaterialFallback(color: string) {
 /** A provided sample map carries the exact finish; tinting would darken or alter it. */
 export function threeDFaceMaterialColor(color: string, hasProvidedDoorSample: boolean) {
   return hasProvidedDoorSample ? "#ffffff" : color;
+}
+
+/**
+ * The colour a solid (untextured) door or drawer face is drawn in.
+ *
+ * DLC faces are drawn with tone mapping off (`toneMapped = false`), so the
+ * renderer writes albedo x light straight to the screen with no ACES shoulder.
+ * Their drawers and exposed sides already multiply their colour by the DLC light
+ * compensation for that reason; the door face did not, so a pale door reached
+ * the screen at its full light sum. That clips to pure white on any wall facing
+ * the room's key light and stays cream on a wall facing away from it: one finish,
+ * two colours, with a hard seam at the corner where the wall facing turns.
+ * Passing the same compensation hex the drawers use keeps every front of one
+ * finish on one colour. `null` (tone-mapped faces) returns the colour unchanged.
+ */
+export function threeDCompensatedSolidFaceColor(color: string, compensationHex: string | null): string {
+  if (!compensationHex) return color;
+  return `#${new THREE.Color(color).multiply(new THREE.Color(compensationHex)).getHexString()}`;
 }
 
 /**
@@ -5975,7 +6017,7 @@ export function addCabinet(
   // template (`grainSubstituted`), so compensating against a photo it never had
   // darkened it: Natura Maple measured ΔE2000 26.7 from its own recorded colour.
   const dlcPhotoComp = dlcPhotoCompensationApplies(surfaceTextures?.faceCrop)
-    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(dlcDoorFinish ?? "") ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(dlcDoorFinish))
+    ? threeDDesignerRoomPhotoCompensation(dlcDoorFinish)
     : null;
   const dlcPhotoTint = dlcPhotoComp
     ? (surfaceTextures?.faceCrop?.tintHex
@@ -6002,7 +6044,7 @@ export function addCabinet(
     styleCode: doorProfile?.styleCode,
     distributorId: doorProfile?.distributorId,
   })
-    ? dlcPhotoLightCompensation(isVeryDarkCabinetStain(color) ? DARK_STAIN_DOOR_LIGHTS : RESTORED_DOOR_LIGHTS, relativeLuminance(color))
+    ? threeDDesignerRoomPhotoCompensation(color)
     : null;
   const markPhotoFaceToneMapOff = (material: THREE.MeshStandardMaterial) => {
     if (!photoFaceComp || !material.map) return;
@@ -6011,7 +6053,11 @@ export function addCabinet(
     material.userData = { ...material.userData, photoFaceToneMapOff: true };
     material.needsUpdate = true;
   };
-  const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff" ? dlcPhotoTint : threeDFaceMaterialColor(color, Boolean(doorTexture));
+  // A solid-colour DLC door face is drawn with tone mapping off like its drawers and sides,
+  // so it takes the same light compensation they do (threeDCompensatedSolidFaceColor).
+  const faceColor = threeDFaceMaterialColor(color, Boolean(doorTexture)) === "#ffffff"
+    ? dlcPhotoTint
+    : threeDCompensatedSolidFaceColor(threeDFaceMaterialColor(color, Boolean(doorTexture)), dlcPhotoComp?.hex ?? null);
 	  const doorFinishSurface = threeDDoorFinishSurfaceProfile(doorProfile?.finishSheen, Boolean(doorTexture));
 	  const faceMaterial = new THREE.MeshPhysicalMaterial({
 	    color: faceColor,
