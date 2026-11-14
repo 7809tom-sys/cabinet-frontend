@@ -194,11 +194,13 @@ describe("Designer programmed photoreal material wiring", () => {
   it("keeps the corrected photographic exposure below neutral after the washed-out mobile regression", () => {
     expect(rendererSource).toContain("renderer.toneMappingExposure = studioLights.exposure");
     expect(rendererSource).toContain("new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity)");
-    expect(rendererSource).toContain("new THREE.DirectionalLight(studioLights.key.color, studioLights.key.intensity)");
-    expect(rendererSource).toContain("new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity)");
+    // The key and fill keep the rig's energy, split over one mirrored neutral pair so every
+    // wall's cabinets get the same light (Tom, Nov 14 2026: one finish read cream and white).
+    expect(rendererSource).toContain("const pairIntensity = (studioLights.key.intensity + studioLights.fill.intensity) / 2;");
+    expect(rendererSource).toContain("new THREE.DirectionalLight(THREE_D_ROOM_LIGHT_COLOR, pairIntensity)");
     expect(rendererSource).not.toContain("renderer.toneMappingExposure = 0.68");
     expect(rendererSource).not.toContain("renderer.toneMappingExposure = 0.84");
-    expect(rendererSource).toContain('new THREE.PointLight("#ffdca6", 2.8');
+    expect(rendererSource).toContain("new THREE.PointLight(THREE_D_ROOM_LIGHT_COLOR, 2.8");
   });
 
   it("records the Administration room scene without falsely representing it as an input to the exact 3D capture", () => {

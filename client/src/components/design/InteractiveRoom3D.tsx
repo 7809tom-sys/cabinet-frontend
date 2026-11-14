@@ -4,7 +4,6 @@ import { useTabletWorkspace } from "@/hooks/useTabletWorkspace";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { THREE_D_BLOCKED_MESSAGE, THREE_D_RECONNECTING_MESSAGE, THREE_D_STARTING_MESSAGE, THREE_D_UNAVAILABLE_MESSAGE, ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
@@ -93,7 +92,7 @@ import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRai
 import { loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
 import { matchCabinetColorName } from "@shared/cabinetColorNames";
 import { runColorGate, type ColorGateResult } from "@shared/colorGate";
-import { doorLightsForFinish } from "@shared/doorRenderLights";
+import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
 import { probeFlatPatchHex } from "@/lib/doorColorProbe";
 import { toast } from "sonner";
 import { pantryDrawerFrontLayout } from "@/lib/pantryDrawerLayout";
@@ -308,6 +307,106 @@ export function pathTraceCompatibleMaterial(material: THREE.Material) {
     reusedApprovedTextureMap: hasMaterialMap,
   };
   return converted;
+}
+
+/**
+ * One light color for every wall's cabinets (Tom, Nov 14 2026). The room rig used
+ * to light the left-facing wall with a warm key from +X and the right-facing wall
+ * with a cool blue fill from -X, so one off-white door line rendered cream on one
+ * wall and bright white on the other. Every room light now shares one neutral
+ * color, and the two directional lights are a mirrored pair whose angle gives the
+ * back wall (+Z facing) the same direct light as each side wall, so a cabinet's
+ * rendered shade comes from its material color, not from the wall it hangs on.
+ */
+export const THREE_D_ROOM_LIGHT_COLOR = "#ffffff";
+
+/** Mirrored key direction (x, y, z) before scaling by the room span. |x| = 2z keeps back and side walls equal. */
+export const THREE_D_ROOM_KEY_DIRECTION = [2, 1.8, 1] as const;
+
+/**
+ * The designer's reflection/ambient environment, built to be identical in every
+ * compass direction. Three's `RoomEnvironment` has its light boxes on one side of
+ * the room, and because `scene.environment` drives cabinets at full strength (the
+ * material's own envMapIntensity is ignored for a scene environment), a back-wall
+ * cabinet received noticeably more of it than a left- or right-wall cabinet. This
+ * scene varies only with height: a soft ceiling, a bright ring band (so metal and
+ * gloss still pick up a highlight streak), a mid-grey horizon and a darker floor.
+ * Any vertical face therefore sees the same environment whichever wall it is on.
+ */
+export const THREE_D_ROOM_ENVIRONMENT_LEVELS = {
+  ceiling: 1.55,
+  ring: 3.2,
+  horizon: 0.78,
+  floor: 0.34,
+} as const;
+
+export function createThreeDDesignerRoomEnvironment(): { scene: THREE.Scene; dispose: () => void } {
+  const scene = new THREE.Scene();
+  const levels = THREE_D_ROOM_ENVIRONMENT_LEVELS;
+  const shell = new THREE.SphereGeometry(20, 48, 32);
+  const position = shell.getAttribute("position");
+  const colors = new Float32Array(position.count * 3);
+  for (let index = 0; index < position.count; index += 1) {
+    // Elevation only, never azimuth: every wall facing sees the same shell.
+    const elevation = position.getY(index) / 20;
+    const level = elevation >= 0
+      ? levels.horizon + (levels.ceiling - levels.horizon) * elevation
+      : levels.horizon + (levels.floor - levels.horizon) * Math.min(1, -elevation * 1.6);
+    colors[index * 3] = level;
+    colors[index * 3 + 1] = level;
+    colors[index * 3 + 2] = level;
+  }
+  shell.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  const shellMaterial = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, toneMapped: false });
+  scene.add(new THREE.Mesh(shell, shellMaterial));
+  const ring = new THREE.CylinderGeometry(18.5, 18.5, 2.4, 64, 1, true);
+  const ringMaterial = new THREE.MeshBasicMaterial({ color: new THREE.Color(levels.ring, levels.ring, levels.ring), side: THREE.BackSide, toneMapped: false });
+  const ringMesh = new THREE.Mesh(ring, ringMaterial);
+  ringMesh.position.y = 7;
+  scene.add(ringMesh);
+  return {
+    scene,
+    dispose: () => {
+      shell.dispose();
+      ring.dispose();
+      shellMaterial.dispose();
+      ringMaterial.dispose();
+    },
+  };
+}
+
+/**
+ * The live designer room lights: hemisphere, a mirrored neutral key pair and the
+ * room point light. Room width/depth are in inches; `wallHeight` is in scene units.
+ * The pair splits the rig's key + fill energy, so overall brightness is unchanged.
+ */
+export function addThreeDDesignerRoomLights(
+  scene: THREE.Scene,
+  studioLights: DoorLightRig,
+  roomWidthIn: number,
+  roomDepthIn: number,
+  wallHeight: number,
+): THREE.Light[] {
+  const maxSpan = Math.max(roomWidthIn, roomDepthIn) * INCH;
+  const hemisphere = new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity);
+  const pairIntensity = (studioLights.key.intensity + studioLights.fill.intensity) / 2;
+  const [dx, dy, dz] = THREE_D_ROOM_KEY_DIRECTION;
+  const centerX = roomWidthIn * INCH * 0.5;
+  const centerZ = roomDepthIn * INCH * 0.5;
+  const keyPair = ([1, -1] as const).map((side) => {
+    const light = new THREE.DirectionalLight(THREE_D_ROOM_LIGHT_COLOR, pairIntensity);
+    light.position.set(centerX + side * dx * maxSpan, dy * maxSpan, centerZ + dz * maxSpan);
+    light.target.position.set(centerX, 0, centerZ);
+    light.castShadow = false;
+    light.userData = { designerRoomLight: side > 0 ? "key-east" : "key-west" };
+    return light;
+  });
+  const roomLight = new THREE.PointLight(THREE_D_ROOM_LIGHT_COLOR, 2.8, maxSpan * 3.2, 2);
+  roomLight.position.set(roomWidthIn * INCH * 0.5, wallHeight * 0.76, roomDepthIn * INCH * 0.5);
+  roomLight.userData = { designerRoomLight: "room" };
+  hemisphere.userData = { designerRoomLight: "hemisphere" };
+  scene.add(hemisphere, ...keyPair, ...keyPair.map((light) => light.target), roomLight);
+  return [hemisphere, ...keyPair, roomLight];
 }
 
 export function addThreeDProductionLightRig(
@@ -13404,7 +13503,9 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	    threeScene.background = new THREE.Color(studioLights.background);
 	    const pmremGenerator = new THREE.PMREMGenerator(renderer);
 	    pmremGenerator.compileEquirectangularShader();
-	    const environmentTarget = pmremGenerator.fromScene(new RoomEnvironment(), 0.04);
+	    const roomEnvironment = createThreeDDesignerRoomEnvironment();
+	    const environmentTarget = pmremGenerator.fromScene(roomEnvironment.scene, 0.04);
+	    roomEnvironment.dispose();
 	    threeScene.environment = environmentTarget.texture;
     threeScene.environmentIntensity = studioLights.environment;
     const camera = new THREE.PerspectiveCamera(42, canvasWidth / canvasHeight, 0.1, 100);
@@ -13436,18 +13537,8 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
     controls.autoRotateSpeed = 1.1;
     controls.update();
 
-	    threeScene.add(new THREE.HemisphereLight(studioLights.hemisphere.sky, studioLights.hemisphere.ground, studioLights.hemisphere.intensity));
-	    const keyLight = new THREE.DirectionalLight(studioLights.key.color, studioLights.key.intensity);
-	    keyLight.position.set(maxSpan, maxSpan * 1.8, maxSpan * 0.8);
-	    keyLight.castShadow = false;
-	    threeScene.add(keyLight);
-	    const fillLight = new THREE.DirectionalLight(studioLights.fill.color, studioLights.fill.intensity);
-	    fillLight.position.set(-maxSpan, maxSpan, maxSpan);
-	    threeScene.add(fillLight);
 	    const wallHeight = Math.max(...Object.values(wallHeights)) * INCH;
-	    const warmLight = new THREE.PointLight("#ffdca6", 2.8, maxSpan * 3.2, 2);
-    warmLight.position.set(room.width * INCH * 0.52, wallHeight * 0.76, room.depth * INCH * 0.48);
-    threeScene.add(warmLight);
+	    addThreeDDesignerRoomLights(threeScene, studioLights, room.width, room.depth, wallHeight);
 
 	    const materialDefaults = { ...(scene.materials?.defaults ?? { floor: "#b89778", countertop: "#e9e7e2", backsplash: "#d9d5cc", wall: "#efece6" }), countertop: countertopFinish };
 	    const resolvedRoomWallAppearance = roomWallAppearance(roomOverride);
