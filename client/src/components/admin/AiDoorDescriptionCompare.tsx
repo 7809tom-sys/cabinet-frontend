@@ -58,6 +58,7 @@ import {
   type AiDoorImageSource,
 } from "@/lib/aiDoorImageSource";
 import { announceChosenDoorProfile } from "@/lib/useChosenDoorProfiles";
+import { trpc } from "@/lib/trpc";
 import {
   AI_DOOR_IMAGE_FAILED_MESSAGE,
   aiDoorImageCaption,
@@ -317,6 +318,13 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     }));
   }
 
+  // Persist the official choice on the style itself. Browser storage alone made
+  // the AI image look saved while no other machine - or the Designer - ever saw it.
+  const saveAiProfile = trpc.doorStyles.saveAiProfile.useMutation({
+    onSuccess: () => setSavedNote("The official AI profile is saved on this door style."),
+    onError: (error) => setSavedNote(error.message),
+  });
+
   function saveComparison() {
     const next = saveAiDoorComparison(style.id, { ...stored, fields });
     setStored(next);
@@ -340,6 +348,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
       announceChosenDoorProfile(style.id);
       setChoiceVersion((current) => current + 1);
       onChooseOfficial?.(record);
+      // The server is the source of truth: model, its stated words, and the door
+      // image it drew. A failure here is reported, never swallowed.
+      saveAiProfile.mutate({
+        id: style.id,
+        model,
+        text: record.description ?? null,
+        imageUrl: generated[model]?.image?.url ?? null,
+      });
       setSavedNote(`${AI_DOOR_MODEL_LABELS[model]}'s description is now this door's official profile. The other two are kept as reference.`);
     } finally {
       setBusy(false);
