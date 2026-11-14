@@ -24,6 +24,19 @@ const describeMock = vi.hoisted(() => ({
   available: true,
 }));
 
+vi.mock("@/lib/trpc", () => ({
+  trpc: {
+    aiDoorDescription: {
+      // Booleans only, exactly like the real procedure. The panel never sees a key.
+      providerStatus: { useQuery: () => ({ data: { gpt: true, claude: false, gemini: true, keys: { gpt: "OPENAI_API_KEY", claude: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY" } } }) },
+    },
+    doorStyles: {
+      // #412 writes the chosen AI profile; the panel tests do not exercise it.
+      saveAiProfile: { useMutation: () => ({ mutate: () => undefined }) },
+    },
+  },
+}));
+
 vi.mock("@/lib/aiDoorDescribeClient", () => ({
   AI_DOOR_GENERATE_UNAVAILABLE_MESSAGE: "Generate needs the API server's AI door procedure, which is not deployed yet. Copy the prompt instead.",
   aiDoorDescribeProcedureAvailable: () => describeMock.available,
@@ -154,6 +167,15 @@ describe("nothing runs on editor open", () => {
 });
 
 describe("the three columns render", () => {
+  it("names which columns have a server key, so a silent column has a reason", () => {
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    expect(screen.getByTestId("ai-door-provider-status")).toBeTruthy();
+    expect(screen.getByTestId("ai-door-provider-gpt").textContent).toContain("OK");
+    expect(screen.getByTestId("ai-door-provider-claude").textContent).toContain("No key");
+    // The missing key is named by variable, never by value.
+    expect(screen.getByTestId("ai-door-provider-claude").getAttribute("title")).toContain("ANTHROPIC_API_KEY");
+  });
+
   it("shows a labelled field, a Generate, a copy prompt, and a choose action for each model", () => {
     render(<AiDoorDescriptionCompare style={STYLE} />);
     fireEvent.click(screen.getByTestId("ai-door-compare-start"));

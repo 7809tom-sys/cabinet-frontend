@@ -325,6 +325,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
     onError: (error) => setSavedNote(error.message),
   });
 
+  // Which columns have a provider key on this server. Booleans only - the
+  // procedure never returns a key. Tom, Nov 13 2026: the panel said nothing about
+  // why two of three columns never answered.
+  const providerStatus = trpc.aiDoorDescription.providerStatus.useQuery(undefined, {
+    enabled: open,
+    staleTime: 60_000,
+  });
+
   function saveComparison() {
     const next = saveAiDoorComparison(style.id, { ...stored, fields });
     setStored(next);
@@ -420,6 +428,29 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
           </figure>
         )}
       </div>
+
+      {providerStatus.data && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]" data-testid="ai-door-provider-status">
+          {AI_DOOR_MODELS.map((model) => {
+            const connected = Boolean(providerStatus.data?.[model]);
+            return (
+              <span
+                key={model}
+                className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 ${connected ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-900"}`}
+                data-testid={`ai-door-provider-${model}`}
+                title={connected
+                  ? `${AI_DOOR_MODEL_LABELS[model]} has a key on this server.`
+                  : `${AI_DOOR_MODEL_LABELS[model]} has no key on this server. Set ${providerStatus.data?.keys?.[model] ?? "its API key"} on the backend service.`}
+              >
+                {connected ? "OK" : "No key"} · {AI_DOOR_MODEL_LABELS[model]}
+              </span>
+            );
+          })}
+          <span className="text-muted-foreground">
+            Missing a key? Add it as a backend environment variable and redeploy - the frontend never holds it.
+          </span>
+        </div>
+      )}
 
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         {AI_DOOR_MODELS.map((model) => {
