@@ -75,10 +75,13 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import {
+  NINE_INCH_COMPANION_IN,
   autoDesignInsideCornerReservations,
   cornerReservationsOnWall,
   decideAutoDesignCornerTypeOrder,
   describeCornerTypeDecision,
+  pickNineInchCompanion,
+  placeCompanionBesideCorner,
   subtractInsideCornerReservations,
 } from "./autoDesignCornerDecision";
 import { neighborAtGapEdge, refrigeratorPanelAtEdge, resolveLeftoverGap, leftoverGapIsActionable } from "./autoDesignLeftover";
@@ -116,6 +119,7 @@ import {
   placedFootprint,
   freeSegmentsOnWall,
   isFarmSinkBasePaletteItem,
+  isFillerItem,
   isRangeOrOven,
   isSinkBaseCabinet,
   makeSinkForCabinet,
@@ -1059,6 +1063,14 @@ export function runAutoDesignLayout(args: {
   if (lockedKinds.length > 0) notes.push(`Utilities that cannot move stay at their measured spot (no 3″ wiggle): ${lockedKinds.join(", ")}.`);
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
+  const extraCornerReservations: Array<{ wallId: string; start: number; end: number }> = [];
+  const companionKeepUids: string[] = [];
+  const seatedCompanions: Array<{
+    source: DesignCabinet;
+    wallId: string;
+    cornerPoint: { x: number; y: number };
+    cornerUid: string;
+  }> = [];
   const wantedCornerFamily = hasPreference(input.intake, "lazy-susan") ? "lazy-susan" : hasPreference(input.intake, "blind-corner") ? "blind" : null;
   if (wantedCornerFamily && !stage.cornerOptions.some((option) => autoDesignCornerFamily(option) === wantedCornerFamily)) {
     notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the type is chosen from the appliances and the run math.`);
@@ -1087,12 +1099,30 @@ export function runAutoDesignLayout(args: {
       corner: point,
       placed: working,
       options: stage.cornerOptions,
+      companionCatalog: pool,
       wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
       preferLazySusan: wantedCornerFamily === "lazy-susan",
       preferBlind: wantedCornerFamily === "blind",
     });
     notes.push(describeCornerTypeDecision(slot.label, typeDecision));
-    const cornerOptionsForBuild = stage.cornerOptions;
+    if (typeDecision.blocked) {
+      notes.push(typeDecision.reason);
+      notes.push(`cannot fit at ${slot.label}.`);
+      reviewFindings.push({
+        ruleId: "corner-first-least-waste",
+        code: "corner-cabinet-not-seated",
+        severity: "warning",
+        title: `${slot.label}: no corner cabinet was seated`,
+        detail: typeDecision.reason,
+      });
+      continue;
+    }
+    const cornerOptionsForBuild = typeDecision.companionNine
+      ? stage.cornerOptions.filter((option) => {
+        if (autoDesignCornerFamily(option) !== "lazy-susan") return true;
+        return dim(option.width, 0) + NINE_INCH_COMPANION_IN <= typeDecision.availableIn + 0.05;
+      })
+      : stage.cornerOptions;
     const fit = evaluateAutoDesignCornerFit({
       options: cornerOptionsForBuild,
       room,
@@ -1160,7 +1190,73 @@ export function runAutoDesignLayout(args: {
     }
     if (seated.fallbackNote) notes.push(seated.fallbackNote);
     working = seated.placed;
+    const nine = (typeDecision.companionNine || typeDecision.band === "lazy-susan")
+      ? pickNineInchCompanion(pool)
+      : null;
+    if (nine) {
+      const wallIds = [firstWall.engineWallId, secondWall.engineWallId];
+      // Prefer the measured tight leg first, then the other, so a 42" plus-nine
+      // and a 45" leftover of 9" to a range both get a catalog 9" before later
+      // 3" wiggles can walk a sink or range into the pocket.
+      const orderedWalls = typeDecision.relevantWallId
+        ? [typeDecision.relevantWallId, ...wallIds.filter((id) => id !== typeDecision.relevantWallId)]
+        : wallIds;
+      for (const wallId of orderedWalls) {
+        if (!wallId) continue;
+        const cornerSpan = wallRunSpan(seated.corner, wallId, room);
+        if (!(cornerSpan > 0)) continue;
+        const cornerStart = wallRunOffset(seated.corner, wallId, room);
+        const cornerEnd = cornerStart + cornerSpan;
+        const already = working.some((item) => item.masterCode === nine.masterCode && Math.abs(item.width - NINE_INCH_COMPANION_IN) <= 0.2
+          && cabinetWall(item, room) === wallId
+          && Math.min(cornerEnd, wallRunOffset(item, wallId, room) + wallRunSpan(item, wallId, room)) - Math.max(cornerStart, wallRunOffset(item, wallId, room)) > -0.2
+          && (Math.abs(wallRunOffset(item, wallId, room) - cornerEnd) <= 0.3 || Math.abs(wallRunOffset(item, wallId, room) + wallRunSpan(item, wallId, room) - cornerStart) <= 0.3));
+        if (already) continue;
+        const neighbors = working.filter((item) => item.uid !== seated.corner.uid && cabinetWall(item, room) === wallId && !isFillerItem(item) && (item.placement === "base" || item.placement === "appliance" || item.placement === "tall"));
+        let pocket: { start: number; end: number } | null = null;
+        for (const item of neighbors) {
+          const start = wallRunOffset(item, wallId, room);
+          const end = start + wallRunSpan(item, wallId, room);
+          if (start >= cornerEnd - 0.05) {
+            const gap = start - cornerEnd;
+            if (!pocket || gap < pocket.end - pocket.start) pocket = { start: cornerEnd, end: start };
+          } else if (cornerStart >= end - 0.05) {
+            const gap = cornerStart - end;
+            if (!pocket || gap < pocket.end - pocket.start) pocket = { start: end, end: cornerStart };
+          }
+        }
+        const gap = pocket ? pocket.end - pocket.start : 0;
+        const shouldFill = typeDecision.companionNine
+          ? gap >= NINE_INCH_COMPANION_IN - 0.2 && gap <= NINE_INCH_COMPANION_IN + 3.2
+          : Math.abs(gap - NINE_INCH_COMPANION_IN) <= 0.6;
+        // Always keep a measured sink on this leg from being walked 3" into the leftover.
+        const sink = working.find((item) => item.placement === "base" && /^SB/i.test(item.masterCode) && cabinetWall(item, room) === wallId);
+        if (sink && !companionKeepUids.includes(sink.uid)) companionKeepUids.push(sink.uid);
+        if (pocket && gap > 0.2) extraCornerReservations.push({ wallId, start: pocket.start, end: pocket.end });
+        if (!shouldFill) continue;
+        const next = placeCompanionBesideCorner({
+          source: nine,
+          corner: seated.corner,
+          wallId,
+          cornerPoint: point,
+          room,
+          placed: working,
+          makeUid,
+          styleId: args.styleId,
+        });
+        if (next) {
+          working = next.placed;
+          const start = wallRunOffset(next.companion, wallId, room);
+          const span = wallRunSpan(next.companion, wallId, room);
+          if (span > 0) extraCornerReservations.push({ wallId, start, end: start + span });
+          companionKeepUids.push(next.companion.uid);
+          seatedCompanions.push({ source: nine, wallId, cornerPoint: point, cornerUid: seated.corner.uid });
+          notes.push(`${slot.label}: ${nine.masterCode} (9 in) is placed beside the lazy Susan so the countertop stays continuous.`);
+        }
+      }
+    }
     applianceMoves.push(...seated.moves);
+
     seatedCorners.push({
       slotId: slot.id,
       label: slot.label,
@@ -1309,7 +1405,7 @@ export function runAutoDesignLayout(args: {
   }
   // Reserve every inside-corner square of the cabineted runs before the base
   // fill (and every later leftover / "use every inch" / intake-repack pass).
-  const cornerReserved = autoDesignInsideCornerReservations(room, runWalls);
+  const cornerReserved = [...autoDesignInsideCornerReservations(room, runWalls), ...extraCornerReservations];
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
@@ -1768,6 +1864,7 @@ export function runAutoDesignLayout(args: {
       room,
       openings: stageOpenings,
       reservedSpans: cornerReserved,
+      keepUids: companionKeepUids,
       intake: input.intake,
       baseCatalog: args.baseCatalog,
       wallCatalog: args.wallCatalog,
@@ -1960,6 +2057,28 @@ export function runAutoDesignLayout(args: {
   });
   working = finalBlindSeal.placed;
   notes.push(...finalBlindSeal.notes.filter((note) => !notes.includes(note)));
+  // Later leftover / 15-rule retile can drop the 9 in companion; put it back
+  // beside the still-seated lazy Susan so the 42 in band stays intact.
+  for (const companion of seatedCompanions) {
+    const already = working.some((item) => item.masterCode === companion.source.masterCode && Math.abs(item.width - NINE_INCH_COMPANION_IN) <= 0.2);
+    if (already) continue;
+    const corner = working.find((item) => item.uid === companion.cornerUid);
+    if (!corner) continue;
+    const next = placeCompanionBesideCorner({
+      source: companion.source,
+      corner,
+      wallId: companion.wallId,
+      cornerPoint: companion.cornerPoint,
+      room,
+      placed: working,
+      makeUid,
+      styleId: args.styleId,
+    });
+    if (next) {
+      working = next.placed;
+      notes.push(`The 9 in ${companion.source.masterCode} was seated again beside the lazy Susan after later passes.`);
+    }
+  }
 
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a

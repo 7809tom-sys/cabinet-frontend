@@ -339,9 +339,27 @@ export function isAutoDesignBlindCornerOption(candidate: Pick<AutoBuildCornerCan
   return candidate.placement === "base" && isTrueBlindCornerCode(candidate.masterCode);
 }
 
-export type AutoDesignCornerFamily = "diagonal" | "lazy-susan" | "blind" | "other";
+export type AutoDesignCornerFamily = "diagonal" | "lazy-susan" | "blind" | "pull-out" | "other";
 
-export function autoDesignCornerFamily(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "cornerType">): AutoDesignCornerFamily {
+/**
+ * A pull-out / sliding / adjustable corner base (the 43.5" band), from the
+ * stored type or a description that names that kind of *corner*. A true BBC
+ * stays a blind. A 9" tray or spice-rack pull-out is a straight companion,
+ * not a corner cabinet, and is rejected here.
+ */
+export function isPullOutCornerCabinet(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "cornerType" | "subCategory" | "placement">): boolean {
+  const code = (candidate.masterCode ?? "").toUpperCase();
+  if (!code || isPlainBaseCode(code)) return false;
+  if (isTrueBlindCornerCode(code)) return false;
+  if (candidate.cornerType === "diagonal" || candidate.cornerType === "pie-cut" || /^(?:DCB|DCW|WDC)/.test(code)) return false;
+  if (candidate.cornerType === "lazy-susan" || candidate.cornerType === "easy-reach" || /^(?:LSB|LS|ERB|BER)/.test(code)) return false;
+  const stored = (candidate.cornerType ?? "").toLowerCase().replace(/_/g, "-");
+  if (["pull-out", "pullout", "sliding", "adjustable", "le-mans", "lemans", "magic-corner"].includes(stored)) return true;
+  const text = `${candidate.description ?? ""} ${candidate.subCategory ?? ""}`.toLowerCase();
+  return /(?:le\s*mans|magic\s+corner|sliding\s+corner|pull-?out\s+corner|adjustable\s+corner)/.test(text);
+}
+
+export function autoDesignCornerFamily(candidate: Pick<AutoBuildCornerCandidate, "masterCode" | "description" | "cornerType" | "subCategory" | "placement">): AutoDesignCornerFamily {
   // Family comes from the model code prefix and the stored cornerType only, never from words in the description:
   // a plain base (B42...) with "blind" or "corner" in its text is not a corner of any family.
   const code = (candidate.masterCode ?? "").toUpperCase();
@@ -349,6 +367,7 @@ export function autoDesignCornerFamily(candidate: Pick<AutoBuildCornerCandidate,
   if (candidate.cornerType === "diagonal" || candidate.cornerType === "pie-cut" || /^(?:DCB|DCW|WDC)/.test(code)) return "diagonal";
   if (candidate.cornerType === "lazy-susan" || candidate.cornerType === "easy-reach" || /^(?:LSB|LS|ERB|BER)/.test(code)) return "lazy-susan";
   if (candidate.cornerType === "blind-corner" || /^(?:BBC|WBC|BBL|BBR|WBL|WBR|BLB|BCB)/.test(code)) return "blind";
+  if (isPullOutCornerCabinet(candidate)) return "pull-out";
   return "other";
 }
 

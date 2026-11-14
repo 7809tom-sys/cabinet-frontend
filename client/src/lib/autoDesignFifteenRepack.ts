@@ -811,6 +811,8 @@ export function repackFifteenRuleLayout(input: {
   panelCatalog: readonly DesignCabinet[];
   styleId: number | null;
   makeUid: () => string;
+  /** Extra pieces that must not be re-tiled (e.g. the 9 in cabinet beside a 42 in-band lazy Susan). */
+  keepUids?: readonly string[];
 }): FifteenRepackResult {
   const notes: string[] = [];
   const findings: DesignerReviewFinding[] = [];
@@ -836,6 +838,7 @@ export function repackFifteenRuleLayout(input: {
     if (isDishwasher(p)) globalKeepUids.add(p.uid);
     if (p.placement === "tall") globalKeepUids.add(p.uid);
   }
+  for (const uid of input.keepUids ?? []) globalKeepUids.add(uid);
 
   // Pre-scan: figure out wall-cabinet H/D/MB defaults across all walls.
   const allWallFill: PlacedCabinet[] = [];
