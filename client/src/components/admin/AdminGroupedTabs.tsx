@@ -39,6 +39,7 @@ import CrmCleanupAdmin from "@/components/admin/CrmCleanupAdmin";
 import RolesAdmin from "@/components/admin/RolesAdmin";
 import SkuImageManager from "@/components/admin/SkuImageManager";
 import FeaturedStylesAdmin from "@/components/admin/FeaturedStylesAdmin";
+import SupplierSamplesAdmin from "@/components/admin/SupplierSamplesAdmin";
 import ShippingAdmin, { FreightApiLogsPanel, FreightQuoteHistoryPanel } from "@/components/admin/ShippingAdmin";
 import CarrierKeysPanel from "@/components/admin/CarrierKeysPanel";
 import MarginsAdmin from "@/components/admin/MarginsAdmin";
@@ -635,7 +636,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="cabinets" className="mt-6 space-y-8"><AdminTabErrorBoundary tabName="Catalog"><AdminTabHelp tab="cabinets" /><GenericCabinetsAdmin /><CabinetSpreadsheetAdmin /><CabinetLineDownload /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="door-styles" className="mt-4">
           <CatalogSubTabs sectionId="door-styles" activeTab={activeTab} onSelect={selectTab}>
-            <TabsContent value="featured" className="mt-6"><AdminTabErrorBoundary tabName="Featured Styles"><AdminTabHelp tab="featured" /><FeaturedStylesAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="featured" className="mt-6"><AdminTabErrorBoundary tabName="Featured Styles"><AdminTabHelp tab="featured" /><SupplierSamplesAdmin /><FeaturedStylesAdmin /></AdminTabErrorBoundary></TabsContent>
             <TabsContent value="door-corrections" className="mt-6"><AdminTabErrorBoundary tabName="Door Corrections"><AdminTabHelp tab="door-corrections" /><DoorCorrectionsAdmin /></AdminTabErrorBoundary></TabsContent>
             <TabsContent value="door-rendering-audit" className="mt-6"><AdminTabErrorBoundary tabName="Door Rendering Audit"><AdminTabHelp tab="door-rendering-audit" /><DoorRenderingAuditAdmin /></AdminTabErrorBoundary></TabsContent>
           </CatalogSubTabs>
