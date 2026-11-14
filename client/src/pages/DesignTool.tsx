@@ -382,6 +382,7 @@ import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDial
 import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
 import { cornerCatalogForLayer } from "@/lib/autoDesignCornerChoice";
 import { AutoDesignSinkDialog } from "@/components/design/AutoDesignSinkDialog";
+import { DesignerFixturePickPopup, type FixturePick } from "@/components/design/DesignerFixturePickPopup";
 import { AutoDesignTallDialog } from "@/components/design/AutoDesignTallDialog";
 import { AutoDesignRangeDialog } from "@/components/design/AutoDesignRangeDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
@@ -1517,6 +1518,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const [autoDesignSinkPrompt, setAutoDesignSinkPrompt] = useState<{ mode: "replace" | "add"; sinkUid: string | null } | null>(null);
   /** The sink the post-build question placed, shown so the setup view can state it. */
   const [autoDesignSinkPicks, setAutoDesignSinkPicks] = useState<AutoDesignSinkProduct[]>([]);
+  /** Rule 1: when the designer opens, a pop-up asks for the faucet and sink first. Required at open, easy to dismiss. */
+  const [fixturePickOpen, setFixturePickOpen] = useState(false);
+  const [fixturePick, setFixturePick] = useState<FixturePick>({ sinkId: null, faucetId: null });
+  const fixturePickRef = useRef<FixturePick>({ sinkId: null, faucetId: null });
+  const fixturePickShownRef = useRef(false);
+  useEffect(() => {
+    if (!autoDesignAvailable || fixturePickShownRef.current) return;
+    fixturePickShownRef.current = true;
+    setFixturePickOpen(true);
+  }, [autoDesignAvailable]);
   /** Sink bases the post-build sink question has already been asked about. */
   const autoDesignSinkPromptedRef = useRef(new Set<string>());
   /** The faucet prompt queued behind the sink question, applied once the sink is settled. */
@@ -4825,7 +4836,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined,
       // HARD RULE: the sink always gets a faucet. The catalog rows feed the real
       // pick; with none the build uses the built-in default fixture and says so.
-      faucetCatalog: autoDesignFaucetProductsRef.current,
+      faucetCatalog: (() => {
+        // Rule 1: the faucet picked in the designer-open pop-up is the one the build seats.
+        const picked = autoDesignFaucetProductsRef.current.find((product) => product.id === fixturePickRef.current.faucetId);
+        return picked ? [picked] : autoDesignFaucetProductsRef.current;
+      })(),
       // The line's own end/finished panel stock: the build finishes the outside
       // of the base cabinet on each side of the range with a real placed panel.
       panelCatalog: autoPanelCatalog,
@@ -11244,6 +11259,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     autoDesignOpen
     || autoDesignCornerStage != null
     || autoDesignFaucetPrompt != null
+    || fixturePickOpen
     || sinks.some((sink) => sink.autoDesignFaucet)
   );
   const {
@@ -11470,6 +11486,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     autoDesignOpen
     || autoDesignCornerStage != null
     || autoDesignSinkPrompt != null
+    || fixturePickOpen
   );
   const {
     data: pelicanSinkCatalog,
@@ -23312,6 +23329,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        />
 	      )}
 	      {autoDesignAvailable && (
+	        <DesignerFixturePickPopup
+	          open={fixturePickOpen}
+	          sinkProducts={autoDesignSinkProducts}
+	          faucetProducts={autoDesignFaucetProducts}
+	          loading={autoDesignSinkCatalogLoading || autoDesignFaucetCatalogLoading}
+	          initial={fixturePick}
+	          onSave={(pick) => { fixturePickRef.current = pick; setFixturePick(pick); setFixturePickOpen(false); toast.success("Faucet and sink saved. They are offered first once the layout is built."); }}
+	          onDismiss={() => setFixturePickOpen(false)}
+	        />
+	      )}
+	      {autoDesignAvailable && (
 	        <AutoDesignFaucetDialog
 	          open={autoDesignFaucetPrompt != null && !threeDGraphicsPaused}
 	          sinkLabel={autoDesignFaucetPromptCabinet?.masterCode ?? "this sink"}
@@ -23319,6 +23347,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          products={autoDesignFaucetProducts}
 	          loading={autoDesignFaucetCatalogLoading}
 	          catalogUnavailable={autoDesignFaucetCatalogUnavailable}
+	          preferredProductId={fixturePick.faucetId}
 	          onKeepDefault={keepAutoDesignFaucetDefault}
 	          onChoose={chooseAutoDesignFaucet}
 	        />
@@ -23342,6 +23371,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          loading={autoDesignSinkCatalogLoading}
 	          catalogUnavailable={autoDesignSinkCatalogUnavailable}
 	          placedSinkCount={sinks.length}
+	          preferredProductId={fixturePick.sinkId}
 	          onKeepDefault={keepAutoDesignSinkDefault}
 	          onChoose={chooseAutoDesignSink}
 	        />

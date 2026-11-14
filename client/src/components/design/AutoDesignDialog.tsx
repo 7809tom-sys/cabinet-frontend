@@ -7,6 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Boxes, Droplets, Flame } from "lucide-react";
 import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
+import { AutoDesignIntakeSection } from "./AutoDesignIntakeSection";
+import { emptyAutoDesignIntake, hasPreference, intakeMissing, type AutoDesignIntake } from "@/lib/autoDesignFifteenRules";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
 import { DEFAULT_OVER_RANGE_ANSWER } from "@/lib/overRangeCompanion";
@@ -102,6 +104,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const [refrigeratorWidth, setRefrigeratorWidth] = useState<RefrigeratorWidth>(36);
   const [windowCenter, setWindowCenter] = useState("");
   const [kitchenUses, setKitchenUses] = useState<KitchenUseId[]>([]);
+  const [intake, setIntake] = useState<AutoDesignIntake>(() => emptyAutoDesignIntake());
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -112,6 +115,11 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
       setDishwasherSide(dishwasherSidePreference);
     }
   }, [dishwasherSidePreference]);
+  useEffect(() => {
+    if (!hasPreference(intake, "dishwasher")) return;
+    setOmitted((prev) => (prev.dishwasher ? { ...prev, dishwasher: false } : prev));
+    setDishwasherSide((prev) => (prev === "none" ? "right" : prev));
+  }, [intake.preferences]);
 
   const setValue = (field: PointField, patch: Partial<FieldValue>) => setValues((current) => ({
     ...current,
@@ -157,7 +165,13 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const noDishwasher = omitted.dishwasher || dishwasherSide === "none";
   const submit = () => {
     setSubmitError(null);
+    const missing = intakeMissing(intake);
+    if (missing.length) {
+      setSubmitError(missing.join(" "));
+      return;
+    }
     const result = onBuild({
+      intake,
       layoutType,
       originCorner,
       runDirection,
@@ -194,6 +208,7 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
 	          </DialogDescription>
 	        </DialogHeader>
 	        <div className="grid gap-4">
+	          <AutoDesignIntakeSection intake={intake} onChange={setIntake} />
 	          {onLoadSixWallTrainingRoom && (
 	            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/70 p-3">
 	              <div className="min-w-0 text-xs leading-relaxed text-slate-700">

@@ -434,6 +434,15 @@ export function ElevationView({
       const start = wallRunOffset(p, side, room);
       return { start, end: start + wallRunSpan(p, side, room), level: 0, uid: p.uid };
     }));
+  const continuousUpperRuns = mergedElevationTrimRuns(sorted
+    .filter((p) => p.placement === "wall")
+    .map((p) => { const start = wallRunOffset(p, side, room); const { bottom } = elevationBox(p, room, elevationCabinets); return { start, end: start + wallRunSpan(p, side, room), level: bottom, uid: p.uid }; }), 1.5)
+    .map((run) => {
+      const members = sorted.filter((p) => p.placement === "wall" && (() => { const s = wallRunOffset(p, side, room); const e = s + wallRunSpan(p, side, room); const { bottom } = elevationBox(p, room, elevationCabinets); return Math.abs(bottom - run.level) <= 1.5 && s >= run.start - 0.01 && e <= run.end + 0.01; })());
+      const top = Math.max(...members.map((p) => { const box = elevationBox(p, room, elevationCabinets); return box.bottom + box.height; }));
+      return { ...run, top, count: members.length };
+    })
+    .filter((run) => run.count >= 2);
 
   // Openings on the wall being viewed.
   const viewOpenings = openings.filter((o) => o.side === side);
@@ -2046,6 +2055,15 @@ export function ElevationView({
                 </div>
               )}
             </div>
+          );
+        })}
+
+        {continuousUpperRuns.map((run) => {
+          const anchor = sorted.find((p) => p.uid === run.anchorUid)!;
+          const cabF = finishFor ? finishFor(anchor) : finish;
+          return (
+            <div key={`continuous-upper-run-${run.anchorUid}-${run.start}`} data-testid="continuous-wall-run" data-run-count={run.count} aria-hidden="true" className="absolute pointer-events-none"
+              style={{ left: run.start * ppi - 1, width: (run.end - run.start) * ppi + 2, bottom: run.level * ppi - 1, height: (run.top - run.level) * ppi + 2, border: `2px solid ${cabF.edge}`, borderRadius: 2, zIndex: 3 }} />
           );
         })}
 

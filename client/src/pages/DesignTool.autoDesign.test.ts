@@ -52,7 +52,9 @@ describe("public Auto-Design Designer wiring", () => {
     expect(anchorSource).toContain("export function buildAnchoredRefrigeratorBay(");
     // Its floor space is reserved and nothing is allowed to move it.
     expect(anchorSource).toContain("refrigeratorFloorReservation");
-    expect(layoutSource).toContain("fixedUids: anchoredUids,");
+    // Rule 2 (Nov 13 2026): utilities the customer says cannot move are fixed alongside the anchored refrigerator.
+    expect(layoutSource).toContain("const fixedAnchorUids = Array.from(new Set([...anchoredUids, ...lockedUids]));");
+    expect(layoutSource).toContain("fixedUids: fixedAnchorUids,");
     expect(layoutSource).toContain("fixedRefrigeratorUids: anchoredUids,");
     expect(layoutSource).toContain("immovableApplianceUids: anchoredUids,");
   });

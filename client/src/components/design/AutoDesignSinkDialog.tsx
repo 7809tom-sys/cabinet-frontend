@@ -33,6 +33,8 @@ type Props = {
   catalogUnavailable: boolean;
   /** Already chosen in this design, so the pop-up can say what a second pick does. */
   placedSinkCount: number;
+  /** The sink the customer picked in the designer-open pop-up (rule 1); offered first. */
+  preferredProductId?: number | null;
   onKeepDefault: () => void;
   onChoose: (product: AutoDesignSinkProduct, applyToAllSinks: boolean) => void;
 };
@@ -51,10 +53,14 @@ export function AutoDesignSinkDialog({
   loading,
   catalogUnavailable,
   placedSinkCount,
+  preferredProductId,
   onKeepDefault,
   onChoose,
 }: Props) {
   const [filter, setFilter] = useState<InstallationFilter>("All");
+  const preferredProduct = preferredProductId != null
+    ? products.find((product) => product.id === preferredProductId) ?? null
+    : null;
   const visible = useMemo(() => {
     const rows = filter === "All" ? products : products.filter((product) => installationFilterFor(product) === filter);
     return groupPelicanConfigurations(rows as never);
@@ -75,6 +81,22 @@ export function AutoDesignSinkDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
+          {preferredProduct && (
+            <div
+              data-testid="auto-design-sink-preferred"
+              className="flex items-center justify-between gap-2 rounded-lg border border-[#244338] bg-[#f6f3ed] p-2 text-sm"
+            >
+              <span>Customer's pick: {preferredProduct.name}</span>
+              <Button
+                type="button"
+                size="sm"
+                data-testid="auto-design-sink-use-preferred"
+                onClick={() => onChoose(preferredProduct, false)}
+              >
+                Place this sink
+              </Button>
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5" data-testid="auto-design-sink-filters">
             {INSTALLATION_FILTERS.filter((name) => name === "All" || (name === "Farmhouse" ? hasFarm : hasStandard)).map((name) => (
               <Button

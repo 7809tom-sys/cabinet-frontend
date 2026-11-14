@@ -12,6 +12,7 @@ import {
   autoDesignWallNameByEngineId,
   wallLabelToEngineWallId,
   type AutoDesignInputs,
+  type WallLabel,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { ensureRequiredBlindCornerBaseFillers } from "./blindCornerRequiredFiller";
@@ -34,6 +35,7 @@ import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFiller
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
+import { fifteenRuleFindings, hasPreference, lockedAnchorKinds } from "./autoDesignFifteenRules";
 import { ensureDrawerBase } from "./autoDesignDrawerRule";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "./kitchenAdjacency";
 import { autoDesignFillerMaxIn, fillAutoDesignLowerSeams, planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
@@ -371,6 +373,7 @@ function slideSinkForLanding(input: {
   room: RoomData;
   notes: string[];
   reviewFindings: DesignerReviewFinding[];
+  lockedUids?: readonly string[];
 }): { placed: PlacedCabinet[] } {
   let working = [...input.placed];
   const landingIn = sinkTallLandingIn();
@@ -380,6 +383,18 @@ function slideSinkForLanding(input: {
     const gap = gaps[0]!;
     const sink = working.find((item) => item.uid === gap.sinkUid);
     if (!sink) break;
+    if (input.lockedUids?.includes(sink.uid)) {
+      input.reviewFindings.push({
+        ruleId: "auto-design-rule-2",
+        code: "sink-locked-no-slide",
+        severity: "info",
+        title: `${gap.sinkCode} stays put`,
+        detail: "The customer said the sink base cannot move, so it was not slid for a counter landing.",
+        cabinetUid: sink.uid,
+        cabinetCode: sink.masterCode,
+      });
+      break;
+    }
     const slides = planSinkLandingSlides({ sink, placed: working, room: input.room, landingIn });
     const slide = slides[0];
     if (!slide) {
@@ -693,6 +708,7 @@ export function runAutoDesignLayout(args: {
   const fail = (message: string): AutoDesignLayoutResult => ({ ok: false, message });
   const plan = planAutoDesignAutoBuild(input);
   if (!plan.ok) return fail(`Missing required measurement: ${plan.missing.join(", ")}.`);
+  const peninsulaRequest = args.peninsula ?? (input.intake?.islandOrPeninsula === "peninsula" && input.intake.peninsulaSide ? { side: input.intake.peninsulaSide } : null);
   const pool = args.baseCatalog;
   const straightBaseCatalog = autoBuildStraightBaseCatalog(pool);
   const drawerBaseCatalog = autoBuildDrawerBaseCatalog(pool);
@@ -998,8 +1014,19 @@ export function runAutoDesignLayout(args: {
   const applianceMoves: AutoDesignLayoutSuccess["applianceMoves"] = [];
   const seatedCorners: AutoDesignSeatedCorner[] = [];
   const anchoredUids = anchoredRefrigerator ? [anchoredRefrigerator.uid] : [];
+  const lockedKinds = lockedAnchorKinds(input.intake);
+  const lockedUids = lockedKinds.flatMap((kind) => {
+    const anchor = anchorsByKind.get(kind);
+    return anchor ? [anchor.uid] : [];
+  });
+  const fixedAnchorUids = Array.from(new Set([...anchoredUids, ...lockedUids]));
+  if (lockedKinds.length > 0) notes.push(`Utilities that cannot move stay at their measured spot (no 3″ wiggle): ${lockedKinds.join(", ")}.`);
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
+  const wantedCornerFamily = hasPreference(input.intake, "lazy-susan") ? "lazy-susan" : hasPreference(input.intake, "blind-corner") ? "blind" : null;
+  const preferredCornerOptions = wantedCornerFamily ? stage.cornerOptions.filter((option) => autoDesignCornerFamily(option) === wantedCornerFamily) : [];
+  const cornerOptionsForBuild = preferredCornerOptions.length > 0 ? preferredCornerOptions : stage.cornerOptions;
+  if (wantedCornerFamily && preferredCornerOptions.length === 0) notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the standard corner order was used.`);
   for (const slot of stage.slots) {
     const firstWall = wallLabelToEngineWallId(slot.firstWall, room, input.originCorner, input.runDirection);
     const secondWall = wallLabelToEngineWallId(slot.secondWall, room, input.originCorner, input.runDirection);
@@ -1019,7 +1046,7 @@ export function runAutoDesignLayout(args: {
       continue;
     }
     const fit = evaluateAutoDesignCornerFit({
-      options: stage.cornerOptions,
+      options: cornerOptionsForBuild,
       room,
       placed: working,
       corner: point,
@@ -1032,7 +1059,7 @@ export function runAutoDesignLayout(args: {
     // Blind corner (at its pull and pulled further), straight base, and the 3" wiggle are costed
     // by dead corner inches; the least waste wins and a fitting blind corner beats a straight base.
     const cornerPlan = pickCornerFirst({
-      cornerOptions: stage.pool.filter((row) => stage.cornerOptions.some((option) => option.id === row.id)),
+      cornerOptions: stage.pool.filter((row) => cornerOptionsForBuild.some((option) => option.id === row.id)),
       straightBaseCatalog: stage.straightBaseCatalog,
       room,
       cornerWallIds: [firstWall.engineWallId, secondWall.engineWallId],
@@ -1042,12 +1069,14 @@ export function runAutoDesignLayout(args: {
     });
     if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
     // A blind corner the planner chose overrides the generic widest-first order.
-    const plannedBlind = cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
-      ? stage.cornerOptions.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
-      : null;
+    const plannedBlind = wantedCornerFamily === "lazy-susan"
+      ? null
+      : cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
+        ? cornerOptionsForBuild.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
+        : null;
     const seated = seatAutoDesignCornerFromCatalog({
       slot,
-      options: stage.cornerOptions,
+      options: cornerOptionsForBuild,
       pool: stage.pool,
       preferred: plannedBlind,
       target: point,
@@ -1136,7 +1165,7 @@ export function runAutoDesignLayout(args: {
     catalog: stage.straightBaseCatalog,
     origins: stage.anchorOrigins,
     lockedUids: [],
-    fixedUids: anchoredUids,
+    fixedUids: fixedAnchorUids,
   });
   working = wiggle.placed;
   const separated = separateRangeAndRefrigerator({
@@ -1153,7 +1182,7 @@ export function runAutoDesignLayout(args: {
   }
   const usage = normalizeKitchenUsage(stage.input.kitchenUsage);
   const heavyCook = cooksALot(usage);
-  const preferDrawers = heavyCook || bakesALot(usage);
+  const preferDrawers = heavyCook || bakesALot(usage) || hasPreference(stage.input.intake, "lots-of-drawers");
   // Tall oven / pantry cabinets are picked in the tall pop-up and never dropped
   // into a run unasked. They are seated as run anchors BEFORE the base runs tile
   // the walls, so a pantry reserves its span the same way a measured appliance
@@ -1229,7 +1258,7 @@ export function runAutoDesignLayout(args: {
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
-    const peninsulaHold = args.peninsula && wallId === "bottom" ? autoDesignPeninsulaAttachment(room, args.peninsula.side) : null;
+    const peninsulaHold = peninsulaRequest && wallId === "bottom" ? autoDesignPeninsulaAttachment(room, peninsulaRequest.side) : null;
     const reservations = [
       ...(reservation?.wall === wallId ? [{ start: reservation.start, end: reservation.end }] : []),
       ...(peninsulaHold ? [{ start: peninsulaHold.reserveStart, end: peninsulaHold.reserveEnd }] : []),
@@ -1498,7 +1527,7 @@ export function runAutoDesignLayout(args: {
   // refrigerator. The base runs and the tall picks are both down, so a slide that
   // opens the landing is known exactly. The sink base slides (within its own
   // anchor cap); nothing else moves. A sink that still has no landing is named.
-  const landingFix = slideSinkForLanding({ placed: working, room, notes, reviewFindings });
+  const landingFix = slideSinkForLanding({ placed: working, room, notes, reviewFindings, lockedUids });
   working = landingFix.placed;
   // HARD RULE (owner, Nov 5 2026): a real bridge wall cabinet is placed above the
   // range on EVERY build, and it goes in BEFORE the upper run tiles. Seating it
@@ -1714,9 +1743,9 @@ export function runAutoDesignLayout(args: {
   let peninsulaSummary: AutoDesignPeninsulaSummary | null = null;
   let peninsulaRuns: import("./design").PeninsulaRun[] = [];
   let furniture: PlacedFurniture[] = [];
-  if (args.peninsula) {
+  if (peninsulaRequest) {
     const built = buildAutoDesignPeninsula({
-      request: args.peninsula,
+      request: peninsulaRequest,
       room,
       placed: working,
       sinks,
@@ -1816,6 +1845,10 @@ export function runAutoDesignLayout(args: {
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
+  const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
+  // The 15-rule findings (spacing, suggested downsizes, oven pairing, intake picks) are
+  // suggestions only and run when the build was given the upfront intake.
+  if (input.intake) reviewFindings.push(...fifteenRuleFindings({ placed: working, room, baseCatalog: args.baseCatalog, intake: input.intake, wallLabelOf: (wallId) => wallNames[wallId] ?? null, peninsulaBuilt: peninsulaSummary != null }));
   return {
     ok: true,
     // The plan the build returns is the whole plan, including any fixed anchor
