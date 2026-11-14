@@ -59,7 +59,7 @@ describe("the add-only over-range pass", () => {
   });
 
   it("surfaces a blocked bridge on the review list instead of skipping it", () => {
-    expect(designTool).toContain("setAutoDesignReviewFindings((current) => [...current, ...mandatoryBridge.findings])");
+    expect(designTool).toContain("reviewFindings.push(...mandatoryBridge.findings)");
     expect(designTool).toContain("const overRangeFillRanRef = useRef");
   });
 

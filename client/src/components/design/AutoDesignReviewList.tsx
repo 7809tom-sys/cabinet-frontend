@@ -8,17 +8,21 @@ import {
 /**
  * Non-blocking Auto Design report after a build (Tom, Nov 14 2026).
  *
- * The end-of-flow "Design questions needing review" alert is replaced by this
- * summary panel: the same findings, grouped into what could not be met, what
- * was applied or adjusted, and defaults the shopper can still change. It is
- * not a modal, starts with the report visible, and can be collapsed or dismissed.
+ * One end-of-run summary: the same findings, grouped into what could not be
+ * met, what was applied or adjusted, and defaults the shopper can still change.
+ * It is not a modal, never times out, and stays until the user dismisses it.
+ * "View last report" brings the same report back after a dismiss.
  */
 export function AutoDesignReviewList({
   findings,
+  open = true,
   onDismiss,
+  onReopen,
 }: {
   findings: readonly DesignerReviewFinding[];
+  open?: boolean;
   onDismiss: () => void;
+  onReopen?: () => void;
 }) {
   const report = useMemo(() => buildAutoDesignRulesReport(findings), [findings]);
   const signature = `${report.unmet.join("\n")}\n${report.applied.join("\n")}\n${report.changeable.join("\n")}`;
@@ -27,6 +31,20 @@ export function AutoDesignReviewList({
     setExpanded(true);
   }, [signature]);
   if (autoDesignRulesReportIsEmpty(report)) return null;
+  if (!open) {
+    return (
+      <div className="absolute bottom-3 right-28 z-40" data-testid="designer-review-list">
+        <button
+          type="button"
+          data-testid="auto-design-view-last-report"
+          onClick={onReopen}
+          className="rounded-md border border-[#d7a46c]/80 bg-[#fffdf9] px-3 py-1.5 text-xs font-semibold text-[#244338] shadow-md hover:bg-[#f6f3ed]"
+        >
+          View last report
+        </button>
+      </div>
+    );
+  }
   const count = report.unmet.length + report.applied.length + report.changeable.length;
   const listId = "auto-design-rules-report-list";
   return (

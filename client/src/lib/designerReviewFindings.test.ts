@@ -3,6 +3,7 @@ import {
   autoDesignReportFindingLine,
   buildAutoDesignRulesReport,
   autoDesignRulesReportIsEmpty,
+  autoDesignRunNotice,
   overRangeDefaultedFinding,
   type DesignerReviewFinding,
 } from "./designerReviewFindings";
@@ -46,5 +47,35 @@ describe("buildAutoDesignRulesReport", () => {
 
   it("is empty when there are no findings", () => {
     expect(autoDesignRulesReportIsEmpty(buildAutoDesignRulesReport([]))).toBe(true);
+  });
+});
+
+describe("autoDesignRunNotice", () => {
+  it("keeps the exact toast sentence and routes warning vs info into the right group", () => {
+    const warningNote = autoDesignRunNotice({
+      text: "The faucet window was raised 2 in so the spout clears the sash.",
+      kind: "warning",
+      code: "faucet-window",
+    });
+    const appliedNote = autoDesignRunNotice({
+      text: "Moved the range 3 in away from the corner to fit the required corner cabinet. Its measured center is now 24 in along the wall.",
+      kind: "info",
+      code: "appliance-move",
+    });
+    const shift = autoDesignRunNotice({
+      text: "The landing is tight.",
+      kind: "warning",
+      code: "shift-review",
+      title: "Landing beside the range is short",
+      detail: "The landing is tight.",
+    });
+    const report = buildAutoDesignRulesReport([warningNote, appliedNote, shift]);
+    expect(report.unmet).toEqual([
+      "The faucet window was raised 2 in so the spout clears the sash.",
+      "Landing beside the range is short — The landing is tight.",
+    ]);
+    expect(report.applied).toEqual([
+      "Moved the range 3 in away from the corner to fit the required corner cabinet. Its measured center is now 24 in along the wall.",
+    ]);
   });
 });

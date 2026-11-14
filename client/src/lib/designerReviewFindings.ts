@@ -78,9 +78,37 @@ export function designerReviewLines(list: DesignerReviewList): string[] {
 
 /** One report sentence for a finding, including the wall when the build named one. */
 export function autoDesignReportFindingLine(finding: DesignerReviewFinding): string {
-  return finding.wallLabel
-    ? `${finding.title} (${finding.wallLabel}) — ${finding.detail}`
-    : `${finding.title} — ${finding.detail}`;
+  const head = finding.wallLabel
+    ? `${finding.title} (${finding.wallLabel})`
+    : finding.title;
+  return finding.detail ? `${head} — ${finding.detail}` : head;
+}
+
+/**
+ * Turns a former Auto Design toast into a report finding, keeping the same
+ * sentence the toast used to show. `warning` lands in "Couldn't be met";
+ * `info` lands in "Applied or adjusted".
+ */
+export function autoDesignRunNotice(input: {
+  text: string;
+  kind: "warning" | "info";
+  code: string;
+  title?: string;
+  detail?: string;
+}): DesignerReviewFinding {
+  const title = (input.title ?? input.text).trim();
+  const detail = (input.detail ?? "").trim();
+  return makeReviewFinding({
+    ruleId: "design-questions-honored",
+    code: input.code,
+    severity: input.kind,
+    title,
+    detail,
+    wallLabel: null,
+    cabinetUid: null,
+    // Distinct subject so two notices with the same code are not collapsed.
+    cabinetCode: title,
+  });
 }
 
 export type AutoDesignRulesReport = {
