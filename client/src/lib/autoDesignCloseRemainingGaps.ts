@@ -15,6 +15,8 @@ import { isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller"
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { formatFillerInches } from "./autoDesignFillerConsolidation";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 import {
   WALL_OPENING_CLEARANCE_IN,
   appendCollisionFreePlacements,
@@ -91,13 +93,14 @@ function packWidths(span: number, catalog: readonly DesignCabinet[], layer: "bas
 }
 
 function rowFor(catalog: readonly DesignCabinet[], layer: "base" | "wall", width: number, preferHeightIn: number | null): DesignCabinet | null {
-  const rows = catalog.filter((row) => sellable(row, layer) && Math.abs(widthOf(row) - width) <= 0.05);
+  const rows = catalog.filter((row) => sellable(row, layer) && Math.abs(widthOf(row) - width) <= 0.05)
+    .sort((a, b) => (layer === "base" ? baseRowRank(a) - baseRowRank(b) : 0));
   if (!rows.length) return null;
   if (preferHeightIn != null) {
     const atHeight = rows.filter((row) => Math.abs(dim(row.height, 0) - preferHeightIn) <= 0.5);
     if (atHeight.length) return atHeight.sort((a, b) => a.masterCode.localeCompare(b.masterCode))[0]!;
   }
-  return rows.sort((a, b) => a.masterCode.localeCompare(b.masterCode))[0]!;
+  return rows.sort((a, b) => (layer === "base" ? baseRowRank(a) - baseRowRank(b) : 0) || a.masterCode.localeCompare(b.masterCode))[0]!;
 }
 
 function isWindowOrDoor(opening: WallOpening): boolean {
@@ -118,6 +121,65 @@ function blockedByOpening(gapStart: number, gapEnd: number, openings: readonly W
 
 function reserved(gapStart: number, gapEnd: number, spans: ReadonlyArray<{ wallId: string; start: number; end: number }>, wallId: string): boolean {
   return spans.some((span) => span.wallId === wallId && gapStart < span.end - COLLISION && gapEnd > span.start + COLLISION);
+}
+
+/**
+ * The parts of a free gap outside every reserved span. A gap that only touches
+ * a reserved corner square (or a range / sink span) still has a real opening
+ * beside it; dropping the whole gap left that opening empty (Tom, Nov 14 2026:
+ * a 14 in base opening next to a blocked corner was never filled).
+ */
+function unreservedPieces(
+  gap: { start: number; length: number },
+  spans: ReadonlyArray<{ wallId: string; start: number; end: number }>,
+  wallId: string,
+): Array<{ start: number; length: number; trimmed: boolean }> {
+  let pieces = [{ start: gap.start, end: gap.start + gap.length }];
+  for (const span of spans) {
+    if (span.wallId !== wallId) continue;
+    pieces = pieces.flatMap((piece) => {
+      if (span.end <= piece.start + COLLISION || span.start >= piece.end - COLLISION) return [piece];
+      const out: Array<{ start: number; end: number }> = [];
+      if (span.start > piece.start + COLLISION) out.push({ start: piece.start, end: span.start });
+      if (span.end < piece.end - COLLISION) out.push({ start: span.end, end: piece.end });
+      return out;
+    });
+  }
+  return pieces.map((piece) => ({
+    start: piece.start,
+    length: piece.end - piece.start,
+    trimmed: Math.abs(piece.start - gap.start) > COLLISION || Math.abs(piece.end - piece.start - gap.length) > COLLISION,
+  }));
+}
+
+/** Kitchen Rules `close_gap_with_cabinet_max_in` (default 14.5 in). */
+export function autoDesignCloseGapWithCabinetMaxIn(): number {
+  return kitchenRuleNumber("close_gap_with_cabinet_max_in");
+}
+
+/**
+ * Tom's rule (Nov 14 2026): a base opening from the line's narrowest base up to
+ * `close_gap_with_cabinet_max_in` gets a NEW real base, the widest the line
+ * sells that leaves no more than `seam_filler_max_in`, plus one filler trimmed
+ * to the rest (14 -> 12 + 2, 14.5 -> 12 + 2.5). Widths come from the live
+ * catalog for the chosen line; nothing is hard-coded. Null when the opening is
+ * outside the band or no catalog base leaves a filler-sized remainder.
+ */
+export function narrowBasePlusFillerWidth(gapIn: number, catalog: readonly DesignCabinet[]): number | null {
+  const widths = Array.from(new Set(catalog.filter((row) => sellable(row, "base")).map(widthOf))).filter((width) => width > 0).sort((a, b) => b - a);
+  if (!widths.length) return null;
+  const narrowest = widths[widths.length - 1]!;
+  if (gapIn < narrowest - COLLISION || gapIn > autoDesignCloseGapWithCabinetMaxIn() + COLLISION) return null;
+  const fillerMax = autoDesignFillerMaxIn();
+  return widths.find((width) => width <= gapIn + COLLISION && gapIn - width <= fillerMax + COLLISION) ?? null;
+}
+
+/** A plain door base (B12) before a drawer or specialty base of the same width (3DB12). */
+function baseRowRank(row: DesignCabinet): number {
+  const code = row.masterCode.toUpperCase();
+  if (/^B\d{1,2}$/.test(code)) return 0;
+  if (/^B\d/.test(code)) return 1;
+  return 2;
 }
 
 function placeFiller(input: {
@@ -252,16 +314,24 @@ export function closeRemainingRunGaps(input: {
           openingClearance,
           layer,
           layer === "wall",
-        ).filter((gap) => gap.length >= MIN_GAP_IN - 1e-9)
-          .filter((gap) => !blockedByOpening(gap.start, gap.start + gap.length, openings, wallId, layer))
-          .filter((gap) => !reserved(gap.start, gap.start + gap.length, reservedSpans, wallId));
+        ).flatMap((gap) => unreservedPieces(gap, reservedSpans, wallId))
+          .filter((gap) => gap.length >= MIN_GAP_IN - 1e-9)
+          .filter((gap) => !blockedByOpening(gap.start, gap.start + gap.length, openings, wallId, layer));
         const gap = gaps
           .filter((entry) => !failedGaps.has(`${entry.start}:${entry.length}`))
           .sort((left, right) => right.length - left.length)[0];
         if (!gap) break;
         const start = gap.start;
         const span = Math.round(gap.length * 1000) / 1000;
-        const packed = packWidths(span, catalog, layer);
+        const narrowWidth = layer === "base" ? narrowBasePlusFillerWidth(span, catalog) : null;
+        if (gap.trimmed && narrowWidth == null) {
+          // Beside a reserved corner square, range or sink span only the
+          // narrow-base-plus-filler rule fills; anything else keeps the old
+          // behaviour (left for the earlier passes and the review).
+          failedGaps.add(`${gap.start}:${gap.length}`);
+          continue;
+        }
+        const packed = narrowWidth != null ? [narrowWidth] : packWidths(span, catalog, layer);
         let along = start;
         let placedAny = false;
         for (const width of packed) {

@@ -238,8 +238,14 @@ describe("AutoDesignDialog", () => {
     expect(checkbox.getAttribute("id")).toBe("auto-design-sink-window");
     expect(checkbox.getAttribute("aria-label")).toBe("window");
     expect(screen.getByLabelText("Sink base center from selected wall start in inches")).toBeTruthy();
-    // The extra window-center field stays hidden until the box is checked.
+    // The separate "window above the sink" center field is gone; the checkbox
+    // next to the sink measurement is the only window control.
     expect(screen.queryByLabelText(/Window above the sink/i)).toBeNull();
+    expect(screen.queryByTestId("auto-design-window-help")).toBeNull();
+    fireEvent.click(checkbox);
+    expect(screen.queryByLabelText(/Window above the sink/i)).toBeNull();
+    expect(screen.queryByTestId("auto-design-window-center")).toBeNull();
+    expect(screen.queryByTestId("auto-design-window-help")).toBeNull();
   });
 
   it("submits sinkWindowCenter when the window box is checked and clears it when unchecked", () => {
@@ -255,5 +261,18 @@ describe("AutoDesignDialog", () => {
     fireEvent.click(screen.getByTestId("auto-design-sink-window"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({ sinkWindowCenter: null }));
+  });
+
+  it("defaults the window center to the current sink measurement, including after the sink value changes", () => {
+    const onBuild = vi.fn((): { ok: true } => ({ ok: true }));
+    render(<AutoDesignDialog open onOpenChange={vi.fn()} onBuild={onBuild} />);
+    fireEvent.click(screen.getByTestId("intake-construction-new"));
+    fireEvent.click(screen.getByTestId("auto-design-sink-window"));
+    fireEvent.change(screen.getByLabelText("Sink base center from selected wall start in inches"), { target: { value: "36" } });
+    fireEvent.click(screen.getByTestId("auto-design-build-submit"));
+    expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
+      sinkWindowCenter: expect.objectContaining({ wallLabel: "Wall 1", centerOffsetIn: 36 }),
+      sink: expect.objectContaining({ wallLabel: "Wall 1", centerOffsetIn: 36 }),
+    }));
   });
 });

@@ -59,9 +59,13 @@ describe("Auto-Design kitchen rules wiring", () => {
     expect(bridge).toContain("setRangeCompanionPrompt({ rangeUid: range.uid, proposal, microwaveAlreadyPlaced: false })");
   });
 
-  it("shows the window field for every layout, including galley, and explains what it does", () => {
-    expect(dialog).not.toContain('layoutType !== "galley" && (\n            <div className="space-y-1.5">\n              <Label htmlFor="auto-design-window-center"');
-    expect(dialog).toContain("Window above the sink");
-    expect(dialog).toContain("No wall cabinet goes above the sink");
+  it("uses the sink window checkbox for every layout and no longer shows a separate window-center field", () => {
+    expect(dialog).toContain('data-testid="auto-design-sink-window"');
+    expect(dialog).toContain('aria-label="window"');
+    expect(dialog).toContain("sinkWindowCenter: windowAboveSink");
+    expect(dialog).toContain("centerOffsetIn: Number(values.sink.centerOffsetIn)");
+    expect(dialog).not.toContain("auto-design-window-center");
+    expect(dialog).not.toContain("Window above the sink");
+    expect(dialog).not.toContain("auto-design-window-help");
   });
 });
