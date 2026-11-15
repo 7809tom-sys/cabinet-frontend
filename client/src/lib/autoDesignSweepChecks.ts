@@ -10,7 +10,7 @@
  * Each finding names the rule it came from, so a failure becomes a test case rather
  * than a note.
  */
-import { cabinetWall, isCornerCabinet, isFillerItem, placedFootprint, wallLength, wallRunOffset, wallRunSpan } from "./design";
+import { cabinetWall, isCornerCabinet, isFillerItem, sharesPlanCollisionZone, wallLength, wallRunOffset, wallRunSpan } from "./design";
 import type { DesignCabinet, PlacedCabinet, RoomData } from "./design";
 
 export type SweepFinding = {
@@ -26,7 +26,14 @@ function doorFace(item: PlacedCabinet): boolean {
   return item.placement === "base" || item.placement === "wall" || item.placement === "tall";
 }
 
-/** Two cabinets on the same wall whose spans overlap. Never legitimate. */
+/**
+ * Two cabinets on the same wall whose spans overlap in the same height band.
+ * A wall cabinet or hood hanging over a base, sink base or appliance is
+ * legitimate. Tall cabinets and tall panels span both the base and wall
+ * bands, so they still conflict with any part whose elevation they actually
+ * intersect. Bands come from the layout's own rule: placement plus the
+ * physical elevation envelope (`sharesPlanCollisionZone` / `elevationBox`).
+ */
 export function findOverlaps(placed: readonly PlacedCabinet[], room: RoomData): SweepFinding[] {
   const findings: SweepFinding[] = [];
   const items = placed.filter((item) => doorFace(item) || item.placement === "appliance");
@@ -36,6 +43,9 @@ export function findOverlaps(placed: readonly PlacedCabinet[], room: RoomData): 
       const b = items[j]!;
       const wall = cabinetWall(a, room);
       if (!wall || wall !== cabinetWall(b, room)) continue;
+      // Same rule the placer uses: only parts whose elevation envelopes
+      // intersect (or that share a placement band) reserve the same run.
+      if (!sharesPlanCollisionZone(a, b)) continue;
       const aStart = wallRunOffset(a, wall, room);
       const bStart = wallRunOffset(b, wall, room);
       const overlap = Math.min(aStart + wallRunSpan(a, wall, room), bStart + wallRunSpan(b, wall, room)) - Math.max(aStart, bStart);
@@ -123,7 +133,7 @@ export function blindCornersWithoutDoorSide(placed: readonly PlacedCabinet[]): S
 /** Every check, for a matrix runner. */
 export function sweepFindings(placed: readonly PlacedCabinet[], room: RoomData): SweepFinding[] {
   const findings = [...findOverlaps(placed, room), ...wallWidthMismatches(placed, room), ...blindCornersWithoutDoorSide(placed)];
-  for (const [wall, count] of interiorFillerCounts(placed, room)) {
+  for (const [wall, count] of Array.from(interiorFillerCounts(placed, room))) {
     if (count > 1) {
       findings.push({
         ruleId: "one-interior-filler",

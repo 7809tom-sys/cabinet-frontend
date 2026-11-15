@@ -19,6 +19,38 @@ describe("auto-design sweep checks", () => {
     expect(findings.map((f) => f.code)).toEqual(["cabinets-overlap"]);
   });
 
+  it("does not flag a wall cabinet hanging over a base cabinet", () => {
+    const placed = [
+      cab("base", "B27", "base", 27, 0, { height: 34.5, mountBottom: 0 }),
+      cab("upper", "W27", "wall", 27, 0, { height: 30, mountBottom: 54 }),
+    ];
+    expect(findOverlaps(placed, ROOM)).toEqual([]);
+  });
+
+  it("flags two wall cabinets on the same wall that overlap", () => {
+    const placed = [
+      cab("a", "W24", "wall", 24, 0, { height: 30, mountBottom: 54 }),
+      cab("b", "W24", "wall", 24, 18, { height: 30, mountBottom: 54 }),
+    ];
+    expect(findOverlaps(placed, ROOM).map((f) => f.code)).toEqual(["cabinets-overlap"]);
+  });
+
+  it("flags a tall cabinet that overlaps a base cabinet in plan", () => {
+    const placed = [
+      cab("base", "B24", "base", 24, 0, { height: 34.5, mountBottom: 0 }),
+      cab("tall", "U188424", "tall", 18, 12, { height: 84, mountBottom: 0 }),
+    ];
+    expect(findOverlaps(placed, ROOM).map((f) => f.code)).toEqual(["cabinets-overlap"]);
+  });
+
+  it("does not flag a hood hanging over a range", () => {
+    const placed = [
+      cab("range", "RANGE-30", "appliance", 30, 0, { height: 36, mountBottom: 0, depth: 25 }),
+      cab("hood", "HOOD-30", "appliance", 30, 0, { height: 18, mountBottom: 66, depth: 18 }),
+    ];
+    expect(findOverlaps(placed, ROOM)).toEqual([]);
+  });
+
   it("does not flag neighbours that merely touch", () => {
     const placed = [cab("a", "B24", "base", 24, 0), cab("b", "B24", "base", 24, 24)];
     expect(findOverlaps(placed, ROOM)).toEqual([]);
