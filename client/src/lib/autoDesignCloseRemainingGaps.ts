@@ -12,6 +12,7 @@
  */
 import { autoDesignInsideCornerReservations } from "./autoDesignCornerDecision";
 import { isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
+import { isCornerLegFillerGroupId } from "./cornerLegFillerGroup";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { formatFillerInches } from "./autoDesignFillerConsolidation";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
@@ -225,7 +226,7 @@ function mergeAdjacentFillers(placed: PlacedCabinet[], room: RoomData, wallIds: 
   for (const layer of ["base", "wall"] as const) {
     for (const wallId of wallIds) {
       const fillers = working
-        .filter((item) => isFillerItem(item) && !isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId) && cabinetWall(item, room) === wallId && (layer === "wall" ? item.placement === "wall" : item.placement !== "wall"))
+        .filter((item) => isFillerItem(item) && !isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId) && !isCornerLegFillerGroupId(item.fillerPieceGroupId) && cabinetWall(item, room) === wallId && (layer === "wall" ? item.placement === "wall" : item.placement !== "wall"))
         .sort((left, right) => wallRunOffset(left, wallId, room) - wallRunOffset(right, wallId, room));
       for (let i = 0; i < fillers.length - 1; i += 1) {
         const left = fillers[i]!;

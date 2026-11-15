@@ -22,6 +22,7 @@ import { formatFillerInches } from "./autoDesignFillerConsolidation";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { isDishwasherItem } from "./dishwasherPanelRule";
 import { isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
+import { isCornerLegFillerGroupId } from "./cornerLegFillerGroup";
 import {
   WALL_OPENING_CLEARANCE_IN,
   appendCollisionFreePlacements,
@@ -84,6 +85,7 @@ function isFixedOnRun(item: PlacedCabinet): boolean {
   if (isCornerCabinet(item.masterCode, item.description)) return true;
   if (isRefrigerator(item) || isRefrigeratorEndPanel(item) || item.refrigeratorAssemblyId != null) return true;
   if (isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId)) return true;
+  if (isCornerLegFillerGroupId(item.fillerPieceGroupId)) return true;
   return false;
 }
 

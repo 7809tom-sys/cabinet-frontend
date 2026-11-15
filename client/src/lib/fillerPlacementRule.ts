@@ -27,6 +27,7 @@
  * This module is the single judge for those rules. It is pure: it looks at the
  * finished placements and answers "is this board legal, and if not, why".
  */
+import { isCornerLegFillerGroupId } from "./cornerLegFillerGroup";
 import {
   cabinetWall,
   formatEighthInches,
@@ -208,6 +209,8 @@ function isRequiredCornerFiller(filler: PlacedCabinet, room: RoomData): boolean 
     || filler.fillerTransitionKind === "angled-wedge"
     || filler.fillerTransitionKind === "corner-provisional"
     || filler.integratedWallBlindFiller === true
+    // The clearance board a lazy Susan / diagonal corner owns on each leg.
+    || isCornerLegFillerGroupId(filler.fillerPieceGroupId)
   ) return true;
   const wallId = cabinetWall(filler, room);
   const frame = wallRunFrame(wallId, room);
