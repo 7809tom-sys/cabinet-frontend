@@ -39,32 +39,37 @@ function build(preferences: PreferenceId[], pack: Pack = PACK, styleId = 510004)
 const fullUppers = (placed: readonly PlacedCabinet[]) => placed.filter((item) => item.placement === "wall" && Math.abs(Number(item.height) - 30) <= 0.5 && /^W\d{4}$/.test(item.masterCode));
 
 describe("Auto Design honors the finish picks in the form", () => {
-  it("Glass cabinets above: 30 in uppers get the line's own GD row, with no review line on success", () => {
+  it("Glass cabinets above: each 30 in upper gets the line's own glass stacker on top, with no review line on success", () => {
+    // Tom, Nov 15 2026: "understanding as a stacker". This line sells 12 in
+    // glass stackers (W1812GD, W3312GD, DCW2412GD ...), so the pick seats them.
     const solid = build([]);
-    expect(fullUppers(solid.placed).some((item) => item.glassDoor === true)).toBe(false);
+    expect(solid.placed.some((item) => item.stackedOnCabinetUid != null)).toBe(false);
     const glass = build(["glass-uppers"]);
     const byCode = new Map(PACK.wall.map((row) => [row.masterCode, row]));
     const uppers = fullUppers(glass.placed);
     expect(uppers.length).toBeGreaterThan(0);
-    // The Designer's glass upgrade: the solid row stays on the plan and the cart
-    // orders `${code}GD`, so that GD row must be a real catalog row of this line.
     for (const item of uppers) {
-      const gd = byCode.get(`${item.masterCode}GD`);
-      expect(item.glassDoor === true, item.masterCode).toBe(Boolean(gd && Math.abs(Number(gd.height) - Number(item.height)) <= 0.5));
+      const stacker = glass.placed.find((other) => other.stackedOnCabinetUid === item.uid);
+      expect(stacker, item.masterCode).toBeTruthy();
+      // A real catalog row of this line, same width, glass.
+      expect(byCode.has(stacker!.masterCode), stacker!.masterCode).toBe(true);
+      expect(Number(stacker!.width)).toBe(Number(item.width));
+      expect(stacker!.glassDoor).toBe(true);
+      expect(item.glassDoor === true).toBe(false);
     }
-    expect(uppers.some((item) => item.glassDoor === true)).toBe(true);
-    // A 12 in bridge over the range or refrigerator keeps its solid door.
-    expect(glass.placed.filter((item) => item.placement === "wall" && Number(item.height) < 20).every((item) => item.glassDoor !== true)).toBe(true);
-    expect(glass.reviewFindings.some((finding) => /glass/i.test(`${finding.title} ${finding.detail}`) && finding.code !== "preference-glass-uppers-unavailable")).toBe(false);
+    // A 12 in bridge over the range or refrigerator carries no stacker and keeps its solid door.
+    const bridges = glass.placed.filter((item) => item.placement === "wall" && Number(item.height) < 20 && item.stackedOnCabinetUid == null);
+    expect(bridges.every((item) => !glass.placed.some((other) => other.stackedOnCabinetUid === item.uid))).toBe(true);
+    expect(glass.reviewFindings.some((finding) => /^preference-glass/.test(finding.code ?? ""))).toBe(false);
     expect(glass.reviewFindings.some((finding) => /not placed automatically/.test(finding.detail))).toBe(false);
   });
 
-  it("Glass cabinets above on a line with no 30 in glass rows: solid doors stay and one warning names them", () => {
+  it("Glass cabinets above on a line with no glass stackers or 30 in glass rows: solid doors stay and one warning names them", () => {
     const run = build(["glass-uppers"], CATALOG["540005"]!, 540005);
     expect(run.placed.some((item) => item.glassDoor === true)).toBe(false);
     const warning = run.reviewFindings.filter((finding) => finding.code === "preference-glass-uppers-unavailable");
     expect(warning).toHaveLength(1);
-    expect(warning[0]!.detail).toMatch(/sells no glass-door \(GD\) version of W\d{4}/);
+    expect(warning[0]!.detail).toMatch(/sells no glass stacker and no glass-door \(GD\) version of W\d{4}/);
   });
 
   it("Crown molding turns on the designer's crown trim", () => {

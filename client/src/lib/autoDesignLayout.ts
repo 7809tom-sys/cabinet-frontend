@@ -15,6 +15,7 @@ import {
   type WallLabel,
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
+import { placeCornerLegFillers } from "./autoDesignCornerLegFillers";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { applyGlassUpperPreference } from "./autoDesignFormOptions";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
@@ -715,6 +716,12 @@ export function runAutoDesignLayout(args: {
   /** The line's tall oven/pantry boxes, so a pop-up pick resolves to its catalog row. */
   tallCatalog?: readonly DesignCabinet[];
   /**
+   * Every wall row the selected line sells, including glass stackers routed to
+   * other palette tabs (DCW stackers). The "Glass cabinets above" pick seats its
+   * stackers from these rows and `wallCatalog`.
+   */
+  stackerCatalog?: readonly DesignCabinet[];
+  /**
    * The faucet rows the selected line sells. The build always places a faucet at
    * the sink; with no usable row here it uses the built-in default fixture.
    */
@@ -1213,6 +1220,33 @@ export function runAutoDesignLayout(args: {
     }
     if (seated.fallbackNote) notes.push(seated.fallbackNote);
     working = seated.placed;
+    // Tom, Nov 15 2026: a lazy Susan or diagonal corner base gets a filler on
+    // each leg, between it and the base beside it, so the doors clear. It is
+    // seated before the runs tile, so the runs close around it.
+    const legFillers = placeCornerLegFillers({
+      corner: seated.corner,
+      cornerPoint: point,
+      wallIds: [firstWall.engineWallId, secondWall.engineWallId].filter((id) => !excludedWallIds.includes(id)),
+      room,
+      placed: working,
+      catalogFillers,
+      makeUid,
+      styleId: args.styleId,
+      // The narrowest real base: a straight base, or the line's 9 in companion
+      // (tray / pull-out) that the corner and range-flank rules seat.
+      minBaseWidthIn: [...stage.straightBaseCatalog, ...[pickNineInchCompanion(pool)].filter((row): row is DesignCabinet => row != null)]
+        .reduce<number | null>((min, row) => {
+          const width = dim(row.width, 0);
+          return width > 0 && (min == null || width < min) ? width : min;
+        }, null),
+    });
+    working = legFillers.placed;
+    reviewFindings.push(...legFillers.findings);
+    notes.push(...legFillers.notes);
+    for (const filler of legFillers.fillers) {
+      companionKeepUids.push(filler.uid);
+      notes.push(`${slot.label}: ${filler.masterCode} cut to ${filler.width}″ is placed beside ${seated.corner.masterCode} on the ${cabinetWall(filler, room)} leg so the doors clear.`);
+    }
     const nine = (typeDecision.companionNine || typeDecision.band === "lazy-susan")
       ? pickNineInchCompanion(pool)
       : null;
@@ -1226,10 +1260,15 @@ export function runAutoDesignLayout(args: {
         : wallIds;
       for (const wallId of orderedWalls) {
         if (!wallId) continue;
-        const cornerSpan = wallRunSpan(seated.corner, wallId, room);
-        if (!(cornerSpan > 0)) continue;
-        const cornerStart = wallRunOffset(seated.corner, wallId, room);
-        const cornerEnd = cornerStart + cornerSpan;
+        // The corner block on this leg is the corner box plus its leg filler.
+        const legFiller = legFillers.fillers.find((filler) => cabinetWall(filler, room) === wallId) ?? null;
+        const cornerBoxSpan = wallRunSpan(seated.corner, wallId, room);
+        if (!(cornerBoxSpan > 0)) continue;
+        const boxStart = wallRunOffset(seated.corner, wallId, room);
+        const legStart = legFiller ? wallRunOffset(legFiller, wallId, room) : boxStart;
+        const legEnd = legFiller ? legStart + wallRunSpan(legFiller, wallId, room) : boxStart + cornerBoxSpan;
+        const cornerStart = Math.min(boxStart, legStart);
+        const cornerEnd = Math.max(boxStart + cornerBoxSpan, legEnd);
         const already = working.some((item) => item.masterCode === nine.masterCode && Math.abs(item.width - NINE_INCH_COMPANION_IN) <= 0.2
           && cabinetWall(item, room) === wallId
           && Math.min(cornerEnd, wallRunOffset(item, wallId, room) + wallRunSpan(item, wallId, room)) - Math.max(cornerStart, wallRunOffset(item, wallId, room)) > -0.2
@@ -1255,11 +1294,13 @@ export function runAutoDesignLayout(args: {
         // Always keep a measured sink on this leg from being walked 3" into the leftover.
         const sink = working.find((item) => item.placement === "base" && /^SB/i.test(item.masterCode) && cabinetWall(item, room) === wallId);
         if (sink && !companionKeepUids.includes(sink.uid)) companionKeepUids.push(sink.uid);
-        if (pocket && gap > 0.2) extraCornerReservations.push({ wallId, start: pocket.start, end: pocket.end });
+        // Tom, Nov 15 2026: the pocket is held only when its 9 in companion is
+        // seated. Reserving every pocket left an empty, unfilled hole between the
+        // corner cabinet and the next base (visible in the countertop).
         if (!shouldFill) continue;
         const next = placeCompanionBesideCorner({
           source: nine,
-          corner: seated.corner,
+          corner: legFiller ?? seated.corner,
           wallId,
           cornerPoint: point,
           room,
@@ -1269,6 +1310,7 @@ export function runAutoDesignLayout(args: {
         });
         if (next) {
           working = next.placed;
+          if (pocket && gap > 0.2) extraCornerReservations.push({ wallId, start: pocket.start, end: pocket.end });
           const start = wallRunOffset(next.companion, wallId, room);
           const span = wallRunSpan(next.companion, wallId, room);
           if (span > 0) extraCornerReservations.push({ wallId, start, end: start + span });
@@ -1744,7 +1786,11 @@ export function runAutoDesignLayout(args: {
   working = sinkBridgeResult.placed;
   notes.push(...sinkBridgeResult.notes);
   reviewFindings.push(...sinkBridgeResult.findings);
-  if (sinkBridgeResult.added) {
+  // Keep the over-range bridge (and an over-sink bridge) through the 15-rule
+  // retile on EVERY build. This used to run only when a sink bridge was added,
+  // so a kitchen whose sink sits under a window (no sink bridge) left the range
+  // bridge unprotected (Tom, Nov 15 2026: "failed to put a cabinet above the range").
+  {
     for (const item of working) {
       if (item.placement === "wall" && Math.abs((item.mountBottom ?? 0) - 72) <= 0.6 && !companionKeepUids.includes(item.uid)) {
         // Keep over-sink and over-range bridges through the 15-rule retile.
@@ -2279,16 +2325,40 @@ export function runAutoDesignLayout(args: {
     notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
     reviewFindings.push(...closedAfterMatch.findings);
   }
+  // HARD RULE (owner, Nov 5 2026), last word: every range leaves the build with
+  // its bridge above it (above the microwave when there is one). The passes
+  // after the first seat (15-rule retile, gap closing, tighten, upper
+  // re-match) re-plan the wall layer; one that lost the bridge must not ship a
+  // bare microwave. The seat is idempotent and add-only.
+  const finalBridges = placeMandatoryOverRangeBridges({
+    placed: working,
+    room,
+    wallCatalog: args.wallCatalog,
+    wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
+    styleId: args.styleId,
+    makeUid,
+  });
+  if (finalBridges.added) {
+    working = finalBridges.placed;
+    notes.push(...finalBridges.notes.map((note) => `${note} (re-seated after the wall run was re-planned)`));
+  }
+  for (const finding of finalBridges.findings) {
+    if (!reviewFindings.some((existing) => existing.code === finding.code && existing.cabinetUid === finding.cabinetUid)) reviewFindings.push(finding);
+  }
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
-  // Rule 12: "Glass cabinets above" gives the ordinary uppers the line's own
-  // GD (glass door) version of the same box, never an invented SKU.
+  // Rule 12: "Glass cabinets above" seats the line's own glass stackers, never an invented SKU.
+  // Tom, Nov 15 2026: on a line that sells glass stackers the pick seats the
+  // line's own glass stacker on top of each upper (catalog-driven).
   const glassUppers = applyGlassUpperPreference({
     placed: working,
     wallCatalog: args.wallCatalog,
     intake: input.intake,
     wallHeightIn: upperResult.heightUsedIn,
+    room,
+    stackerCatalog: [...args.wallCatalog, ...(args.stackerCatalog ?? [])],
+    makeUid,
   });
   working = glassUppers.placed;
   reviewFindings.push(...glassUppers.findings);
@@ -2309,7 +2379,9 @@ export function runAutoDesignLayout(args: {
     sinkWindow,
     openings: workingOpenings,
     faucetWindowNotes,
-    notes,
+    // The filler passes can re-report the same unchanged run (for example "B21
+    // became B21 with a 2″ filler.") on every pass; the build reports it once.
+    notes: Array.from(new Set(notes)),
     warnings,
     wiggleMoves: reportedWiggleMoves,
     fifteenRepackMoves,

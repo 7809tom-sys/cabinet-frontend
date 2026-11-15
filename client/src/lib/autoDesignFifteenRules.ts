@@ -817,7 +817,7 @@ export function fifteenRuleFindings(input: {
   if (intake) {
     const prefFindings: { id: PreferenceId; label: string; detail: string }[] = [];
     // Glass cabinets above and crown molding are placed by the build itself
-    // (applyGlassUpperPreference swaps in the line's GD rows; the crown pick
+    // (applyGlassUpperPreference seats the line's glass stackers, or its GD doors on a line with no stacker; the crown pick
     // turns on the designer's crown trim). Only a missing SKU is reported.
     if (hasPreference(intake, "budget-friendly")) {
       prefFindings.push({

@@ -4879,6 +4879,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       refrigeratorCaps: mergeAutoDesignRefrigeratorCaps(wallPool, fridgeParts?.deepAbove ?? []),
       refrigeratorEndPanels: fridgeParts?.endPanels ?? [],
       tallCatalog,
+      // Glass stackers for the "Glass cabinets above" pick, from every wall row
+      // the selected line sells (DCW stackers live on the Corner tab).
+      stackerCatalog: bulkGlassStackerCatalogRef.current,
       stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined,
       // HARD RULE: the sink always gets a faucet. The catalog rows feed the real
       // pick; with none the build uses the built-in default fixture and says so.
@@ -5327,9 +5330,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = finishedRules.placed;
     // Rule 12 on the corner-stage (continue) build as well: glass uppers use the
-    // line's own GD rows and the crown pick turns on crown trim.
+    // line's own glass stackers and the crown pick turns on crown trim.
     const stageGlass = applyGlassUpperPreference({
       placed: working, wallCatalog: stage.wallPool, intake: stage.input.intake, wallHeightIn: upperResult.heightUsedIn,
+      room, stackerCatalog: [...stage.wallPool, ...bulkGlassStackerCatalogRef.current], makeUid,
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);
