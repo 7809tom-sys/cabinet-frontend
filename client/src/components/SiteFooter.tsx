@@ -50,6 +50,7 @@ export function SiteFooter() {
                 { label: t("nav_shop_by_style"), href: "/styles" },
                 { label: "Cabinet Education", href: "/styles#profile-guide" },
                 { label: "Kitchen Planning Guide", href: "/kitchen-planning" },
+                { label: "Kitchen Design FAQ", href: "/faq" },
                 { label: t("nav_design_tool"), href: "/design" },
                 { label: t("nav_build_an_order"), href: "/bulk-order" },
                 { label: t("nav_photo_to_cart"), href: "/photo-to-cart" },
