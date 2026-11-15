@@ -61,6 +61,18 @@ describe("Auto Design closes a base opening with the largest base plus filler", 
     expect(added.filter((entry) => entry.at >= 63 - 0.01 && entry.at < 77 - 0.01).map((entry) => entry.code)).toEqual(["B12", "TEST-BF3"]);
   });
 
+  it("says so when the line sells no base that fits the opening with a filler-sized remainder", () => {
+    const noNarrow = BASES.filter((entry) => entry.width !== "12" && entry.width !== "9");
+    const placed = [item("b27", "B27", 36, 27, "base"), item("range", "RANGE-30", 77, 30, "appliance")];
+    let n = 0;
+    const result = closeRemainingRunGaps({
+      placed, room: ROOM, openings: [], wallIds: ["top"], baseCatalog: noNarrow, wallCatalog: [], fillers: FILLERS,
+      styleId: 1, makeUid: () => `y-${++n}`, reservedSpans: [{ wallId: "top", start: 0, end: 36 }, { wallId: "top", start: 107, end: ROOM.width }],
+    });
+    expect(result.placed.filter((p) => p.uid !== "b27" && p.uid !== "range")).toEqual([]);
+    expect(result.findings.some((finding) => finding.code === "narrow-base-missing" && /14/.test(finding.title))).toBe(true);
+  });
+
   it("does not drop a wide filler beside a reserved span (6 in stays for the review, no 6 in board)", () => {
     const placed = [item("b27", "B27", 36, 27, "base")];
     let n = 0;

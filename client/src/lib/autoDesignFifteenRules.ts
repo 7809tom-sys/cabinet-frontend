@@ -813,24 +813,12 @@ export function fifteenRuleFindings(input: {
     });
   }
 
-  // Rule 12: preferences the build does not place automatically.
+  // Rule 12: preferences the build does not place (or only partly places).
   if (intake) {
     const prefFindings: { id: PreferenceId; label: string; detail: string }[] = [];
-    if (hasPreference(intake, "glass-uppers")) {
-      prefFindings.push({
-        id: "glass-uppers",
-        label: "Glass cabinets above",
-        detail: "Glass cabinets above: pick glass-door uppers on the review; not placed automatically.",
-      });
-    }
-    if (hasPreference(intake, "crown-molding")) {
-      prefFindings.push({
-        id: "crown-molding",
-        label: "Crown molding",
-        detail:
-          "Crown molding: add crown molding along the continuous wall runs; not placed automatically.",
-      });
-    }
+    // Glass cabinets above and crown molding are placed by the build itself
+    // (applyGlassUpperPreference swaps in the line's GD rows; the crown pick
+    // turns on the designer's crown trim). Only a missing SKU is reported.
     if (hasPreference(intake, "budget-friendly")) {
       prefFindings.push({
         id: "budget-friendly",

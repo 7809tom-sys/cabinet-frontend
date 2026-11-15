@@ -378,6 +378,7 @@ import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
+import { applyGlassUpperPreference, autoDesignTrimFromIntake } from "@/lib/autoDesignFormOptions";
 import { AutoDesignReviewList } from "@/components/design/AutoDesignReviewList";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
@@ -4931,6 +4932,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     wallCabHeightRef.current = selectedWallCabinetHeight;
     wallCabHeightPromptedRef.current = true;
     setCountertop(true);
+    // Rule 12: "Crown molding" in the intake turns on the designer's crown trim,
+    // so it is drawn along the top of the uppers in 3D and billed on the list.
+    // Crown stays opt-in: only the customer's own intake pick turns it on.
+    const customerCrownPick = autoDesignTrimFromIntake(input.intake).crown;
+    if (customerCrownPick) {
+      trimOverride.current.crown = true;
+      setCrown(customerCrownPick);
+    }
     setAutoDesignOpen(false);
     // The generated plan, the workspace mode, and the selection land in the same
     // React commit, so the 3D view rebuilds once for the finished result instead
@@ -5317,6 +5326,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid, styleId: styleIdRef.current ?? null,
     });
     working = finishedRules.placed;
+    // Rule 12 on the corner-stage (continue) build as well: glass uppers use the
+    // line's own GD rows and the crown pick turns on crown trim.
+    const stageGlass = applyGlassUpperPreference({
+      placed: working, wallCatalog: stage.wallPool, intake: stage.input.intake, wallHeightIn: upperResult.heightUsedIn,
+    });
+    working = stageGlass.placed;
+    reviewFindings.push(...stageGlass.findings);
+    const stageCrownPick = autoDesignTrimFromIntake(stage.input.intake).crown;
+    if (stageCrownPick) {
+      trimOverride.current.crown = true;
+      setCrown(stageCrownPick);
+    }
     // The selected door, on uppers, bases, talls, and fillers.
     working = stampAutoDesignSingleFinish(working, styleIdRef.current ?? null);
     placedRef.current = working;
