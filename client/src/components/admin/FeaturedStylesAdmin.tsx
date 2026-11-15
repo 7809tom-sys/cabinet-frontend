@@ -1147,7 +1147,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   dispatch={dispatchColorSource}
                   aiAvailable={aiAvailable}
                   supplierPhotoUrl={doorSampleImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl || null}
-                  aiImageUrl={style.approvedReferenceImageUrl ?? null}
+                  // An accepted render wins. Failing that, the AI profile image the editor already
+          // saved (0281) belongs on this tile - otherwise the generated image is
+          // stored and never shown anywhere (Tom, Nov 15 2026).
+          aiImageUrl={style.approvedReferenceImageUrl ?? (style as { aiProfileImageUrl?: string | null }).aiProfileImageUrl ?? null}
                   sherwinHex={sherwinHex}
                   hexSwatch={hexSwatch}
                   sherwinPicker={null}
