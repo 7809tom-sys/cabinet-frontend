@@ -1826,6 +1826,21 @@ export function runAutoDesignLayout(args: {
   notes.push(...consolidated.notes);
   reviewFindings.push(...consolidated.warnings);
   reviewFillers(runWalls, working, room, stageOpenings, reviewFindings);
+  // A wall that received wall cabinets and no bases is a silent half-wall: Tom hit
+  // it twice (Nov 15 2026). Never build that quietly - name the wall and the reason.
+  for (const wallId of runWalls) {
+    const onWall = working.filter((item) => cabinetWall(item, room) === wallId);
+    const hasWall = onWall.some((item) => item.placement === "wall" && !isFillerItem(item));
+    const hasBase = onWall.some((item) => item.placement === "base" && !isFillerItem(item));
+    if (!hasWall || hasBase) continue;
+    reviewFindings.push({
+      ruleId: "base-run-required",
+      code: "wall-run-without-bases",
+      severity: "warning",
+      title: "Wall cabinets with no base run",
+      detail: `The ${wallId} wall has wall cabinets but no base cabinets. The priced base pool was empty, or every span on that wall was narrower than the smallest base the line sells.`,
+    });
+  }
   // NKBA planning guidelines that were not encoded before: total usable counter
   // frontage, a preparation run beside the sink, and a landing for a microwave or
   // wall oven. Each names its number on the review list rather than staying silent.
