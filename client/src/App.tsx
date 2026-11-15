@@ -17,6 +17,7 @@ import { AffiliatePublishedFeature } from "@/components/affiliate/AffiliatePubli
 import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
+import FaqPage from "@/pages/FaqPage";
 import { lazy, Suspense, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -389,6 +390,7 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
       <Switch>
         {/* Home has its own footer, no AppLayout wrapper needed */}
+        <Route path="/faq" element={<FaqPage />} />
         <Route path="/">
           <AdminEditModeBar />
           <Home />
