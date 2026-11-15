@@ -19,7 +19,7 @@
  * placeholder door outline: an empty column shows its prompt controls and an
  * empty field.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -320,10 +320,26 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
 
   // Persist the official choice on the style itself. Browser storage alone made
   // the AI image look saved while no other machine - or the Designer - ever saw it.
+  // The profile that was chosen, so a picture that arrives after the choice is not
+  // lost. The row came back with a model and text but no image (Tom, Nov 15 2026).
+  const chosenRef = useRef<{ model: AiDoorModel; text: string | null } | null>(null);
+  const savedImageRef = useRef<string | null>(null);
+
   const saveAiProfile = trpc.doorStyles.saveAiProfile.useMutation({
     onSuccess: () => setSavedNote("The official AI profile is saved on this door style."),
     onError: (error) => setSavedNote(error.message),
   });
+
+  // A picture that lands after the choice is saved again, so the row never ends up
+  // with a model and text but no image.
+  useEffect(() => {
+    const chosen = chosenRef.current;
+    if (!chosen) return;
+    const url = generated[chosen.model]?.image?.url ?? null;
+    if (!url || savedImageRef.current === url) return;
+    savedImageRef.current = url;
+    saveAiProfile.mutate({ id: style.id, model: chosen.model, text: chosen.text, imageUrl: url });
+  }, [generated, saveAiProfile, style.id]);
 
   // Which columns have a provider key on this server. Booleans only - the
   // procedure never returns a key. Tom, Nov 13 2026: the panel said nothing about
@@ -364,6 +380,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
         text: record.description ?? null,
         imageUrl: generated[model]?.image?.url ?? null,
       });
+      chosenRef.current = { model, text: record.description ?? null };
       setSavedNote(`${AI_DOOR_MODEL_LABELS[model]}'s description is now this door's official profile. The other two are kept as reference.`);
     } finally {
       setBusy(false);
