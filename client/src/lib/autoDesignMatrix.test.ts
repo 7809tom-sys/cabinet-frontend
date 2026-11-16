@@ -303,19 +303,18 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   // here without one fails. (The dedicated `overRangeBridgeMatrix.test.ts` asserts
   // the geometry: centered, at the 72" datum, matched to the range width.)
   if (range && !overRangeHasBridge(placed, range, room)) issues.push(`no bridge above ${range.masterCode}`);
-  // Tom's decision (Nov 9 2026, issue #354 item 5): on the frameless line the
-  // bridge hangs from the fixed 72" datum and its TOP must reach the single
-  // 94-1/4" wall-cabinet line, so the picker chooses the frameless 22-5/8" box
-  // (W30xx23) rather than the old 12" W3012 that topped out at 84-1/4".
+  // On the frameless line the bridge hangs from the fixed 72" datum and its TOP
+  // meets the run's own top line (Tom, Nov 15 2026; was the single 94-1/4" line).
   if (range) {
     const bridge = existingOverRangeBridge(placed, range, room);
     if (bridge) {
       const top = Number(bridge.mountBottom ?? 0) + Number(bridge.height ?? 0);
       if (frameless) {
-        // The line's tallest stock bridge reaches 94-5/8" (72 + 22-5/8"); allow
-        // that and require the bridge to be at least on the line.
-        if (top > 95.2) issues.push(`bridge ${bridge.masterCode} tops at ${top}, above the 94-1/4 inch frameless upper line`);
-        if (top < 93.9) issues.push(`bridge ${bridge.masterCode} tops at ${top}, below the 94-1/4 inch frameless upper line`);
+        // Tom (Nov 15 2026) retired the single 94-1/4" line: frameless uppers hang
+        // from 54" like framed ones, so the bridge tops out on the run's own top
+        // (54 + 30-1/4 = 84-1/4 for a 30" run; 72 + 12 = 84 is within the 1/2").
+        const runTop = 54 + 30.25;
+        if (Math.abs(top - runTop) > 0.6) issues.push(`bridge ${bridge.masterCode} tops at ${top}, off the ${runTop} inch frameless upper line`);
       } else {
         if (top > 84.75) issues.push(`bridge ${bridge.masterCode} tops at ${top}, above the 84 inch upper line`);
         if (Number(bridge.height ?? 0) > 12.75) issues.push(`bridge ${bridge.masterCode} is ${bridge.height} tall, not 12`);

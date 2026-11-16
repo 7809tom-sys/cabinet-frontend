@@ -208,7 +208,14 @@ export function removeAutoExposedPanels(
   return kept.length === placed.length ? placed as PlacedCabinet[] : kept;
 }
 
+/** Mirrors `EXPOSED_SIDE_PANEL_REASON_PREFIX` in sidePanelForExposedSide.ts (kept local to avoid an import cycle). */
+const EXPOSED_SIDE_PANEL_REASON_PREFIX = "exposed-side:";
+
 function isAutoPanel(item: PlacedCabinet): boolean {
+  // Boards the exposed-side engine (`sidePanelForExposedSide.ts`) seats belong to
+  // that engine. Treating them as this pass's own unqualified panels deleted them
+  // here and re-added them there on every render.
+  if (typeof item.autoPlacedReason === "string" && item.autoPlacedReason.startsWith(EXPOSED_SIDE_PANEL_REASON_PREFIX)) return false;
   return Boolean(item.autoPlacedReason && item.autoPlacedForUid && item.autoPlacedSide);
 }
 

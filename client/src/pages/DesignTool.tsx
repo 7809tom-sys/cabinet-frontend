@@ -175,7 +175,6 @@ import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
 import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp";
 import { normalizeRefrigeratorBridgeDepth } from "@/lib/refrigeratorBridgeDepth";
 import { fillGapsUnderOneAndAHalf } from "@/lib/subOneAndHalfFiller";
-import type { CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
@@ -277,6 +276,7 @@ import { designerCabinetName, isRangeBaseCabinetCode } from "@/lib/designerCabin
 import { isRangeTopRow, placeRangeTopOnBase, rangeTopRowDisabledReason, rangeTopRowsForBase } from "@/lib/rangeBaseSelection";
 import { rangeBaseCooktopPromptWidth, repairRangeBasesWithoutCooktop } from "@/lib/rangeBaseGuard";
 import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "@/lib/framelessWallTopAlignment";
+import { samePlacementsShallow } from "@/lib/samePlacements";
 import { applyExposedSidePanels, exposedSidePanelNeeds, syncExposedSidePanelsForRun, cookingSidesFinishedByExposedPanels, setExposedSidePanel, symmetricEndPanel, exposedSidePanelFor, type ExposedSidePanelNeed } from "@/lib/sidePanelForExposedSide";
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
@@ -1635,7 +1635,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // sink base changes. This removes a stale elevated mount after a window is
   // deleted while preserving the minimum valid clearance when a window remains.
   useEffect(() => {
-    setPlaced((current) => normalizeGlassStackersToParentFronts(
+    setPlaced((current) => {
+      const next = normalizeGlassStackersToParentFronts(
         normalizeWallOpenShelfMounts(
           alignFramelessWallCabinetTops({
             placed: normalizeStandardWallMounts(
@@ -1648,7 +1649,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           room,
         ),
         room,
-      ));
+      );
+      // No-op bailout: a pass that rebuilt equal objects must not hand React a
+      // new array, or this effect (which depends on `placed`) re-runs forever and
+      // every `placed` consumer, including the 3D scene, rebuilds on each lap.
+      return samePlacementsShallow(current, next) ? current : next;
+    });
   }, [placed, openings, room, setPlaced]);
   // A saved plan can contain one Auto-Design window copied onto every wall.
   // Drop only those copies. Hand-placed windows stay.
@@ -6088,12 +6094,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       setPlaced(plan.placed);
     }
     const next: ExposedPanelWarning[] = [
-      ...plan.needs.map((need) => ({
-        id: `side-panel:${need.hostUid}:${need.side}`,
-        cabinetUid: need.hostUid,
-        reason: need.reason === "smaller-neighbour" ? "base-open-end" as const : "open-beside-range" as const,
-        message: need.message,
-      })),
+      ...plan.needs.map((need) => {
+        // A board the run had no room for is named with the reason, never
+        // announced as added (and never forced in as a 0.75" overrun).
+        const refused = plan.skipped.find((entry) => entry.hostCode === need.hostCode && entry.side === need.side && entry.reason === need.reason);
+        return {
+          id: `side-panel:${need.hostUid}:${need.side}`,
+          cabinetUid: need.hostUid,
+          reason: need.reason === "smaller-neighbour" ? "base-open-end" as const : "open-beside-range" as const,
+          message: refused
+            ? `${need.hostCode} needs a 3/4″ ${need.selection.masterCode} panel on its ${need.side === "start" ? "left" : "right"} side, but it was not added: ${refused.why}.`
+            : need.message,
+        };
+      }),
     ];
     setSidePanelWarnings((prev) => sameExposedPanelWarnings(prev, next) ? prev : next);
     // A 3/4" board is real run width. If the finished run no longer fits its
