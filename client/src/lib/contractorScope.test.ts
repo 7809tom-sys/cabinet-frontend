@@ -87,6 +87,13 @@ describe("contractor scope", () => {
     expect(affiliateMarkupQuery(9)).toEqual({ affiliateUserId: 9 });
     expect(setAffiliateMarkupInput(12.5)).toEqual({ markupPercent: 12.5 });
     expect(setAffiliateMarkupInput(null, 9)).toEqual({ markupPercent: null, affiliateUserId: 9 });
+    expect(setAffiliateMarkupInput(40, 9, { multiplier: 1.2, reason: " Tom approved " })).toEqual({
+      markupPercent: 40,
+      affiliateUserId: 9,
+      adminOverrideMultiplier: 1.2,
+      adminOverrideReason: "Tom approved",
+    });
+    expect(setAffiliateMarkupInput(40, 9, { multiplier: null })).toEqual({ markupPercent: 40, affiliateUserId: 9, adminOverrideMultiplier: null });
   });
 
   it("links the affiliate dashboard to a read-only contractor preview", () => {

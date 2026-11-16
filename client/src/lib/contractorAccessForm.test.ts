@@ -117,3 +117,32 @@ describe("affiliate contractor request helpers", () => {
     expect(contractorProcedureError({ message: "Not allowed", data: { code: "FORBIDDEN" } })).toBe("FORBIDDEN: Not allowed");
   });
 });
+
+describe("contractor price floors (Tom, Nov 16, 2026)", () => {
+  it("explains the 1.38 floor and the lowest markup", async () => {
+    const { contractorFloorNote } = await import("./contractorAccessForm");
+    expect(contractorFloorNote({ contractorFloorMultiplier: 1.38, minMarkupPercent: 31.43, adminOverrideMultiplier: null }))
+      .toBe("Contractor prices never go below Cabinet Dealz cost × 1.38. The lowest markup over your cost is 31.43%.");
+    expect(contractorFloorNote({ contractorFloorMultiplier: 1.2, minMarkupPercent: 14.29, adminOverrideMultiplier: 1.2 }, "admin"))
+      .toBe("Contractor prices never go below Cabinet Dealz cost × 1.20 (Cabinet Dealz override). The lowest markup over their cost is 14.29%.");
+    // Older backend without the floor fields still shows the default.
+    expect(contractorFloorNote({})).toBe("Contractor prices never go below Cabinet Dealz cost × 1.38.");
+  });
+
+  it("warns before saving a markup under the minimum", async () => {
+    const { belowContractorFloorMessage } = await import("./contractorAccessForm");
+    expect(belowContractorFloorMessage(20, 31.43)).toContain("below the minimum of 31.43%");
+    expect(belowContractorFloorMessage(31.43, 31.43)).toBeNull();
+    expect(belowContractorFloorMessage(0, null)).toBeNull();
+  });
+
+  it("accepts admin overrides only from 1.15 to 1.38", async () => {
+    const { parseOverrideMultiplier } = await import("./contractorAccessForm");
+    expect(parseOverrideMultiplier("1.20")).toEqual({ ok: true, value: 1.2 });
+    expect(parseOverrideMultiplier("1.15")).toEqual({ ok: true, value: 1.15 });
+    expect(parseOverrideMultiplier("1.38")).toEqual({ ok: true, value: 1.38 });
+    expect(parseOverrideMultiplier("1.10")).toMatchObject({ ok: false });
+    expect(parseOverrideMultiplier("1.40")).toMatchObject({ ok: false });
+    expect(parseOverrideMultiplier("abc")).toMatchObject({ ok: false });
+  });
+});

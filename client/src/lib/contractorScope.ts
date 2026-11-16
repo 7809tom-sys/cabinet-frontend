@@ -152,6 +152,13 @@ export function affiliateMarkupQuery(affiliateUserId?: number): AffiliateMarkupQ
 export function setAffiliateMarkupInput(
   markupPercent: number | null,
   affiliateUserId?: number,
+  override?: { multiplier: number | null; reason?: string },
 ): SetAffiliateMarkupInput {
-  return affiliateUserId != null ? { markupPercent, affiliateUserId } : { markupPercent };
+  const base: SetAffiliateMarkupInput = affiliateUserId != null ? { markupPercent, affiliateUserId } : { markupPercent };
+  if (override === undefined) return base;
+  return {
+    ...base,
+    adminOverrideMultiplier: override.multiplier,
+    ...(override.reason?.trim() ? { adminOverrideReason: override.reason.trim() } : {}),
+  };
 }

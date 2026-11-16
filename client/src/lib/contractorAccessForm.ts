@@ -64,6 +64,16 @@ export type ContractorAccessListRow = {
 export type AffiliateMarkupResult = {
   markupPercent: number | null;
   siteDefaultPercent: number;
+  /**
+   * Tom's floors (Nov 16, 2026), as multipliers on Cabinet Dealz cost. Sent by
+   * cabinet-backend feat/price-floor-enforcement; optional until it ships.
+   */
+  contractorFloorMultiplier?: number;
+  hardFloorMultiplier?: number;
+  /** Admin-only override of the 1.38 floor for this store, or null. */
+  adminOverrideMultiplier?: number | null;
+  /** Lowest markup over the store's cost that reaches the floor. Null when it varies by SKU. */
+  minMarkupPercent?: number | null;
 };
 
 export type AffiliateMarkupQuery = {
@@ -73,6 +83,9 @@ export type AffiliateMarkupQuery = {
 export type SetAffiliateMarkupInput = {
   markupPercent: number | null;
   affiliateUserId?: number;
+  /** Admin only: lower this store's contractor floor (1.15..1.38 × cost). Null clears it. */
+  adminOverrideMultiplier?: number | null;
+  adminOverrideReason?: string;
 };
 
 export type AffiliateReviewInput = {
@@ -244,4 +257,42 @@ export function validateAffiliateContractorDraft(
       licenseNumber: licenseNumber || null,
     },
   };
+}
+
+/** Default contractor floor and hard floor on Cabinet Dealz cost (Tom, Nov 16, 2026). */
+export const CONTRACTOR_FLOOR_MULTIPLIER = 1.38;
+export const HARD_FLOOR_MULTIPLIER = 1.15;
+
+function formatMultiplier(value: number): string {
+  return value.toFixed(2);
+}
+
+/** Plain note shown on the contractor pricing card. */
+export function contractorFloorNote(
+  data: Pick<AffiliateMarkupResult, "contractorFloorMultiplier" | "minMarkupPercent" | "adminOverrideMultiplier">,
+  audience: "affiliate" | "admin" = "affiliate",
+): string {
+  const floor = data.contractorFloorMultiplier ?? CONTRACTOR_FLOOR_MULTIPLIER;
+  const whose = audience === "admin" ? "their" : "your";
+  const parts = [`Contractor prices never go below Cabinet Dealz cost × ${formatMultiplier(floor)}`];
+  if (data.adminOverrideMultiplier != null) parts[0] += " (Cabinet Dealz override)";
+  if (data.minMarkupPercent != null) parts.push(`The lowest markup over ${whose} cost is ${formatMarkupPercent(data.minMarkupPercent)}%`);
+  return `${parts.join(". ")}.`;
+}
+
+/** Client-side hint before saving; the server makes the final check. */
+export function belowContractorFloorMessage(markupPercent: number, minMarkupPercent: number | null | undefined): string | null {
+  if (minMarkupPercent == null || markupPercent >= minMarkupPercent) return null;
+  return `That is below the minimum of ${formatMarkupPercent(minMarkupPercent)}%. Contractor pricing below cost × 1.38 needs an override from Cabinet Dealz.`;
+}
+
+/** Parse an admin override multiplier such as "1.20". Must be 1.15 to 1.38. */
+export function parseOverrideMultiplier(raw: string): { ok: true; value: number } | { ok: false; message: string } {
+  const trimmed = raw.trim();
+  if (!/^\d+(\.\d{1,4})?$/.test(trimmed)) return { ok: false, message: "Enter a multiplier like 1.20." };
+  const value = Number(trimmed);
+  if (value < HARD_FLOOR_MULTIPLIER || value > CONTRACTOR_FLOOR_MULTIPLIER) {
+    return { ok: false, message: `An override must be between cost × ${formatMultiplier(HARD_FLOOR_MULTIPLIER)} and cost × ${formatMultiplier(CONTRACTOR_FLOOR_MULTIPLIER)}.` };
+  }
+  return { ok: true, value };
 }
