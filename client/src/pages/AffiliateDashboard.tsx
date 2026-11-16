@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, type ReactElement } from "react";
-import { Link } from "wouter";
+import { Link, Redirect } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { affiliateDashboardLinks, affiliateDashboardPath, affiliateDesignerPath, affiliateStorefrontUrl } from "@/lib/affiliateStorefrontUrl";
-import { affiliatePortalFallback, resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
+import { affiliatePortalFallback, affiliateViewAsSignInHref, resolveAffiliateDashboardSelection } from "@/lib/affiliateDashboardSelection";
 import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
 import type { AffiliateFeatureKey } from "@shared/affiliateFeaturePublish";
 import { AffiliateTierCard } from "@/components/affiliate/AffiliateTierCard";
@@ -508,6 +508,10 @@ export default function AffiliateDashboard() {
   }
 
   if (!isAuthenticated) {
+    // A link to one affiliate's dashboard (?viewAs=<id>) needs a sign-in, not
+    // the public membership sign-up page, and must come back to that affiliate.
+    const viewAsSignIn = affiliateViewAsSignInHref(window.location.search);
+    if (viewAsSignIn) return <Redirect to={viewAsSignIn} replace />;
     return <AffiliateLanding />;
   }
 
