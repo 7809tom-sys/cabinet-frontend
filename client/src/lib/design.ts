@@ -4412,6 +4412,38 @@ export function normalizeWallBlindCornerRequiredFillers(placements: PlacedCabine
  * order. Earlier accepted cabinets remain authoritative; a later overlapping
  * refrigerator or other item is rejected instead of replacing its neighbor.
  */
+/**
+ * A filler is cut to a measured opening, so it may touch the boxes on either
+ * side by a sawn seam. Up to this much overlap along the run is that seam, not
+ * a second item standing in the same spot.
+ */
+export const FILLER_SEAM_TOLERANCE_IN = 0.0625;
+
+/**
+ * True when a filler collides with its neighbours only at hairline seams
+ * (≤ FILLER_SEAM_TOLERANCE_IN along the same wall run). Such a filler closes a
+ * real gap and must survive overlap cleanup; a filler that sits inside another
+ * item's spot (for example under a full-height ½" board that already closes the
+ * opening at every height) still collides once the seams are set aside.
+ */
+export function fillerOverlapIsSeamOnly(candidate: PlacedCabinet, existing: readonly PlacedCabinet[], room?: RoomData | null): boolean {
+  if (!room || !isFillerItem(candidate)) return false;
+  const wall = cabinetWall(candidate, room);
+  if (!wall) return false;
+  const start = wallRunOffset(candidate, wall, room);
+  const end = start + wallRunSpan(candidate, wall, room);
+  if (end - start <= FILLER_SEAM_TOLERANCE_IN) return false;
+  const others = existing.filter((item) => {
+    if (item.uid === candidate.uid) return false;
+    if (cabinetWall(item, room) !== wall) return true;
+    const itemStart = wallRunOffset(item, wall, room);
+    const itemEnd = itemStart + wallRunSpan(item, wall, room);
+    const overlap = Math.min(end, itemEnd) - Math.max(start, itemStart);
+    return overlap > FILLER_SEAM_TOLERANCE_IN;
+  });
+  return cabinetPlacementCollisionDetail(candidate, others, room) == null;
+}
+
 export function removeOverlappingPlacements(placements: PlacedCabinet[], room?: RoomData): CollisionResolution {
   const wallBlindNormalized = normalizeWallBlindCornerRequiredFillers(placements);
   const stackerNormalized = room
@@ -4454,6 +4486,12 @@ export function removeOverlappingPlacements(placements: PlacedCabinet[], room?: 
       continue;
     }
     const appended = appendCollisionFreePlacements(resolution.placed, [candidate], room);
+    // A filler that only kisses its neighbours at a sawn seam closes a real gap:
+    // keep it (it used to be deleted here, reopening the gap it was cut for).
+    if (appended.rejected.length && fillerOverlapIsSeamOnly(candidate, resolution.placed, room)) {
+      resolution.placed.push(candidate);
+      continue;
+    }
     resolution.placed = appended.placed;
     resolution.rejected.push(...appended.rejected);
   }

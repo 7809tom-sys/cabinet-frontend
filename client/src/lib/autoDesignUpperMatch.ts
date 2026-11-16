@@ -55,6 +55,27 @@ function isCovered(from: number, to: number, spans: readonly Span[]): boolean {
   return reach >= to - ADJACENT_IN;
 }
 
+type CornerLeg = { start: number; end: number; corner: Span; upper: Span };
+
+/**
+ * The strip of a base corner that the wall corner above it does not cover, on
+ * the side facing a run of straight bases (ERB33's 33" leg vs WER2430's 24" leg
+ * leaves 9"). Empty when the legs already agree.
+ */
+function cornerLegsFor(chainStart: number, chainEnd: number, cornerBases: readonly Span[], cornerUppers: readonly Span[]): CornerLeg[] {
+  const legs: CornerLeg[] = [];
+  for (const corner of cornerBases) {
+    const upper = cornerUppers.find((entry) => entry.start >= corner.start - ADJACENT_IN && entry.end <= corner.end + ADJACENT_IN);
+    if (!upper) continue;
+    if (Math.abs(corner.start - chainEnd) <= ADJACENT_IN && upper.start > chainEnd + ADJACENT_IN) {
+      legs.push({ start: chainEnd, end: upper.start, corner, upper });
+    } else if (Math.abs(corner.end - chainStart) <= ADJACENT_IN && upper.end < chainStart - ADJACENT_IN) {
+      legs.push({ start: upper.end, end: chainStart, corner, upper });
+    }
+  }
+  return legs;
+}
+
 export function matchUppersToBases(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
@@ -87,15 +108,28 @@ export function matchUppersToBases(input: {
       if (last && base.start - last[last.length - 1]!.end <= ADJACENT_IN) last.push(base);
       else chains.push([base]);
     }
+    const cornerBases = working.filter((item) => item.placement === "base" && cabinetWall(item, room) === wall
+      && isCornerCabinet(item.masterCode, item.description, item.cornerType ?? null)).map(spanOf);
+    const cornerUppers = working.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall
+      && isCornerCabinet(item.masterCode, item.description, item.cornerType ?? null)).map(spanOf);
     for (const chain of chains) {
-      const chainStart = chain[0]!.start;
-      const chainEnd = chain[chain.length - 1]!.end;
+      const baseStart = chain[0]!.start;
+      const baseEnd = chain[chain.length - 1]!.end;
+      // Corner leg (Tom, Nov 15 2026): a base corner and the wall corner above it
+      // can have different legs (ERB33 = 33", WER2430 = 24"). The strip of the
+      // base corner the wall corner leaves uncovered is a "leg" that needs its
+      // own upper, or every upper beyond it lands 9" off the base beneath it.
+      const legs = cornerLegsFor(baseStart, baseEnd, cornerBases, cornerUppers);
+      const targets: Span[] = [...legs.map((leg) => ({ item: leg.corner.item, start: leg.start, end: leg.end })), ...chain]
+        .sort((a, b) => a.start - b.start);
+      const chainStart = targets[0]!.start;
+      const chainEnd = targets[targets.length - 1]!.end;
       const above = working.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall)
         .map(spanOf)
         .filter((entry) => entry.start < chainEnd - COLLISION_EPSILON_IN && entry.end > chainStart + COLLISION_EPSILON_IN);
       const uppers = above.filter((entry) => !isFillerItem(entry.item));
       if (!uppers.length) continue; // nothing above (a window, the range bay) is left alone
-      const aligned = chain.every((base) => above.some((entry) => !isFillerItem(entry.item)
+      const aligned = targets.every((base) => above.some((entry) => !isFillerItem(entry.item)
         && Math.abs(entry.start - base.start) <= ADJACENT_IN && Math.abs((entry.end - entry.start) - (base.end - base.start)) <= ADJACENT_IN))
         && above.every((entry) => !isFillerItem(entry.item));
       if (aligned) continue;
@@ -156,6 +190,7 @@ export function matchUppersToBases(input: {
       const mountBottom = mostCommon(uppers.map((entry) => entry.item.mountBottom ?? 54)) ?? 54;
       const rows: Array<{ row: DesignCabinet; start: number; base: Span; exact: boolean } | null> = [];
       const missing: string[] = [];
+      const missingLegs: Array<{ width: number; corner: string; wallCorner: string }> = [];
       const clipped: string[] = [];
       const pickWidth = (width: number, exact: boolean) => standard
         .filter((candidate) => exact
@@ -164,14 +199,21 @@ export function matchUppersToBases(input: {
         .sort((a, b) => (exact ? 0 : dim(b.width, 0) - dim(a.width, 0))
           || Math.abs(dim(a.depth, 0) - depth) - Math.abs(dim(b.depth, 0) - depth)
           || a.masterCode.localeCompare(b.masterCode))[0];
-      for (const base of chain) {
+      for (const base of targets) {
         const baseWidth = base.end - base.start;
+        const leg = legs.find((entry) => Math.abs(entry.start - base.start) <= COLLISION_EPSILON_IN && Math.abs(entry.end - base.end) <= COLLISION_EPSILON_IN);
         const slot = windows.length ? slotFor(base) : { start: base.start, end: base.end };
         if (!slot) { rows.push(null); continue; }
         const exact = Math.abs((slot.end - slot.start) - baseWidth) <= COLLISION_EPSILON_IN;
-        const row = pickWidth(slot.end - slot.start, exact);
+        // A corner leg takes an exact-width upper or nothing (never a narrowed box).
+        const row = leg && !exact ? undefined : pickWidth(slot.end - slot.start, exact);
         if (!row) {
-          if (exact) missing.push(`${formatInches(baseWidth)}`);
+          if (leg) {
+            // A leg within the seam-filler max is left to the gap closer.
+            if (baseWidth > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN && exact) {
+              missingLegs.push({ width: baseWidth, corner: leg.corner.item.masterCode, wallCorner: leg.upper.item.masterCode });
+            }
+          } else if (exact) missing.push(`${formatInches(baseWidth)}`);
           rows.push(null);
           continue;
         }
@@ -180,6 +222,20 @@ export function matchUppersToBases(input: {
         const start = exact ? base.start : (slot.start > base.start + COLLISION_EPSILON_IN ? base.end - width : base.start);
         if (!exact) clipped.push(`${row.masterCode} over ${base.item.masterCode}`);
         rows.push({ row, start, base, exact });
+      }
+      if (missingLegs.length) {
+        for (const leg of missingLegs) {
+          findings.push({
+            ruleId: "uppers-match-bases",
+            code: "corner-leg-not-matched",
+            severity: "warning",
+            title: `Uppers beside ${leg.wallCorner} do not line up with the bases on ${wall}`,
+            detail: `${leg.corner} reaches ${formatInches(leg.width)} farther along the wall than ${leg.wallCorner}, and this line sells no ${formatInches(leg.width)} wide wall cabinet at ${formatInches(height)} or a filler that wide, so the wall cabinets above ${label} were kept.`,
+            cabinetUid: chain[0]!.item.uid,
+            cabinetCode: chain[0]!.item.masterCode,
+          });
+        }
+        continue;
       }
       if (missing.length) {
         skip(`This line sells no ${missing.join(", ")} wide wall cabinet at ${formatInches(height)}, so the wall cabinets above ${label} do not match the base width.`);
@@ -225,6 +281,10 @@ export function matchUppersToBases(input: {
       }
       working = accepted.placed;
       notes.push(`Wall cabinets over ${label} now match the bases: ${replacements.map((item) => item.masterCode).join(" + ")} (was ${uppers.map((entry) => entry.item.masterCode).join(" + ")}${above.length > uppers.length ? " and filler" : ""}).`);
+      for (const leg of legs) {
+        if (!planned.some((entry) => Math.abs(entry.start - leg.start) <= ADJACENT_IN)) continue;
+        notes.push(`${leg.corner.item.masterCode} reaches ${formatInches(leg.end - leg.start)} past ${leg.upper.item.masterCode}; that leg got its own upper so the uppers line up over the bases on ${wall}.`);
+      }
       if (clipped.length) {
         findings.push({
           ruleId: "uppers-match-bases",
