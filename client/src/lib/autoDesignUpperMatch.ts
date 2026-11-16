@@ -59,7 +59,8 @@ type CornerLeg = { start: number; end: number; corner: Span; upper: Span };
 
 /**
  * The strip of a base corner that the wall corner above it does not cover, on
- * the side facing a run of straight bases. Empty when the legs already agree.
+ * the side facing a run of straight bases (ERB33's 33" leg vs WER2430's 24" leg
+ * leaves 9"). Empty when the legs already agree.
  */
 function cornerLegsFor(chainStart: number, chainEnd: number, cornerBases: readonly Span[], cornerUppers: readonly Span[]): CornerLeg[] {
   const legs: CornerLeg[] = [];
@@ -161,28 +162,66 @@ export function matchUppersToBases(input: {
       // A sliver up to seam_filler_max_in is left for the gap closer that
       // runs after this pass; anything wider keeps the existing uppers.
       if (overhangs.some(([from, to]) => to - from > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN && !isCovered(from, to, coverers))) continue;
-      const window = input.openings.find((opening) => opening.side === wall && opening.kind === "window"
+      // A window keeps WALL_OPENING_CLEARANCE_IN clear on each side. Tom's rule
+      // (Nov 15 2026) is about the PAIRING, any size: every base whose upper slot
+      // is clear of the window gets its exact-width upper. Only a base that the
+      // window's clearance actually reaches gets the widest catalog upper that
+      // still fits between the clearance and that base's far seam, so the seams
+      // past it keep lining up with the bases below (B30 + B12 beside a window:
+      // W2730 + W1230, not W3030 + W0930).
+      const windows = input.openings.filter((opening) => opening.side === wall && opening.kind === "window"
         && opening.offset - WALL_OPENING_CLEARANCE_IN < chainEnd - COLLISION_EPSILON_IN
         && opening.offset + opening.width + WALL_OPENING_CLEARANCE_IN > chainStart + COLLISION_EPSILON_IN);
-      if (window) {
-        skip(`A window keeps ${formatInches(WALL_OPENING_CLEARANCE_IN)} clear on each side, so the wall cabinets above ${label} cannot match the base width.`);
-        continue;
-      }
+      const slotFor = (base: Span): { start: number; end: number } | null => {
+        let start = base.start;
+        let end = base.end;
+        for (const opening of windows) {
+          const blockFrom = opening.offset - WALL_OPENING_CLEARANCE_IN;
+          const blockTo = opening.offset + opening.width + WALL_OPENING_CLEARANCE_IN;
+          if (blockTo <= start + COLLISION_EPSILON_IN || blockFrom >= end - COLLISION_EPSILON_IN) continue;
+          // Keep the side of the base away from the window.
+          if (blockFrom <= start + COLLISION_EPSILON_IN) start = Math.max(start, blockTo);
+          else if (blockTo >= end - COLLISION_EPSILON_IN) end = Math.min(end, blockFrom);
+          else return null; // the window sits inside this base's span: no upper here
+        }
+        return end - start > COLLISION_EPSILON_IN ? { start, end } : null;
+      };
       const depth = mostCommon(uppers.map((entry) => Number(entry.item.depth) || 0)) ?? 12;
       const mountBottom = mostCommon(uppers.map((entry) => entry.item.mountBottom ?? 54)) ?? 54;
-      const rows: Array<DesignCabinet | null> = [];
+      const rows: Array<{ row: DesignCabinet; start: number; base: Span; exact: boolean } | null> = [];
       const missing: string[] = [];
       const missingLegs: Array<{ width: number; corner: string; wallCorner: string }> = [];
+      const clipped: string[] = [];
+      const pickWidth = (width: number, exact: boolean) => standard
+        .filter((candidate) => exact
+          ? Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN
+          : dim(candidate.width, 0) <= width + COLLISION_EPSILON_IN)
+        .sort((a, b) => (exact ? 0 : dim(b.width, 0) - dim(a.width, 0))
+          || Math.abs(dim(a.depth, 0) - depth) - Math.abs(dim(b.depth, 0) - depth)
+          || a.masterCode.localeCompare(b.masterCode))[0];
       for (const base of targets) {
-        const width = base.end - base.start;
+        const baseWidth = base.end - base.start;
         const leg = legs.find((entry) => Math.abs(entry.start - base.start) <= COLLISION_EPSILON_IN && Math.abs(entry.end - base.end) <= COLLISION_EPSILON_IN);
-        const row = standard
-          .filter((candidate) => Math.abs(dim(candidate.width, 0) - width) <= COLLISION_EPSILON_IN)
-          .sort((a, b) => Math.abs(dim(a.depth, 0) - depth) - Math.abs(dim(b.depth, 0) - depth) || a.masterCode.localeCompare(b.masterCode))[0];
-        if (row) rows.push(row);
-        else if (leg && width <= autoDesignFillerMaxIn() + COLLISION_EPSILON_IN) rows.push(null); // the gap closer seats one filler here
-        else if (leg) { rows.push(null); missingLegs.push({ width, corner: leg.corner.item.masterCode, wallCorner: leg.upper.item.masterCode }); }
-        else missing.push(`${formatInches(width)}`);
+        const slot = windows.length ? slotFor(base) : { start: base.start, end: base.end };
+        if (!slot) { rows.push(null); continue; }
+        const exact = Math.abs((slot.end - slot.start) - baseWidth) <= COLLISION_EPSILON_IN;
+        // A corner leg takes an exact-width upper or nothing (never a narrowed box).
+        const row = leg && !exact ? undefined : pickWidth(slot.end - slot.start, exact);
+        if (!row) {
+          if (leg) {
+            // A leg within the seam-filler max is left to the gap closer.
+            if (baseWidth > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN && exact) {
+              missingLegs.push({ width: baseWidth, corner: leg.corner.item.masterCode, wallCorner: leg.upper.item.masterCode });
+            }
+          } else if (exact) missing.push(`${formatInches(baseWidth)}`);
+          rows.push(null);
+          continue;
+        }
+        // A clipped slot hangs its upper on the base's far seam (away from the window).
+        const width = dim(row.width, 0);
+        const start = exact ? base.start : (slot.start > base.start + COLLISION_EPSILON_IN ? base.end - width : base.start);
+        if (!exact) clipped.push(`${row.masterCode} over ${base.item.masterCode}`);
+        rows.push({ row, start, base, exact });
       }
       if (missingLegs.length) {
         for (const leg of missingLegs) {
@@ -202,15 +241,19 @@ export function matchUppersToBases(input: {
         skip(`This line sells no ${missing.join(", ")} wide wall cabinet at ${formatInches(height)}, so the wall cabinets above ${label} do not match the base width.`);
         continue;
       }
+      if (rows.every((entry) => entry == null)) continue;
+      // Nothing to gain when the uppers already sit exactly where these would.
+      const planned = rows.filter((entry): entry is NonNullable<typeof entry> => entry != null);
+      const alreadyThere = planned.length === uppers.length && planned.every((entry) => uppers.some((upper) => upper.item.masterCode === entry.row.masterCode
+        && Math.abs(upper.start - entry.start) <= ADJACENT_IN));
+      if (alreadyThere) continue;
       const removeUids = new Set(above.map((entry) => entry.item.uid));
       const without = working.filter((item) => !removeUids.has(item.uid));
-      const replacements: PlacedCabinet[] = targets.flatMap((base, index) => {
-        const row = rows[index];
-        if (!row) return [];
+      const replacements: PlacedCabinet[] = planned.map(({ row, start, base }) => {
         const width = dim(row.width, 0);
         const rowDepth = footprintDepth(row);
         const original = uppers.find((entry) => entry.start < base.end && entry.end > base.start)?.item ?? uppers[0]!.item;
-        return [{
+        return {
           uid: input.makeUid(),
           cabinetId: row.id,
           masterCode: row.masterCode,
@@ -218,7 +261,7 @@ export function matchUppersToBases(input: {
           category: row.category,
           subCategory: row.subCategory,
           placement: "wall",
-          ...wallPlacementAt(base.start, width, rowDepth, wall as WallSide, room),
+          ...wallPlacementAt(start, width, rowDepth, wall as WallSide, room),
           width,
           depth: rowDepth,
           height: dim(row.height, height),
@@ -229,7 +272,7 @@ export function matchUppersToBases(input: {
           constructionMethod: row.constructionMethod ?? null,
           ...(original.glassDoor ? { glassDoor: true } : {}),
           styleId: input.styleId,
-        } as PlacedCabinet];
+        } as PlacedCabinet;
       });
       const accepted = appendCollisionFreePlacements(without, replacements, room);
       if (accepted.rejected.length > 0) {
@@ -239,7 +282,19 @@ export function matchUppersToBases(input: {
       working = accepted.placed;
       notes.push(`Wall cabinets over ${label} now match the bases: ${replacements.map((item) => item.masterCode).join(" + ")} (was ${uppers.map((entry) => entry.item.masterCode).join(" + ")}${above.length > uppers.length ? " and filler" : ""}).`);
       for (const leg of legs) {
+        if (!planned.some((entry) => Math.abs(entry.start - leg.start) <= ADJACENT_IN)) continue;
         notes.push(`${leg.corner.item.masterCode} reaches ${formatInches(leg.end - leg.start)} past ${leg.upper.item.masterCode}; that leg got its own upper so the uppers line up over the bases on ${wall}.`);
+      }
+      if (clipped.length) {
+        findings.push({
+          ruleId: "uppers-match-bases",
+          code: "upper-narrowed-for-window",
+          severity: "info",
+          title: `Window clearance narrowed an upper over ${label}`,
+          detail: `The window keeps ${formatInches(WALL_OPENING_CLEARANCE_IN)} clear, so ${clipped.join(", ")} is the widest stock box that fits; every other upper matches its base.`,
+          cabinetUid: chain[0]!.item.uid,
+          cabinetCode: chain[0]!.item.masterCode,
+        });
       }
     }
   }
