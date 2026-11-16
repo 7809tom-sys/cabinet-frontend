@@ -36,6 +36,8 @@ import {
 } from "./autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
+import { repairMissingAngledWallFillers } from "./angledWallFiller";
+import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
@@ -2279,6 +2281,20 @@ export function runAutoDesignLayout(args: {
     notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
     reviewFindings.push(...closedAfterMatch.findings);
   }
+  // 45° corners (Tom, Nov 16 2026): every angled corner closes with the
+  // front-miter filler pair on BOTH layers. The upper run follows the bases, so
+  // its 45° miter needs about 6⅜″ per side; when the line sells no wall filler
+  // that wide, the corner-end upper grows to the next stock width (never past
+  // its own 45° hold) so the pair is cut from real stock. This runs after the
+  // last upper re-match so that match cannot reopen the corner. Whatever still
+  // cannot close is named on the report instead of being left silently open.
+  const angledUppers = closeAutoDesignAngledUpperCorners({
+    placed: working, room, wallCatalog: args.wallCatalog, fillers: catalogFillers,
+  });
+  working = angledUppers.placed;
+  notes.push(...angledUppers.notes);
+  working = repairMissingAngledWallFillers(working, room, catalogFillers, makeUid, args.styleId).placed;
+  reviewFindings.push(...autoDesignOpenAngledCornerFindings(working, room, catalogFillers));
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.

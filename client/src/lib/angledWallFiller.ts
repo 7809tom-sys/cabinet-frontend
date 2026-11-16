@@ -307,19 +307,40 @@ export function measuredAngledWallTransition(
 	  const end = start + wallRunSpan(cabinet, cabinet.wallId, room);
 	  const currentElevation = elevationBox(cabinet, room);
 
-	  for (const shared of joins) {
+	  // A cabinet can sit on a wall with a 45° join at BOTH ends. Only the join it
+	  // actually terminates counts: another same-layer box between this cabinet
+	  // and the vertex owns that corner. Without this, the first join in the
+	  // list won even when the cabinet sat at the far end of its run, the bogus
+	  // run-length "gap" found no stock, and the real corner was never measured.
+	  const ownerBlocked = (at: "start" | "end") => placed.some((item) => {
+	    if (item.uid === cabinet.uid || item.fillerPieceGroupId || item.wallId !== cabinet.wallId) return false;
+	    if (item.placement !== cabinet.placement) return false;
+	    const itemStart = wallRunOffset(item, cabinet.wallId!, room);
+	    const itemEnd = itemStart + wallRunSpan(item, cabinet.wallId!, room);
+	    return at === "start"
+	      ? itemEnd <= start + JOIN_EPSILON_IN && itemStart < start - JOIN_EPSILON_IN
+	      : itemStart >= end - JOIN_EPSILON_IN && itemEnd > end + JOIN_EPSILON_IN;
+	  });
+	  const orderedJoins = [...joins].sort((left, right) => (
+	    (left.at === "start" ? start : wallLen - end) - (right.at === "start" ? start : wallLen - end)
+	  ));
+	  for (const shared of orderedJoins) {
 	    const ownerGap = shared.at === "start" ? start : wallLen - end;
 	    if (ownerGap < -JOIN_EPSILON_IN) continue;
+	    if (ownerBlocked(shared.at)) continue;
 	    const neighborLen = wallLength(shared.neighborWallId as WallSide, room);
+	    const gapOnNeighbor = (item: PlacedCabinet) => {
+	      const itemStart = wallRunOffset(item, shared.neighborWallId, room);
+	      const itemEnd = itemStart + wallRunSpan(item, shared.neighborWallId, room);
+	      return shared.neighborAt === "start" ? itemStart : neighborLen - itemEnd;
+	    };
 	    const neighborCandidate = placed
 	      .filter((item) => item.uid !== cabinet.uid
 	        && !item.fillerPieceGroupId
 	        && item.placement === cabinet.placement
 	        && item.wallId === shared.neighborWallId)
 	      .map((item) => {
-	      const itemStart = wallRunOffset(item, shared.neighborWallId, room);
-	      const itemEnd = itemStart + wallRunSpan(item, shared.neighborWallId, room);
-	      const neighborGap = shared.neighborAt === "start" ? itemStart : neighborLen - itemEnd;
+	      const neighborGap = gapOnNeighbor(item);
 	      const itemElevation = elevationBox(item, room);
 	      const sameElevation = Math.abs(itemElevation.bottom - currentElevation.bottom) <= JOIN_EPSILON_IN
 	        && Math.abs(itemElevation.height - currentElevation.height) <= JOIN_EPSILON_IN;
@@ -328,6 +349,24 @@ export function measuredAngledWallTransition(
 	      .filter(({ neighborGap, sameElevation }) => neighborGap >= -JOIN_EPSILON_IN && sameElevation)
 	      .sort((left, right) => left.neighborGap - right.neighborGap)[0];
 	    if (!neighborCandidate) continue;
+	    // The neighbor must be the first box at that vertex in this layer. An
+	    // appliance, refrigerator panel or tall box closer to the corner owns the
+	    // joint instead, so a pair is never measured past it to a far cabinet.
+	    const sameBand = (item: PlacedCabinet) => cabinet.placement === "wall"
+	      ? item.placement === "wall" || item.placement === "tall"
+	      : item.placement === "base" || item.placement === "tall" || item.placement === "appliance";
+	    const closerOccupant = placed.some((item) => item.uid !== neighborCandidate.item.uid
+	      && item.uid !== cabinet.uid
+	      && !item.fillerPieceGroupId
+	      && item.wallId === shared.neighborWallId
+	      && sameBand(item)
+	      && (item.placement !== "wall" || (() => {
+	        const box = elevationBox(item, room);
+	        return box.bottom < currentElevation.bottom + currentElevation.height - JOIN_EPSILON_IN
+	          && box.bottom + box.height > currentElevation.bottom + JOIN_EPSILON_IN;
+	      })())
+	      && gapOnNeighbor(item) < neighborCandidate.neighborGap - JOIN_EPSILON_IN);
+	    if (closerOccupant) continue;
 	    const neighbor = neighborCandidate.item;
 	    if (placed.some((item) => item.fillerTransitionKind === "front-miter-pair" && (
 	      (item.fillerForCabinetUid === cabinet.uid && item.fillerTransitionNeighborUid === neighbor.uid)
@@ -419,6 +458,43 @@ export function angledWallTransitionFootprint(
     : null;
 }
 
+function transitionPlacementOf(cabinet: Pick<PlacedCabinet, "placement">): "base" | "wall" | "tall" | null {
+  return cabinet.placement === "wall"
+    ? "wall"
+    : cabinet.placement === "base"
+      ? "base"
+      : cabinet.placement === "tall" ? "tall" : null;
+}
+
+/**
+ * The selected-line filler stock a measured 45° pair would be cut from, or null
+ * when the line sells no board tall and wide enough. Each piece must cover its
+ * own front and rear cut; nothing is stretched, stacked or invented.
+ */
+export function angledWallFillerStock(
+  cabinet: PlacedCabinet,
+  room: RoomData,
+  measurement: Pick<AngledWallTransitionMeasurement, "requiredStockWidthIn">,
+  candidates: readonly CatalogFillerCandidate[],
+): CatalogFillerCandidate | null {
+  const transitionPlacement = transitionPlacementOf(cabinet);
+  if (!transitionPlacement) return null;
+  const currentElevation = elevationBox(cabinet, room);
+  const heightCompatibleCandidates = candidates.filter((candidate) => {
+    const height = numberValue(candidate.height);
+    if (height + JOIN_EPSILON_IN < currentElevation.height) return false;
+    const sourceText = `${candidate.masterCode} ${candidate.description ?? ""}`.toLowerCase();
+    // A base transition may be cut from real base/tall filler stock, but never
+    // from a source-described wall filler. Tall cabinets require tall stock;
+    // no source filler is stretched or invented to match an elevation.
+    if (transitionPlacement === "base" && /\bwall\s+filler\b/.test(sourceText)) return false;
+    if (transitionPlacement === "wall" && /\bbase\s+filler\b/.test(sourceText)) return false;
+    if (transitionPlacement === "tall" && !/\btall\s+filler\b/.test(sourceText)) return false;
+    return true;
+  });
+  return catalogFillerForGap(heightCompatibleCandidates, measurement.requiredStockWidthIn, transitionPlacement);
+}
+
 /**
  * Resolves a source-priced two-piece miter pair at the exposed front of the
  * cabinet runs. Both pieces use the same verified selected-line filler stock,
@@ -433,28 +509,12 @@ export function automaticAngledWallFiller(
   makeUid: () => string,
   styleId: number | null,
 ): AngledWallFillerResolution | null {
-	const transitionPlacement = cabinet.placement === "wall"
-	  ? "wall"
-	  : cabinet.placement === "base"
-	    ? "base"
-	    : cabinet.placement === "tall" ? "tall" : null;
+	const transitionPlacement = transitionPlacementOf(cabinet);
 	if (!transitionPlacement) return null;
 	  const measurement = measuredAngledWallTransition(cabinet, room, placed);
 	  if (!measurement) return null;
 	  const currentElevation = elevationBox(cabinet, room);
-	  const heightCompatibleCandidates = candidates.filter((candidate) => {
-	    const height = numberValue(candidate.height);
-	    if (height + JOIN_EPSILON_IN < currentElevation.height) return false;
-	    const sourceText = `${candidate.masterCode} ${candidate.description ?? ""}`.toLowerCase();
-	    // A base transition may be cut from real base/tall filler stock, but never
-	    // from a source-described wall filler. Tall cabinets require tall stock;
-	    // no source filler is stretched or invented to match an elevation.
-	    if (transitionPlacement === "base" && /\bwall\s+filler\b/.test(sourceText)) return false;
-	    if (transitionPlacement === "wall" && /\bbase\s+filler\b/.test(sourceText)) return false;
-	    if (transitionPlacement === "tall" && !/\btall\s+filler\b/.test(sourceText)) return false;
-	    return true;
-	  });
-	  const source = catalogFillerForGap(heightCompatibleCandidates, measurement.requiredStockWidthIn, transitionPlacement);
+	  const source = angledWallFillerStock(cabinet, room, measurement, candidates);
 	  if (!source) return null;
 
 	  const depth = Math.max(FRONT_FILLER_DEPTH_IN, measurement.depthIn);
