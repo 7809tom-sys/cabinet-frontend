@@ -27,6 +27,7 @@ import {
   formatEighthInches,
   insideCornerHoldIn,
   isFillerItem,
+  isRefrigeratorEndPanel,
   roomWallRunFrames,
   wallLength,
   wallPlacementAt,
@@ -198,7 +199,8 @@ export function autoDesignOpenAngledCornerFindings(
   }
   // A run that ends against a tall box or an appliance on the next wall (a
   // refrigerator and its end panel, a pantry) has no cabinet-to-cabinet pair to
-  // measure, and a filler against a refrigerator panel is not allowed. Name the
+  // measure, and a corner that the last-resort miter pair could not close against a
+  // refrigerator panel stays open. Name the
   // open 45° corner so it is reviewed rather than silently left as bare floor.
   for (const frame of roomWallRunFrames(room)) {
     for (const at of ["start", "end"] as const) {
@@ -235,6 +237,11 @@ export function autoDesignOpenAngledCornerFindings(
         seen.add(key);
         const hold = insideCornerHoldIn(45, layer === "wall" ? 12 : 24);
         if (cabinet.gap <= hold + 0.5 && other.gap <= hold + 0.5) continue;
+        // Closed against a refrigerator panel by the last-resort miter pair.
+        if (placed.some((piece) => piece.fillerTransitionKind === "front-miter-pair" && (
+          (piece.fillerForCabinetUid === cabinet.item.uid && piece.fillerTransitionNeighborUid === other.item.uid)
+          || (piece.fillerForCabinetUid === other.item.uid && piece.fillerTransitionNeighborUid === cabinet.item.uid)
+        ))) continue;
         findings.push({
           ruleId: "angled-wall-filler",
           code: layer === "wall" ? "angled-upper-corner-open" : "angled-base-corner-open",
@@ -248,4 +255,99 @@ export function autoDesignOpenAngledCornerFindings(
     }
   }
   return findings;
+}
+
+/**
+ * Tom, Nov 16 2026 (8:17 AM CT): a filler against a refrigerator panel is the
+ * last resort. When a run turns a 45° corner and the next wall starts with a
+ * refrigerator end panel, the space between that layer's 45° hold and the panel
+ * gets the widest stock cabinet the live catalog sells that fits (use every
+ * inch, never a hardcoded size). The corner then closes cabinet-to-cabinet with
+ * the normal miter pair. When no cabinet fits (a base run usually has under 6″
+ * there) nothing is seated and the base miter pair closes against the panel.
+ */
+export function seatAutoDesignAngledFridgePanelCabinets(input: {
+  placed: readonly PlacedCabinet[];
+  room: RoomData;
+  baseCatalog: readonly DesignCabinet[];
+  wallCatalog: readonly DesignCabinet[];
+  makeUid: () => string;
+  styleId: number | null;
+}): { placed: PlacedCabinet[]; notes: string[] } {
+  const { room } = input;
+  let working = [...input.placed];
+  const notes: string[] = [];
+  for (const frame of roomWallRunFrames(room)) {
+    for (const at of ["start", "end"] as const) {
+      const join = wallRunJoinAt(frame, at, room);
+      if (!join || Math.abs(join.turnDeg - 45) > 0.5) continue;
+      const vertex = at === "start" ? frame.start : frame.end;
+      const neighborAt = Math.hypot(join.frame.start.x - vertex.x, join.frame.start.y - vertex.y) <= 0.01 ? "start" : "end";
+      for (const layer of ["base", "wall"] as const) {
+        const nearestOn = (wallId: string, end: "start" | "end") => {
+          const len = wallLength(wallId as WallSide, room);
+          return working
+            .filter((item) => item.wallId === wallId && !item.fillerPieceGroupId && !isFillerItem(item)
+              && (isRefrigeratorEndPanel(item) || (layer === "base"
+                ? item.placement === "base" || item.placement === "tall" || item.placement === "appliance"
+                : item.placement === "wall" || item.placement === "tall")))
+            .map((item) => {
+              const start = wallRunOffset(item, wallId, room);
+              const stop = start + wallRunSpan(item, wallId, room);
+              return { item, start, stop, gap: end === "start" ? start : len - stop };
+            })
+            .filter((entry) => entry.gap >= -EPSILON_IN)
+            .sort((left, right) => left.gap - right.gap)[0] ?? null;
+        };
+        // Only the wall whose first box is the panel: the far side is the run.
+        const panel = nearestOn(join.frame.id, neighborAt);
+        const run = nearestOn(frame.id, at);
+        if (!panel || !run || !isRefrigeratorEndPanel(panel.item)) continue;
+        if (run.item.placement !== layer || isRefrigeratorEndPanel(run.item)) continue;
+        const depth = Number(run.item.depth) || (layer === "wall" ? 12 : 24);
+        const hold = insideCornerHoldIn(45, depth);
+        const free = panel.gap - hold;
+        if (!(free > EPSILON_IN)) continue;
+        const rows = (layer === "wall"
+          ? autoDesignStandardUpperRows(input.wallCatalog, Number(run.item.height) || 0)
+          : input.baseCatalog.filter((row) => !row.isCornerCabinet))
+          .filter((row) => Math.abs(dim(row.depth, 0) - depth) <= 0.5)
+          .filter((row) => dim(row.width, 0) > 0 && dim(row.width, 0) <= free + EPSILON_IN)
+          .sort((left, right) => dim(right.width, 0) - dim(left.width, 0));
+        const wallId = join.frame.id;
+        for (const row of rows) {
+          const width = dim(row.width, 0);
+          const along = neighborAt === "start" ? panel.start - width : panel.stop;
+          const spot = wallPlacementAt(along, width, depth, wallId as WallSide, room);
+          const height = layer === "wall" ? Number(run.item.height) || dim(row.height, 30) : dim(row.height, 34.5);
+          const candidate: PlacedCabinet = {
+            uid: input.makeUid(),
+            cabinetId: row.id,
+            masterCode: row.masterCode,
+            description: row.description,
+            category: row.category,
+            subCategory: row.subCategory,
+            placement: layer,
+            ...spot,
+            width,
+            depth,
+            height,
+            rotation: spot.rotation,
+            wallId: spot.wallId ?? wallId,
+            wallOffset: spot.wallOffset ?? along,
+            numberOfDoors: row.numberOfDoors,
+            numberOfDrawers: row.numberOfDrawers,
+            catalogImageUrl: row.catalogImageUrl ?? null,
+            styleId: input.styleId,
+            mountBottom: layer === "wall" ? run.item.mountBottom : 0,
+          } as PlacedCabinet;
+          if (cabinetPlacementCollisionDetail(candidate, working, room)) continue;
+          working = [...working, candidate];
+          notes.push(`${row.masterCode} (${formatEighthInches(width)}) is seated beside the ${panel.item.masterCode} refrigerator panel at the 45° corner of ${frame.id} and ${wallId}, so the ${layer === "wall" ? "upper" : "base"} corner closes with cabinets instead of a filler against the panel.`);
+          break;
+        }
+      }
+    }
+  }
+  return { placed: working, notes };
 }

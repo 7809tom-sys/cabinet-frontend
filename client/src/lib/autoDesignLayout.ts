@@ -37,7 +37,7 @@ import {
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { repairMissingAngledWallFillers } from "./angledWallFiller";
-import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners } from "./autoDesignAngledUpperCorners";
+import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners, seatAutoDesignAngledFridgePanelCabinets } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "./kitchenUsage";
@@ -2288,6 +2288,16 @@ export function runAutoDesignLayout(args: {
   // its own 45° hold) so the pair is cut from real stock. This runs after the
   // last upper re-match so that match cannot reopen the corner. Whatever still
   // cannot close is named on the report instead of being left silently open.
+  // A filler against a refrigerator panel is the last resort (Tom, Nov 16 2026,
+  // 8:17 AM CT): at a 45° corner whose next wall starts with a refrigerator end
+  // panel, seat the widest live-catalog cabinet that fits first.
+  const fridgeCorners = seatAutoDesignAngledFridgePanelCabinets({
+    placed: working, room,
+    baseCatalog: stage.straightBaseCatalog, wallCatalog: args.wallCatalog,
+    makeUid, styleId: args.styleId,
+  });
+  working = fridgeCorners.placed;
+  notes.push(...fridgeCorners.notes);
   const angledUppers = closeAutoDesignAngledUpperCorners({
     placed: working, room, wallCatalog: args.wallCatalog, fillers: catalogFillers,
   });

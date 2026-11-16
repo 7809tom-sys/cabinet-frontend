@@ -3,6 +3,10 @@
  * or between a cabinet and a refrigerator or its end panel, is closed with a
  * filler. The refrigerator is not slid to close that gap. A filler is never
  * wider than 3 inches; this pass only sees gaps that are already under 1.5.
+ *
+ * Tom, Nov 16 2026: beside a refrigerator end panel the leftover no cabinet can
+ * take (about 2″) is also closed here, up to the 3″ cap. Wider panel gaps are
+ * for a real cabinet or a resize, never a board.
  */
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import {
@@ -21,6 +25,7 @@ import {
   type RoomData,
   type WallSide,
 } from "./design";
+import { FRIDGE_PANEL_FILLER_MAX_IN } from "./fillerPlacementRule";
 
 /** Gaps this wide or wider are not this rule. They stay on the existing filler cap. */
 export const SUB_ONE_AND_HALF_MAX_IN = 1.5;
@@ -93,7 +98,15 @@ export function fillGapsUnderOneAndAHalf(input: {
         const left = edges[index]!;
         const right = edges[index + 1]!;
         const gap = right.start - left.end;
-        if (gap <= SUB_ONE_AND_HALF_MIN_IN || gap > SUB_ONE_AND_HALF_MAX_IN + 1e-6) continue;
+        // Tom, Nov 16 2026: beside a refrigerator end panel the last-resort board
+        // may close any leftover no cabinet can take, up to the 3″ strip cap
+        // (about 2″ in practice); every other seam keeps the 1.5″ rule.
+        const isCabinetBox = (item: PlacedCabinet) => (item.placement === "base" || item.placement === "wall")
+          && !isPanelOrFridge(item) && !isFillerItem(item);
+        const besidePanel = (isRefrigeratorEndPanel(left.item) && isCabinetBox(right.item))
+          || (isRefrigeratorEndPanel(right.item) && isCabinetBox(left.item));
+        const maxGap = besidePanel ? FRIDGE_PANEL_FILLER_MAX_IN : SUB_ONE_AND_HALF_MAX_IN;
+        if (gap <= SUB_ONE_AND_HALF_MIN_IN || gap > maxGap + 1e-6) continue;
         if (gap > 3 + 1e-6) continue;
         if (!qualifies(left.item, right.item)) continue;
         const filler = catalogFillerForGap(input.fillers, gap, layer);

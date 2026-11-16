@@ -5,6 +5,7 @@ import {
   appendCollisionFreePlacements,
   customWallJoinTurnsFortyFive,
   elevationBox,
+  isRefrigeratorEndPanel,
   peninsulaRunById,
   peninsulaRunEndpoints,
   STD,
@@ -334,16 +335,27 @@ export function measuredAngledWallTransition(
 	      const itemEnd = itemStart + wallRunSpan(item, shared.neighborWallId, room);
 	      return shared.neighborAt === "start" ? itemStart : neighborLen - itemEnd;
 	    };
+	    // Tom, Nov 16 2026: a base run may also close its 45° corner against a
+	    // full-depth refrigerator end panel when no cabinet fits beside the panel.
+	    // The panel covers the whole base band and shares the 24″ front line, so
+	    // the pair is measured exactly as between two bases.
+	    const panelCoversBand = (item: PlacedCabinet) => {
+	      if (cabinet.placement !== "base" || !isRefrigeratorEndPanel(item)) return false;
+	      const box = elevationBox(item, room);
+	      return box.bottom <= currentElevation.bottom + JOIN_EPSILON_IN
+	        && box.bottom + box.height >= currentElevation.bottom + currentElevation.height - JOIN_EPSILON_IN
+	        && (Number(item.depth) || 0) >= (Number(cabinet.depth) || 0) - JOIN_EPSILON_IN;
+	    };
 	    const neighborCandidate = placed
 	      .filter((item) => item.uid !== cabinet.uid
 	        && !item.fillerPieceGroupId
-	        && item.placement === cabinet.placement
+	        && (item.placement === cabinet.placement || panelCoversBand(item))
 	        && item.wallId === shared.neighborWallId)
 	      .map((item) => {
 	      const neighborGap = gapOnNeighbor(item);
 	      const itemElevation = elevationBox(item, room);
-	      const sameElevation = Math.abs(itemElevation.bottom - currentElevation.bottom) <= JOIN_EPSILON_IN
-	        && Math.abs(itemElevation.height - currentElevation.height) <= JOIN_EPSILON_IN;
+	      const sameElevation = panelCoversBand(item) || (Math.abs(itemElevation.bottom - currentElevation.bottom) <= JOIN_EPSILON_IN
+	        && Math.abs(itemElevation.height - currentElevation.height) <= JOIN_EPSILON_IN);
 	      return { item, neighborGap, sameElevation };
 	    })
 	      .filter(({ neighborGap, sameElevation }) => neighborGap >= -JOIN_EPSILON_IN && sameElevation)

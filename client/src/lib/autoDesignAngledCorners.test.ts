@@ -143,10 +143,12 @@ describe("Auto Design closes every 45° corner of an angled-wall room (Tom, Nov 
     }
   });
 
-  it("names the refrigerator corner instead of leaving silent bare floor", () => {
+  it("closes the refrigerator corner instead of leaving it open (Tom, Nov 16 8:17 AM CT)", () => {
+    // A cabinet beside the panel first; the base miter pair against the panel
+    // only because no base fits there. No open-corner warning is left.
     const fridgeCorner = result.reviewFindings.filter((finding) => finding.ruleId === "angled-wall-filler"
       && /back and angR|angR and back/.test(finding.title));
-    expect(fridgeCorner.map((finding) => finding.code).sort()).toEqual(["angled-base-corner-open", "angled-upper-corner-open"]);
+    expect(fridgeCorner).toEqual([]);
   });
 
   it("measures the corner a cabinet actually ends at, not the far end of its wall", () => {

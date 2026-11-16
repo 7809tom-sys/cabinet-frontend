@@ -10,8 +10,9 @@
  *
  * It is never:
  *
- *   - on the side of a refrigerator end panel (a panel is a finished skin, not a
- *     cabinet to fill against),
+ *   - on the side of a refrigerator end panel where a cabinet could take the
+ *     space (Tom, Nov 16 2026: only the small leftover no cabinet fits, about
+ *     2″ and never over 3″, is closed against the panel),
  *   - on the outside/side face of a cabinet that ends in open floor,
  *   - a default board on every cabinet.
  *
@@ -227,6 +228,23 @@ function isRequiredCornerFiller(filler: PlacedCabinet, room: RoomData): boolean 
   return false;
 }
 
+/**
+ * Widest board ever cut against a refrigerator panel: the 3″ filler strip cap.
+ * Every real cabinet is wider, so a gap this small is one no cabinet can take.
+ */
+export const FRIDGE_PANEL_FILLER_MAX_IN = 3;
+
+/**
+ * A board beside a refrigerator panel is legal only as the last resort, no
+ * wider than the 3″ strip cap. The 45° front-miter piece that closes an angled
+ * corner at the panel is the corner rule's own board, sized by the corner
+ * geometry; the Auto Design corner pass seats a cabinet there first when one fits.
+ */
+export function isAllowedPanelFiller(filler: PlacedCabinet): boolean {
+  if (filler.fillerTransitionKind === "front-miter-pair") return true;
+  return (Number(filler.width) || 0) <= FRIDGE_PANEL_FILLER_MAX_IN + FILLER_SEAM_TOLERANCE_IN;
+}
+
 /** Two boxes on the same run whose along-run spans and depths both overlap. */
 function overlapsInPlan(filler: PlacedCabinet, other: PlacedCabinet, room: RoomData): boolean {
   const wallId = cabinetWall(filler, room);
@@ -277,13 +295,17 @@ export function fillerRuleViolation(input: {
 
   const panelBound = bounds.find((bound) => bound.kind === "item" && bound.item != null
     && (isRefrigeratorEndPanel(bound.item) || isPanelItem(bound.item)));
-  // A gap under 1.5 inches between a cabinet and a refrigerator panel is closed
-  // with a filler. The board must still not run through the panel (caught above).
-  const narrowCabinetToPanel = (Number(filler.width) || 0) <= 1.5 + FILLER_SEAM_TOLERANCE_IN;
-  if (panelBound?.item && !narrowCabinetToPanel) {
+  // Tom, Nov 16 2026 (8:17 AM CT): a filler against a refrigerator panel is a
+  // last resort, not banned. The build seats a cabinet beside the panel whenever
+  // one fits; only the small leftover no cabinet can take (about 2″, never over
+  // the 3″ strip cap, which is narrower than any cabinet a line sells) is closed
+  // with a board against the panel. A wider board is space a cabinet or a resize
+  // should close, so it is still removed. It must never run through the panel
+  // (caught above).
+  if (panelBound?.item && !isAllowedPanelFiller(filler)) {
     return {
       code: "against-refrigerator-panel",
-      detail: `${filler.masterCode} is cut against the ${panelBound.item.masterCode} panel. A filler closes a cabinet-to-cabinet, cabinet-to-wall, or cabinet-to-appliance gap, never a panel side.`,
+      detail: `${filler.masterCode} is cut against the ${panelBound.item.masterCode} panel, but ${formatEighthInches(Number(filler.width) || 0)} is more than the ${formatEighthInches(FRIDGE_PANEL_FILLER_MAX_IN)} last-resort board; a cabinet or a resize closes that space instead.`,
     };
   }
 
