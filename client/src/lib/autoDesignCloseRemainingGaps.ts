@@ -22,6 +22,8 @@ import {
   appendCollisionFreePlacements,
   cabinetWall,
   dim,
+  elevationBox,
+  fillerOverlapIsSeamOnly,
   freeSegmentsOnWall,
   isFillerItem,
   isPanelItem,
@@ -220,7 +222,88 @@ function placeFiller(input: {
 }
 
 
-function mergeAdjacentFillers(placed: PlacedCabinet[], room: RoomData, wallIds: readonly string[]): PlacedCabinet[] {
+/** Full-height pieces (tall panels, continuous fillers) that close a run at the upper layer too. */
+export function isFullHeightRunPiece(item: PlacedCabinet): boolean {
+  return item.placement === "tall" || (isFillerItem(item) && item.fillerContinuousVertical === true);
+}
+
+/** True when full-height pieces on that wall cover [from, to] end to end. */
+function fullHeightCovers(placed: readonly PlacedCabinet[], wallId: string, from: number, to: number, room: RoomData): boolean {
+  const spans = placed
+    .filter((item) => isFullHeightRunPiece(item) && cabinetWall(item, room) === wallId)
+    .map((item) => { const start = wallRunOffset(item, wallId, room); return { start, end: start + wallRunSpan(item, wallId, room) }; })
+    .sort((a, b) => a.start - b.start);
+  let reach = from;
+  for (const span of spans) {
+    if (span.start > reach + COLLISION) break;
+    reach = Math.max(reach, span.end);
+  }
+  return reach >= to - COLLISION;
+}
+
+/**
+ * A loose wall-layer filler standing entirely inside full-height pieces (the ½″
+ * board and end panel beside a refrigerator) duplicates them: the opening is
+ * already closed at every height, and overlap cleanup would delete it later
+ * anyway. Drop it here so the plan never carries the duplicate.
+ */
+function dropWallFillersInsideFullHeightPieces(placed: PlacedCabinet[], room: RoomData, wallIds: readonly string[]): PlacedCabinet[] {
+  const drop = new Set<string>();
+  for (const item of placed) {
+    if (item.placement !== "wall" || !isFillerItem(item) || isFullHeightRunPiece(item)) continue;
+    if (item.integratedWallBlindFiller || item.fillerForCabinetUid || isRequiredBlindCornerFillerGroupId(item.fillerPieceGroupId)) continue;
+    const wallId = cabinetWall(item, room);
+    if (!wallId || !wallIds.includes(wallId)) continue;
+    const start = wallRunOffset(item, wallId, room);
+    if (fullHeightCovers(placed.filter((other) => other.uid !== item.uid), wallId, start, start + wallRunSpan(item, wallId, room), room)) drop.add(item.uid);
+  }
+  return drop.size ? placed.filter((item) => !drop.has(item.uid)) : placed;
+}
+
+/** True when a continuous full-height filler already fills the filler's span on that wall. */
+function coveredByFullHeightFiller(filler: PlacedCabinet, placed: readonly PlacedCabinet[], wallId: string, room: RoomData): boolean {
+  const start = wallRunOffset(filler, wallId, room);
+  const end = start + wallRunSpan(filler, wallId, room);
+  return placed.some((item) => {
+    if (item.uid === filler.uid || !isFillerItem(item) || item.fillerContinuousVertical !== true) return false;
+    if (cabinetWall(item, room) !== wallId) return false;
+    const itemStart = wallRunOffset(item, wallId, room);
+    const itemEnd = itemStart + wallRunSpan(item, wallId, room);
+    return itemStart <= start + COLLISION && itemEnd >= end - COLLISION;
+  });
+}
+
+function isOwnedBoard(item: PlacedCabinet): boolean {
+  return item.fillerContinuousVertical === true || Boolean(item.fillerForCabinetUid);
+}
+
+function gapIsOccupied(
+  placed: readonly PlacedCabinet[],
+  skipUids: readonly string[],
+  wallId: string,
+  from: number,
+  to: number,
+  layerSample: PlacedCabinet,
+  room: RoomData,
+): boolean {
+  const band = elevationBox(layerSample, room, placed);
+  const bandTop = band.bottom + band.height;
+  return placed.some((item) => {
+    if (skipUids.includes(item.uid) || cabinetWall(item, room) !== wallId) return false;
+    const start = wallRunOffset(item, wallId, room);
+    const end = start + wallRunSpan(item, wallId, room);
+    if (Math.min(to, end) - Math.max(from, start) <= COLLISION) return false;
+    const box = elevationBox(item, room, placed);
+    return Math.min(bandTop, box.bottom + box.height) - Math.max(band.bottom, box.bottom) > COLLISION;
+  });
+}
+
+function mergeAdjacentFillers(
+  placed: PlacedCabinet[],
+  room: RoomData,
+  wallIds: readonly string[],
+  catalogFillers: readonly CatalogFillerCandidate[],
+): PlacedCabinet[] {
   let working = [...placed];
   for (const layer of ["base", "wall"] as const) {
     for (const wallId of wallIds) {
@@ -235,16 +318,37 @@ function mergeAdjacentFillers(placed: PlacedCabinet[], room: RoomData, wallIds: 
         const rightStart = wallRunOffset(right, wallId, room);
         const gap = rightStart - leftEnd;
         if (gap > 1 + 0.05 || gap < -0.05) continue;
+        // A board owned by a cabinet or appliance (the ½″ between a refrigerator
+        // and its end panel) is not a loose run filler; merging it dragged the
+        // owner's board across the panel's spot.
+        if (isOwnedBoard(left) || isOwnedBoard(right)) continue;
+        // Never merge across something that already stands in the gap.
+        if (gap > 0.05 && gapIsOccupied(working, [left.uid, right.uid], wallId, leftEnd, rightStart, left, room)) continue;
         const combined = Math.round((wallRunSpan(right, wallId, room) + wallRunSpan(left, wallId, room) + Math.max(0, gap)) * 1000) / 1000;
         const depth = layer === "wall" ? 12 : 24;
         const spot = wallPlacementAt(leftStart, combined, depth, wallId as WallSide, room);
         if (!spot) continue;
+        // The merged board is cut from ONE real stock filler, so it must come from
+        // a catalog row at least that wide (OF3xx stops at 2-7/8; OF6xx at
+        // 5-7/8). Before, the left piece's identity was stretched to the
+        // combined width — a 4" "OF335" that the plan flagged OVER MAX. When the
+        // line sells no stock wide enough, the two boards stay as they are.
+        const stock = catalogFillerForGap(catalogFillers, combined, layer);
+        if (!stock) continue;
+        const stockWidth = widthOf(stock);
+        if (stockWidth > 0 && combined > stockWidth + 0.001) continue;
         const merged: PlacedCabinet = {
           ...left,
           ...spot,
+          cabinetId: stock.id,
+          masterCode: stock.masterCode,
+          category: stock.category ?? left.category,
+          subCategory: stock.subCategory ?? left.subCategory,
+          catalogImageUrl: stock.catalogImageUrl ?? left.catalogImageUrl ?? null,
           width: combined,
+          nominalWidth: stockWidth > 0 ? stockWidth : combined,
           fillerTotalWidth: combined,
-          description: fittedCatalogFillerDescription({ masterCode: left.masterCode, description: left.description, width: String(left.width) }, combined),
+          description: fittedCatalogFillerDescription(stock, combined),
         };
         working = working.filter((item) => item.uid !== left.uid && item.uid !== right.uid);
         working.push(merged);
@@ -387,7 +491,13 @@ export function closeRemainingRunGaps(input: {
               working = accepted.placed;
               placedAny = true;
               notes.push(`${filler.masterCode} filled a ${formatFillerInches(leftover)} leftover on ${wallId} (${layer}).`);
-            } else if (leftover <= 3 + COLLISION) {
+            } else if (coveredByFullHeightFiller(filler, working, wallId, input.room)
+              || fullHeightCovers(working, wallId, along, along + leftover, input.room)) {
+              // A full-height board (the ½″ beside a refrigerator panel, say)
+              // already closes this spot at every height. The wall-layer scan
+              // does not see floor-standing boards, so this "gap" is not real;
+              // seating a second filler here only made overlap cleanup delete it.
+            } else if (leftover <= 3 + COLLISION && fillerOverlapIsSeamOnly(filler, working, input.room)) {
               // A sliver next to a bridge or panel often fails the rectangular
               // collision test at a 1/64 in seam. The measured gap is real, so
               // seat the catalog filler directly in that opening.
@@ -421,7 +531,8 @@ export function closeRemainingRunGaps(input: {
     }
   }
 
-  return { placed: mergeAdjacentFillers(working, input.room, input.wallIds), notes, findings };
+  const deduped = dropWallFillersInsideFullHeightPieces(working, input.room, input.wallIds);
+  return { placed: mergeAdjacentFillers(deduped, input.room, input.wallIds, input.fillers), notes, findings };
 }
 
 /** Gaps still open on a layer that are larger than `minIn` and not a window/door clearance. */
@@ -458,6 +569,9 @@ export function remainingRunGaps(input: {
         // Ignore a completely empty wall (no run started).
         const hasRun = input.placed.some((item) => cabinetWall(item, input.room) === wallId && (layer === "wall" ? item.placement === "wall" || item.placement === "tall" : item.placement === "base" || item.placement === "appliance" || isFillerItem(item) || isPanelItem(item)));
         if (!hasRun) continue;
+        // On the upper layer, a spot a full-height board or tall panel already
+        // closes (refrigerator end panel + its ½″ board) is not an open gap.
+        if (layer === "wall" && fullHeightCovers(input.placed, wallId, gap.start, gap.start + gap.length, input.room)) continue;
         out.push({ wallId, layer, start: gap.start, width: Math.round(gap.length * 1000) / 1000 });
       }
     }
