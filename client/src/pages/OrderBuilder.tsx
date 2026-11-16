@@ -14,7 +14,9 @@ import { BarcodeScanTab } from "@/components/order/BarcodeScanTab";
 import { cartPrefillStorageKey } from "@/pages/Cart";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { applyCartCheckoutPrefill, type CartCheckoutPrefillItem } from "@/lib/cartCheckoutPrefill";
-import { resolveStoreScope } from "@/lib/affiliateContext";
+import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
+import { checkoutPrefillState, storeCartPath } from "@/lib/storeCheckout";
+import { Link } from "wouter";
 
 type Source = "ocr" | "csv" | "manual" | "barcode";
 
@@ -28,7 +30,12 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-export default function OrderBuilder() {
+/**
+ * `checkout` is the store checkout step (/store/<slug>/checkout): it only
+ * reviews the cart handed over by "Continue to secure checkout" and never
+ * falls back to the photo / CSV / code-entry tools.
+ */
+export default function OrderBuilder({ checkout = false }: { checkout?: boolean } = {}) {
   const { t } = useLanguage();
 	const storeScope = resolveStoreScope({
 	  pathname: typeof window !== "undefined" ? window.location.pathname : "/order/new",
@@ -43,20 +50,31 @@ export default function OrderBuilder() {
   const [initialTier, setInitialTier] = useState<string | null>(null);
   const [kitchenDesignId, setKitchenDesignId] = useState<number | null>(null);
   const [carrierPreference, setCarrierPreference] = useState<"ups" | null>(null);
+  const [hasPrefill, setHasPrefill] = useState(false);
+  const [prefillFailed, setPrefillFailed] = useState(false);
+  const cartPath = storeCartPath(affiliateSlugForStoreScope(storeScope));
 
   // If the user arrived from the cart ("Request this order"), pick up the
   // prefilled {code, qty} pairs, match them, and drop straight into review.
-  useEffect(() => {
-    if (prefillConsumed.current) return;
-    prefillConsumed.current = true;
+  // The hand-off stays in sessionStorage until the lines are matched, so a
+  // remount, reload, or second click never lands on an empty order.
+  const prefillKey = cartPrefillStorageKey(storeScope);
+  const dropPrefill = () => {
+    try {
+      sessionStorage.removeItem(prefillKey);
+    } catch {
+      /* ignore */
+    }
+  };
+  const loadPrefill = () => {
     let raw: string | null = null;
     try {
-	  const prefillKey = cartPrefillStorageKey(storeScope);
 	  raw = sessionStorage.getItem(prefillKey);
-	  if (raw) sessionStorage.removeItem(prefillKey);
     } catch {
       return;
     }
+    setHasPrefill(Boolean(raw));
+    setPrefillFailed(false);
     if (!raw) return;
     let parsed: CartCheckoutPrefillItem[] = [];
     try {
@@ -73,14 +91,24 @@ export default function OrderBuilder() {
         if (decoded.carrierPreference === "ups") setCarrierPreference("ups");
       }
     } catch {
+      dropPrefill();
+      setHasPrefill(false);
       return;
     }
     const items = parsed.filter((p) => p.code && p.qty > 0);
-    if (items.length === 0) return;
+    if (items.length === 0) {
+      dropPrefill();
+      setHasPrefill(false);
+      return;
+    }
     matchCodes.mutate(
       { items },
       {
         onSuccess: (result) => {
+          // Checkout keeps the hand-off so a reload still shows this cart; the
+          // next "Continue to secure checkout" overwrites it.
+          if (!checkout) dropPrefill();
+          setHasPrefill(false);
           setSource("manual");
           const checkoutLines = result.lines.map((line, index) => {
             const cartLine = items[index];
@@ -93,9 +121,20 @@ export default function OrderBuilder() {
           });
           setTimeout(() => document.getElementById("order-review")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
         },
-        onError: () => toast.error(t("ob_cart_load_err")),
+        onError: () => {
+          setPrefillFailed(true);
+          toast.error(t("ob_cart_load_err"));
+        },
       }
     );
+  };
+  useEffect(() => {
+    if (prefillConsumed.current) return;
+    prefillConsumed.current = true;
+    // An affiliate cart hands off to /store/<slug>/checkout only, so that
+    // store's Get a Quote tool never reopens the last checkout cart.
+    if (!checkout && affiliateSlugForStoreScope(storeScope)) return;
+    loadPrefill();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -114,18 +153,48 @@ export default function OrderBuilder() {
   }
 
   const hasLines = lines.length > 0;
+  const checkoutState = checkoutPrefillState({
+    hasPrefill,
+    pending: matchCodes.isPending,
+    failed: prefillFailed,
+    lineCount: lines.length,
+  });
 
   return (
     <div className="container py-10 max-w-5xl">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="font-serif text-3xl md:text-4xl font-bold text-foreground">{t("ob_title")}</h1>
+        <h1 className="font-serif text-3xl md:text-4xl font-bold text-foreground">{checkout ? "Checkout" : t("ob_title")}</h1>
         <p className="text-muted-foreground mt-2 max-w-2xl">
-          {t("ob_sub")}
+          {checkout
+            ? "Review your cart, enter the delivery address, then pay securely with Stripe."
+            : t("ob_sub")}
         </p>
       </div>
 
-      {!hasLines && (
+      {checkout && checkoutState === "loading" && (
+        <div role="status" data-testid="checkout-loading" className="flex items-center gap-2 rounded-xl border border-border bg-card p-6 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading your cart…
+        </div>
+      )}
+      {checkout && checkoutState === "error" && (
+        <div role="alert" data-testid="checkout-load-error" className="rounded-xl border border-destructive/40 bg-card p-6">
+          <p className="font-semibold">Your cart could not be loaded into checkout.</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={loadPrefill}>Try again</Button>
+            <Button variant="outline" asChild><Link href={cartPath}>Back to cart</Link></Button>
+          </div>
+        </div>
+      )}
+      {checkout && checkoutState === "empty" && (
+        <div data-testid="checkout-empty" className="rounded-xl border border-border bg-card p-6">
+          <p className="font-semibold">There is nothing to check out yet.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Open your cart and choose Continue to secure checkout.</p>
+          <Button className="mt-4" asChild><Link href={cartPath}>Go to cart</Link></Button>
+        </div>
+      )}
+
+      {!checkout && !hasLines && (
         <Tabs value={source} onValueChange={(v) => setSource(v as Source)} className="mb-2">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
             <TabsTrigger value="ocr" className="flex-col gap-1 py-3">

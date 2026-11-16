@@ -426,6 +426,17 @@ export default function App() {
             </Suspense>
           )}
         </Route>
+        {/* Store checkout: the cart's review, delivery address, and Stripe
+            step. Without this route /store/:slug/checkout was a 404. */}
+        <Route path="/store/:slug/checkout">
+          {(params) => (
+            <Suspense fallback={<PageLoader />}>
+              <AffiliateShell slug={params.slug}>
+                <OrderBuilder checkout />
+              </AffiliateShell>
+            </Suspense>
+          )}
+        </Route>
         <Route path="/store/:slug/checkout/success">
           {(params) => (
             <Suspense fallback={<PageLoader />}>

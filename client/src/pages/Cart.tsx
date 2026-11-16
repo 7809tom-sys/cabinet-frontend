@@ -22,6 +22,7 @@ import {
   type StoreScope,
 } from "@/lib/affiliateContext";
 import { cartItemToCheckoutPrefill } from "@/lib/cartCheckoutPrefill";
+import { storeCheckoutPath } from "@/lib/storeCheckout";
 import { cartNoteWithoutMosaicWaste, mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
 import { separateGlassPurchaseItems } from "@/lib/cartGlassPolicy";
@@ -174,7 +175,8 @@ export default function Cart() {
     } catch {
       /* ignore */
     }
-    navigate(currentAffiliateSlug ? `/store/${currentAffiliateSlug}/order` : "/order/new");
+    // Affiliate carts go to the store checkout step, not the Build an Order tool.
+    navigate(currentAffiliateSlug ? storeCheckoutPath(currentAffiliateSlug) : "/order/new");
   };
 
   if (items.length === 0) {
