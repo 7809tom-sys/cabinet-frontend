@@ -313,7 +313,10 @@ export function seatAutoDesignAngledFridgePanelCabinets(input: {
           : input.baseCatalog.filter((row) => !row.isCornerCabinet))
           .filter((row) => Math.abs(dim(row.depth, 0) - depth) <= 0.5)
           .filter((row) => dim(row.width, 0) > 0 && dim(row.width, 0) <= free + EPSILON_IN)
-          .sort((left, right) => dim(right.width, 0) - dim(left.width, 0));
+          // Widest first (use every inch); at one width a spice / pull-out box first.
+          .sort((left, right) => dim(right.width, 0) - dim(left.width, 0)
+            || Number(/spice|pull[- ]?out/i.test(`${right.description ?? ""} ${right.subCategory ?? ""}`))
+              - Number(/spice|pull[- ]?out/i.test(`${left.description ?? ""} ${left.subCategory ?? ""}`)));
         const wallId = join.frame.id;
         for (const row of rows) {
           const width = dim(row.width, 0);

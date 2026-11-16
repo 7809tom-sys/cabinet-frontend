@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import realCatalog from "./__fixtures__/autoDesignRealCatalog.json";
 import { runAutoDesignLayout } from "./autoDesignLayout";
+import { FRIDGE_PANEL_CORNER_TARGET_IN, fridgePanelCornerSlideOptions, type FridgePanelCornerState } from "./autoDesignFridgeCornerSlide";
 import { fillGapsUnderOneAndAHalf } from "./subOneAndHalfFiller";
 import { fillerRuleViolation, isAllowedPanelFiller, removeIllegalFillers } from "./fillerPlacementRule";
 import {
@@ -178,5 +179,66 @@ describe("angled fridge corner (back ↔ angR, Tom's room)", () => {
     const miters = result.placed.filter((item) => item.fillerTransitionKind === "front-miter-pair");
     expect(miters.filter((item) => item.placement === "base")).toHaveLength(6);
     expect(miters.filter((item) => item.placement === "wall")).toHaveLength(6);
+  });
+});
+
+describe("wiggle room before a wide fridge-panel corner filler (Tom, Nov 16 8:41 AM CT)", () => {
+  const { result, span } = buildAngled();
+  const onAngR = result.placed.filter((item) => item.wallId === "angR");
+  const fridge = onAngR.find((item) => item.masterCode === "FRIDGE-36")!;
+  const panel = onAngR.filter((item) => isRefrigeratorEndPanel(item)).sort((left, right) => span(left).start - span(right).start)[0]!;
+  const piece = onAngR.find((item) => item.fillerTransitionKind === "front-miter-pair" && item.placement === "base")!;
+
+  it("slides the refrigerator the most it can without losing the upper beside the panel, and says why", () => {
+    // Measured at center 34 (16 → 52). The upper beside the panel (W0930) still
+    // fits only up to a ¼″ slide toward the corner; a longer slide opens the
+    // upper corner, and a slide away runs into the far corner clearance.
+    expect(span(fridge).start).toBeCloseTo(15.75, 2);
+    expect(span(panel).start).toBeCloseTo(14.5, 2);
+    expect(piece.width).toBeCloseTo(4.56, 2);
+    expect(Math.abs(span(piece).end - span(panel).start)).toBeLessThan(0.05);
+    const upper = onAngR.find((item) => item.placement === "wall" && !isFillerItem(item) && Math.abs(span(item).end - span(panel).start) < 0.05);
+    expect(upper?.masterCode).toBe("W0930");
+    expect(result.notes.some((note) => /refrigerator slid 0\.25″ toward the 45° corner/.test(note))).toBe(true);
+  });
+
+  it("leaves the cabinets on the other wall alone: the miter line is fixed by the corner", () => {
+    const back = result.placed.filter((item) => item.wallId === "back" && item.placement === "base" && !isFillerItem(item));
+    const last = back.sort((left, right) => span(right).end - span(left).end)[0]!;
+    expect(last.masterCode).toBe("B12");
+    expect(span(last).start).toBeCloseTo(97, 2);
+    expect(span(last).end).toBeCloseTo(109, 2);
+  });
+});
+
+describe("fridgePanelCornerSlideOptions", () => {
+  const panel = { uid: "p", masterCode: "REPV2496", width: 0.75, depth: 24, height: 96, placement: "tall" } as PlacedCabinet;
+  const state = (over: Partial<FridgePanelCornerState>): FridgePanelCornerState => ({
+    vertexKey: "v", wallId: "w", neighborWallId: "n", panel, panelGapIn: 14.75,
+    basePiece: { uid: "f", width: 4.81, placement: "base", fillerTransitionKind: "front-miter-pair" } as PlacedCabinet,
+    baseCabinetBesidePanel: null, upperBesidePanel: null, ...over,
+  });
+
+  it("asks for a cabinet first when the smallest base fits inside the wiggle cap", () => {
+    const options = fridgePanelCornerSlideOptions(state({}), { smallestBaseWidthIn: 6, capIn: 3 });
+    expect(options[0]).toEqual({ panelDeltaIn: 2.25, goal: "cabinet" });
+    expect(options[1]).toEqual({ panelDeltaIn: -2.75, goal: "smaller-filler" });
+  });
+
+  it("never asks for a slide past the cap, and stops at about 2 in", () => {
+    const options = fridgePanelCornerSlideOptions(state({}), { smallestBaseWidthIn: 12, capIn: 3 });
+    expect(options.every((option) => option.goal === "smaller-filler")).toBe(true);
+    expect(Math.min(...options.map((option) => option.panelDeltaIn))).toBeGreaterThanOrEqual(-(4.81 - FRIDGE_PANEL_CORNER_TARGET_IN));
+  });
+
+  it("only offers slides that still fit a stock upper beside the panel", () => {
+    const upper = { uid: "u", masterCode: "W0930", width: 9, depth: 12, height: 30, placement: "wall" } as PlacedCabinet;
+    const options = fridgePanelCornerSlideOptions(state({ upperBesidePanel: upper }), { smallestBaseWidthIn: 12, capIn: 3, upperWidthsIn: [9, 12, 15] });
+    expect(options.map((option) => option.panelDeltaIn)).toEqual([-0.25, -0.125]);
+  });
+
+  it("does nothing when the board is already about 2 in or there is none", () => {
+    expect(fridgePanelCornerSlideOptions(state({ basePiece: { uid: "f", width: 2, placement: "base" } as PlacedCabinet }), { smallestBaseWidthIn: 6, capIn: 3 })).toEqual([]);
+    expect(fridgePanelCornerSlideOptions(state({ basePiece: null }), { smallestBaseWidthIn: 6, capIn: 3 })).toEqual([]);
   });
 });

@@ -37,6 +37,13 @@ import {
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { repairMissingAngledWallFillers } from "./angledWallFiller";
+import { isNarrowLeftoverCabinet } from "./autoDesignLeftoverFixes";
+import {
+  fridgePanelCornerSlideOptions,
+  fridgePanelCornerStates,
+  newFindingCodes,
+  otherCornerSignature,
+} from "./autoDesignFridgeCornerSlide";
 import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners, seatAutoDesignAngledFridgePanelCabinets } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
@@ -68,7 +75,7 @@ import {
   tallCabinetPlacement,
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
-import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
+import { autoDesignStandardUpperRows, buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { placeSinkBridges } from "./autoDesignSinkBridge";
 import { closeRemainingRunGaps } from "./autoDesignCloseRemainingGaps";
@@ -704,7 +711,7 @@ function autoDesignWallFitSuggestion(input: AutoDesignInputs, room: RoomData, ba
     baseCatalog,
   });
 }
-export function runAutoDesignLayout(args: {
+function runAutoDesignLayoutOnce(args: {
   input: AutoDesignInputs;
   room: RoomData;
   openings: readonly WallOpening[];
@@ -2293,7 +2300,7 @@ export function runAutoDesignLayout(args: {
   // panel, seat the widest live-catalog cabinet that fits first.
   const fridgeCorners = seatAutoDesignAngledFridgePanelCabinets({
     placed: working, room,
-    baseCatalog: stage.straightBaseCatalog, wallCatalog: args.wallCatalog,
+    baseCatalog: fridgeCornerBaseCatalog(args.baseCatalog), wallCatalog: args.wallCatalog,
     makeUid, styleId: args.styleId,
   });
   working = fridgeCorners.placed;
@@ -2358,4 +2365,83 @@ export function runAutoDesignLayout(args: {
     reviewFindings: buildDesignerReviewList(reviewFindings).findings,
     reviewAllHonored: buildDesignerReviewList(reviewFindings).allHonored,
   };
+}
+
+/**
+ * Bases that may stand beside a refrigerator panel at a 45° corner: the plain
+ * run bases plus the real narrow boxes the leftover rule already seats (a 6″
+ * spice / pull-out base first), all from the live catalog.
+ */
+function fridgeCornerBaseCatalog(catalog: readonly DesignCabinet[]): DesignCabinet[] {
+  const seen = new Set<number>();
+  return [...autoBuildStraightBaseCatalog(catalog), ...catalog.filter((row) => isNarrowLeftoverCabinet(row))]
+    .filter((row) => (seen.has(row.id) ? false : (seen.add(row.id), true)));
+}
+
+/**
+ * Auto Design build. A refrigerator bay whose panel sits at a 45° corner with
+ * a wide panel-side miter filler gets one wiggle-room retry (Tom, Nov 16 2026,
+ * 8:41 AM CT): see autoDesignFridgeCornerSlide.ts. Cabinet shifts cannot shrink
+ * that board (the miter line is fixed by the corner), so the refrigerator's
+ * measured center is slid within the anchor wiggle cap, and the slide is kept
+ * only when the rebuilt plan is no worse anywhere else.
+ */
+export function runAutoDesignLayout(args: Parameters<typeof runAutoDesignLayoutOnce>[0]): AutoDesignLayoutResult {
+  const first = runAutoDesignLayoutOnce(args);
+  const fridge = args.input.refrigerator;
+  if (!first.ok || !fridge || args.anchoredRefrigerator) return first;
+  const states = fridgePanelCornerStates(first.placed, args.room).filter((state) => state.basePiece);
+  if (states.length === 0) return first;
+  const capIn = Math.max(0, kitchenRuleNumber("anchor_wiggle_cap_in"));
+  const baseWidths = fridgeCornerBaseCatalog(args.baseCatalog)
+    .filter((row) => Math.abs(dim(row.depth, 0) - 24) <= 0.5)
+    .map((row) => dim(row.width, 0))
+    .filter((width) => width > 0);
+  const smallestBaseWidthIn = baseWidths.length > 0 ? Math.min(...baseWidths) : null;
+  const openCorner = (findings: readonly DesignerReviewFinding[]) => findings.filter((finding) => finding.code === "angled-base-corner-open" || finding.code === "angled-upper-corner-open").length;
+  // The multiplier on a panel delta that, added to the measured center, moves
+  // the panel by that delta (the label frame can run against the engine wall).
+  let learnedSign: number | null = null;
+  for (const state of states) {
+    const before = otherCornerSignature(first.placed, args.room, state);
+    const upper = state.upperBesidePanel;
+    const upperWidthsIn = upper
+      ? autoDesignStandardUpperRows(args.wallCatalog, Number(upper.height) || 0)
+        .filter((row) => Math.abs(dim(row.depth, 0) - (Number(upper.depth) || 12)) <= 0.5)
+        .map((row) => dim(row.width, 0))
+        .filter((width) => width > 0)
+      : undefined;
+    for (const option of fridgePanelCornerSlideOptions(state, { smallestBaseWidthIn, capIn, upperWidthsIn })) {
+      // The label frame may run either way along the engine wall: try a sign,
+      // and keep the build whose panel actually moved the intended way. Once a
+      // build shows which way the label runs, only that sign is tried.
+      const signs: number[] = learnedSign != null ? [learnedSign] : [1, -1];
+      for (const sign of signs) {
+        const centerOffsetIn = fridge.centerOffsetIn + sign * option.panelDeltaIn;
+        const retry = runAutoDesignLayoutOnce({ ...args, input: { ...args.input, refrigerator: { ...fridge, centerOffsetIn } } });
+        if (!retry.ok) continue;
+        const after = fridgePanelCornerStates(retry.placed, args.room).find((entry) => entry.vertexKey === state.vertexKey);
+        if (after && learnedSign == null && Math.abs(Math.abs(after.panelGapIn - state.panelGapIn) - Math.abs(option.panelDeltaIn)) <= 0.1) {
+          learnedSign = sign * Math.sign(after.panelGapIn - state.panelGapIn) * Math.sign(option.panelDeltaIn);
+        }
+        if (!after || Math.abs((after.panelGapIn - state.panelGapIn) - option.panelDeltaIn) > 0.1) continue;
+        if (openCorner(retry.reviewFindings) > openCorner(first.reviewFindings)) break;
+        if (newFindingCodes(first.reviewFindings, retry.reviewFindings).length > 0) break;
+        if (otherCornerSignature(retry.placed, args.room, after).join("\n") !== before.join("\n")) break;
+        const beforePiece = Number(state.basePiece!.width) || 0;
+        if (option.goal === "cabinet" && !after.baseCabinetBesidePanel) break;
+        if (option.goal === "smaller-filler") {
+          const afterPiece = after.basePiece ? Number(after.basePiece.width) || 0 : Infinity;
+          if (!(afterPiece < beforePiece - 1 / 16)) break;
+        }
+        const moved = Math.abs(option.panelDeltaIn);
+        const what = option.goal === "cabinet"
+          ? `so ${after.baseCabinetBesidePanel!.masterCode} fits beside the panel and the base corner closes cabinet-to-cabinet with no filler against the panel`
+          : `so the base filler against the panel shrinks from ${beforePiece.toFixed(2)}″ to ${(Number(after.basePiece!.width) || 0).toFixed(2)}″`;
+        retry.notes.push(`The refrigerator slid ${moved.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}″ ${option.panelDeltaIn > 0 ? "away from" : "toward"} the 45° corner of ${state.wallId} and ${state.neighborWallId} (inside the ${capIn}″ wiggle room) ${what}. Cabinets on ${state.neighborWallId} cannot change that board: the 45° miter line is fixed by the corner.`);
+        return retry;
+      }
+    }
+  }
+  return first;
 }
