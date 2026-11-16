@@ -36,7 +36,8 @@ import {
 } from "./autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
-import { repairMissingAngledWallFillers } from "./angledWallFiller";
+import { closeDishwasherPanelAngledCorners, repairMissingAngledWallFillers } from "./angledWallFiller";
+import { syncDishwasherPanels, type DishwasherPanelStock } from "./dishwasherPanelRule";
 import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
@@ -727,6 +728,13 @@ export function runAutoDesignLayout(args: {
    * as a real placed catalog row so it is drawn and billed.
    */
   panelCatalog?: readonly DesignCabinet[];
+  /**
+   * Selected-line price of a panel row (the Designer's price list). With it the
+   * build only seats a priced dishwasher panel and names a line without one;
+   * without it (harnesses) the catalog row is used and the Designer's own sync
+   * checks the price once the plan loads.
+   */
+  dishwasherPanelPriceFor?: (row: DesignCabinet) => number | null;
   styleId: number | null;
   makeUid: () => string;
   stoveMasterCode?: string;
@@ -2288,6 +2296,63 @@ export function runAutoDesignLayout(args: {
   // its own 45° hold) so the pair is cut from real stock. This runs after the
   // last upper re-match so that match cannot reopen the corner. Whatever still
   // cannot close is named on the report instead of being left silently open.
+  // Dishwasher panel (Tom, Nov 16 2026, 8:35 / 8:56 AM CT): every exposed
+  // dishwasher side gets the line's own DWR panel inside the build, so the
+  // layout, the report and the 45° corner passes below all see it. At a 45°
+  // turn the next wall's cabinets slide away from the corner by up to the
+  // wiggle room (the kitchen-rule jog, 3″) to make room; past that the panel is
+  // refused with a named finding. The Designer's later sync re-derives the
+  // same panel (same uid and spot) and leaves it alone.
+  {
+    const panelRows = new Map<number | string, DesignCabinet>();
+    for (const row of [...(args.panelCatalog ?? []), ...args.fillers]) {
+      if (row && !panelRows.has(row.id ?? row.masterCode)) panelRows.set(row.id ?? row.masterCode, row);
+    }
+    const panelStock: DishwasherPanelStock[] = Array.from(panelRows.values()).map((row) => ({
+      id: row.id,
+      masterCode: row.masterCode,
+      description: row.description,
+      category: row.category ?? null,
+      subCategory: row.subCategory ?? null,
+      width: row.width,
+      height: row.height,
+      depth: row.depth,
+      price: args.dishwasherPanelPriceFor ? args.dishwasherPanelPriceFor(row) : null,
+    }));
+    const dishwasherPanels = syncDishwasherPanels({
+      placed: working,
+      room,
+      catalog: panelStock,
+      angledShiftLimitIn: autoDesignShiftLimitIn("dishwasher-panel"),
+      requirePricedStock: Boolean(args.dishwasherPanelPriceFor),
+    });
+    const beforePanels = new Map(working.map((item) => [item.uid, item]));
+    working = dishwasherPanels.placed;
+    // A sink base that slid carries its basin (and faucet) with it.
+    if (dishwasherPanels.moves?.length) {
+      sinks = sinks.map((sink) => {
+        const moved = sink.cabinetUid ? working.find((item) => item.uid === sink.cabinetUid) : null;
+        const before = sink.cabinetUid ? beforePanels.get(sink.cabinetUid) : null;
+        if (!moved || !before || !dishwasherPanels.moves!.some((move) => move.uid === moved.uid)) return sink;
+        return { ...sink, x: sink.x + (moved.x - before.x), y: sink.y + (moved.y - before.y) };
+      });
+    }
+    for (const move of dishwasherPanels.moves ?? []) {
+      notes.push(`${move.masterCode} on ${move.wallId} slid ${formatEighthInches(move.deltaIn)} away from the 45° corner so the dishwasher panel fits (wiggle room).`);
+    }
+    for (const warning of dishwasherPanels.warnings) {
+      reviewFindings.push({
+        ruleId: "dishwasher-panel-run-end-or-turn",
+        code: warning.id.startsWith("missing-price") ? "dishwasher-panel-sku-missing" : "dishwasher-panel-no-room",
+        severity: "warning",
+        title: warning.id.startsWith("missing-price") ? "No dishwasher panel for this line" : "Dishwasher panel could not be seated",
+        detail: warning.message,
+        cabinetUid: warning.cabinetUid,
+        cabinetCode: working.find((item) => item.uid === warning.cabinetUid)?.masterCode ?? null,
+      });
+    }
+    working = closeDishwasherPanelAngledCorners(working, room, catalogFillers, makeUid, args.styleId).placed;
+  }
   const angledUppers = closeAutoDesignAngledUpperCorners({
     placed: working, room, wallCatalog: args.wallCatalog, fillers: catalogFillers,
   });

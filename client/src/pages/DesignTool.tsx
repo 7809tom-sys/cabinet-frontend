@@ -3499,6 +3499,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // Peninsula Wizard and imports stamp Color 1. Auto Design does not: it reads
   // `styleIdRef`, the door the designer currently has selected.
   const designStyleIdRef = useRef<number | null>(null);
+  // Selected-line panel price for the Auto Design dishwasher-panel step; null
+  // until the price list has loaded (the build then defers the price check to
+  // the Designer's own dishwasher-panel sync).
+  const dishwasherPanelPriceRef = useRef<((cabinetId: number) => number | null) | null>(null);
   const styleBRef = useRef<number | null>(null);
   // Default to Homeowner for guests; overridden by user.pricingTier on login.
   const [tier, setTier] = useState<PricingTier>("Homeowner");
@@ -4896,6 +4900,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // The line's own end/finished panel stock: the build finishes the outside
       // of the base cabinet on each side of the range with a real placed panel.
       panelCatalog: autoPanelCatalog,
+      dishwasherPanelPriceFor: dishwasherPanelPriceRef.current
+        ? (row) => dishwasherPanelPriceRef.current?.(row.id) ?? null
+        : undefined,
       preExistingPlacements,
       anchoredRefrigerator,
       // The door selected in the designer, not Color 1 and not a second finish.
@@ -5957,6 +5964,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     return m;
   }, [priceRows, tier]);
+  dishwasherPanelPriceRef.current = priceRowsFetched
+    ? (cabinetId: number) => (designStyleId != null ? priceMap.get(`${cabinetId}:${designStyleId}`) ?? null : null)
+    : null;
 
   // Resolve a placed item's unit price at its EFFECTIVE finish. Closet parts
   // carry id=0 (skipped by the kitchen pricing engine) so they price from the

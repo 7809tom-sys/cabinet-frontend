@@ -26,6 +26,7 @@
 import {
   STD,
   cabinetCollisionDetail,
+  cabinetPlanBodiesIntersect,
   cabinetPlacementCollisionDetail,
   cabinetWall,
   DISHWASHER_FORTY_FIVE_PANEL_REASON,
@@ -38,6 +39,7 @@ import {
   wallRunJoinAt,
   wallRunOffset,
   wallRunSpan,
+  wallLength,
   type PlacedCabinet,
   type RoomData,
   type WallRunFrame,
@@ -74,9 +76,21 @@ export type DishwasherPanelWarning = {
   message: string;
 };
 
+/** A cabinet the 45° panel step slid along its own wall to make room for the panel. */
+export type DishwasherPanelMove = {
+  uid: string;
+  masterCode: string;
+  wallId: string;
+  /** Distance moved away from the shared vertex, in inches. */
+  deltaIn: number;
+  panelUid: string;
+};
+
 export type DishwasherPanelPlan = {
   placed: PlacedCabinet[];
   warnings: DishwasherPanelWarning[];
+  /** Cabinets slid to seat a panel at a 45° turn (Auto Design only). */
+  moves?: DishwasherPanelMove[];
 };
 
 const EPS = 1 / 16;
@@ -85,12 +99,144 @@ export const DISHWASHER_PANEL_DEFAULT_WIDTH_IN = 3;
 /** Wider than this and the piece is no longer a dishwasher return panel. */
 export const DISHWASHER_PANEL_MAX_WIDTH_IN = 6;
 /**
- * Depth a neighbouring cabinet body may reach into the fitted 45° corner slot
- * before it counts as an obstruction. At a 45° inside corner the cabinet bodies
- * legitimately reach up to three inches past the mandatory hold, so a shallow
- * contact with the finish board is the fitted condition, not an overlap.
+ * Tom, Nov 16 2026 (8:56 AM CT): at a 45° turn the panel is checked against the
+ * real rotated cabinet bodies (not their screen boxes, and with no 0.5″ contact
+ * allowance). When it would bump into the next wall's cabinet, Auto Design first
+ * slides that cabinet away from the corner by up to the wiggle room
+ * (`angledShiftLimitIn`, the kitchen-rule jog of 3″) and only then gives up
+ * with a visible warning.
  */
-const FITTED_ANGLED_CONTACT_IN = 0.5;
+const ANGLED_SHIFT_STEP_IN = 1 / 8;
+/**
+ * The Designer never moves the shopper's cabinets, so for a saved plan it keeps
+ * its old allowance: a neighbour whose screen box reaches no more than this far
+ * into the 45° slot is the fitted condition. A panel is refused there only when
+ * the real bodies also intersect, so a corner Auto Design already cleared (by
+ * sliding the next cabinet) is never taken apart again.
+ */
+const DESIGNER_FITTED_ANGLED_CONTACT_IN = 0.5;
+
+/** Floor-level bodies a base-height panel can physically run into. */
+function isFloorBody(item: PlacedCabinet): boolean {
+  return item.placement === "base" || item.placement === "appliance" || item.placement === "tall";
+}
+
+/** A 45° miter board fitted against this panel (it is meant to touch it). */
+function isPanelMiterPeer(item: PlacedCabinet, panelUid: string): boolean {
+  return item.fillerTransitionKind === "front-miter-pair"
+    && (item.fillerTransitionNeighborUid === panelUid || item.fillerForCabinetUid === panelUid);
+}
+
+function shiftedAlongWall(item: PlacedCabinet, wallId: string, deltaAlong: number, room: RoomData): PlacedCabinet {
+  const start = wallRunOffset(item, wallId, room);
+  const before = wallPlacementAt(start, item.width, item.depth, wallId as WallSide, room, item.peninsulaSide ?? null, false);
+  const after = wallPlacementAt(start + deltaAlong, item.width, item.depth, wallId as WallSide, room, item.peninsulaSide ?? null, false);
+  return {
+    ...item,
+    // Keep any forward offset exactly as it was.
+    x: Number(item.x) + (after.x - before.x),
+    y: Number(item.y) + (after.y - before.y),
+    rotation: after.rotation,
+    wallOffset: after.wallOffset ?? start + deltaAlong,
+  };
+}
+
+/**
+ * Slide the cabinets that block a 45° panel away from the shared vertex, along
+ * their own wall, by the smallest amount (⅛″ steps, at most `limitIn`) that
+ * clears the panel. Pieces butted behind them move with them, and an upper
+ * that matches a moved base moves with it so uppers keep matching the bases.
+ * A stale 45° miter board on a moved cabinet is dropped; the build's final
+ * miter repair cuts it again against the new faces.
+ */
+function slideBlockersForPanel(input: {
+  panel: PlacedCabinet;
+  blockers: readonly PlacedCabinet[];
+  occupants: readonly PlacedCabinet[];
+  room: RoomData;
+  vertex: { x: number; y: number };
+  limitIn: number;
+}): { next: PlacedCabinet[]; moved: DishwasherPanelMove[]; deltaIn: number } | null {
+  const { panel, blockers, occupants, room, vertex, limitIn } = input;
+  if (!(limitIn > 0) || blockers.length === 0) return null;
+  const frames = roomWallRunFrames(room);
+  const wallIds = new Set(blockers.map((item) => cabinetWall(item, room)));
+  if (wallIds.size !== 1) return null;
+  const wallId = Array.from(wallIds)[0];
+  if (!wallId || wallId === panel.wallId) return null;
+  const frame = frames.find((candidate) => candidate.id === wallId);
+  if (!frame) return null;
+  const atStart = Math.hypot(frame.start.x - vertex.x, frame.start.y - vertex.y) <= 0.5;
+  const atEnd = Math.hypot(frame.end.x - vertex.x, frame.end.y - vertex.y) <= 0.5;
+  if (atStart === atEnd) return null;
+  const direction = atStart ? 1 : -1;
+  const wallLen = wallLength(wallId as WallSide, room);
+  const span = (item: PlacedCabinet) => {
+    const start = wallRunOffset(item, wallId, room);
+    return { start, end: start + wallRunSpan(item, wallId, room) };
+  };
+  const onWall = occupants.filter((item) => item.uid !== panel.uid && cabinetWall(item, room) === wallId);
+  const isMiter = (item: PlacedCabinet) => item.fillerTransitionKind === "front-miter-pair";
+
+  for (let step = 1; step * ANGLED_SHIFT_STEP_IN <= limitIn + EPS; step++) {
+    const delta = step * ANGLED_SHIFT_STEP_IN;
+    // Floor chain: the blockers, then anything butted behind them that the
+    // shift would push into.
+    const chain = new Map<string, PlacedCabinet>();
+    const dropped = new Set<string>();
+    for (const item of blockers) (isMiter(item) ? dropped.add(item.uid) : chain.set(item.uid, item));
+    let grew = true;
+    while (grew) {
+      grew = false;
+      const moving = Array.from(chain.values()).map(span);
+      for (const item of onWall) {
+        if (chain.has(item.uid) || dropped.has(item.uid) || !isFloorBody(item)) continue;
+        const own = span(item);
+        const pushed = moving.some((run) => (direction > 0
+          ? own.start >= run.end - EPS && own.start < run.end + delta - EPS
+          : own.end <= run.start + EPS && own.end > run.start - delta + EPS));
+        if (!pushed) continue;
+        if (isMiter(item)) dropped.add(item.uid);
+        else chain.set(item.uid, item);
+        grew = true;
+      }
+    }
+    if (chain.size === 0) return null;
+    // Uppers that match a moved base move with it.
+    const movedBases = Array.from(chain.values()).filter((item) => item.placement === "base").map(span);
+    for (const item of onWall) {
+      if (item.placement !== "wall" || isMiter(item) || chain.has(item.uid)) continue;
+      const own = span(item);
+      if (movedBases.some((run) => Math.abs(run.start - own.start) <= EPS && Math.abs(run.end - own.end) <= EPS)) chain.set(item.uid, item);
+    }
+    // A miter board on anything that moves is cut again later.
+    for (const item of occupants) {
+      if (!isMiter(item)) continue;
+      if (chain.has(item.fillerForCabinetUid ?? "") || chain.has(item.fillerTransitionNeighborUid ?? "")) dropped.add(item.uid);
+    }
+    const shifted = Array.from(chain.values()).map((item) => shiftedAlongWall(item, wallId, direction * delta, room));
+    const inside = shifted.every((item) => {
+      const own = span(item);
+      return own.start >= -EPS && own.end <= wallLen + EPS;
+    });
+    if (!inside) continue;
+    const rest = occupants.filter((item) => !chain.has(item.uid) && !dropped.has(item.uid) && item.uid !== panel.uid);
+    const clearOfPanel = shifted.every((item) => !isFloorBody(item) || !cabinetPlanBodiesIntersect(panel, item));
+    if (!clearOfPanel) continue;
+    const clearOfRest = shifted.every((item) => cabinetPlacementCollisionDetail(item, [...rest, ...shifted.filter((other) => other.uid !== item.uid)], room) == null);
+    if (!clearOfRest) continue;
+    const byUid = new Map(shifted.map((item) => [item.uid, item]));
+    const next = occupants
+      .filter((item) => !dropped.has(item.uid))
+      .map((item) => byUid.get(item.uid) ?? item);
+    return {
+      next,
+      deltaIn: delta,
+      moved: shifted.map((item) => ({ uid: item.uid, masterCode: item.masterCode, wallId, deltaIn: delta, panelUid: panel.uid })),
+    };
+  }
+  return null;
+}
 
 function codeKey(value: string | null | undefined): string {
   return String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -265,8 +411,23 @@ export function syncDishwasherPanels(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
   catalog: readonly DishwasherPanelStock[];
+  /**
+   * Auto Design only: how far (inches) the next wall's cabinets may slide away
+   * from a 45° corner to make room for the panel. The Designer never moves the
+   * shopper's cabinets, so it leaves this at 0.
+   */
+  angledShiftLimitIn?: number;
+  /**
+   * False when the caller has no price list yet (an Auto Design harness): the
+   * catalog row is still required, and the Designer's own sync checks the price
+   * once the plan is loaded. Defaults to true.
+   */
+  requirePricedStock?: boolean;
 }): DishwasherPanelPlan {
   const { placed, room, catalog } = input;
+  const shiftLimitIn = Math.max(0, input.angledShiftLimitIn ?? 0);
+  const requirePriced = input.requirePricedStock !== false;
+  const moves: DishwasherPanelMove[] = [];
   const warnings: DishwasherPanelWarning[] = [];
   const hadOwnPanels = placed.some(isDishwasherPanelPlacement);
   const withoutPanels = placed.filter((item) => !isDishwasherPanelPlacement(item));
@@ -281,24 +442,22 @@ export function syncDishwasherPanels(input: {
 
   const stock = dishwasherPanelStock(catalog);
   const width = stock ? panelWidthIn(stock) : DISHWASHER_PANEL_DEFAULT_WIDTH_IN;
-  const occupants: PlacedCabinet[] = [...withoutPanels];
+  let occupants: PlacedCabinet[] = [...withoutPanels];
   const panels: PlacedCabinet[] = [];
 
   /**
-   * Collision for a thin finish board. Cabinet bodies reach up to three inches
-   * past the mandatory hold at a 45° join (design.ts
-   * `FITTED_FORTY_FIVE_CORNER_FILLER_MAX_IN`), so the angled slot tolerates that
-   * fitted contact. Every other end uses the normal placement collision, and a
-   * deeper angled conflict still refuses the panel and warns.
+   * At a 45° turn the panel is tested against the real rotated floor bodies
+   * (flush contact is fine), never their screen boxes, and the miter board cut
+   * against this panel is meant to touch it. Every other end uses the normal
+   * placement collision.
    */
-  const collides = (panel: PlacedCabinet, atAngledTurn: boolean): boolean => {
-    if (!atAngledTurn) return cabinetPlacementCollisionDetail(panel, occupants, room) != null;
-    return occupants.some((other) => {
-      if (other.uid === panel.uid) return false;
-      const detail = cabinetCollisionDetail(panel, [other]);
-      return detail != null && detail.penetration > FITTED_ANGLED_CONTACT_IN;
-    });
-  };
+  const angledBlockers = (panel: PlacedCabinet): PlacedCabinet[] => occupants.filter((other) => {
+    if (other.uid === panel.uid || !isFloorBody(other) || isPanelMiterPeer(other, panel.uid)) return false;
+    if (!cabinetPlanBodiesIntersect(panel, other)) return false;
+    if (shiftLimitIn > 0) return true;
+    const detail = cabinetCollisionDetail(panel, [other]);
+    return detail != null && detail.penetration > DESIGNER_FITTED_ANGLED_CONTACT_IN;
+  });
 
   for (const dishwasher of dishwashers) {
     const wallId = cabinetWall(dishwasher, room) as string | null;
@@ -347,7 +506,7 @@ export function syncDishwasherPanels(input: {
       const along = edge === "end" ? own.end : own.start - width;
       if (along < -EPS || along + width > frame.length + EPS) continue;
 
-      if (!stock || stock.price == null || stock.price <= 0) {
+      if (!stock || (requirePriced && (stock.price == null || stock.price <= 0))) {
         warnings.push({
           id: `missing-price:dw-panel:${dishwasher.uid}:${edge}`,
           cabinetUid: dishwasher.uid,
@@ -389,7 +548,27 @@ export function syncDishwasherPanels(input: {
         autoPlacedSide: edge,
         islandFace: dishwasher.islandFace ?? null,
       };
-      if (collides(panel, turn === 45)) {
+      if (turn === 45) {
+        const blockers = angledBlockers(panel);
+        if (blockers.length > 0) {
+          const vertex = edge === "end" ? frame.end : frame.start;
+          const slid = slideBlockersForPanel({ panel, blockers, occupants, room, vertex, limitIn: shiftLimitIn });
+          if (!slid) {
+            const names = Array.from(new Set(blockers.map((item) => item.masterCode))).join(", ");
+            warnings.push({
+              id: `no-room:dw-panel:${dishwasher.uid}:${edge}`,
+              cabinetUid: dishwasher.uid,
+              reason,
+              message: shiftLimitIn > 0
+                ? `${dishwasher.masterCode} ends at the 45° corner and needs a ${width}" dishwasher panel (DWR), but ${names} on the next wall could not slide out of the way within the ${shiftLimitIn}" wiggle room.`
+                : `${dishwasher.masterCode} ends here and needs a ${width}" dishwasher panel (DWR) that has no clear ${width}" of run.`,
+            });
+            continue;
+          }
+          occupants = slid.next;
+          moves.push(...slid.moved);
+        }
+      } else if (cabinetPlacementCollisionDetail(panel, occupants, room) != null) {
         warnings.push({
           id: `no-room:dw-panel:${dishwasher.uid}:${edge}`,
           cabinetUid: dishwasher.uid,
@@ -404,7 +583,7 @@ export function syncDishwasherPanels(input: {
   }
 
   if (panels.length === 0) return unchanged();
-  const next = [...withoutPanels, ...panels];
-  if (sameSignature(next, placed)) return { placed: placed as PlacedCabinet[], warnings };
-  return { placed: next, warnings };
+  const next = [...occupants.filter((item) => !panels.some((panel) => panel.uid === item.uid)), ...panels];
+  if (moves.length === 0 && sameSignature(next, placed)) return { placed: placed as PlacedCabinet[], warnings };
+  return { placed: next, warnings, ...(moves.length ? { moves } : {}) };
 }
