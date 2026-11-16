@@ -25,7 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { affiliateDashboardLinks, affiliateStorefrontPath, affiliateStorefrontUrl, copyAffiliateStorefrontLink } from "@/lib/affiliateStorefrontUrl";
 import { affiliateGuidePath } from "@/lib/affiliateGuides";
-import { affiliateAdminRowLinks } from "@/lib/affiliateAdminRowLinks";
+import { affiliateAdminCredentialLinks, affiliateAdminRowLinks } from "@/lib/affiliateAdminRowLinks";
 import {
   AFFILIATE_STOREFRONT_TEMPLATES,
   type AffiliateStorefrontTemplate,
@@ -117,11 +117,20 @@ export default function AffiliatesAdmin() {
         affiliates.map((a) => (
           <Card key={a.id} id={`affiliate-row-${a.id}`}>
             <CardContent className="pt-6 space-y-3">
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+              <div
+                className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 cursor-pointer"
+                onClick={(event) => {
+                  const target = event.target;
+                  if (target instanceof Element && target.closest("a, button, input, textarea, select, [role='combobox']")) return;
+                  window.location.assign(affiliateAdminRowLinks(a.id).portalUrl);
+                }}
+              >
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Store className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold">{a.storeName}</span>
+                    <a href={affiliateAdminRowLinks(a.id).portalUrl} className="font-semibold hover:underline">
+                      {a.storeName}
+                    </a>
                     <Badge variant={statusVariant(a.status)} className="capitalize">{a.status}</Badge>
                     <Badge variant="outline" className="font-mono">{a.referralCode}</Badge>
                     <Badge variant="secondary">{(Number(a.commissionRate) * 100).toFixed(1)}%</Badge>
@@ -201,7 +210,7 @@ export default function AffiliatesAdmin() {
                   >
                     <Copy className="h-3.5 w-3.5" /> Copy storefront link
                   </Button>
-                  <a href={affiliateAdminRowLinks(a.id).portalUrl} target="_blank" rel="noreferrer">
+                  <a href={affiliateAdminRowLinks(a.id).portalUrl}>
                     <Button variant="outline" size="sm" className="w-full gap-1.5">
                       <Store className="h-3.5 w-3.5" /> Affiliate Portal
                     </Button>
@@ -330,7 +339,7 @@ function AffiliateDetailsPanel({ affiliate: a, origin }: { affiliate: AffiliateI
   const utils = trpc.useUtils();
   const storeUrl = affiliateStorefrontUrl(a.slug, origin);
   const refLink = `${storeUrl}/order?ref=${a.referralCode}`;
-  const loginUrl = `${origin}/affiliate`;
+  const credentials = affiliateAdminCredentialLinks(a.id, origin);
   const [activeTab, setActiveTab] = useState<"credentials" | "template" | "referrals" | "earnings" | "crm" | "catalog" | "storefront" | "analytics" | "pricing" | "marketing" | "w9">("credentials");
 
   const setTemplate = trpc.affiliates.adminUpdate.useMutation({
@@ -371,21 +380,22 @@ function AffiliateDetailsPanel({ affiliate: a, origin }: { affiliate: AffiliateI
         {activeTab === "credentials" && (
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Affiliate Credentials</p>
-            {[
-              { label: "Storefront URL", value: storeUrl },
+            {([
+              { label: "Storefront URL", value: storeUrl, href: storeUrl, newTab: true },
               { label: "Referral Link", value: refLink },
               { label: "Referral Code", value: a.referralCode },
-              { label: "Login Portal", value: loginUrl },
+              { label: "Login Portal", value: credentials.portalUrl, href: credentials.portalUrl },
+              { label: "Affiliate sign-in link", value: credentials.signInUrl, href: credentials.signInUrl, newTab: true },
               { label: "Email", value: a.email },
-            ].map(({ label, value }) => (
+            ] as Array<{ label: string; value: string; href?: string; newTab?: boolean }>).map(({ label, value, href, newTab }) => (
               <div key={label} className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
+                <span className="text-xs text-muted-foreground w-40 shrink-0">{label}</span>
                 <code className="flex-1 text-xs bg-muted rounded px-2 py-1 truncate">{value}</code>
                 <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => copyText(value, label)}>
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
-                {(label === "Storefront URL" || label === "Login Portal") && (
-                  <a href={value} target="_blank" rel="noreferrer">
+                {href && (
+                  <a href={href} {...(newTab ? { target: "_blank", rel: "noreferrer" } : {})}>
                     <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
                       <ExternalLink className="h-3.5 w-3.5" />
                     </Button>
@@ -397,7 +407,7 @@ function AffiliateDetailsPanel({ affiliate: a, origin }: { affiliate: AffiliateI
               <Button
                 variant="outline" size="sm" className="gap-1.5"
                 onClick={() => {
-                  const all = `Storefront: ${storeUrl}\nReferral link: ${refLink}\nReferral code: ${a.referralCode}\nLogin: ${loginUrl}\nEmail: ${a.email}`;
+                  const all = `Storefront: ${storeUrl}\nReferral link: ${refLink}\nReferral code: ${a.referralCode}\nLogin Portal: ${credentials.portalUrl}\nAffiliate sign-in link: ${credentials.signInUrl}\nEmail: ${a.email}`;
                   copyText(all, "All credentials");
                 }}
               >
