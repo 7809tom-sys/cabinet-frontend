@@ -4842,6 +4842,9 @@ describe("accessory placement (item 5: accessories into the drawing)", () => {
 describe("dishwasher/base end panel placement", () => {
   it("identifies dishwasher end panels without misclassifying decorative or refrigerator panels", () => {
     expect(isDishwasherPanel({ masterCode: "DWEP", description: "Dishwasher End Panel" })).toBe(true);
+    expect(isDishwasherPanel({ masterCode: "BEP(DWR)3" })).toBe(true);
+    expect(isDishwasherPanel({ masterCode: "DWR3" })).toBe(true);
+    expect(isDishwasherPanel({ masterCode: "DW3" })).toBe(true);
     expect(isDishwasherPanel({ masterCode: "BDEP", description: "Base Decorative End Panel" })).toBe(false);
     expect(isDishwasherPanel({ masterCode: "REPV2496", description: "Refrigerator End Panel" })).toBe(false);
   });

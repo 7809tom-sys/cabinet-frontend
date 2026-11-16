@@ -44,6 +44,7 @@ import {
   type WallSide,
 } from "./design";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
+import { isDishwasherPanelAliasCode } from "./dishwasherPanelAliases";
 
 /** Panel-stock fields this rule needs; the Designer passes its accessory catalog. */
 export type DishwasherPanelStock = {
@@ -110,6 +111,8 @@ export function isDishwasherPanelPlacement(item: Pick<PlacedCabinet, "autoPlaced
 /** A floor-standing dishwasher: base-height appliance under the finished counter. */
 export function isDishwasherItem(item: PlacedCabinet): boolean {
   if (isPanelItem(item)) return false;
+  // DW3 is a panel alias, not a dishwasher (the appliance codes are DW-24 and similar).
+  if (isDishwasherPanelAliasCode(item.masterCode)) return false;
   const code = codeKey(item.masterCode);
   const text = `${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
   const named = /^DW(?:[-_]?\d|$)/.test(code) || /\bdishwasher\b/.test(text);
@@ -140,6 +143,7 @@ export function isDishwasherPanelStock(item: {
   const code = codeKey(item.masterCode);
   const text = `${item.category ?? ""} ${item.subCategory ?? ""} ${item.description ?? ""}`.toLowerCase();
   if (/refrigerator|fridge|\bwall\b|\btall\b/.test(text)) return false;
+  if (isDishwasherPanelAliasCode(item.masterCode)) return true;
   return /DWR/i.test(code)
     || /dishwasher\s*(?:return|end|side)?\s*panel/.test(text)
     || /^(?:BP|BEP)\d/.test(code);
@@ -156,9 +160,15 @@ function panelWidthIn(stock: DishwasherPanelStock): number {
 export function dishwasherPanelStock(catalog: readonly DishwasherPanelStock[]): DishwasherPanelStock | null {
   const usable = catalog.filter(isDishwasherPanelStock);
   if (usable.length === 0) return null;
+  const priced = (item: DishwasherPanelStock) => item.price != null && item.price > 0;
+  // A line that sells more than one alias keeps the priced one it actually offers
+  // (DWR3 on Designer Warehouse, BEP(DWR)3 on Ashford). An unpriced alias never
+  // hides a priced sibling.
+  const pricedAlias = usable.find((item) => isDishwasherPanelAliasCode(item.masterCode) && priced(item));
+  if (pricedAlias) return pricedAlias;
   // Prefer the printed DWR family, then any other priced board, then anything.
   const isDwr = (item: DishwasherPanelStock) => /dwr/i.test(codeKey(item.masterCode));
-  return [...usable.filter(isDwr), ...usable.filter((item) => !isDwr(item) && item.price != null && item.price > 0), ...usable][0] ?? null;
+  return [...usable.filter(isDwr), ...usable.filter((item) => !isDwr(item) && priced(item)), ...usable][0] ?? null;
 }
 
 type RunEdge = "start" | "end";
@@ -236,7 +246,7 @@ function edgeAlreadyFinished(
 ): boolean {
   const own = runSpanOf(dishwasher, wallId, room);
   return placed.some((item) => {
-    if (!isPanelItem(item) || isDishwasherPanelPlacement(item)) return false;
+    if ((!isPanelItem(item) && !isDishwasherPanelAliasCode(item.masterCode)) || isDishwasherPanelPlacement(item)) return false;
     if (cabinetWall(item, room) !== wallId) return false;
     const span = runSpanOf(item, wallId, room);
     const touching = edge === "end"

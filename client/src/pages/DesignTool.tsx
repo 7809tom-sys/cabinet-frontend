@@ -169,6 +169,7 @@ import { withChosenProfiles, useChosenDoorProfiles } from "@/lib/useChosenDoorPr
 import { isAefFramelessStyleCode } from "@shared/aefFramelessSpecs";
 import { catalogItemToExposedPanelStock, sameExposedPanelWarnings, syncExposedSidePanels, type ExposedPanelStock, type ExposedPanelWarning } from "@/lib/exposedSidePanels";
 import { syncDishwasherPanels, type DishwasherPanelStock, type DishwasherPanelWarning } from "@/lib/dishwasherPanelRule";
+import { isDishwasherPanelAliasCode, resolveDishwasherPanelAliasPrice } from "@/lib/dishwasherPanelAliases";
 import { countertopToastVisible, COUNTERTOP_TOAST_TIMEOUT_MS, useDebouncedValue, stablePricePairKey } from "@/lib/designerPricingStability";
 import { ColorStyleQuickPicker } from "@/components/design/ColorStyleQuickPicker";
 import { ApproveDoorButton } from "@/components/admin/ApproveDoorButton";
@@ -5849,6 +5850,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // prospective rows, a physically required filler could never pass the
 	    // positive-price gate until it had somehow already been added.
 	    catalogFillers.filter(isCatalogFiller).forEach((filler) => push(filler.id, designStyleId, filler.masterCode));
+    // DWR3, DW3, and BEP(DWR)3 share a price. Pre-fetch every alias the line
+    // actually lists so a saved DWR3 can still resolve to a priced BEP(DWR)3
+    // (and the other way around) without changing the pricing key on placement.
+    autoPanelCatalog.forEach((item) => {
+      if (!isDishwasherPanelAliasCode(item.masterCode)) return;
+      push(item.id, designStyleId, item.masterCode);
+    });
+    placed.forEach((cabinet) => {
+      if (!isDishwasherPanelAliasCode(cabinet.masterCode)) return;
+      const sid = pricingStyleIdFor(cabinet) ?? designStyleId;
+      autoPanelCatalog.forEach((item) => {
+        if (isDishwasherPanelAliasCode(item.masterCode)) push(item.id, sid, item.masterCode);
+      });
+    });
     // Panel sheets are priced before they are placed so adding an auto panel
     // does not change the pricing key and refetch in a loop.
     const stylesById = new Map((doorStyles ?? []).map((style) => [style.id, style as DoorStyleEndPanelInput & { id: number }]));
@@ -5979,9 +5994,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         }
       }
       const v = priceMap.get(`${pricingIdForPlacedCabinet(p)}:${sid}`);
-      return v ?? null;
+      if (v != null) return v;
+      if (isDishwasherPanelAliasCode(p.masterCode)) {
+        return resolveDishwasherPanelAliasPrice(
+          { id: pricingIdForPlacedCabinet(p), masterCode: p.masterCode },
+          sid,
+          priceMap,
+          autoPanelCatalog,
+        );
+      }
+      return null;
     },
-	    [priceMap, pricingIdForPlacedCabinet, pricingStyleIdFor, designStyleId, glassDoorAddonCodeFor, glassDoorCatalogProduct]
+	    [priceMap, pricingIdForPlacedCabinet, pricingStyleIdFor, designStyleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, autoPanelCatalog]
 	  );
   // Frameless and Hickory lines get a 3/4" panel on an open run end, a window
   // side, an island back, or a wall cabinet facing a range. Other lines keep a
@@ -6034,7 +6058,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     width: item.width,
     height: item.height,
     depth: item.depth,
-    price: designStyleId != null ? priceMap.get(`${item.id}:${designStyleId}`) ?? null : null,
+    price: isDishwasherPanelAliasCode(item.masterCode)
+      ? resolveDishwasherPanelAliasPrice(
+        { id: item.id, masterCode: item.masterCode },
+        designStyleId,
+        priceMap,
+        autoPanelCatalog,
+      )
+      : (designStyleId != null ? priceMap.get(`${item.id}:${designStyleId}`) ?? null : null),
   })), [autoPanelCatalog, priceMap, designStyleId]);
   useEffect(() => {
     const current = placedRef.current;

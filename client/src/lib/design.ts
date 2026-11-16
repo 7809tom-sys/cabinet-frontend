@@ -6,6 +6,7 @@ import { freestandingCountertopSurfaces, isFreestandingBase } from "@/lib/freest
 import { apronFrontRemovedArea, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
 import { farmhouseSinkApronPastCarcassIn } from "@/lib/farmhouseSinkBaseFace";
 import { kitchenRuleNumber } from "@/lib/kitchenRuleParameters";
+import { isDishwasherPanelAliasCode } from "@/lib/dishwasherPanelAliases";
 import {
   REFRIGERATOR_PANEL_LIMIT_EPSILON_IN,
   clipCountertopSpan,
@@ -82,6 +83,7 @@ export function clampFillerExtensionIn(depth: number, placement: string | null |
 // True for finished end panels, decorative panels, refrigerator/dishwasher
 // skins, and door panels — all of which are 3/4" thick flat stock.
 export function isPanelItem(c: { description?: string | null; masterCode?: string | null; subCategory?: string | null }): boolean {
+  if (isDishwasherPanelAliasCode(c.masterCode)) return true;
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""} ${c.masterCode ?? ""}`.toLowerCase();
   // Match "panel"/"skin" but not unrelated words like "panelized".
   return /\bpanel\b|\bskin\b|end panel|dishwasher panel|refrigerator panel|decorative panel/.test(hay);
@@ -95,6 +97,7 @@ export function isDishwasherPanel(c: {
 }): boolean {
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""} ${c.masterCode ?? ""}`.toLowerCase();
   if (/refrigerator|decorative/.test(hay)) return false;
+  if (isDishwasherPanelAliasCode(c.masterCode)) return true;
   const code = `${c.masterCode ?? ""}`.replace(/[^a-z0-9]/gi, "").toUpperCase();
   return /^DW(?:EP|PANEL)$/.test(code)
     || /dishwasher\s*(?:end\s*)?panel|\bdw\s*[-_ ]?(?:end\s*)?panel\b|\bbase\s+end\s+panel\b/.test(hay);

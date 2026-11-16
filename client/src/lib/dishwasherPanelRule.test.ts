@@ -103,6 +103,8 @@ describe("dishwasher panel stock", () => {
   it("recognises the DWR dishwasher panel and base panel boards, never refrigerator or wall panels", () => {
     expect(isDishwasherPanelStock({ masterCode: "BEP(DWR)3", description: "Dishwasher Return Panel" })).toBe(true);
     expect(isDishwasherPanelStock({ masterCode: "DWR3", description: "3 in panel" })).toBe(true);
+    expect(isDishwasherPanelStock({ masterCode: "DW3" })).toBe(true);
+    expect(isDishwasherPanelStock({ masterCode: "DWR3" })).toBe(true);
     expect(isDishwasherPanelStock({ masterCode: "DWP24", description: "Dishwasher Panel", subCategory: "Decorative End Panel" })).toBe(true);
     expect(isDishwasherPanelStock({ masterCode: "BP9642", description: "96 x 42 long panel" })).toBe(true);
     expect(isDishwasherPanelStock({ masterCode: "BEP2535", description: '25-5/8" Base End Panel' })).toBe(true);
@@ -125,6 +127,24 @@ describe("dishwasher panel stock", () => {
     expect(isDishwasherItem(piece(room, "range", "straight", 0, {
       masterCode: "RANGE-30", description: '30" Range', category: "Appliance", placement: "appliance", height: 36, mountBottom: 0,
     }))).toBe(false);
+    // DW3 is a panel alias, never a dishwasher appliance, even with no description.
+    expect(isDishwasherItem(piece(room, "alias", "straight", 0, {
+      masterCode: "DW3", placement: "base", height: 34.5, mountBottom: 0,
+    }))).toBe(false);
+  });
+
+  it("picks the priced alias the line actually sells, and does not invent a SKU", () => {
+    const unpricedDwr3 = { ...DWR_STOCK, id: 15480031, masterCode: "DWR3", description: "Dishwasher Return Panel", price: null };
+    const pricedBep = DWR_STOCK;
+    const pricedDwr3 = { ...unpricedDwr3, price: 63.2 };
+    const board = { ...DWR_STOCK, id: 2, masterCode: "BEP2535", description: "Base End Panel", width: 0.75, price: 86 };
+    // An unpriced DWR3 must not hide a priced BEP(DWR)3 on the same line.
+    expect(dishwasherPanelStock([unpricedDwr3, pricedBep])?.masterCode).toBe("BEP(DWR)3");
+    // A Designer Warehouse line that prices DWR3 keeps that code.
+    expect(dishwasherPanelStock([pricedDwr3, { ...pricedBep, price: null }])?.masterCode).toBe("DWR3");
+    expect(dishwasherPanelStock([pricedDwr3])?.masterCode).toBe("DWR3");
+    // A line that sells none of the aliases still falls back to a priced base end panel.
+    expect(dishwasherPanelStock([board])?.masterCode).toBe("BEP2535");
   });
 });
 
@@ -319,5 +339,47 @@ describe("dishwasher panels never disturb unrelated layouts", () => {
     } finally {
       resetKitchenRuleParameters();
     }
+  });
+});
+
+describe("dishwasher panel alias re-sync", () => {
+  it("does not add a second panel when a saved DWR3 or DW3 already finishes the run end", () => {
+    const room = { ...DEFAULT_ROOM, width: 156 } as RoomData;
+    const dw = dishwasher(room, "dw", "top", 24);
+    const saved = (code: string, id: number): PlacedCabinet => piece(room, "saved-dwr", "top", 48, {
+      cabinetId: id,
+      masterCode: code,
+      width: 3,
+      placement: "base",
+    });
+    for (const existing of [saved("DWR3", 15480031), saved("DW3", 99)]) {
+      const placed = [piece(room, "b1", "top", 0), dw, existing];
+      const result = syncDishwasherPanels({ placed, room, catalog: [DWR_STOCK] });
+      expect(panels(result.placed)).toHaveLength(0);
+      expect(result.placed.filter((item) => (
+        item.masterCode === existing.masterCode || item.masterCode === "BEP(DWR)3"
+      ))).toHaveLength(1);
+      expect(result.placed).toBe(placed);
+      expect(result.warnings).toEqual([]);
+    }
+  });
+
+  it("keeps a saved auto-placed DWR3 on re-sync instead of duplicating it as BEP(DWR)3", () => {
+    const room = { ...DEFAULT_ROOM, width: 156 } as RoomData;
+    const first = syncDishwasherPanels({
+      placed: [piece(room, "b1", "top", 0), dishwasher(room, "dw", "top", 24)],
+      room,
+      catalog: [DWR_STOCK],
+    });
+    const saved = first.placed.map((item) => (
+      item.autoPlacedReason ? { ...item, cabinetId: 15480031, masterCode: "DWR3" } : item
+    ));
+    const again = syncDishwasherPanels({ placed: saved, room, catalog: [DWR_STOCK] });
+    expect(panels(again.placed)).toHaveLength(1);
+    expect(again.placed.filter((item) => (
+      item.masterCode === "DWR3" || item.masterCode === "BEP(DWR)3"
+    ))).toHaveLength(1);
+    expect(again.placed).toBe(saved);
+    expect(panels(again.placed)[0]?.masterCode).toBe("DWR3");
   });
 });
