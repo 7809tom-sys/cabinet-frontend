@@ -37,6 +37,7 @@ import {
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { repairMissingAngledWallFillers } from "./angledWallFiller";
+import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
 import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
@@ -125,6 +126,7 @@ import {
   isRefrigerator,
   placedFootprint,
   freeSegmentsOnWall,
+  magneticAvailableWallStart,
   isFarmSinkBasePaletteItem,
   isFillerItem,
   isRangeOrOven,
@@ -684,6 +686,114 @@ function nextFittingBaseAlong(input: {
     }
   }
   return null;
+}
+
+
+
+
+/** True when a corner reservation is a 45° filler seat (not a 90° square). */
+function fortyFiveSeatSpan(room: RoomData, span: { wallId: string; start: number; end: number }, runWalls: readonly string[]): boolean {
+  const frame = wallRunFrame(span.wallId, room);
+  if (!frame) return false;
+  const at = Math.abs(span.start - frame.runStart) <= 0.01 ? "start" : Math.abs(span.end - frame.runEnd) <= 0.01 ? "end" : null;
+  const seat = at ? fortyFiveCornerSeat(room, span.wallId, at, "base", { neighborWallIds: runWalls }) : null;
+  return Boolean(seat && Math.abs((span.end - span.start) - Math.min(frame.runEnd - frame.runStart, seat.cabinetSetbackIn)) <= 0.01);
+}
+
+/**
+ * Re-run the Designer's manual drop snap on the first base box beside each 45°
+ * corner seat of `wallId` (boxes laid since `before`). The seat span (vertex to
+ * the end of the 3″ angled filler) is removed from the free segments, exactly
+ * as the seated filler pair will occupy it, then `magneticAvailableWallStart`
+ * decides the start the same way a hand drop at the box's position would. A box
+ * is moved only when the snap lands within the Designer's snap threshold and
+ * the moved box is collision-free; otherwise it stays where the fill put it.
+ */
+function snapFortyFiveCornerCabinets(
+  working: PlacedCabinet[],
+  before: ReadonlySet<string>,
+  wallId: string,
+  runWalls: readonly string[],
+  room: RoomData,
+  openings: WallOpening[],
+): PlacedCabinet[] {
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return working;
+  let next = working;
+  const seats = (["start", "end"] as const).flatMap((at) => {
+    const seat = fortyFiveCornerSeat(room, wallId, at, "base", { neighborWallIds: runWalls });
+    if (!seat) return [];
+    const span = at === "start"
+      ? { start: frame.runStart, end: frame.runStart + seat.cabinetSetbackIn }
+      : { start: frame.runEnd - seat.cabinetSetbackIn, end: frame.runEnd };
+    return [{ at, seat, span }];
+  });
+  for (const { at, seat } of seats) {
+    const candidates = next
+      .filter((item) => !before.has(item.uid) && item.wallId === wallId && item.placement === "base" && !isFillerItem(item))
+      .map((item) => {
+        const start = wallRunOffset(item, wallId, room);
+        const end = start + wallRunSpan(item, wallId, room);
+        return { item, start, gap: at === "start" ? start - frame.runStart : frame.runEnd - end };
+      })
+      .sort((left, right) => left.gap - right.gap);
+    const first = candidates[0];
+    if (!first) continue;
+    const others = next.filter((item) => item.uid !== first.item.uid);
+    const segments = subtractAnchorRunReservations(
+      freeSegmentsOnWall(wallId as WallSide, room, others, openings, Math.min(first.item.width, 9), 0, "base", false, first.item, first.item.depth),
+      seats.map((entry) => entry.span),
+    );
+    const snapped = magneticAvailableWallStart(segments, first.start, first.item.width);
+    if (snapped == null || Math.abs(snapped - first.start) <= 0.01) continue;
+    // Only a snap that seats the box closer to this corner's filler end counts.
+    const snappedGap = at === "start" ? snapped - frame.runStart : frame.runEnd - (snapped + wallRunSpan(first.item, wallId, room));
+    if (Math.abs(snappedGap - seat.cabinetSetbackIn) >= Math.abs(first.gap - seat.cabinetSetbackIn) - 0.01) continue;
+    const spot = wallPlacementAt(snapped, first.item.width, first.item.depth, wallId as WallSide, room);
+    const moved = { ...first.item, ...spot };
+    if (appendCollisionFreePlacements(others, [moved], room).rejected.length > 0) continue;
+    next = next.map((item) => (item.uid === moved.uid ? moved : item));
+  }
+  return next;
+}
+
+/**
+ * Slide the base boxes one fill segment just laid (those not in `before`) as a
+ * block toward the end of the segment, so the last box ends exactly at
+ * `segmentEnd` (a 45° corner seat). Every box keeps its width and order. When
+ * any slid box would collide, the segment is left exactly as it was laid.
+ */
+function slideSegmentToFortyFiveSeat(
+  working: PlacedCabinet[],
+  before: ReadonlySet<string>,
+  wallId: string,
+  segmentStart: number,
+  segmentEnd: number,
+  room: RoomData,
+): PlacedCabinet[] {
+  const laid = working.filter((item) => !before.has(item.uid) && item.wallId === wallId && item.placement === "base");
+  if (laid.length === 0) return working;
+  const spans = laid.map((item) => {
+    const start = wallRunOffset(item, wallId, room);
+    return { item, start, end: start + wallRunSpan(item, wallId, room) };
+  });
+  if (spans.some((span) => span.start < segmentStart - 0.05 || span.end > segmentEnd + 0.05)) return working;
+  const lastEnd = Math.max(...spans.map((span) => span.end));
+  const shift = segmentEnd - lastEnd;
+  if (!(shift > 0.05)) return working;
+  const moved = new Map<string, PlacedCabinet>();
+  for (const { item, start } of spans) {
+    const spot = wallPlacementAt(start + shift, item.width, item.depth, wallId as WallSide, room);
+    moved.set(item.uid, { ...item, ...spot });
+  }
+  const others = working.filter((item) => !moved.has(item.uid));
+  let trial = others;
+  for (const item of Array.from(moved.values())) {
+    const accepted = appendCollisionFreePlacements(trial, [item], room);
+    if (accepted.rejected.length > 0) return working;
+    trial = accepted.placed;
+  }
+  return working.map((item) => moved.get(item.uid) ?? item);
 }
 
 /**
@@ -1446,6 +1556,7 @@ export function runAutoDesignLayout(args: {
       ...cornerReservationsOnWall(wallId, cornerReserved),
     ];
     for (const segment of subtractAnchorRunReservations(rawSegments, reservations)) {
+      const segmentStartUids = new Set(working.map((item) => item.uid));
       const beside = (edge: "start" | "end") => working.some((other) => other.placement === "appliance"
         && isRangeOrOven(other.masterCode, other.description) && cabinetWall(other, room) === wallId
         && Math.abs((edge === "start" ? wallRunOffset(other, wallId, room) + wallRunSpan(other, wallId, room) - segment.start
@@ -1565,6 +1676,27 @@ export function runAutoDesignLayout(args: {
           along = next;
         }
       }
+      // 45° corners (Tom, Nov 16 2026, voice 11:53 AM CT): the run is built
+      // FROM the end of the 3″ angled filler. A segment that ends at a 45°
+      // corner seat (and does not also start at one) is laid from its start,
+      // so its leftover would land against the corner and widen the angled
+      // filler past 3″. Slide the boxes this segment just laid toward the
+      // corner, so the last one ends exactly at the seat and the leftover sits
+      // at the other end of the segment (beside a cabinet, appliance or panel)
+      // where the ordinary gap passes close it.
+      const endSeat = fortyFiveCornerSeat(room, wallId, "end", "base", { neighborWallIds: runWalls });
+      const startSeat = fortyFiveCornerSeat(room, wallId, "start", "base", { neighborWallIds: runWalls });
+      const segmentFrame = wallRunFrame(wallId, room);
+      if (endSeat && segmentFrame && !(startSeat && segment.start <= segmentFrame.runStart + startSeat.cabinetSetbackIn + 0.05)
+        && Math.abs(segmentEnd - (segmentFrame.runEnd - endSeat.cabinetSetbackIn)) <= 0.05) {
+        working = slideSegmentToFortyFiveSeat(working, segmentStartUids, wallId, segment.start, segmentEnd, room);
+      }
+      // Tom, Nov 16 2026 (voice 12:14 PM CT): a corner-adjacent cabinet snaps
+      // into place the way it does when it is dropped by hand. The Designer's
+      // own drop snap (`magneticAvailableWallStart` over `freeSegmentsOnWall`)
+      // is reused with the 3″ angled-filler seat treated as occupied, so the
+      // first box on each side lands against the filler end.
+      working = snapFortyFiveCornerCabinets(working, segmentStartUids, wallId, runWalls, room, stageOpenings);
     }
   }
   working = absorbOpenBaseGaps(working, room, stage.straightBaseCatalog, runWalls, args.styleId, makeUid, cornerReserved);
@@ -1663,6 +1795,8 @@ export function runAutoDesignLayout(args: {
       ? kitchenRuleNumber("anchor_wiggle_cap_in")
       : kitchenRuleNumber("jog_max_in")),
     wallHeightIn: wallDesignHeight,
+    // Only the 45° filler seats: the 90° corner square keeps today's behavior here.
+    reservedSpans: cornerReserved.filter((span) => fortyFiveSeatSpan(room, span, runWalls)),
   });
   working = realCabinets.placed;
   notes.push(...realCabinets.notes);
