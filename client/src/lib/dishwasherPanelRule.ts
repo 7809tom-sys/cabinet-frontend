@@ -91,6 +91,22 @@ export const DISHWASHER_PANEL_MAX_WIDTH_IN = 6;
  * contact with the finish board is the fitted condition, not an overlap.
  */
 const FITTED_ANGLED_CONTACT_IN = 0.5;
+/**
+ * Where the two 24″-deep cabinet fronts meet at a 45° turn, measured along each
+ * wall from the vertex: 24 × tan(22.5°) ≈ 9.94″ (the front miter line).
+ */
+export const DISHWASHER_PANEL_FORTY_FIVE_FRONT_MITER_IN = STD.BASE_DEPTH * Math.tan(Math.PI / 8);
+/** Narrowest mitered panel face; below this the panel cannot be cut and seated. */
+export const DISHWASHER_PANEL_MIN_MITER_CUT_IN = 0.5;
+
+function formatPanelInches(value: number): string {
+  const eighths = Math.round(value * 8);
+  const whole = Math.floor(eighths / 8);
+  let rest = eighths % 8;
+  let den = 8;
+  while (rest > 0 && rest % 2 === 0) { rest /= 2; den /= 2; }
+  return rest === 0 ? `${whole}"` : whole === 0 ? `${rest}/${den}"` : `${whole}-${rest}/${den}"`;
+}
 
 function codeKey(value: string | null | undefined): string {
   return String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -265,6 +281,14 @@ export function syncDishwasherPanels(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
   catalog: readonly DishwasherPanelStock[];
+  /**
+   * The Auto Design build has no price list. It seats the line's own panel row
+   * by geometry and leaves the price check to the Designer's own sync, which
+   * re-derives the same panel (same uid and spot) once prices load and refuses
+   * it with its named warning when the line has no priced panel. Nothing is
+   * ever priced here.
+   */
+  deferPriceCheck?: boolean;
 }): DishwasherPanelPlan {
   const { placed, room, catalog } = input;
   const warnings: DishwasherPanelWarning[] = [];
@@ -338,16 +362,31 @@ export function syncDishwasherPanels(input: {
       const reason: DishwasherPanelReason = turn === 45
         ? DISHWASHER_FORTY_FIVE_PANEL_REASON
         : DISHWASHER_RUN_END_PANEL_REASON;
+      // Tom, Nov 16 2026 (4:38 PM CT): at a 45° turn that a cabinet run on the
+      // next wall closes, the panel is part of the corner construction. Its
+      // corner edge is cut on the 22.5° miter where the two cabinet fronts
+      // meet, so it never reaches across the mitered front and the next wall's
+      // single miter board meets it there. A panel already clear of the miter
+      // line keeps its full width.
+      let panelWidth = width;
+      let miterCut = false;
+      if (turn === 45 && adjoiningRunReachesVertex(room, frame, edge, withoutPanels)) {
+        const toMiter = distanceToVertex - DISHWASHER_PANEL_FORTY_FIVE_FRONT_MITER_IN;
+        if (toMiter >= DISHWASHER_PANEL_MIN_MITER_CUT_IN - EPS && toMiter < width - EPS) {
+          panelWidth = Math.round(toMiter * 1000) / 1000;
+          miterCut = true;
+        }
+      }
       if (turn === 45) {
         // The panel fills only the fitted corner slot inside the 11" hold; a
         // wider piece would reach across the mitered front.
-        if (hold <= 0 || width > hold + EPS) continue;
+        if (hold <= 0 || panelWidth > hold + EPS) continue;
       }
 
-      const along = edge === "end" ? own.end : own.start - width;
-      if (along < -EPS || along + width > frame.length + EPS) continue;
+      const along = edge === "end" ? own.end : own.start - panelWidth;
+      if (along < -EPS || along + panelWidth > frame.length + EPS) continue;
 
-      if (!stock || stock.price == null || stock.price <= 0) {
+      if (!stock || (!input.deferPriceCheck && (stock.price == null || stock.price <= 0))) {
         warnings.push({
           id: `missing-price:dw-panel:${dishwasher.uid}:${edge}`,
           cabinetUid: dishwasher.uid,
@@ -359,7 +398,7 @@ export function syncDishwasherPanels(input: {
 
       const depth = numeric(stock.depth, STD.BASE_DEPTH) || STD.BASE_DEPTH;
       const height = numeric(stock.height, STD.BASE_HEIGHT) || STD.BASE_HEIGHT;
-      const spot = wallPlacementAt(along, width, depth, wallId as WallSide, room, dishwasher.peninsulaSide ?? null, false);
+      const spot = wallPlacementAt(along, panelWidth, depth, wallId as WallSide, room, dishwasher.peninsulaSide ?? null, false);
       if (Math.abs(numeric(spot.wallOffset, along) - along) > 0.2) continue;
       const panel: PlacedCabinet = {
         uid: `auto-dw-panel:${dishwasher.uid}:${edge}`,
@@ -371,7 +410,7 @@ export function syncDishwasherPanels(input: {
         placement: "base",
         x: spot.x,
         y: spot.y,
-        width,
+        width: panelWidth,
         depth,
         height,
         nominalWidth: width,
@@ -383,7 +422,9 @@ export function syncDishwasherPanels(input: {
         mountBottom: 0,
         numberOfDoors: 0,
         numberOfDrawers: 0,
-        fieldModificationNote: `${DISHWASHER_PANEL_REASONS[reason]}. Cut from ${stock.masterCode}.`,
+        fieldModificationNote: miterCut
+          ? `${DISHWASHER_PANEL_REASONS[reason]}. Cut from ${stock.masterCode} to ${formatPanelInches(panelWidth)} with a 22.5° miter where it meets the next wall's filler.`
+          : `${DISHWASHER_PANEL_REASONS[reason]}. Cut from ${stock.masterCode}.`,
         autoPlacedReason: reason,
         autoPlacedForUid: dishwasher.uid,
         autoPlacedSide: edge,
@@ -394,7 +435,7 @@ export function syncDishwasherPanels(input: {
           id: `no-room:dw-panel:${dishwasher.uid}:${edge}`,
           cabinetUid: dishwasher.uid,
           reason,
-          message: `${dishwasher.masterCode} ends here and needs a ${width}" dishwasher panel (DWR) that has no clear ${width}" of run.`,
+          message: `${dishwasher.masterCode} ends here and needs a ${formatPanelInches(panelWidth)} dishwasher panel (DWR) that has no clear ${formatPanelInches(panelWidth)} of run.`,
         });
         continue;
       }

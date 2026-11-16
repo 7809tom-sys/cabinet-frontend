@@ -202,9 +202,10 @@ describe("Tom's five-wall kitchen (line 330011)", () => {
       && /top and angTR|angTR and top/.test(finding.title))).toBe(true);
   });
 
-  it("keeps the dishwasher-at-the-turn corner as it is on main (handled on the dishwasher-panel branch)", () => {
+  it("closes the dishwasher-at-the-turn corner with the dishwasher panel (Tom, Nov 16 2026, 4:38 PM CT)", () => {
+    // Covered in detail by autoDesignDishwasherFortyFiveCorner.test.ts.
     const result = build();
     expect(result.reviewFindings.some((finding) => finding.code === "angled-base-corner-open"
-      && /angTR and right|right and angTR/.test(finding.title))).toBe(true);
+      && /angTR and right|right and angTR/.test(finding.title))).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ import {
 } from "./design";
 import {
   DISHWASHER_FORTY_FIVE_PANEL_REASON,
+  DISHWASHER_PANEL_FORTY_FIVE_FRONT_MITER_IN,
   DISHWASHER_RUN_END_PANEL_REASON,
   dishwasherPanelStock,
   isDishwasherItem,
@@ -243,7 +244,7 @@ describe("dishwasher at a 45-degree turn", () => {
     piece(room, "straight", "straight", hold),
   ];
 
-  it("auto-places one DWR panel in the fitted 45° corner slot", () => {
+  it("auto-places one DWR panel in the fitted 45° corner slot, cut on the front miter line", () => {
     const result = syncDishwasherPanels({ placed: angledLayout(), room, catalog: [DWR_STOCK] });
     const dwPanels = panels(result.placed);
     expect(dwPanels).toHaveLength(1);
@@ -252,10 +253,23 @@ describe("dishwasher at a 45-degree turn", () => {
       autoPlacedForUid: "dw",
       autoPlacedSide: "end",
       wallId: "diagonal",
-      width: 3,
+      nominalWidth: 3,
     });
+    // Tom, Nov 16 2026 (4:38 PM CT): the next run closes this turn, so the
+    // panel's corner edge stops where the two cabinet fronts meet (24 × tan
+    // 22.5° from the vertex) instead of reaching across the mitered front.
+    expect(dwPanels[0]!.width).toBeCloseTo(hold - DISHWASHER_PANEL_FORTY_FIVE_FRONT_MITER_IN, 3);
     expect(dwPanels[0]!.wallOffset).toBeCloseTo(diagonalLength - hold, 6);
+    expect(dwPanels[0]!.fieldModificationNote).toMatch(/22\.5° miter/);
     expect(result.warnings).toEqual([]);
+  });
+
+  it("keeps the full 3-inch panel at a 45° turn no cabinet run closes", () => {
+    const placed = angledLayout().filter((item) => item.uid !== "straight");
+    const result = syncDishwasherPanels({ placed, room, catalog: [DWR_STOCK] });
+    const dwPanels = panels(result.placed);
+    expect(dwPanels).toHaveLength(1);
+    expect(dwPanels[0]).toMatchObject({ autoPlacedReason: DISHWASHER_FORTY_FIVE_PANEL_REASON, width: 3 });
   });
 
   it("leaves the continuous countertop over the angled dishwasher and over the miter join", () => {

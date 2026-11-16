@@ -4,6 +4,7 @@ import {
 	  type WallSide,
   appendCollisionFreePlacements,
   customWallJoinTurnsFortyFive,
+  DISHWASHER_FORTY_FIVE_PANEL_REASON,
   elevationBox,
   peninsulaRunById,
   peninsulaRunEndpoints,
@@ -15,6 +16,7 @@ import {
 } from "@/lib/design";
 import { catalogFillerForGap, type CatalogFillerCandidate } from "@/lib/catalogFiller";
 import { installedFillerVerticalSpec } from "@/lib/smallGapFiller";
+import { isDishwasherItem } from "@/lib/dishwasherPanelRule";
 
 const JOIN_EPSILON_IN = 0.25;
 const FRONT_FILLER_DEPTH_IN = 0.75;
@@ -34,6 +36,25 @@ function isTransitionCabinetPlacement(
   placement: PlacedCabinet["placement"],
 ): placement is "base" | "wall" | "tall" {
   return placement === "base" || placement === "wall" || placement === "tall";
+}
+
+/**
+ * The cabinet band a box joins a 45° corner in. Tom, Nov 16 2026 (4:38 PM CT):
+ * a base-height dishwasher is treated as a base cabinet for corner joining and
+ * the 3″ filler pair. It stays an appliance everywhere else (pricing, 3D, the
+ * panel rule); only the 45° corner code reads it as a base.
+ */
+function transitionBandOf(item: PlacedCabinet): "base" | "wall" | "tall" | null {
+  if (isTransitionCabinetPlacement(item.placement)) return item.placement;
+  return item.placement === "appliance" && isDishwasherItem(item) ? "base" : null;
+}
+
+/** Boxes in the same floor/upper band; an appliance or tall box shares the base band. */
+function ownerBandPeer(owner: "base" | "wall" | "tall", other: PlacedCabinet): boolean {
+  if (other.placement === owner) return true;
+  if (owner === "base") return other.placement === "appliance" || other.placement === "tall";
+  if (owner === "wall") return other.placement === "tall";
+  return false;
 }
 
 export type AngledWallTransitionPoint = { x: number; y: number };
@@ -298,7 +319,8 @@ export function measuredAngledWallTransition(
 	  // This is a cabinet-run rule, not a base-cabinet rule. Any independently
 	  // supported cabinet family may meet a true 45° turn; the two selected-line
 	  // filler boards follow the shared elevation band of those two cabinets.
-	  if (!isTransitionCabinetPlacement(cabinet.placement) || !cabinet.wallId) return null;
+	  const band = transitionBandOf(cabinet);
+	  if (!band || !cabinet.wallId) return null;
 	  const joins = transitionJoins(cabinet.wallId, room);
 	  if (joins.length === 0) return null;
 
@@ -314,7 +336,11 @@ export function measuredAngledWallTransition(
 	  // run-length "gap" found no stock, and the real corner was never measured.
 	  const ownerBlocked = (at: "start" | "end") => placed.some((item) => {
 	    if (item.uid === cabinet.uid || item.fillerPieceGroupId || item.wallId !== cabinet.wallId) return false;
-	    if (item.placement !== cabinet.placement) return false;
+	    // Any box in the same floor/upper band between this cabinet and the vertex
+	    // owns that corner: a dishwasher or range at the run end, a pantry, a
+	    // refrigerator. Measuring past it produced bogus corner findings (a B12
+	    // "needing 23¼″" past the dishwasher that actually ends the run).
+	    if (!ownerBandPeer(band, item)) return false;
 	    const itemStart = wallRunOffset(item, cabinet.wallId!, room);
 	    const itemEnd = itemStart + wallRunSpan(item, cabinet.wallId!, room);
 	    return at === "start"
@@ -337,7 +363,7 @@ export function measuredAngledWallTransition(
 	    const neighborCandidate = placed
 	      .filter((item) => item.uid !== cabinet.uid
 	        && !item.fillerPieceGroupId
-	        && item.placement === cabinet.placement
+	        && transitionBandOf(item) === band
 	        && item.wallId === shared.neighborWallId)
 	      .map((item) => {
 	      const neighborGap = gapOnNeighbor(item);
@@ -352,7 +378,7 @@ export function measuredAngledWallTransition(
 	    // The neighbor must be the first box at that vertex in this layer. An
 	    // appliance, refrigerator panel or tall box closer to the corner owns the
 	    // joint instead, so a pair is never measured past it to a far cabinet.
-	    const sameBand = (item: PlacedCabinet) => cabinet.placement === "wall"
+	    const sameBand = (item: PlacedCabinet) => band === "wall"
 	      ? item.placement === "wall" || item.placement === "tall"
 	      : item.placement === "base" || item.placement === "tall" || item.placement === "appliance";
 	    const closerOccupant = placed.some((item) => item.uid !== neighborCandidate.item.uid
@@ -458,12 +484,8 @@ export function angledWallTransitionFootprint(
     : null;
 }
 
-function transitionPlacementOf(cabinet: Pick<PlacedCabinet, "placement">): "base" | "wall" | "tall" | null {
-  return cabinet.placement === "wall"
-    ? "wall"
-    : cabinet.placement === "base"
-      ? "base"
-      : cabinet.placement === "tall" ? "tall" : null;
+function transitionPlacementOf(cabinet: PlacedCabinet): "base" | "wall" | "tall" | null {
+  return transitionBandOf(cabinet);
 }
 
 /**
@@ -631,7 +653,7 @@ export function repairMissingAngledWallFillers(
   let next = [...placed];
   const added: PlacedCabinet[] = [];
   for (const cabinet of placed) {
-	if (cabinet.fillerPieceGroupId || !isTransitionCabinetPlacement(cabinet.placement)) continue;
+	if (cabinet.fillerPieceGroupId || !transitionBandOf(cabinet)) continue;
     const fillerStyleId = typeof styleId === "function" ? styleId(cabinet) : styleId;
     const resolution = automaticAngledWallFiller(cabinet, room, next, candidates, makeUid, fillerStyleId);
     if (!resolution) continue;
@@ -639,6 +661,149 @@ export function repairMissingAngledWallFillers(
     if (!resolution.fillers.every((filler) => appended.placed.some((item) => item.uid === filler.uid))) continue;
     next = appended.placed;
     added.push(...resolution.fillers);
+  }
+  return { placed: added.length > 0 ? next : [...placed], added };
+}
+
+/**
+ * Tom, Nov 16 2026 (8:35 AM and 4:38 PM CT): a dishwasher that ends its run at
+ * a 45° turn carries its DWR panel in the fitted corner slot, and the run still
+ * has to meet the next wall. The panel is then the corner partner on the
+ * dishwasher's wall.
+ *
+ * `syncDishwasherPanels` cuts that panel to the front miter line, so the panel
+ * itself is the dishwasher-side face of the joint (its 22.5° cut lands on the
+ * miter point) and only the next wall needs its board: one selected-line
+ * filler cut from that cabinet's face to the miter point, mitered 22.5°. No
+ * filler is laid flat against the panel and neither board has an exposed side.
+ * A panel clear of the miter line is left to the ordinary two-piece pair.
+ */
+export function closeDishwasherPanelAngledCorners(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  candidates: readonly CatalogFillerCandidate[],
+  makeUid: () => string,
+  styleId: number | null,
+): AngledWallFillerRepair {
+  let next = [...placed];
+  const added: PlacedCabinet[] = [];
+  for (const panel of placed) {
+    if (panel.autoPlacedReason !== DISHWASHER_FORTY_FIVE_PANEL_REASON || !panel.wallId) continue;
+    const wallLen = wallLength(panel.wallId as WallSide, room);
+    const start = wallRunOffset(panel, panel.wallId, room);
+    const end = start + wallRunSpan(panel, panel.wallId, room);
+    const shared = transitionJoins(panel.wallId, room)
+      .map((join) => ({ join, gap: join.at === "start" ? start : wallLen - end }))
+      .filter((entry) => entry.gap >= -JOIN_EPSILON_IN)
+      .sort((left, right) => left.gap - right.gap)[0]?.join;
+    if (!shared) continue;
+    const neighborLen = wallLength(shared.neighborWallId as WallSide, room);
+    const gapOnNeighbor = (item: PlacedCabinet) => {
+      const itemStart = wallRunOffset(item, shared.neighborWallId, room);
+      const itemEnd = itemStart + wallRunSpan(item, shared.neighborWallId, room);
+      return shared.neighborAt === "start" ? itemStart : neighborLen - itemEnd;
+    };
+    const first = next
+      .filter((item) => item.wallId === shared.neighborWallId && !item.fillerPieceGroupId
+        && (item.placement === "base" || item.placement === "appliance" || item.placement === "tall"))
+      .map((item) => ({ item, gap: gapOnNeighbor(item) }))
+      .filter((entry) => entry.gap >= -JOIN_EPSILON_IN)
+      .sort((left, right) => left.gap - right.gap)[0];
+    // Only a base cabinet on the next wall takes a board against the panel.
+    if (!first || first.item.placement !== "base") continue;
+    const neighbor = first.item;
+    if (next.some((item) => item.fillerTransitionKind === "front-miter-pair"
+      && ((item.fillerForCabinetUid === neighbor.uid && item.fillerTransitionNeighborUid === panel.uid)
+        || (item.fillerForCabinetUid === panel.uid && item.fillerTransitionNeighborUid === neighbor.uid)))) continue;
+    const ownerFace = cabinetSideFaceAtWallEndpoint(panel, panel.wallId, shared.at, room);
+    const neighborFace = cabinetSideFaceAtWallEndpoint(neighbor, shared.neighborWallId, shared.neighborAt, room);
+    const ownerFrame = wallFrame(panel.wallId, room, panel.peninsulaSide);
+    const neighborFrame = wallFrame(shared.neighborWallId, room, neighbor.peninsulaSide);
+    if (!ownerFace || !neighborFace || !ownerFrame || !neighborFrame) continue;
+    const miterPoint = lineIntersection(ownerFace.front, ownerFrame.tangent, neighborFace.front, neighborFrame.tangent);
+    if (!miterPoint) continue;
+    const ownerFaceOffset = shared.at === "start" ? start : end;
+    const ownerMiterOffset = wallOffsetAtPoint(panel.wallId, miterPoint, room, panel.peninsulaSide);
+    if (ownerMiterOffset == null) continue;
+    // Distance from the panel face toward the vertex to the miter line. At or
+    // past 0.5″ the ordinary two-piece pair owns this corner.
+    const ownerCut = shared.at === "end" ? ownerMiterOffset - ownerFaceOffset : ownerFaceOffset - ownerMiterOffset;
+    if (ownerCut >= 0.5) continue;
+    const neighborRear = {
+      x: neighborFace.front.x - neighborFrame.inward.x * FRONT_FILLER_DEPTH_IN,
+      y: neighborFace.front.y - neighborFrame.inward.y * FRONT_FILLER_DEPTH_IN,
+    };
+    const ownerRear = {
+      x: ownerFace.front.x - ownerFrame.inward.x * FRONT_FILLER_DEPTH_IN,
+      y: ownerFace.front.y - ownerFrame.inward.y * FRONT_FILLER_DEPTH_IN,
+    };
+    const rearMiterPoint = lineIntersection(ownerRear, ownerFrame.tangent, neighborRear, neighborFrame.tangent);
+    if (!rearMiterPoint) continue;
+    const neighborFaceOffset = shared.neighborAt === "start"
+      ? wallRunOffset(neighbor, shared.neighborWallId, room)
+      : wallRunOffset(neighbor, shared.neighborWallId, room) + wallRunSpan(neighbor, shared.neighborWallId, room);
+    const miterOffset = wallOffsetAtPoint(shared.neighborWallId, miterPoint, room, neighbor.peninsulaSide);
+    const rearMiterOffset = wallOffsetAtPoint(shared.neighborWallId, rearMiterPoint, room, neighbor.peninsulaSide);
+    if (miterOffset == null || rearMiterOffset == null) continue;
+    const frontCut = roundedEighth(Math.abs(miterOffset - neighborFaceOffset));
+    const rearCut = roundedEighth(Math.abs(rearMiterOffset - neighborFaceOffset));
+    if (frontCut < 0.5) continue;
+    const source = angledWallFillerStock(neighbor, room, { requiredStockWidthIn: Math.max(frontCut, rearCut) }, candidates);
+    if (!source) continue;
+    const depth = Math.max(FRONT_FILLER_DEPTH_IN, transitionFrontDatumDepth(neighbor));
+    const footprint = frontFillerFootprint(shared.neighborWallId, room, neighborFaceOffset, miterOffset, rearMiterOffset, depth, neighbor.peninsulaSide);
+    if (!footprint) continue;
+    const spot = frontFillerPlacement(shared.neighborWallId, neighborFaceOffset, miterOffset, depth, room, neighbor.peninsulaSide);
+    const elevation = elevationBox(neighbor, room);
+    const vertical = installedFillerVerticalSpec("base", elevation.height);
+    const exactCutWidth = Math.abs(miterOffset - neighborFaceOffset);
+    const sourceDescription = source.description ?? source.masterCode;
+    const installedName = /\bscribe\b/i.test(sourceDescription) ? "Filler" : sourceDescription;
+    const stockWidth = numberValue(source.width);
+    const piece: PlacedCabinet = {
+      uid: makeUid(),
+      cabinetId: source.id,
+      masterCode: source.masterCode,
+      description: `${installedName} — front filler cut to ${roundedEighth(exactCutWidth)}" with 22.5° miter against the dishwasher panel (forms 45° turn)`,
+      category: source.category,
+      subCategory: source.subCategory,
+      placement: "base",
+      x: spot.x,
+      y: spot.y,
+      width: exactCutWidth,
+      nominalWidth: stockWidth,
+      depth,
+      nominalDepth: depth,
+      height: vertical.storedHeight,
+      nominalHeight: numberValue(source.height),
+      rotation: spot.rotation,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      catalogImageUrl: source.catalogImageUrl ?? null,
+      mountBottom: elevation.bottom,
+      styleId,
+      wallId: spot.wallId ?? shared.neighborWallId,
+      wallOffset: spot.wallOffset ?? Math.min(neighborFaceOffset, miterOffset),
+      fillerPieceGroupId: `front-miter-pair-${panel.uid}-${neighbor.uid}-${shared.at}`,
+      fillerBillingRole: "primary",
+      fillerTotalWidth: exactCutWidth,
+      fillerPlacementMode: "right",
+      fillerForCabinetUid: neighbor.uid,
+      fillerMiterAngle: 22.5,
+      fillerMiteredEnd: miterOffset >= neighborFaceOffset ? "end" : "start",
+      fillerTransitionKind: "front-miter-pair",
+      fillerTransitionPiece: "neighbor",
+      fillerTransitionNeighborUid: panel.uid,
+      fillerTransitionRearWidthIn: Math.abs(rearMiterOffset - neighborFaceOffset),
+      fillerTransitionFrontWidthIn: exactCutWidth,
+      fillerTransitionStockWidthIn: stockWidth,
+      fillerTransitionPlanFootprint: footprint.map((point) => ({ ...point })),
+      fillerIndependentCabinetSupport: true,
+    };
+    const appended = appendCollisionFreePlacements(next, [piece], room);
+    if (!appended.placed.some((item) => item.uid === piece.uid)) continue;
+    next = appended.placed;
+    added.push(piece);
   }
   return { placed: added.length > 0 ? next : [...placed], added };
 }

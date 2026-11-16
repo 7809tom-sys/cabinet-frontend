@@ -385,6 +385,11 @@ export function autoDesignOpenAngledCornerFindings(
         seen.add(key);
         const hold = insideCornerHoldIn(45, layer === "wall" ? 12 : 24);
         if (cabinet.gap <= hold + 0.5 && other.gap <= hold + 0.5) continue;
+        // Tom, Nov 16 2026 (4:38 PM CT): a base-height dishwasher joins a 45°
+        // corner like a base, so a miter pair seated against it closes the corner.
+        if (placed.some((piece) => piece.fillerTransitionKind === "front-miter-pair"
+          && [piece.fillerForCabinetUid, piece.fillerTransitionNeighborUid].includes(cabinet.item.uid)
+          && [piece.fillerForCabinetUid, piece.fillerTransitionNeighborUid].includes(other.item.uid))) continue;
         findings.push({
           ruleId: "angled-wall-filler",
           code: layer === "wall" ? "angled-upper-corner-open" : "angled-base-corner-open",

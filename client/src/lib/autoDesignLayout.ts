@@ -37,6 +37,7 @@ import {
 import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { repairMissingAngledWallFillers } from "./angledWallFiller";
+import { dishwasherCornerRetileCatalog, seatDishwashersAtFortyFiveCorners } from "./autoDesignDishwasherFortyFiveCorner";
 import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
 import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
@@ -2414,6 +2415,30 @@ export function runAutoDesignLayout(args: {
     working = closedAfterMatch.placed;
     notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
     reviewFindings.push(...closedAfterMatch.findings);
+  }
+  // Dishwasher at a 45° corner (Tom, Nov 16 2026, voice 4:38 PM CT): a
+  // base-height dishwasher joins the corner like a base cabinet. When it was
+  // measured inside the corner's filler space it slides away only as far as
+  // the stock bases behind it re-tile exactly (no bare strip), gets its panel
+  // cut on the 22.5° miter, and the next wall's miter board meets that panel.
+  // The move is named on the report with how far and why.
+  {
+    const dishwasherWallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
+    const dishwasherCorner = seatDishwashersAtFortyFiveCorners({
+      placed: working,
+      room,
+      runWallIds: runWalls,
+      baseCatalog: dishwasherCornerRetileCatalog(stage.straightBaseCatalog, args.baseCatalog),
+      panelCatalog: args.panelCatalog ?? [],
+      fillers: catalogFillers,
+      lockedUids,
+      keepUids: companionKeepUids,
+      wallLabelOf: (wallId) => dishwasherWallNames[wallId] ?? null,
+      styleId: args.styleId,
+      makeUid,
+    });
+    working = dishwasherCorner.placed;
+    reviewFindings.push(...dishwasherCorner.findings);
   }
   // 45° corners (Tom, Nov 16 2026): every angled corner closes with the
   // front-miter filler pair on BOTH layers. The upper run follows the bases, so
