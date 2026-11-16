@@ -50,11 +50,12 @@ import {
   STD,
   appendCollisionFreePlacements,
   cabinetWall,
+  isBlindCorner,
+  isCornerCabinet,
   isFillerItem,
   isPanelItem,
   isRangeOrOven,
   placedHeight,
-  rotatedSize,
   wallLength,
   wallPlacementAt,
   wallRunOffset,
@@ -86,6 +87,20 @@ export type ExposedSideReason =
   | "beside-oven"
   | "smaller-neighbour"
   | "symmetric-end";
+
+/**
+ * The `autoPlacedReason` prefix every board this engine seats carries. The
+ * generic overlap repair (`removeOverlappingPlacements`) keeps any row with an
+ * `autoPlacedReason`, and the qualified-panel engine in `exposedSidePanels.ts`
+ * leaves rows with this prefix to this engine, so neither one deletes a board
+ * this engine just placed (which re-added it on the next pass, forever).
+ */
+export const EXPOSED_SIDE_PANEL_REASON_PREFIX = "exposed-side:";
+
+/** True for a board this engine seated automatically. */
+export function isExposedSideEnginePanel(item: { autoPlacedReason?: string | null }): boolean {
+  return typeof item.autoPlacedReason === "string" && item.autoPlacedReason.startsWith(EXPOSED_SIDE_PANEL_REASON_PREFIX);
+}
 
 export type ExposedSidePanelNeed = {
   /** The cabinet whose side is exposed. */
@@ -209,8 +224,8 @@ function uncoveredBand(
 ): { bottomIn: number; heightIn: number; depthIn: number } | null {
   const hostV = verticalOf(host);
   const neighbourV = verticalOf(neighbour);
-  const hostDepth = rotatedSize(host).d;
-  const neighbourDepth = rotatedSize(neighbour).d;
+  const hostDepth = finishedSideDepth(host);
+  const neighbourDepth = finishedSideDepth(neighbour);
   // The neighbour covers from the floor up to its own top. Whatever the host
   // shows above that line (and above its own bottom) is the exposed band.
   const coveredTop = Math.max(hostV.bottom, Math.min(hostV.top, neighbourV.top));
@@ -327,7 +342,27 @@ function sideIsCovered(
  */
 function wholeSideBand(host: PlacedCabinet): { bottomIn: number; heightIn: number; depthIn: number } {
   const v = verticalOf(host);
-  return { bottomIn: v.bottom, heightIn: placedHeight(host), depthIn: rotatedSize(host).d };
+  return { bottomIn: v.bottom, heightIn: placedHeight(host), depthIn: finishedSideDepth(host) };
+}
+
+/** A box's own depth (front to back), whatever wall it hangs on. */
+function boxDepth(item: PlacedCabinet): number {
+  if (isBlindCorner(item.masterCode, item.description)) return item.placement === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH;
+  const depth = Number(item.depth);
+  return Number.isFinite(depth) && depth > 0 ? depth : (item.placement === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH);
+}
+
+/** Finished depth a side panel has to cover: a corner box's leg, not its L footprint. */
+function finishedSideDepth(host: PlacedCabinet): number {
+  // The box's own front-to-back depth. `rotatedSize().d` is the PLAN footprint,
+  // which on a side wall (rotation 90/270) is the cabinet WIDTH: that made every
+  // wider box on a side wall look "deeper" than its neighbour, invented
+  // smaller-neighbour panels, and picked a tall TEP sheet for a 24"-wide upper.
+  const depth = boxDepth(host);
+  if (!isCornerCabinet(host.masterCode ?? "", host.description ?? undefined, host.cornerType ?? undefined)) return depth;
+  if (host.placement === "wall") return Math.min(depth, 13.5);
+  if (host.placement === "base") return Math.min(depth, STD.BASE_DEPTH);
+  return depth;
 }
 
 /**
@@ -349,7 +384,7 @@ export function exposedSidePanelNeeds(input: {
     if (!span) return;
     seen.add(key);
     const placement = host.placement as "wall" | "base" | "tall";
-    const selection = selectAefEndPanel(placement, rotatedSize(host).d, Math.max(band.heightIn, placedHeight(host)), catalog);
+    const selection = selectAefEndPanel(placement, finishedSideDepth(host), Math.max(band.heightIn, placedHeight(host)), catalog);
     needs.push({
       hostUid: host.uid,
       hostCode: host.masterCode ?? "",
@@ -359,7 +394,7 @@ export function exposedSidePanelNeeds(input: {
       startIn: side === "start" ? span.start - SIDE_PANEL_THICKNESS_IN : span.end,
       bottomIn: band.bottomIn,
       heightIn: band.heightIn > 0 ? band.heightIn : placedHeight(host),
-      depthIn: band.depthIn > 0 ? band.depthIn : rotatedSize(host).d,
+      depthIn: band.depthIn > 0 ? Math.min(band.depthIn, finishedSideDepth(host)) : finishedSideDepth(host),
       placement,
       selection,
       message: describe(reason, host.masterCode ?? "", selection, side),
@@ -406,6 +441,9 @@ export function exposedSidePanelNeeds(input: {
         record(host, side, "beside-microwave", uncoveredBand(host, neighbour) ?? wholeSideBand(host));
         continue;
       }
+      // Open run ends and window sides are owned by the qualified-panel engine
+      // (`exposedSidePanels.ts`, reasons open-end-of-run / window-side), so this
+      // rule leaves a side with no neighbour to it.
       if (!neighbour) continue;
       if (neighbour.placement !== host.placement) continue;
       if (isFillerItem(neighbour)) continue;
@@ -567,6 +605,7 @@ export function applyExposedSidePanels(input: {
       styleId: host.styleId ?? input.styleId,
       autoPlacedForUid: host.uid,
       autoPlacedSide: need.side,
+      autoPlacedReason: `${EXPOSED_SIDE_PANEL_REASON_PREFIX}${need.reason}`,
       fieldModificationNote: `Auto-added: side panel because the side is exposed (${need.reason}). Cut from ${need.selection.masterCode}. Mounted ${mountBottom}″–${mountBottom + height}″.`,
     };
     // A 3/4" board flush against an appliance is the intended contact — the
@@ -579,7 +618,20 @@ export function applyExposedSidePanels(input: {
       continue;
     }
     const appliances = working.filter((item) => item.placement === "appliance");
-    working = [...accepted.placed, ...appliances];
+    const candidate = [...accepted.placed, ...appliances];
+    // A wall-length run has no 3/4" to give. Placing the board anyway made the
+    // run 0.75" too long, which the overlap check then deleted and this pass
+    // re-added. Refuse visibly instead of overrunning the wall.
+    const layer = need.placement === "wall" ? "wall" : "base";
+    const overrunBefore = runFitProblems({ placed: working, room: input.room, wallIds: [need.wallId] })
+      .filter((problem) => problem.layer === layer).reduce((sum, problem) => sum + problem.overrunIn, 0);
+    const overrunAfter = runFitProblems({ placed: candidate, room: input.room, wallIds: [need.wallId] })
+      .filter((problem) => problem.layer === layer).reduce((sum, problem) => sum + problem.overrunIn, 0);
+    if (overrunAfter > overrunBefore + 0.01) {
+      skipped.push({ hostCode: need.hostCode, side: need.side, reason: need.reason, why: `the ${need.wallId} wall run is already full length, so the required 3/4″ panel would overrun it by ${Math.round((overrunAfter - overrunBefore) * 100) / 100}″ — swap a cabinet or filler for one 3/4″ narrower to make room` });
+      continue;
+    }
+    working = candidate;
     changed = true;
     alreadyPanelled.add(`${need.hostUid}:${need.side}`);
     additions.push(panel);
@@ -680,7 +732,7 @@ export function exposedSidePanelSelection(
   catalog: readonly AefEndPanelCatalogItem[],
 ): AefEndPanelSelection | null {
   if (host.placement !== "wall" && host.placement !== "base" && host.placement !== "tall") return null;
-  return selectAefEndPanel(host.placement, rotatedSize(host).d, placedHeight(host), catalog);
+  return selectAefEndPanel(host.placement, finishedSideDepth(host), placedHeight(host), catalog);
 }
 
 /**
@@ -916,7 +968,7 @@ export function symmetricEndPanel(input: {
   const band = wholeSideBand(neighbour);
   const selection = selectAefEndPanel(
     neighbour.placement as "wall" | "base" | "tall",
-    rotatedSize(neighbour).d,
+    finishedSideDepth(neighbour),
     placedHeight(neighbour),
     catalog,
   );
