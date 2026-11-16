@@ -22,6 +22,7 @@ import { formatFillerInches } from "./autoDesignFillerConsolidation";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { isDishwasherItem } from "./dishwasherPanelRule";
 import { isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
+import { isFullHeightRunPiece } from "./autoDesignCloseRemainingGaps";
 import {
   WALL_OPENING_CLEARANCE_IN,
   appendCollisionFreePlacements,
@@ -217,8 +218,12 @@ export function tightenRunOpenings(input: {
     const heightIn = layer === "wall" ? input.wallHeightIn ?? standardHeight("wall") : standardHeight("base");
     for (const wallId of input.wallIds) {
       if (!wallRunFrame(wallId, input.room)) continue;
+      // On the upper layer a full-height board or tall panel is a neighbour too:
+      // without it an upper beside a refrigerator cap was snapped into the end
+      // panel's spot once the duplicate wall filler there stopped being added.
       const onWall = () => Array.from(byUid.values())
-        .filter((item) => cabinetWall(item, input.room) === wallId && layerOf(item) === layer)
+        .filter((item) => cabinetWall(item, input.room) === wallId
+          && (layerOf(item) === layer || (layer === "wall" && isFullHeightRunPiece(item))))
         .sort((left, right) => wallRunOffset(left, wallId, input.room) - wallRunOffset(right, wallId, input.room));
 
       // First: snap each appliance's neighbors to its exact faces so the opening
@@ -375,8 +380,12 @@ export function interCabinetGaps(input: {
   for (const layer of ["base", "wall"] as const) {
     for (const wallId of input.wallIds) {
       if (!wallRunFrame(wallId, input.room)) continue;
+      // A full-height board or tall panel closes the upper layer too, so the
+      // seam check sees it there (it used to report a refrigerator panel's spot
+      // as an open upper seam, which is what a duplicate wall filler "fixed").
       const items = input.placed
-        .filter((item) => cabinetWall(item, input.room) === wallId && layerOf(item) === layer)
+        .filter((item) => cabinetWall(item, input.room) === wallId
+          && (layerOf(item) === layer || (layer === "wall" && isFullHeightRunPiece(item))))
         .sort((left, right) => wallRunOffset(left, wallId, input.room) - wallRunOffset(right, wallId, input.room));
       for (let i = 1; i < items.length; i += 1) {
         const prev = items[i - 1]!;
