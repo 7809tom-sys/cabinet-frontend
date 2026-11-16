@@ -306,6 +306,7 @@ import type { DoorAuditDoorProfile } from "@/lib/doorRenderingAudit";
 import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
+import { AutoDesignRedrawGuard, autoDesignStepFailureText, runWithOneRetry } from "@/lib/autoDesignOneRedraw";
 import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, parseDishwasherSideChoice, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSideChoice } from "@/lib/autoDesignAutoBuild";
 import { autoDesignBlocksEmptyPlan, autoDesignControlState, isRefrigeratorAppliance, isSinkBasePlacement } from "@/lib/autoDesignAvailability";
 import { anchoredRefrigeratorOf, refrigeratorAnchorMeasurement } from "@/lib/autoDesignRefrigeratorAnchor";
@@ -4806,6 +4807,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const tintNote = result.tinted > 0 ? `Refrigerator, dishwasher, microwave and hood are recolored in the 3D view (preview tint, not a catalog photo).` : "";
     toast.success(`${rangeNote}${tintNote}`.trim());
   }, [appliancePalette, setPlaced]);
+  // Tom, Nov 16 2026 (12:19 PM CT): the ONE-REDRAW RULE. One guard per
+  // user-started build: each post-build step may retry once, then it stops and
+  // the user sees the step and the real message instead of a redraw loop.
+  const autoDesignRedrawGuardRef = useRef<AutoDesignRedrawGuard | null>(null);
+  if (!autoDesignRedrawGuardRef.current) {
+    autoDesignRedrawGuardRef.current = new AutoDesignRedrawGuard((failure) => {
+      console.error("[Auto Design] step stopped", failure);
+      toast.error(autoDesignStepFailureText(failure), { duration: 20000 });
+    });
+  }
   const buildAutoDesignLayout = useCallback((input: AutoDesignInputs) => {
     const fail = (message: string) => {
       toast.error(message);
@@ -4859,7 +4870,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // as W362324 that the surround query omits.
     lastFaucetWindowNotesRef.current = [];
     autoDesignWallLabelsRef.current = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection);
-    const run = withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => runAutoDesignLayout({
+    // A new user-started build resets the one-redraw counters.
+    autoDesignRedrawGuardRef.current?.beginBuild();
+    const runAttempt = runWithOneRetry("layout run", () => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => runAutoDesignLayout({
       input: {
         ...input,
         // A refrigerator already on the plan is measured where it stands, so the
@@ -4901,7 +4914,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // The door selected in the designer, not Color 1 and not a second finish.
       styleId: styleIdRef.current ?? null,
       makeUid,
-    }));
+    })));
+    if (!runAttempt.ok) {
+      console.error("[Auto Design] layout run failed twice", runAttempt.failure);
+      return fail(autoDesignStepFailureText(runAttempt.failure));
+    }
+    const run = runAttempt.value;
     if (!run.ok) return fail(run.message);
     startAutoDesignReportRun();
     if (run.sinks[0]) {
@@ -5432,7 +5450,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
   // legacy microwave assembly to the selected source W30 bridge; ordinary spice
   // stacks remain untouched and still use their separate W3030/W3036 workflow.
-  useEffect(() => {
+  useEffect(() => autoDesignRedrawGuardRef.current?.run("microwave bridge repair", () => {
     const repaired = repairLegacyWscMicrowaveBridges(
       placed,
       room,
@@ -5441,11 +5459,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       wallCabHeightRef.current,
     );
     if (repaired.placed === placed) return;
+    if (autoDesignRedrawGuardRef.current?.allowWrite("microwave bridge repair", placed, repaired.placed) === false) return;
     placedRef.current = repaired.placed;
     setPlaced(repaired.placed);
     toast.info(`Replaced legacy WSC30 microwave bridge with the selected ${repaired.placed.find((cabinet) => repaired.repairedUids.includes(cabinet.uid))?.masterCode ?? "W30"} bridge at the 72″ datum.`);
-  }, [placed, room, appliancePalette, wallCabPool, wallCabHeight]);
-  useEffect(() => {
+  }), [placed, room, appliancePalette, wallCabPool, wallCabHeight]);
+  useEffect(() => autoDesignRedrawGuardRef.current?.run("door clearance fillers", () => {
     const clearance = applyFramelessDoorClearanceFillers({
       placed,
       room,
@@ -5453,9 +5472,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid,
     });
     if (clearance.placed === placed) return;
+    if (autoDesignRedrawGuardRef.current?.allowWrite("door clearance fillers", placed, clearance.placed) === false) return;
     placedRef.current = clearance.placed;
     setPlaced(clearance.placed);
-  }, [catalogFillers, placed, room]);
+  }), [catalogFillers, placed, room]);
 
   /**
    * The add-only over-range pass. Runs after every build and on a layout load, and
@@ -5473,7 +5493,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    * makes the answer stick.
    */
   const overRangeFillRanRef = useRef(new Set<string>());
-  useEffect(() => {
+  useEffect(() => autoDesignRedrawGuardRef.current?.run("over-range fill", () => {
     if (placed.length === 0) return;
     const ranges = rangesInPlan(placed);
     if (ranges.length === 0) return;
@@ -5503,10 +5523,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid,
     });
     if (!result.added) return;
+    if (autoDesignRedrawGuardRef.current?.allowWrite("over-range fill", placed, result.placed) === false) return;
     placedRef.current = result.placed;
     setPlaced(() => result.placed);
     for (const note of result.notes) toast.info(note, { duration: 8000 });
-  }, [appliancePalette, overRangeEpoch, placed, room, roomType, setPlaced, styleId, wallCabHeight]);
+  }), [appliancePalette, overRangeEpoch, placed, room, roomType, setPlaced, styleId, wallCabHeight]);
 
   // Actual MasterTrac material numbers grouped by their worksheet categories.
   const closetGroups = useMemo(() => closetPaletteByCategory(), []);
@@ -5994,7 +6015,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const stock = catalogItemToExposedPanelStock(item, designStyleId != null ? priceMap.get(`${item.id}:${designStyleId}`) ?? null : null);
     return stock ? [stock] : [];
   }), [autoPanelCatalog, priceMap, designStyleId]);
-  useEffect(() => {
+  useEffect(() => autoDesignRedrawGuardRef.current?.run("exposed side panel sync", () => {
     const styles = (doorStyles ?? []) as Array<DoorStyleEndPanelInput & { id: number }>;
     const byId = new Map(styles.map((style) => [style.id, style]));
     const doorStyleForPlaced = (cabinet: PlacedCabinet) => {
@@ -6015,12 +6036,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         return sid != null ? priceMap.get(`${stock.id}:${sid}`) ?? null : null;
       },
     });
-    if (plan.placed !== current) {
+    if (plan.placed !== current && autoDesignRedrawGuardRef.current?.allowWrite("exposed side panel sync", current, plan.placed) !== false) {
       placedRef.current = plan.placed;
       setPlaced(plan.placed);
     }
     setExposedPanelWarnings((prev) => sameExposedPanelWarnings(prev, plan.warnings) ? prev : plan.warnings);
-  }, [aefSpecPanelsLoading, catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId, designStyleId]);
+  }), [aefSpecPanelsLoading, catalogFillersLoading, doorStyles, exposedPanelStock, openings, placed, priceMap, priceRowsFetched, pricingStyleIdFor, setPlaced, styleId, designStyleId]);
   // Owner rule: a dishwasher that ends a run, or a run that turns at 45° on it,
   // carries a DWR dishwasher panel. This runs after the exposed-side pass so the
   // dishwasher's measured run end is final, and it is idempotent: a settled plan
@@ -6036,14 +6057,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     depth: item.depth,
     price: designStyleId != null ? priceMap.get(`${item.id}:${designStyleId}`) ?? null : null,
   })), [autoPanelCatalog, priceMap, designStyleId]);
-  useEffect(() => {
+  useEffect(() => autoDesignRedrawGuardRef.current?.run("dishwasher panel sync", () => {
     const current = placedRef.current;
     const plan = syncDishwasherPanels({
       placed: current,
       room: roomRef.current,
       catalog: dishwasherPanelStockCatalog,
     });
-    if (plan.placed !== current) {
+    if (plan.placed !== current && autoDesignRedrawGuardRef.current?.allowWrite("dishwasher panel sync", current, plan.placed) !== false) {
       placedRef.current = plan.placed;
       setPlaced(plan.placed);
     }
@@ -6052,7 +6073,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         && prev.every((warning, index) => warning.id === plan.warnings[index]?.id && warning.message === plan.warnings[index]?.message)) return prev;
       return plan.warnings;
     });
-  }, [dishwasherPanelStockCatalog, placed, setPlaced]);
+  }), [dishwasherPanelStockCatalog, placed, setPlaced]);
 
   // Issue #354 items 3 and 4 (Tom): an exposed side beside a range or microwave,
   // or the side a smaller neighbour leaves showing, gets its 3/4" book panel

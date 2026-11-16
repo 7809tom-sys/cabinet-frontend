@@ -37,6 +37,7 @@ import {
   type WallOpening,
 } from "./design";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
+import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { isSingleDoorTwentyFourRow } from "./singleDoorTwentyFour";
@@ -462,6 +463,8 @@ export type ClusterPlan =
     fillerIn: number | null;
     /** Set when the closest stock sum still leaves more than 3 inches, so no filler is cut. */
     warning: DesignerReviewFinding | null;
+    /** The stretch ends at a 45° corner seat, so the one board goes first and the cabinets end at the seat. */
+    fillerAtStart?: boolean;
   }
   | { kind: "clear"; warning: DesignerReviewFinding }
   | { kind: "consolidate"; boardWidthIn: number; starts: Array<{ uid: string; startIn: number }>; boardStartIn: number }
@@ -570,6 +573,29 @@ function bestRunPack(input: {
  * leftover lands on a real sum. Shrinking is allowed only by sliding the range
  * into the opening, which does not leave the strip empty.
  */
+/**
+ * 45° corners (Tom, Nov 16 2026, voice 11:53 AM CT): a base stretch that ends at
+ * a 45° corner seat starts its cabinets at the end of the 3″ angled filler, so
+ * any run board belongs at the OTHER end of the stretch. True when only the
+ * stretch end (not its start) sits on a 45° base seat.
+ */
+function stretchEndsAtFortyFiveSeat(cluster: Pick<FillerCluster, "wallId" | "layer" | "startIn" | "endIn">, room: RoomData): boolean {
+  if (cluster.layer !== "base") return false;
+  const frame = wallRunFrame(cluster.wallId, room);
+  if (!frame) return false;
+  const endSeat = fortyFiveCornerSeat(room, cluster.wallId, "end", "base");
+  if (!endSeat || Math.abs(cluster.endIn - (frame.runEnd - endSeat.cabinetSetbackIn)) > 0.1) return false;
+  const startSeat = fortyFiveCornerSeat(room, cluster.wallId, "start", "base");
+  return !(startSeat && Math.abs(cluster.startIn - (frame.runStart + startSeat.cabinetSetbackIn)) <= 0.1);
+}
+
+function fortyFiveSeatStartLimit(wallId: string, layer: FillerLayer, room: RoomData): number | null {
+  if (layer !== "base") return null;
+  const frame = wallRunFrame(wallId, room);
+  const seat = fortyFiveCornerSeat(room, wallId, "end", "base");
+  return frame && seat ? frame.runEnd - seat.cabinetSetbackIn : null;
+}
+
 function repackCluster(input: {
   cluster: FillerCluster;
   catalog: readonly DesignCabinet[];
@@ -608,6 +634,9 @@ function repackCluster(input: {
       if (opening.side !== cluster.wallId) continue;
       take(opening.offset, null);
     }
+    // A 45° corner seat is a hard stop: the run never extends into its 3″ filler.
+    const seatLimit = fortyFiveSeatStartLimit(cluster.wallId, cluster.layer, room);
+    if (seatLimit != null) take(seatLimit, null);
     return { at, range };
   };
   const after = nearestAfter();
@@ -642,6 +671,7 @@ function repackCluster(input: {
     rangeAlongIn: flushRange ? Math.round((rangeStart + shift) * 1000) / 1000 : null,
     fillerIn: oversized || pack.remainderIn <= 0.05 ? null : pack.remainderIn,
     warning: oversized ? fillerCapWarning(cluster.wallId, pack.remainderIn) : null,
+    fillerAtStart: !flushRange && stretchEndsAtFortyFiveSeat(cluster, room),
   };
 }
 
@@ -702,6 +732,11 @@ export function planFillerCluster(input: {
   if (cluster.fillers.length > 0 && cluster.fillers.every((item) => (Number(item.width) || 0) <= FILLER_LAST_RESORT_MAX_IN + 0.001)) {
     return { kind: "leave", reason: "a gap of 1 inch or less keeps its filler" };
   }
+  const seatAtEnd = stretchEndsAtFortyFiveSeat(cluster, room);
+  if (seatAtEnd && cluster.fillers.length === 1 && cluster.boardTotalIn <= FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN
+    && Math.abs(wallRunOffset(cluster.fillers[0]!, cluster.wallId, room) - cluster.startIn) <= 0.02) {
+    return { kind: "leave", reason: "one board of 3 inches or less already sits at the run start, away from the 45° corner" };
+  }
   const repacked = repackCluster({
     cluster,
     catalog: input.catalog,
@@ -750,6 +785,15 @@ export function planFillerCluster(input: {
   }
   if (cluster.boardTotalIn > FILLER_STRIP_MAX_IN + COLLISION_EPSILON_IN) {
     return { kind: "clear", warning: fillerCapWarning(cluster.wallId, cluster.boardTotalIn) };
+  }
+  if (seatAtEnd) {
+    // Board first, then the cabinets, so the last cabinet ends on the 45° seat.
+    return {
+      kind: "consolidate",
+      boardWidthIn: cluster.boardTotalIn,
+      starts: laid.starts.map((entry) => ({ uid: entry.uid, startIn: Math.round((entry.startIn + cluster.boardTotalIn) * 1000) / 1000 })),
+      boardStartIn: cluster.startIn,
+    };
   }
   return {
     kind: "consolidate",
@@ -862,7 +906,8 @@ export function consolidateAutoDesignFillers(input: {
           const remove = new Set([...cluster.cabinets, ...cluster.fillers].map((item) => item.uid));
           if (plan.rangeUid) remove.add(plan.rangeUid);
           let trial = working.filter((item) => !remove.has(item.uid));
-          let cursor = plan.startIn;
+          const boardFirst = plan.fillerAtStart === true && plan.fillerIn != null && plan.fillerIn > 0.05;
+          let cursor = boardFirst ? plan.startIn + plan.fillerIn! : plan.startIn;
           let failed = false;
           const template = cluster.cabinets[0]!;
           for (let index = 0; index < plan.rows.length; index += 1) {
@@ -912,7 +957,7 @@ export function consolidateAutoDesignFillers(input: {
           if (!failed && plan.fillerIn != null && plan.fillerIn > 0.05) {
             const owner = trial.filter((item) => item.placement === cluster.layer).at(-1) ?? template;
             const board = boardFor({
-              cluster, width: plan.fillerIn, startIn: cursor, owner,
+              cluster, width: plan.fillerIn, startIn: boardFirst ? plan.startIn : cursor, owner,
               fillers: input.fillers, makeUid: input.makeUid, styleId: input.styleId, room: input.room,
             });
             if (!board) {

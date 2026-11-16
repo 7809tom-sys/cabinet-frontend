@@ -158,12 +158,17 @@ describe("Auto Design closes every 45° corner of an angled-wall room (Tom, Nov 
     expect(measurement?.neighborWallId).toBe("back");
   });
 
-  it("reports an upper corner it cannot close when the line has no wall filler wide enough", () => {
-    // A line whose only filler stock is 3″: even the grown upper needs a 3⅜″ board.
+  it("closes the upper corner from 3″ stock once the bases start at the 3″ filler (Tom, Nov 16 11:53 AM CT)", () => {
+    // A line whose only filler stock is 3″. Before the 45° seat rule this upper
+    // needed a 3⅜″ board and was reported open. Now the corner-end upper is
+    // re-cut so its miter fits the 3″ board, and nothing is left silently open.
     const narrow = FILLERS.filter((row) => Number(row.width) <= 3);
     const narrowResult = build(narrow);
     expect(miterPairsBetween(narrowResult.placed, "left", "angL", "base")).toHaveLength(2);
+    const upperPair = miterPairsBetween(narrowResult.placed, "left", "angL", "wall");
+    expect(upperPair).toHaveLength(2);
+    for (const piece of upperPair) expect(Number(piece.fillerTransitionStockWidthIn)).toBeLessThanOrEqual(3);
     expect(narrowResult.reviewFindings.some((finding) => finding.code === "angled-upper-corner-open"
-      && /left and angL|angL and left/.test(finding.title))).toBe(true);
+      && /left and angL|angL and left/.test(finding.title))).toBe(false);
   });
 });

@@ -40,6 +40,7 @@
  * at the start or end of an L run.
  */
 import { autoBuildSelectedWallCornerReservations, subtractAnchorRunReservations, type AnchorRunReservation } from "./autoDesignAutoBuild";
+import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
 import {
   autoDesignCornerFamily,
   isPullOutCornerCabinet,
@@ -136,7 +137,15 @@ export type CornerTypeDecision = {
   blocked: boolean;
 };
 
-/** Reservations of the inside-corner square on every cabineted run. */
+/**
+ * Reservations of the inside-corner square on every cabineted run.
+ *
+ * 45° corners (Tom, Nov 16 2026, voice 11:53 AM CT): a 135° interior join is
+ * not a lazy-Susan / blind square. Its reservation is only the 3″ angled
+ * filler seat (`fortyFiveCornerSeat`), so the base run starts at the end of
+ * the filler instead of 24″ out, and the front-miter pair closes the corner
+ * from the line's own 3″ stock. 90° corners keep the full square.
+ */
 export function autoDesignInsideCornerReservations(
   room: RoomData,
   runWallIds: readonly string[],
@@ -144,7 +153,19 @@ export function autoDesignInsideCornerReservations(
 ): Array<AnchorRunReservation & { wallId: string }> {
   const reserved: Array<AnchorRunReservation & { wallId: string }> = [];
   for (const wallId of runWallIds) {
+    const frame = wallRunFrame(wallId, room);
     for (const span of autoBuildSelectedWallCornerReservations(wallId, room, runWallIds, depthIn)) {
+      const at = frame && Math.abs(span.start - frame.runStart) <= 0.01
+        ? "start"
+        : frame && Math.abs(span.end - frame.runEnd) <= 0.01 ? "end" : null;
+      const seat = frame && at ? fortyFiveCornerSeat(room, wallId, at, "base", { neighborWallIds: runWallIds }) : null;
+      if (frame && seat) {
+        const setback = Math.min(frame.runEnd - frame.runStart, seat.cabinetSetbackIn);
+        reserved.push(at === "start"
+          ? { wallId, start: frame.runStart, end: frame.runStart + setback }
+          : { wallId, start: frame.runEnd - setback, end: frame.runEnd });
+        continue;
+      }
       reserved.push({ wallId, start: span.start, end: span.end });
     }
   }

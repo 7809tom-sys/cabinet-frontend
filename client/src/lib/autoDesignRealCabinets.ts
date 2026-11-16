@@ -80,6 +80,8 @@ export function openRunGaps(input: {
   openings: readonly WallOpening[];
   layer: "base" | "wall";
   minWidthIn?: number;
+  /** Spans the build keeps clear (e.g. the 45° corner filler seat). */
+  reservedSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
 }): Array<{ startIn: number; widthIn: number }> {
   const minWidthIn = input.minWidthIn ?? REAL_CABINET_MIN_WIDTH_IN;
   const depth = input.layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH;
@@ -95,6 +97,22 @@ export function openRunGaps(input: {
     undefined,
     depth,
   )
+    .flatMap((segment) => {
+      // Tom, Nov 16 2026: a reserved span (the 45° corner filler seat) is never
+      // an opening for a real cabinet; only the part outside it is.
+      let pieces = [{ start: segment.start, end: segment.start + segment.length }];
+      for (const span of input.reservedSpans ?? []) {
+        if (span.wallId !== input.wallId) continue;
+        pieces = pieces.flatMap((piece) => {
+          if (span.end <= piece.start + COLLISION_EPSILON_IN || span.start >= piece.end - COLLISION_EPSILON_IN) return [piece];
+          return [
+            { start: piece.start, end: Math.max(piece.start, span.start) },
+            { start: Math.min(piece.end, span.end), end: piece.end },
+          ].filter((part) => part.end - part.start > COLLISION_EPSILON_IN);
+        });
+      }
+      return pieces.map((piece) => ({ start: piece.start, length: piece.end - piece.start }));
+    })
     .filter((segment) => segment.length > autoDesignFillerMaxIn() + COLLISION_EPSILON_IN)
     .map((segment) => ({ startIn: segment.start, widthIn: segment.length }))
     .sort((left, right) => right.widthIn - left.widthIn);
@@ -232,6 +250,8 @@ export function applyRealCabinetsBeforeFiller(input: {
   slideLimitFor?: (cabinet: PlacedCabinet) => number;
   /** Wall cabinets seated in a 42" design use this height, not the first 30" row. */
   wallHeightIn?: number | null;
+  /** Base spans kept clear (45° corner filler seats). */
+  reservedSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
 }): RealCabinetPassResult {
   let working = [...input.placed];
   const notes: string[] = [];
@@ -244,7 +264,7 @@ export function applyRealCabinetsBeforeFiller(input: {
       if (!wallRunFrame(wallId, input.room)) continue;
       // One fix per opening per iteration, then recompute: a widen changes the run.
       for (let guard = 0; guard < 12; guard += 1) {
-        const gaps = openRunGaps({ wallId, room: input.room, placed: working, openings: input.openings, layer });
+        const gaps = openRunGaps({ wallId, room: input.room, placed: working, openings: input.openings, layer, reservedSpans: layer === "base" ? input.reservedSpans : undefined });
         if (!gaps.length) break;
         const gap = gaps[0]!;
         const neighbors = working.filter((item) => item.placement === layer
