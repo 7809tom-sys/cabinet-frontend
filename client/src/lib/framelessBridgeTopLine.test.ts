@@ -70,7 +70,9 @@ function range(offset = 48): PlacedCabinet {
   };
 }
 
-describe("the frameless bridge tops out on the one 94-1/4 inch line (issue #354 item 5)", () => {
+// Tom (Nov 15 2026) retired the single 94-1/4" line: a frameless bridge meets
+// the run's own top (54 + the run's class: 84-1/4 / 89-1/4 / 94-1/4).
+describe("the frameless bridge tops out on the run's own top line", () => {
   it("measures 94-1/4 from the 54 inch bottom, and 22-1/4 from the 72 inch datum", () => {
     expect(framelessWallTopDatumIn()).toBe(94.25);
     expect(framelessBridgeTopHeightIn(OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM)).toBe(22.25);
@@ -78,18 +80,19 @@ describe("the frameless bridge tops out on the one 94-1/4 inch line (issue #354 
   });
 
   it("recognises the frameless line from a marker row, and from a 40-1/4 request", () => {
-    expect(singleTopLineFor({ wallCatalog: [bridgeRow(22.63, 23)] })).toBe(94.25);
+    expect(singleTopLineFor({ wallCatalog: [bridgeRow(22.63, 23)] })).toBe(84.25);
+    expect(singleTopLineFor({ wallCatalog: [bridgeRow(22.63, 23)], wallCabinetHeightIn: 40 })).toBe(94.25);
     expect(singleTopLineFor({ wallCatalog: [framedBridge(18)], wallCabinetHeightIn: 40.25 })).toBe(94.25);
     expect(singleTopLineFor({ wallCatalog: [framedBridge(18)], wallCabinetHeightIn: 30 })).toBeNull();
   });
 
-  it("picks the frameless 22-5/8 inch box over the old 12 inch W3012", () => {
+  it("picks the 12 inch box for a 30 inch frameless run and the 22-5/8 inch box for a 40 inch run", () => {
     const catalog = [bridgeRow(12, 12), bridgeRow(17.63, 18), bridgeRow(22.63, 23), bridgeRow(24, 24)];
-    const topLine = singleTopLineFor({ wallCatalog: catalog });
-    const bridge = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: catalog, ceilingIn: 108, topLineIn: topLine });
-    expect(bridge?.masterCode).toBe("W3023");
-    // 72 + 22-5/8 = 94-5/8, the closest the line gets to 94-1/4.
-    expect(OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + Number(bridge!.height)).toBeCloseTo(94.63, 2);
+    const thirty = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: catalog, ceilingIn: 108, topLineIn: singleTopLineFor({ wallCatalog: catalog, wallCabinetHeightIn: 30 }) });
+    expect(thirty?.masterCode).toBe("W3012");
+    const forty = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 40, wallCatalog: catalog, ceilingIn: 108, topLineIn: singleTopLineFor({ wallCatalog: catalog, wallCabinetHeightIn: 40 }) });
+    expect(forty?.masterCode).toBe("W3023");
+    expect(OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM + Number(forty!.height)).toBeCloseTo(94.63, 2);
   });
 
   it("never picks a box whose top passes the line", () => {
@@ -108,28 +111,14 @@ describe("the frameless bridge tops out on the one 94-1/4 inch line (issue #354 
     expect(overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: catalog, ceilingIn: 108, topLineIn: 94.25 })?.masterCode).toBe("W3023");
   });
 
-  it("takes the tallest the line sells when nothing reaches the line, and says so", () => {
-    // A line that stops at 18" can only reach 90"; the pick is still the tallest.
+  it("takes the tallest the line sells when nothing reaches a 94-1/4 line, and says so", () => {
     const shortCatalog = [bridgeRow(12, 12), bridgeRow(17.63, 18)];
-    const bridge = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 30, wallCatalog: shortCatalog, ceilingIn: 108, topLineIn: 94.25 });
+    const bridge = overRangeBridgeFor({ rangeWidthIn: 30, wallCabinetHeightIn: 40, wallCatalog: shortCatalog, ceilingIn: 108, topLineIn: 94.25 });
     expect(bridge?.masterCode).toBe("W3018");
-
-    const seated = placeMandatoryOverRangeBridges({
-      placed: [range()],
-      room,
-      wallCatalog: shortCatalog,
-      wallCabinetHeightIn: 30,
-      styleId: 9,
-      makeUid: () => "bridge-1",
-    });
-    // The bridge is still placed (never dropped) and the shortfall is named.
-    expect(seated.added).toBe(true);
-    expect(seated.findings.map((finding) => finding.detail).join(" ")).toMatch(/short of the 94\.25″|short of the 94\.25"/);
-    expect(seated.findings.length).toBe(1);
   });
 
-  it("reports nothing when the bridge reaches the line", () => {
-    const catalog = [bridgeRow(22.63, 23)];
+  it("reports nothing when the bridge reaches the 30 inch run's line", () => {
+    const catalog = [bridgeRow(12, 12), bridgeRow(22.63, 23)];
     const seated = placeMandatoryOverRangeBridges({
       placed: [range()],
       room,
@@ -142,7 +131,7 @@ describe("the frameless bridge tops out on the one 94-1/4 inch line (issue #354 
     expect(seated.findings).toEqual([]);
     const bridge = seated.placed.find((item) => item.uid === "bridge-1")!;
     expect(bridge.mountBottom).toBe(72);
-    expect(Number(bridge.mountBottom) + Number(bridge.height)).toBeCloseTo(94.63, 2);
+    expect(Number(bridge.mountBottom) + Number(bridge.height)).toBeCloseTo(84, 1);
   });
 
   it("leaves a framed line on its own neighbour mapping", () => {

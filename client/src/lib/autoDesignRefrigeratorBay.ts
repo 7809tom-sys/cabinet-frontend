@@ -1,5 +1,5 @@
-import { FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN, framelessAboveFridgeHeight, isFramelessFortyWallHeight } from "./aefAboveFridge";
-import { framelessWallTopDatumIn } from "./framelessWallTopAlignment";
+import { framelessAboveFridgeHeight, isFramelessFortyWallHeight } from "./aefAboveFridge";
+import { framelessRunTopLineIn, framelessWallTopDatumIn } from "./framelessWallTopAlignment";
 import { REFRIGERATOR_PANEL_LIMIT_EPSILON_IN } from "./refrigeratorPanelLimit";
 import { REFRIGERATOR_BRIDGE_FACE_EPSILON_IN } from "./refrigeratorBridgeDepth";
 import { catalogSizeFromNumbers, pickClosestCatalogSize } from "./closestCatalogSize";
@@ -144,8 +144,11 @@ export function pickAutoDesignRefrigeratorCap(
   // frameless line always takes that height whatever 30/36/42 class was asked for.
   // The cap's own bottom is floored at the 72" datum further down, so the top lands
   // on the line without the box ever floating.
+  // Tom (Nov 15 2026) retired the forced 94-1/4" line: only a frameless 40" run
+  // reaches it (and takes the 22-5/8" box). A 30" or 35" frameless run picks its
+  // cap like every other line, so the cap's top meets that run's own top.
   const framelessCapHeight = framelessLine
-    ? (framelessAboveFridgeHeight(wallCabinetHeightIn) ?? FRAMELESS_ABOVE_FRIDGE_HEIGHT_IN)
+    ? framelessAboveFridgeHeight(wallCabinetHeightIn)
     : null;
   if (framelessCapHeight != null) {
     const match = caps
@@ -316,9 +319,13 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   const capHeightLineIn = Math.max(0, Number(wallCabinetHeightIn) || 30);
   // The frame the cap's TOP must reach. On the frameless line that is the single
   // 94-1/4" line (Tom, Nov 9 2026, issue #354 item 5); other lines keep 54 + height.
-  const upperLineTopIn = framelessLine || isFramelessFortyWallHeight(wallCabinetHeightIn)
+  // Tom (Nov 15 2026) retired the forced 94-1/4" frameless line: the cap meets
+  // the run's own top (54 + the run's frameless class), like every other line.
+  const upperLineTopIn = isFramelessFortyWallHeight(wallCabinetHeightIn)
     ? framelessWallTopDatumIn()
-    : UPPER_RUN_BOTTOM_IN + capHeightLineIn;
+    : framelessLine
+      ? framelessRunTopLineIn(capHeightLineIn)
+      : UPPER_RUN_BOTTOM_IN + capHeightLineIn;
   // Height rule, separate from the depth rule: the cabinet above lines up with
   // the other uppers, so its TOP lands on the run's line (54 + the selected
   // upper height) and its bottom is that line less its own height. Hanging it

@@ -35,6 +35,7 @@ import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import {
   FRAMELESS_TOP_WALL_HEIGHT_IN,
+  framelessRunTopLineIn,
   framelessWallTopDatumIn,
 } from "./framelessWallTopAlignment";
 
@@ -224,7 +225,9 @@ export function singleTopLineFor(input: {
   wallCabinetHeightIn?: number | null;
 }): number | null {
   const catalogIsFrameless = (input.wallCatalog ?? []).some((row) => hasAefPrintedGeometry(row));
-  if (catalogIsFrameless) return framelessWallTopDatumIn();
+  // Tom (Nov 15 2026): frameless uppers hang from 54" like framed ones, so the
+  // line is the run's own class (84-1/4 / 89-1/4 / 94-1/4), never a forced 94-1/4.
+  if (catalogIsFrameless) return framelessRunTopLineIn(input.wallCabinetHeightIn);
   // A 40-1/4" request is itself the frameless class: no framed line sells it.
   const requested = Number(input.wallCabinetHeightIn);
   if (Number.isFinite(requested) && Math.abs(requested - FRAMELESS_TOP_WALL_HEIGHT_IN) <= 0.05) {

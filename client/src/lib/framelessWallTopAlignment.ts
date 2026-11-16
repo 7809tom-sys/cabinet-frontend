@@ -140,64 +140,29 @@ export function alignFramelessWallCabinetTops(input: {
 
   const aligned: FramelessWallTopAlignment["aligned"] = [];
   const warnings: string[] = [];
-  const targets = new Map<string, number>();
-  // Every wall the pass touches finishes on the one frameless line, 94-1/4",
-  // whatever heights are in the run and whoever is over the range or fridge.
-  framelessWalls.forEach((wall) => targets.set(wall, framelessWallTopDatumIn()));
-
-  let changed = false;
-  const next = placed.map((cabinet) => {
-    if (cabinet.placement !== "wall") return cabinet;
-    // The WALL decides that the rule applies (a marker-less auto-built bridge
-    // still hangs on a frameless wall), but the CABINET decides whether it may be
-    // rewritten. Only a frameless box or a bridge is this rule's business; a
-    // framed box sharing a mixed / two-style wall keeps its own line exactly.
-    if (!framelessWalls.has(cabinet.wallId ?? "")) return cabinet;
-    if (!isFramelessLine(cabinet) && !isBridgeCabinet(cabinet)) return cabinet;
-    if (eligible && !eligible.has(cabinet.uid)) return cabinet;
-    if (cabinet.islandFace) return cabinet;
-    if (isStacker(cabinet)) return cabinet;
-    if (cabinet.mountBottomAdjusted === true) return cabinet;
-    // Issue #354 item 5 (Tom, Nov 9 2026): the over-microwave bridge and the
-    // refrigerator bridge are NOT exempt from the one 94-1/4" line. Their bottom
-    // stays on the fixed 72" datum and the SKU's HEIGHT is what puts the top on
-    // the line (the 22-5/8" box reaches 94-5/8"). This pass therefore never moves
-    // a bridge's bottom; it reports any bridge whose chosen SKU still finishes off
-    // the line, so the shortfall is visible instead of silent.
-    if (isBridgeCabinet(cabinet)) {
-      const target = targets.get(cabinet.wallId ?? "");
-      if (target == null) return cabinet;
+  // Tom (Nov 15 2026, 7:13 PM CT) replaced the Nov 9 issue #354 "one 94-1/4" top
+  // line" rule: frameless wall cabinets hang from the standard 54" bottom exactly
+  // like framed ones, and a 30-1/4" or 35-1/4" box is NEVER lifted to meet a
+  // 40-1/4" box's top. Reaching the crown is a sizing choice (Auto Design picks
+  // the 40" class), not a raise. Lifting boxes here also fought
+  // normalizeStandardWallMounts (54" reset) inside DesignTool's mount effect, which
+  // rebuilt `placed` on every render and kept the 3D scene from ever settling.
+  //
+  // So this pass now moves nothing. It only names a bridge whose top misses the
+  // wall's real top line (the tallest ordinary frameless box on that wall).
+  for (const wall of Array.from(framelessWalls)) {
+    const target = framelessWallTopLineFor(placed, room, wall);
+    if (target == null) continue;
+    for (const cabinet of walls.get(wall) ?? []) {
+      if (!isBridgeCabinet(cabinet)) continue;
+      if (eligible && !eligible.has(cabinet.uid)) continue;
       const top = wallTopOf(cabinet, room);
       if (Math.abs(top - target) > 0.51) {
-        warnings.push(`${cabinet.masterCode} finishes at ${top}″, ${Math.round((target - top) * 8) / 8}″ off the ${target}″ frameless wall-cabinet top line.`);
+        warnings.push(`${cabinet.masterCode} finishes at ${top}″, ${Math.round((target - top) * 8) / 8}″ off the ${target}″ wall-cabinet top line on this wall.`);
       }
-      return cabinet;
     }
-    const target = targets.get(cabinet.wallId ?? "");
-    if (target == null) return cabinet;
-    const height = placedHeight(cabinet);
-    const bottom = target - height;
-    const current = typeof cabinet.mountBottom === "number"
-      ? cabinet.mountBottom
-      : ordinaryWallMountBottom(cabinet);
-    if (bottom <= current + 0.01) return cabinet;
-    // Never push a box through the ceiling it hangs under. The box keeps its
-    // own line and the difference is named instead of hidden.
-    const ceiling = wallCeilingMin(room, (cabinet.wallId ?? "top") as WallSide);
-    if (bottom + height > ceiling + 0.01) {
-      warnings.push(`${cabinet.masterCode} cannot join the ${target}″ frameless top line: its top would exceed the ${ceiling}″ ceiling on this wall.`);
-      return cabinet;
-    }
-    changed = true;
-    aligned.push({ uid: cabinet.uid, masterCode: cabinet.masterCode ?? "", from: current, to: bottom });
-    return { ...cabinet, mountBottom: bottom };
-  });
-
-  return {
-    placed: changed ? next : (placed as PlacedCabinet[]),
-    aligned,
-    warnings,
-  };
+  }
+  return { placed: placed as PlacedCabinet[], aligned, warnings };
 }
 
 /** Door-style record fields the frameless check reads. */
@@ -227,14 +192,33 @@ export function isFramelessStyle(style: FramelessStyleInput | null | undefined):
  */
 export function framelessWallTopLineFor(
   placed: readonly PlacedCabinet[],
-  _room: RoomData,
+  room: RoomData,
   wallId: string | null | undefined,
 ): number | null {
   const wall = wallId ?? "";
-  const touchesFrameless = placed.some((item) => item.placement === "wall"
-    && (item.wallId ?? "") === wall
-    && (isFramelessLine(item) || isBridgeCabinet(item)));
-  return touchesFrameless ? framelessWallTopDatumIn() : null;
+  const onWall = placed.filter((item) => item.placement === "wall" && (item.wallId ?? "") === wall);
+  if (!onWall.some((item) => isFramelessLine(item) || isBridgeCabinet(item))) return null;
+  // The line is what the wall really shows: the highest top among its ordinary
+  // frameless boxes, each hanging from its own (standard 54") bottom.
+  let line: number | null = null;
+  for (const item of onWall) {
+    if (!isFramelessLine(item) || isBridgeCabinet(item) || isStacker(item) || item.islandFace) continue;
+    const top = wallTopOf(item, room);
+    if (Number.isFinite(top)) line = line == null ? top : Math.max(line, top);
+  }
+  return line;
+}
+
+/**
+ * The top a frameless run of the given nominal wall height really reaches from
+ * the standard bottom: 54 + 30-1/4 = 84-1/4, 54 + 35-1/4 = 89-1/4,
+ * 54 + 40-1/4 = 94-1/4. Bridges and refrigerator caps line up with THIS, so a
+ * 30" frameless run is never matched to a 40" box's line (Tom, Nov 15 2026).
+ */
+export function framelessRunTopLineIn(nominalWallHeightIn: number | null | undefined): number {
+  const nominal = Number(nominalWallHeightIn);
+  const height = framelessWallHeightClass(Number.isFinite(nominal) && nominal > 0 ? nominal : 30);
+  return kitchenRuleNumber("wall_bottom_in") + height;
 }
 
 /** The frameless height class nearest a nominal 30/36/42 request (30.25 / 35.25 / 40.25). */
