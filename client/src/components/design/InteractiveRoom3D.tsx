@@ -89,7 +89,7 @@ import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorPr
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
-import { loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
+import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
 import { matchCabinetColorName } from "@shared/cabinetColorNames";
 import { runColorGate, type ColorGateResult } from "@shared/colorGate";
 import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
@@ -4545,7 +4545,7 @@ function disposeObject(root: THREE.Object3D) {
   const textures = new Set<THREE.Texture>();
   const disposeMaterial = (material: THREE.Material) => {
     for (const value of Object.values(material)) {
-      if (value instanceof THREE.Texture) textures.add(value);
+      if (value instanceof THREE.Texture && !isCachedApplianceFrontTexture(value)) textures.add(value);
     }
     material.dispose();
   };
@@ -13502,6 +13502,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
       host.release();
       if (current && current !== host) current.release();
       rendererHostRef.current = null;
+      disposeApplianceFrontTextureCache();
     };
   }, []);
 

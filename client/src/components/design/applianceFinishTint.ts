@@ -28,14 +28,56 @@ export function tintApplianceRgb(finish: Exclude<ApplianceTintFinish, "stainless
   return [out(tint.cast[0]), out(tint.cast[1]), out(tint.cast[2])];
 }
 
+const CACHED_APPLIANCE_FRONT = "cachedApplianceFront";
+
+/** Cache lives across 3D scene rebuilds so a new mesh can take the already-loaded photo immediately. */
+const applianceFrontTextureCache = new Map<string, THREE.Texture>();
+
+function finishCacheKey(finish: PlacedCabinet["applianceFinish"] | undefined): string {
+  return applianceFinishNeedsTint(finish) ? finish : "stainless";
+}
+
+export function applianceFrontTextureCacheKey(url: string, finish: PlacedCabinet["applianceFinish"] | undefined): string {
+  return `${url}::${finishCacheKey(finish)}`;
+}
+
+export function isCachedApplianceFrontTexture(texture: THREE.Texture | null | undefined): boolean {
+  return texture?.userData?.[CACHED_APPLIANCE_FRONT] === true;
+}
+
+function markCachedApplianceFront(texture: THREE.Texture): THREE.Texture {
+  texture.userData = { ...texture.userData, [CACHED_APPLIANCE_FRONT]: true };
+  return texture;
+}
+
+/**
+ * Drop every cached front photo and dispose the GPU objects. Call only when the
+ * 3D designer unmounts, or from tests, never on a scene rebuild.
+ */
+export function disposeApplianceFrontTextureCache(): void {
+  applianceFrontTextureCache.forEach((texture) => texture.dispose());
+  applianceFrontTextureCache.clear();
+}
+
 /** Front photo texture; recolored once the image arrives when a non-stainless finish is chosen. */
 export function loadApplianceFrontTexture(url: string, finish: PlacedCabinet["applianceFinish"] | undefined): THREE.Texture {
-  if (!applianceFinishNeedsTint(finish)) return new THREE.TextureLoader().load(url);
-  const texture = new THREE.Texture();
+  const key = applianceFrontTextureCacheKey(url, finish);
+  const cached = applianceFrontTextureCache.get(key);
+  if (cached) return cached;
+
+  if (!applianceFinishNeedsTint(finish)) {
+    const texture = markCachedApplianceFront(new THREE.TextureLoader().load(url));
+    applianceFrontTextureCache.set(key, texture);
+    return texture;
+  }
+  const texture = markCachedApplianceFront(new THREE.Texture());
   texture.colorSpace = THREE.SRGBColorSpace;
+  applianceFrontTextureCache.set(key, texture);
   new THREE.ImageLoader().setCrossOrigin("anonymous").load(
     url,
     (image) => {
+      // A later unmount may have evicted this entry; do not resurrect a disposed texture.
+      if (applianceFrontTextureCache.get(key) !== texture) return;
       let source: CanvasImageSource | HTMLImageElement = image;
       try {
         const canvas = document.createElement("canvas");
