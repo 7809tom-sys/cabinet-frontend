@@ -26,6 +26,7 @@ import {
   type AffiliatePricingTierRule,
   type AffiliateProductClass,
 } from "./affiliatePricingTier";
+import { clampToHardFloorCents, type PriceFloorSettings } from "./priceFloors";
 
 /** A single brand-name override row for one affiliate. */
 export interface BrandNameOverride {
@@ -135,6 +136,8 @@ export function resolveAffiliateStorefrontSale(
     referenceRetailCents?: number | null;
     tier?: AffiliatePricingTierRule | null;
     productClass?: AffiliateProductClass;
+    /** Floors from pricing_settings. Absent = cost × 1.15 hard floor. */
+    floors?: PriceFloorSettings | null;
   } = {},
 ): AffiliateRetailResult {
   const source = Math.max(0, roundCents(sourceCostCents));
@@ -149,8 +152,15 @@ export function resolveAffiliateStorefrontSale(
   });
   const affiliateCostCents = resolved.affiliateCostCents
     ?? priceLadder(source, platformSettings).affiliateCents;
+  const retail = resolveAffiliateRetail(affiliateCostCents, markup, opts);
+  // Hard floor (Tom, Nov 16, 2026): no storefront price below Cabinet Dealz
+  // cost × 1.15, whatever the stored markup, buy-cost tier (including a 0%
+  // list_discount), or attach split produced. Basis is supplier cost, never list.
+  const retailCents = clampToHardFloorCents(retail.retailCents, source, opts.floors);
   return {
-    ...resolveAffiliateRetail(affiliateCostCents, markup, opts),
+    ...retail,
+    retailCents,
+    profitCents: retailCents - retail.affiliateCostCents,
     costSource: resolved.source,
   };
 }

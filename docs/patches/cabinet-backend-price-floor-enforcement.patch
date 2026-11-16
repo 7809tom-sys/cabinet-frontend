@@ -1,0 +1,1483 @@
+From dc94cc2aec4df63785bf9d79bec268316d2a9896 Mon Sep 17 00:00:00 2001
+From: Grok Bot <bot@cabinetdealz.local>
+Date: Mon, 16 Nov 2026 12:11:12 -0600
+Subject: [PATCH] Enforce Tom's price floors: cost x1.15 hard floor, cost x1.38
+ contractor floor with admin-only override, contractor never below store cost
+
+Tom approved by voice, Nov 16 2026 11:54 AM CT; store-cost reading confirmed 11:55 AM CT.
+
+- shared/priceFloors.ts: floor constants (11500 / 13800), clamps, write-time checks
+- resolveAffiliateStorefrontSale: clamp retail to yourCost x1.15 (covers bad stored markups and 0% list_discount tiers)
+- sellPriceForTier / contractorPriceOverAffiliateCost: homeowner >= 1.15, contractor >= max(store cost, 1.38 or admin override, 1.15); wholesale unchanged
+- contractorAccess.setAffiliateMarkup: reject below-floor saves server-side; admin-only adminOverrideMultiplier (1.15..1.38) stored in contractor_price_overrides history
+- affiliates update/upsert markup (affiliate + admin): reject retail markups under cost x1.15
+- recalculateStoredTierPrices: cached homeowner/contractor columns honor the floors
+- Floors read from pricing_settings.minMarginOverCostBps / contractorRecommendedBps with 1.15 / 1.38 fallbacks
+- docs/sql/0281_price_floor_enforcement.tidb.sql (hand-run, NOT run)
+---
+ .../sql/0281_price_floor_enforcement.tidb.sql |  60 +++++
+ drizzle/schema.ts                             |  38 +++
+ server/db.ts                                  |  16 +-
+ server/lib/affiliateContractorPricing.test.ts |   8 +-
+ server/lib/affiliateContractorPricing.ts      |   4 +
+ server/lib/affiliateStorefrontPricing.ts      |   5 +
+ server/lib/affiliateTierPricing.ts            |   3 +-
+ server/lib/cartPriceSelection.test.ts         |   5 +-
+ server/lib/priceFloorSettings.ts              |  78 ++++++
+ server/retailFromWholesale.test.ts            |   7 +-
+ server/routers/affiliates.ts                  |  33 +++
+ .../routers/contractorAccess.markup.test.ts   |  96 ++++++-
+ server/routers/contractorAccess.ts            | 104 +++++++-
+ shared/affiliateBranding.ts                   |  12 +-
+ shared/affiliateContractorMarkup.test.ts      |  14 +-
+ shared/margins.ts                             |  65 ++++-
+ shared/priceFloors.test.ts                    | 187 +++++++++++++
+ shared/priceFloors.ts                         | 248 ++++++++++++++++++
+ 18 files changed, 945 insertions(+), 38 deletions(-)
+ create mode 100644 docs/sql/0281_price_floor_enforcement.tidb.sql
+ create mode 100644 server/lib/priceFloorSettings.ts
+ create mode 100644 shared/priceFloors.test.ts
+ create mode 100644 shared/priceFloors.ts
+
+diff --git a/docs/sql/0281_price_floor_enforcement.tidb.sql b/docs/sql/0281_price_floor_enforcement.tidb.sql
+new file mode 100644
+index 00000000..b4dc8b5d
+--- /dev/null
++++ b/docs/sql/0281_price_floor_enforcement.tidb.sql
+@@ -0,0 +1,60 @@
++-- TiDB SQL editor version. Numbered 0281. Run after 0280.
++-- Paste ONE numbered statement at a time. Do not paste the whole file.
++-- Every table is cabinet_dealz.<table>. Never touches freight_zones.
++-- PLAIN ADD COLUMN, one schema change per ALTER. Do not use ADD COLUMN IF NOT
++-- EXISTS / DROP COLUMN IF EXISTS: this project's TiDB Cloud editor has rejected
++-- them (see /workspace/auto-design/fixed-upload.sql, Nov 16, 2026).
++-- If an ADD answers "Duplicate column name ...", the column is already there
++-- (for example from fixed-upload.sql). That is safe: skip to the next statement.
++--
++-- NOT RUN. Delivered with cabinet-backend branch feat/price-floor-enforcement
++-- (Tom, voice, Nov 16, 2026 11:54 AM CT). Inserts no rows, changes no prices,
++-- no backfill. Statements 2, 3 and 4 are identical to fixed-upload.sql
++-- statements 2, 3 and 5, so running either file is enough.
++--
++-- The branch works WITHOUT this file: it reads these columns with fallbacks
++-- (cost x 1.15 hard floor, cost x 1.38 contractor floor) and treats a missing
++-- contractor_price_overrides table as "no override". Only the admin "set
++-- override" save needs statement 4 and returns a clear error until it runs.
++--
++-- users.contractorPriceBps (fixed-upload.sql statement 4) is NOT used by this
++-- branch. Harmless if already added.
++
++-- 1. READ-ONLY CHECK. Shows which of these already exist.
++SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_DEFAULT
++FROM information_schema.COLUMNS
++WHERE TABLE_SCHEMA = 'cabinet_dealz'
++  AND ((TABLE_NAME = 'pricing_settings' AND COLUMN_NAME IN ('contractorRecommendedBps', 'minMarginOverCostBps'))
++       OR TABLE_NAME = 'contractor_price_overrides')
++ORDER BY TABLE_NAME, COLUMN_NAME;
++
++-- 2. Recommended contractor price / contractor floor over Cabinet Dealz cost (13800 = x1.38).
++ALTER TABLE cabinet_dealz.pricing_settings ADD COLUMN contractorRecommendedBps INT NOT NULL DEFAULT 13800;
++
++-- 3. Hard minimum over Cabinet Dealz cost for every sell price (11500 = x1.15).
++ALTER TABLE cabinet_dealz.pricing_settings ADD COLUMN minMarginOverCostBps INT NOT NULL DEFAULT 11500;
++
++-- 4. Admin-only contractor price overrides, append-only history.
++--    Per-store rows use subjectKind = 'affiliate', subjectId = affiliates.id.
++--    newBps is the store's contractor floor on cost (12000 = x1.20, 11500 minimum);
++--    13800 means "override cleared". The latest row per store wins.
++CREATE TABLE IF NOT EXISTS cabinet_dealz.contractor_price_overrides (
++  id BIGINT NOT NULL AUTO_INCREMENT,
++  subjectKind VARCHAR(16) NOT NULL,
++  subjectId BIGINT NOT NULL,
++  oldBps INT NULL,
++  newBps INT NOT NULL,
++  setByUserId BIGINT NOT NULL,
++  setByName VARCHAR(255) NULL,
++  reason VARCHAR(500) NULL,
++  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
++  PRIMARY KEY (id),
++  KEY contractor_price_overrides_subject (subjectKind, subjectId)
++) ENGINE=InnoDB;
++
++-- 5. VERIFY (read-only). Expect 13800 / 11500, and 0 override rows on a first apply.
++SELECT contractorMarkupBps, contractorRecommendedBps, minMarginOverCostBps
++FROM cabinet_dealz.pricing_settings;
++
++SELECT COUNT(*) AS overrideRows
++FROM cabinet_dealz.contractor_price_overrides;
+diff --git a/drizzle/schema.ts b/drizzle/schema.ts
+index ca20c078..b7143c6e 100644
+--- a/drizzle/schema.ts
++++ b/drizzle/schema.ts
+@@ -15,6 +15,7 @@ import {
+   unique,
+   uniqueIndex,
+ } from "drizzle-orm/mysql-core";
++import { sql } from "drizzle-orm";
+ import { AFFILIATE_STOREFRONT_TEMPLATE_IDS } from "../shared/affiliateStorefrontTemplates";
+ import { FREE_USAGE_KINDS } from "../shared/affiliateFreeUsage";
+ import type { AffiliateSocialLink } from "../shared/affiliateSocialLinks";
+@@ -2082,6 +2083,30 @@ export const affiliateContractorMarkups = mysqlTable("affiliate_contractor_marku
+ }));
+ export type AffiliateContractorMarkup = typeof affiliateContractorMarkups.$inferSelect;
+ 
++// Admin-only contractor price overrides, as an append-only history (Tom, Nov 16, 2026).
++// Same shape as /workspace/auto-design/fixed-upload.sql statement 5 and
++// docs/sql/0281_price_floor_enforcement.tidb.sql. The latest row for
++// (subjectKind "affiliate", subjectId = affiliates.id) is that store's contractor
++// floor as a multiplier on Cabinet Dealz cost (12000 = cost × 1.20, never below
++// 11500). newBps at or above the contractor floor (13800) means "no override".
++// Separate from affiliate_contractor_markups so an affiliate edit or clear never
++// wipes it. Code treats a missing table as "no override".
++export const contractorPriceOverrides = mysqlTable("contractor_price_overrides", {
++  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
++  subjectKind: varchar("subjectKind", { length: 16 }).notNull(),
++  subjectId: bigint("subjectId", { mode: "number" }).notNull(),
++  oldBps: int("oldBps"),
++  newBps: int("newBps").notNull(),
++  setByUserId: bigint("setByUserId", { mode: "number" }).notNull(),
++  setByName: varchar("setByName", { length: 255 }),
++  reason: varchar("reason", { length: 500 }),
++  createdAt: datetime("createdAt").notNull().default(sql`CURRENT_TIMESTAMP`),
++}, (t) => ({
++  subjectIdx: index("contractor_price_overrides_subject").on(t.subjectKind, t.subjectId),
++}));
++export type ContractorPriceOverride = typeof contractorPriceOverrides.$inferSelect;
++
++
+ export const affiliateInstallationEstimates = mysqlTable("affiliate_installation_estimates", {
+   id: int("id").autoincrement().primaryKey(),
+   // Null only for a contractor-owned estimate. Affiliate rows still set this.
+@@ -2912,6 +2937,19 @@ export const pricingSettings = mysqlTable("pricing_settings", {
+ });
+ 
+ export type PricingSettings = typeof pricingSettings.$inferSelect;
++
++// Price-floor columns on the same pricing_settings row (Tom, Nov 16, 2026).
++// Kept as a separate table object on purpose: getPricingSettings() does
++// select() of every pricingSettings column, so adding these there would break
++// it until the hand-run SQL lands. Read only through getPriceFloorSettings(),
++// which falls back to 13800 / 11500 when the columns are missing.
++// Hand-run SQL: docs/sql/0281_price_floor_enforcement.tidb.sql (same as
++// /workspace/auto-design/fixed-upload.sql statements 2 and 3).
++export const pricingSettingsPriceFloors = mysqlTable("pricing_settings", {
++  id: int("id").autoincrement().primaryKey(),
++  contractorRecommendedBps: int("contractorRecommendedBps").default(13800).notNull(),
++  minMarginOverCostBps: int("minMarginOverCostBps").default(11500).notNull(),
++});
+ export type InsertPricingSettings = typeof pricingSettings.$inferInsert;
+ 
+ // ─── Platform fee system (price ladder + order fee stack) ──────────────────────
+diff --git a/server/db.ts b/server/db.ts
+index dfe1884b..c04189d5 100644
+--- a/server/db.ts
++++ b/server/db.ts
+@@ -504,6 +504,8 @@ export async function promoteOwnerAdmin<T extends { id: number; role: string }>(
+ 
+ // ─── Pricing & Margins ────────────────────────────────────────────────────────
+ import { pricingSettingAudit, pricingSettings, type PricingSettings } from "../drizzle/schema";
++import type { PriceFloorSettings } from "../shared/priceFloors";
++import { getPriceFloorSettings } from "./lib/priceFloorSettings";
+ 
+ const DEFAULT_PRICING_SETTINGS = {
+   globalMarkupBps: 10000,
+@@ -520,7 +522,11 @@ export type PricingSettingsView = Pick<
+   | "contractorMarkupBps"
+   | "wholesaleMarkupBps"
+   | "wholesaleIncreaseRequiresApproval"
+-> & { updatedAt: Date | null };
++> & {
++  updatedAt: Date | null;
++  /** Tom's floors (cost × 1.15 / × 1.38), read with constant fallbacks. */
++  priceFloors?: PriceFloorSettings | null;
++};
+ 
+ // Read the single pricing-settings row, seeding defaults if the table is empty.
+ // Falls back to in-memory defaults when no DB is configured (local tooling/tests).
+@@ -541,6 +547,7 @@ export async function getPricingSettings(): Promise<PricingSettingsView> {
+     wholesaleMarkupBps: r.wholesaleMarkupBps,
+     wholesaleIncreaseRequiresApproval: r.wholesaleIncreaseRequiresApproval,
+     updatedAt: r.updatedAt ?? null,
++    priceFloors: await getPriceFloorSettings(),
+   };
+ }
+ 
+@@ -625,8 +632,11 @@ export async function recalculateStoredTierPrices(
+     };
+   }
+   const activeSettings = settings ?? await getPricingSettings();
+-  const homeownerMultiplier = Number(activeSettings.homeownerMarkupBps) / 10000;
+-  const contractorMultiplier = Number(activeSettings.contractorMarkupBps) / 10000;
++  // Tom's floors (Nov 16, 2026): the cached homeowner column never sits under
++  // cost × 1.15 and the cached contractor column never under cost × 1.38.
++  const floors = await getPriceFloorSettings();
++  const homeownerMultiplier = Math.max(Number(activeSettings.homeownerMarkupBps), floors.hardFloorBps) / 10000;
++  const contractorMultiplier = Math.max(Number(activeSettings.contractorMarkupBps), floors.contractorFloorBps) / 10000;
+   const wholesaleMultiplier = Number(activeSettings.wholesaleMarkupBps) / 10000;
+   const durableCost = sql`COALESCE(${distributorSkus.yourCost}, ${distributorSkus.adjustedListPrice}, ${distributorSkus.listPrice})`;
+   const hasAuthorizedBase = sql`${durableCost} IS NOT NULL AND ${durableCost} > 0`;
+diff --git a/server/lib/affiliateContractorPricing.test.ts b/server/lib/affiliateContractorPricing.test.ts
+index ad06ce19..597f4912 100644
+--- a/server/lib/affiliateContractorPricing.test.ts
++++ b/server/lib/affiliateContractorPricing.test.ts
+@@ -99,8 +99,9 @@ describe("affiliate contractor checkout price", () => {
+       unitPrice: 1,
+       linePrice: 1,
+     }, rows, unchanged);
+-    expect(line.unitPrice).toBe(129);
+-    expect(sellPriceForTier(rows[0], unchanged, "contractor")).toBe(129);
++    // Site ×1.29 is lifted to Tom's cost × 1.38 contractor floor (Nov 16, 2026).
++    expect(line.unitPrice).toBe(138);
++    expect(sellPriceForTier(rows[0], unchanged, "contractor")).toBe(138);
+   });
+ 
+   it("leaves hardware lines and lines without a cost row unchanged", () => {
+@@ -135,7 +136,8 @@ describe("viewer role gate", () => {
+     expect(sellPriceForTier(row, contractorSettings, "homeowner")).toBe(158);
+     expect(sellPriceForTier(row, siteSettings, "wholesale")).toBe(125);
+     expect(sellPriceForTier(row, contractorSettings, "wholesale")).toBe(125);
+-    expect(sellPriceForTier(row, siteSettings, "contractor")).toBe(129);
++    // Site ×1.29 is lifted to Tom's cost × 1.38 contractor floor (Nov 16, 2026).
++    expect(sellPriceForTier(row, siteSettings, "contractor")).toBe(138);
+     expect(contractorSettings.contractorMarkupBps).toBe(siteSettings.contractorMarkupBps);
+   });
+ });
+diff --git a/server/lib/affiliateContractorPricing.ts b/server/lib/affiliateContractorPricing.ts
+index f89bf245..63a2edf7 100644
+--- a/server/lib/affiliateContractorPricing.ts
++++ b/server/lib/affiliateContractorPricing.ts
+@@ -3,6 +3,7 @@ import { affiliateContractorMarkups, affiliatePricingTiers, affiliates, contract
+ import { DEFAULT_PRICING_SETTINGS } from "../../shared/pricing";
+ import { sellPriceForTier, type AffiliateContractorCostContext, type CostBaseRow, type TierMarkupBps } from "../../shared/margins";
+ import { affiliateTierRule, type StoredAffiliateTier } from "./affiliateTierPricing";
++import { storeContractorOverrideBps } from "./priceFloorSettings";
+ import { getDb, getPlatformPricingSettings, getPricingSettings, type PricingSettingsView } from "../db";
+ 
+ type Viewer = { id: number; role: string } | null | undefined;
+@@ -128,6 +129,8 @@ export async function affiliateContractorCostContextForContractorUser(
+     if (markup?.markupBps == null) return null;
+     const affiliateId = await submittingAffiliateId(db, submission);
+     const tier = affiliateId == null ? null : await storeAffiliateTier(db, affiliateId);
++    // Admin-only override of the 1.38 contractor floor (missing table = none).
++    const adminOverrideBps = await storeContractorOverrideBps(db, affiliateId);
+     let platformAffiliateMarkupBps = DEFAULT_PRICING_SETTINGS.affiliateMarkupBps;
+     try {
+       platformAffiliateMarkupBps = (await getPlatformPricingSettings()).affiliateMarkupBps;
+@@ -141,6 +144,7 @@ export async function affiliateContractorCostContextForContractorUser(
+       markupBps: markup.markupBps,
+       tier,
+       platformAffiliateMarkupBps,
++      adminOverrideBps,
+     };
+   } catch (error) {
+     if (!missingTableWarned) {
+diff --git a/server/lib/affiliateStorefrontPricing.ts b/server/lib/affiliateStorefrontPricing.ts
+index bc31910f..0df40cb8 100644
+--- a/server/lib/affiliateStorefrontPricing.ts
++++ b/server/lib/affiliateStorefrontPricing.ts
+@@ -11,6 +11,8 @@ import {
+ } from "./affiliateTierPricing";
+ import type { AffiliatePricingTierRule } from "@shared/affiliatePricingTier";
+ import type { AffiliateTierDashboard } from "@shared/affiliatePricingTier";
++import type { PriceFloorSettings } from "@shared/priceFloors";
++import { getPriceFloorSettings } from "./priceFloorSettings";
+ 
+ /**
+  * Server-only pricing context for one public affiliate storefront.
+@@ -28,6 +30,8 @@ export type AffiliateStorefrontPricing = {
+   tier: AffiliatePricingTierRule | null;
+   tierView: AffiliateTierView | null;
+   tierDashboard: AffiliateTierDashboard;
++  /** Tom's floors (cost × 1.15 hard floor) from pricing_settings, with constant fallbacks. */
++  priceFloors?: PriceFloorSettings | null;
+ };
+ 
+ function parseCategoryMarkup(value: string | null): Record<string, number> {
+@@ -80,6 +84,7 @@ async function pricingForAffiliate(
+     tier: affiliateTierRule(stored),
+     tierView: stored ? affiliateTierView(stored) : null,
+     tierDashboard: affiliateTierDashboard(stored),
++    priceFloors: await getPriceFloorSettings(),
+   };
+ }
+ 
+diff --git a/server/lib/affiliateTierPricing.ts b/server/lib/affiliateTierPricing.ts
+index 03c837b2..f904b787 100644
+--- a/server/lib/affiliateTierPricing.ts
++++ b/server/lib/affiliateTierPricing.ts
+@@ -101,7 +101,7 @@ export function dollarsToCents(value: string | number | null | undefined): numbe
+ }
+ 
+ export function affiliateStorefrontSale(
+-  pricing: Pick<AffiliateStorefrontPricing, "platformSettings" | "markup" | "tier">,
++  pricing: Pick<AffiliateStorefrontPricing, "platformSettings" | "markup" | "tier"> & Partial<Pick<AffiliateStorefrontPricing, "priceFloors">>,
+   sourceCostCents: number,
+   opts: {
+     categoryKey?: string | null;
+@@ -113,6 +113,7 @@ export function affiliateStorefrontSale(
+   return resolveAffiliateStorefrontSale(sourceCostCents, pricing.platformSettings, pricing.markup, {
+     ...opts,
+     tier: pricing.tier,
++    floors: pricing.priceFloors ?? null,
+   });
+ }
+ 
+diff --git a/server/lib/cartPriceSelection.test.ts b/server/lib/cartPriceSelection.test.ts
+index 7c1b4631..266fb8cd 100644
+--- a/server/lib/cartPriceSelection.test.ts
++++ b/server/lib/cartPriceSelection.test.ts
+@@ -23,7 +23,10 @@ describe("Clark & Son universal rollout pricing", () => {
+   it.each(ownerSupplied)("derives %s tiers once from the authoritative supplier cost", (masterCode, cost, wholesale, contractor, homeowner) => {
+     const row = { masterCode, styleId: 330002, distributorId: 210001, yourCost: cost };
+     expect(sellPriceForTier(row, settings, "wholesale")).toBe(wholesale);
+-    expect(sellPriceForTier(row, settings, "contractor")).toBe(contractor);
++    // Owner-supplied contractor prices are cost × 1.29. Tom's cost × 1.38
++    // contractor floor (Nov 16, 2026) now lifts them: round up cost × 1.38.
++    expect(contractor).toBeLessThan(cost * 1.38);
++    expect(sellPriceForTier(row, settings, "contractor")).toBe(Math.ceil(Math.round(cost * 100) * 1.38 - 1e-9) / 100);
+     expect(sellPriceForTier(row, settings, "homeowner")).toBe(homeowner);
+   });
+ 
+diff --git a/server/lib/priceFloorSettings.ts b/server/lib/priceFloorSettings.ts
+new file mode 100644
+index 00000000..25b2434c
+--- /dev/null
++++ b/server/lib/priceFloorSettings.ts
+@@ -0,0 +1,78 @@
++import { and, desc, eq } from "drizzle-orm";
++import { contractorPriceOverrides, pricingSettingsPriceFloors } from "../../drizzle/schema";
++import { DEFAULT_PRICE_FLOORS, normalizePriceFloors, type PriceFloorSettings } from "../../shared/priceFloors";
++import { getDb } from "../db";
++
++// Tom's price floors (Nov 16, 2026). The columns and the override table come
++// from hand-run SQL (docs/sql/0281_price_floor_enforcement.tidb.sql, same as
++// /workspace/auto-design/fixed-upload.sql). Until it runs, every read here
++// falls back to the 1.15 / 1.38 constants and "no override".
++
++const CACHE_MS = 60_000;
++let cached: { at: number; floors: PriceFloorSettings } | null = null;
++let floorsWarned = false;
++let overridesWarned = false;
++
++/** Subject kind used in contractor_price_overrides for a per-store override. */
++export const STORE_OVERRIDE_SUBJECT = "affiliate";
++
++/** Clear the in-process cache (tests, and right after an admin save). */
++export function resetPriceFloorCache(): void {
++  cached = null;
++}
++
++/** Floors from pricing_settings with safe fallbacks. Never below 1.15 / 1.38 unless the row says a higher-or-equal value. */
++export async function getPriceFloorSettings(): Promise<PriceFloorSettings> {
++  if (cached && Date.now() - cached.at < CACHE_MS) return cached.floors;
++  let floors = DEFAULT_PRICE_FLOORS;
++  try {
++    const db = await getDb();
++    if (db) {
++      const [row] = await db.select({
++        minMarginOverCostBps: pricingSettingsPriceFloors.minMarginOverCostBps,
++        contractorRecommendedBps: pricingSettingsPriceFloors.contractorRecommendedBps,
++      }).from(pricingSettingsPriceFloors).limit(1);
++      floors = normalizePriceFloors(row ?? null);
++    }
++  } catch (error) {
++    if (!floorsWarned) {
++      floorsWarned = true;
++      console.warn(
++        "[Pricing] Price floor columns not readable; using cost × 1.15 / × 1.38",
++        error instanceof Error ? error.message : "unknown error",
++      );
++    }
++  }
++  cached = { at: Date.now(), floors };
++  return floors;
++}
++
++type OverrideDb = NonNullable<Awaited<ReturnType<typeof getDb>>>;
++
++/**
++ * Latest admin override for one store, as a multiplier on Cabinet Dealz cost.
++ * Null = no override (the 1.38 floor). A missing table also reads as null.
++ */
++export async function storeContractorOverrideBps(db: OverrideDb, affiliateId: number | null | undefined): Promise<number | null> {
++  if (affiliateId == null) return null;
++  try {
++    const [row] = await db.select({ newBps: contractorPriceOverrides.newBps })
++      .from(contractorPriceOverrides)
++      .where(and(
++        eq(contractorPriceOverrides.subjectKind, STORE_OVERRIDE_SUBJECT),
++        eq(contractorPriceOverrides.subjectId, affiliateId),
++      ))
++      .orderBy(desc(contractorPriceOverrides.id))
++      .limit(1);
++    return typeof row?.newBps === "number" ? row.newBps : null;
++  } catch (error) {
++    if (!overridesWarned) {
++      overridesWarned = true;
++      console.warn(
++        "[Pricing] contractor_price_overrides not readable; no store overrides apply",
++        error instanceof Error ? error.message : "unknown error",
++      );
++    }
++    return null;
++  }
++}
+diff --git a/server/retailFromWholesale.test.ts b/server/retailFromWholesale.test.ts
+index 84387274..498853d0 100644
+--- a/server/retailFromWholesale.test.ts
++++ b/server/retailFromWholesale.test.ts
+@@ -20,8 +20,11 @@ describe("site-wide retail multiplier", () => {
+ 
+   it("uses vendor wholesale for homeowner retail and leaves the cost ladder alone when it is absent", () => {
+     const row = { yourCost: "162.60", wholesalePrice: "271.00", vendorWholesale: "100" };
+-    expect(sellPriceForTier(row, SETTINGS, "homeowner")).toBe(165);
+-    expect(sellPriceForTier(row, SETTINGS, "contractor")).toBe(209.75);
++    // Vendor wholesale retail ($165) is under Tom's hard floor, cost 162.60 × 1.15
++    // = $186.99 (Nov 16, 2026), so it is lifted. Contractor 162.60 × 1.29 = 209.75
++    // is under cost × 1.38 = $224.39, so it is lifted too.
++    expect(sellPriceForTier(row, SETTINGS, "homeowner")).toBe(186.99);
++    expect(sellPriceForTier(row, SETTINGS, "contractor")).toBe(224.39);
+     expect(sellPriceForTier({ yourCost: "162.60", wholesalePrice: "271.00" }, SETTINGS, "homeowner")).toBe(268.29);
+   });
+ 
+diff --git a/server/routers/affiliates.ts b/server/routers/affiliates.ts
+index f2c9b47d..fff8ecb2 100644
+--- a/server/routers/affiliates.ts
++++ b/server/routers/affiliates.ts
+@@ -21,6 +21,8 @@ import { buildSalesDemoInvite, deliverInviteThenGrant, SALES_DEMO_AFFILIATE_SLUG
+ import { buildAffiliateSetupInvite } from "../affiliateSetupInvite";
+ import { resolveAffiliateAccess } from "../lib/affiliateAccess";
+ import { loadAffiliatePricingById } from "../lib/affiliateStorefrontPricing";
++import { checkRetailMarkupSave, storeCostBasisBps } from "@shared/priceFloors";
++import { getPriceFloorSettings } from "../lib/priceFloorSettings";
+ import { affiliateTierDashboard, affiliateTierView, checkedTierDraft, nextTierCode } from "../lib/affiliateTierPricing";
+ import { unassignedAffiliateTier } from "@shared/affiliatePricingTier";
+ import { toAdminAffiliate, toPublicStorefront, toViewerAffiliate } from "../lib/affiliatePrivacy";
+@@ -362,6 +364,33 @@ const brandingInput = z.object({
+   }).optional(),
+ });
+ 
++/**
++ * Tom's hard floor (Nov 16, 2026): reject any retail markup save (default,
++ * category, or style) that would price this store's cabinets below Cabinet
++ * Dealz cost × 1.15. Applies to admin saves too. A list_discount tier varies
++ * by SKU, so it is left to the sell-time clamp in resolveAffiliateStorefrontSale.
++ * Hardware markup is list-based and not checked here.
++ */
++async function assertRetailMarkupsMeetFloor(
++  affiliateId: number,
++  markups: { defaultMarkupBps?: number | null; categoryMarkup?: Record<string, number> | null; styleMarkupBps?: number | null },
++): Promise<void> {
++  const values = [
++    markups.defaultMarkupBps,
++    markups.styleMarkupBps,
++    ...Object.values(markups.categoryMarkup ?? {}),
++  ].filter((v): v is number => typeof v === "number");
++  if (values.length === 0) return;
++  const pricing = await loadAffiliatePricingById(affiliateId);
++  if (!pricing) return;
++  const basisBps = storeCostBasisBps(pricing.tier, pricing.platformSettings.affiliateMarkupBps);
++  const floors = pricing.priceFloors ?? await getPriceFloorSettings();
++  for (const markupBps of values) {
++    const check = checkRetailMarkupSave({ markupBps, basisBps, floors });
++    if (!check.ok) throw new TRPCError({ code: "BAD_REQUEST", message: check.message });
++  }
++}
++
+ export const affiliatesRouter = router({
+   // ─── Affiliate Team Management ────────────────────────────────────────────
+   myTeam: partnerProcedure
+@@ -1346,6 +1375,7 @@ export const affiliatesRouter = router({
+       if (!mine) throw new TRPCError({ code: "FORBIDDEN", message: "No affiliate account linked to you." });
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++      await assertRetailMarkupsMeetFloor(mine.id, { defaultMarkupBps: input.defaultMarkupBps, categoryMarkup: input.categoryMarkup });
+       const set: Record<string, unknown> = {};
+       if (input.defaultMarkupBps !== undefined) set.defaultMarkupBps = input.defaultMarkupBps;
+       if (input.categoryMarkup !== undefined) set.categoryMarkupJson = JSON.stringify(input.categoryMarkup);
+@@ -1393,6 +1423,7 @@ export const affiliatesRouter = router({
+       const row = existing.find((r) => r.styleId === input.styleId);
+       const brandName = input.brandName === undefined ? row?.brandName ?? null : (input.brandName?.trim() || null);
+       const markupBps = input.markupBps === undefined ? row?.markupBps ?? null : input.markupBps;
++      if (input.markupBps != null) await assertRetailMarkupsMeetFloor(mine.id, { styleMarkupBps: input.markupBps });
+       const featured = input.featured === undefined ? (row?.featured ?? false) : input.featured;
+       if (featured && !row?.featured) {
+         const featuredRows = await db.select({ id: affiliateStyleBranding.id })
+@@ -1514,6 +1545,7 @@ export const affiliatesRouter = router({
+     .mutation(async ({ input }) => {
+       const db = await getDb();
+       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
++      await assertRetailMarkupsMeetFloor(input.affiliateId, { defaultMarkupBps: input.defaultMarkupBps, categoryMarkup: input.categoryMarkup });
+       const set: Record<string, unknown> = {};
+       if (input.defaultMarkupBps !== undefined) set.defaultMarkupBps = input.defaultMarkupBps;
+       if (input.categoryMarkup !== undefined) set.categoryMarkupJson = JSON.stringify(input.categoryMarkup);
+@@ -1552,6 +1584,7 @@ export const affiliatesRouter = router({
+       const row = existing[0];
+       const brandName = input.brandName === undefined ? (row?.brandName ?? null) : (input.brandName?.trim() || null);
+       const markupBps = input.markupBps === undefined ? (row?.markupBps ?? null) : input.markupBps;
++      if (input.markupBps != null) await assertRetailMarkupsMeetFloor(input.affiliateId, { styleMarkupBps: input.markupBps });
+       const featured = input.featured === undefined ? (row?.featured ?? false) : input.featured;
+       if (featured && !row?.featured) {
+         const featuredRows = await db.select({ id: affiliateStyleBranding.id })
+diff --git a/server/routers/contractorAccess.markup.test.ts b/server/routers/contractorAccess.markup.test.ts
+index a7d951fc..465b70c4 100644
+--- a/server/routers/contractorAccess.markup.test.ts
++++ b/server/routers/contractorAccess.markup.test.ts
+@@ -1,5 +1,5 @@
+ import { beforeEach, describe, expect, it, vi } from "vitest";
+-import { affiliateContractorMarkups } from "../../drizzle/schema";
++import { affiliateContractorMarkups, contractorPriceOverrides } from "../../drizzle/schema";
+ 
+ const { getDbMock, getPricingSettingsMock } = vi.hoisted(() => ({
+   getDbMock: vi.fn(),
+@@ -23,9 +23,11 @@ function caller(user: { id: number; role: string; email: string | null }) {
+ 
+ describe("contractorAccess affiliate markup", () => {
+   let markups: Array<{ affiliateUserId: number; affiliateId?: number | null; markupBps: number; updatedByUserId: number | null }>;
++  let overrides: Array<{ subjectKind: string; subjectId: number; oldBps: number | null; newBps: number; setByUserId: number; reason: string | null }>;
+ 
+   beforeEach(() => {
+     markups = [];
++    overrides = [];
+     getPricingSettingsMock.mockReset();
+     getPricingSettingsMock.mockResolvedValue({
+       globalMarkupBps: 10000,
+@@ -39,16 +41,26 @@ describe("contractorAccess affiliate markup", () => {
+     getDbMock.mockResolvedValue({
+       select: () => ({
+         from: (table: unknown) => {
++          if (table === contractorPriceOverrides) {
++            const latest = () => [...overrides].reverse().map((row) => ({ newBps: row.newBps }));
++            return {
++              where: () => ({
++                orderBy: () => ({ limit: async (count: number) => latest().slice(0, count) }),
++              }),
++            };
++          }
+           const rows = table === affiliateContractorMarkups ? markups : [];
+           const builder = {
+-            where: () => Promise.resolve(rows),
++            where: () => Object.assign(Promise.resolve(rows), { limit: async (count: number) => rows.slice(0, count) }),
+             limit: async (count: number) => rows.slice(0, count),
+           };
+           return builder;
+         },
+       }),
+       insert: (table: unknown) => ({
+-        values: (values: { affiliateUserId: number; affiliateId?: number | null; markupBps: number; updatedByUserId: number | null }) => ({
++        values: (values: { affiliateUserId: number; affiliateId?: number | null; markupBps: number; updatedByUserId: number | null }) => table === contractorPriceOverrides
++          ? Promise.resolve(void overrides.push(values as unknown as (typeof overrides)[number]))
++          : ({
+           onDuplicateKeyUpdate: async ({ set }: { set: { markupBps: number; updatedByUserId: number | null; affiliateId?: number | null } }) => {
+             if (table !== affiliateContractorMarkups) throw new Error("unexpected insert");
+             const existing = markups.find((row) => row.affiliateUserId === values.affiliateUserId);
+@@ -71,36 +83,92 @@ describe("contractorAccess affiliate markup", () => {
+     });
+   });
+ 
+-  it("returns null markup and the site default percent for an affiliate who has not set one", async () => {
++  const FLOOR_FIELDS = {
++    contractorFloorMultiplier: 1.38,
++    hardFloorMultiplier: 1.15,
++    adminOverrideMultiplier: null,
++    // Store pays cost × 1.05; 31.43% over that reaches cost × 1.38.
++    minMarkupPercent: 31.43,
++  };
++
++  it("returns null markup, the site default percent, and Tom's floors for an affiliate who has not set one", async () => {
+     const result = await caller({ id: 9, role: "partner", email: "ada@shop.test" }).affiliateMarkup();
+-    expect(result).toEqual({ markupPercent: null, siteDefaultPercent: 29 });
++    expect(result).toEqual({ markupPercent: null, siteDefaultPercent: 29, ...FLOOR_FIELDS });
+   });
+ 
+-  it("saves, reads, and clears an affiliate markup, and lets an admin do it for any affiliate", async () => {
++  it("saves, reads, and clears an affiliate markup at or above the 1.38 floor, and lets an admin do it for any affiliate", async () => {
+     const affiliate = caller({ id: 9, role: "affiliate", email: "ada@shop.test" });
+-    const saved = await affiliate.setAffiliateMarkup({ markupPercent: 29.5 });
+-    expect(saved).toEqual({ markupPercent: 29.5, siteDefaultPercent: 29 });
+-    expect(markups).toEqual([{ affiliateUserId: 9, affiliateId: null, markupBps: 2950, updatedByUserId: 9 }]);
+-    await expect(affiliate.affiliateMarkup()).resolves.toEqual({ markupPercent: 29.5, siteDefaultPercent: 29 });
++    const saved = await affiliate.setAffiliateMarkup({ markupPercent: 31.43 });
++    expect(saved).toEqual({ markupPercent: 31.43, siteDefaultPercent: 29, contractorFloorMultiplier: 1.38, adminOverrideMultiplier: null });
++    expect(markups).toEqual([{ affiliateUserId: 9, affiliateId: null, markupBps: 3143, updatedByUserId: 9 }]);
++    await expect(affiliate.affiliateMarkup()).resolves.toEqual({ markupPercent: 31.43, siteDefaultPercent: 29, ...FLOOR_FIELDS });
+ 
+     await expect(caller({ id: 4, role: "partner", email: "other@shop.test" }).setAffiliateMarkup({
+       affiliateUserId: 9,
+-      markupPercent: 10,
++      markupPercent: 40,
+     })).rejects.toMatchObject({ code: "FORBIDDEN", message: "You can only change your own contractor markup." });
+ 
+     const admin = caller({ id: 2, role: "admin", email: "rich@shop.test" });
+     await expect(admin.affiliateMarkup({ affiliateUserId: 9 })).resolves.toEqual({
+-      markupPercent: 29.5,
++      markupPercent: 31.43,
+       siteDefaultPercent: 29,
++      ...FLOOR_FIELDS,
+     });
+-    await admin.setAffiliateMarkup({ affiliateUserId: 9, markupPercent: 0 });
+-    expect(markups[0]).toMatchObject({ affiliateUserId: 9, affiliateId: null, markupBps: 0, updatedByUserId: 2 });
++    await admin.setAffiliateMarkup({ affiliateUserId: 9, markupPercent: 50 });
++    expect(markups[0]).toMatchObject({ affiliateUserId: 9, affiliateId: null, markupBps: 5000, updatedByUserId: 2 });
++    // "Use site default": the site tier is floored at 1.38 at sell time, so it is allowed.
+     await admin.setAffiliateMarkup({ affiliateUserId: 9, markupPercent: null });
+     expect(markups).toEqual([]);
++    await affiliate.setAffiliateMarkup({ markupPercent: null });
+ 
+     await expect(caller({ id: 8, role: "contractor", email: "pat@shop.test" }).affiliateMarkup())
+       .rejects.toMatchObject({ code: "FORBIDDEN", message: "Only an affiliate can set contractor markup." });
+     await expect(affiliate.setAffiliateMarkup({ markupPercent: 200.01 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+     await expect(affiliate.setAffiliateMarkup({ markupPercent: 10.001 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+   });
++
++  it("rejects affiliate saves that land under cost × 1.38 (0%, 20%, 31.42%)", async () => {
++    const affiliate = caller({ id: 9, role: "affiliate", email: "ada@shop.test" });
++    for (const markupPercent of [0, 20, 31.42]) {
++      await expect(affiliate.setAffiliateMarkup({ markupPercent })).rejects.toMatchObject({
++        code: "BAD_REQUEST",
++        message: expect.stringContaining("below the minimum of cost × 1.38"),
++      });
++    }
++    expect(markups).toEqual([]);
++  });
++
++  it("only an admin can set an override; the admin needs one to go under 1.38 and can never go under 1.15", async () => {
++    const affiliate = caller({ id: 9, role: "affiliate", email: "ada@shop.test" });
++    await expect(affiliate.setAffiliateMarkup({ markupPercent: 40, adminOverrideMultiplier: 1.2 }))
++      .rejects.toMatchObject({ code: "FORBIDDEN" });
++
++    const admin = caller({ id: 2, role: "admin", email: "rich@shop.test" });
++    // No override yet: admin is held to 1.38 too.
++    await expect(admin.setAffiliateMarkup({ affiliateUserId: 9, affiliateId: 77, markupPercent: 20 }))
++      .rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("Set an admin override") });
++    // 0% (cost × 1.05) is under the 1.15 hard floor: no override can allow it.
++    await expect(admin.setAffiliateMarkup({ affiliateUserId: 9, affiliateId: 77, markupPercent: 0, adminOverrideMultiplier: 1.15 }))
++      .rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("No override can go below that") });
++    // Override below 1.15 is refused.
++    await expect(admin.setAffiliateMarkup({ affiliateUserId: 9, affiliateId: 77, markupPercent: 0, adminOverrideMultiplier: 1.1 }))
++      .rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("between cost × 1.15 and cost × 1.38") });
++    // Override at 1.20: 14.29% over the 1.05 store cost reaches cost × 1.20.
++    const saved = await admin.setAffiliateMarkup({
++      affiliateUserId: 9,
++      affiliateId: 77,
++      markupPercent: 14.29,
++      adminOverrideMultiplier: 1.2,
++      adminOverrideReason: "Tom approved",
++    });
++    expect(saved).toMatchObject({ contractorFloorMultiplier: 1.2, adminOverrideMultiplier: 1.2 });
++    expect(overrides).toEqual([expect.objectContaining({ subjectKind: "affiliate", subjectId: 77, oldBps: null, newBps: 12000, setByUserId: 2, reason: "Tom approved" })]);
++    // With the override in place the affiliate may save down to it, not below.
++    await expect(admin.setAffiliateMarkup({ affiliateUserId: 9, affiliateId: 77, markupPercent: 10 }))
++      .rejects.toMatchObject({ code: "BAD_REQUEST", message: expect.stringContaining("below the minimum of cost × 1.2") });
++    // Clearing the override writes a 13800 history row; 1.38 applies again.
++    await admin.setAffiliateMarkup({ affiliateUserId: 9, affiliateId: 77, markupPercent: 40, adminOverrideMultiplier: null });
++    expect(overrides.at(-1)).toMatchObject({ oldBps: 12000, newBps: 13800 });
++    await expect(admin.affiliateMarkup({ affiliateUserId: 9, affiliateId: 77 })).resolves.toMatchObject({ adminOverrideMultiplier: null, contractorFloorMultiplier: 1.38 });
++  });
+ });
+diff --git a/server/routers/contractorAccess.ts b/server/routers/contractorAccess.ts
+index 4e55ec68..85268739 100644
+--- a/server/routers/contractorAccess.ts
++++ b/server/routers/contractorAccess.ts
+@@ -2,7 +2,7 @@ import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
+ import { alias } from "drizzle-orm/mysql-core";
+ import { TRPCError } from "@trpc/server";
+ import { z } from "zod";
+-import { affiliateContractorMarkups, affiliates, contractorAccessRequests, users } from "../../drizzle/schema";
++import { affiliateContractorMarkups, affiliates, contractorAccessRequests, contractorPriceOverrides, users } from "../../drizzle/schema";
+ import { getDb, getPricingSettings } from "../db";
+ import {
+   isAffiliateContractorMarkupPercent,
+@@ -24,6 +24,16 @@ import { DIRECT_STORE_NAME } from "@shared/customerDirectory";
+ import { affiliateIdFromStoreScope, listAccessibleAffiliateIds, resolveAffiliateSiteScope, resolveContractorSubmitAffiliateId, rowBelongsToSite } from "../lib/affiliateSiteScope";
+ import { queryOrLogMissingColumn } from "../lib/signupAffiliateStamp";
+ import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
++import {
++  checkContractorMarkupSave,
++  contractorFloorMultiplierBps,
++  isValidContractorOverrideBps,
++  minContractorMarkupPercent,
++  storeCostBasisBps,
++} from "../../shared/priceFloors";
++import { getPriceFloorSettings, resetPriceFloorCache, STORE_OVERRIDE_SUBJECT, storeContractorOverrideBps } from "../lib/priceFloorSettings";
++import { loadAffiliatePricingById } from "../lib/affiliateStorefrontPricing";
++import { DEFAULT_PRICING_SETTINGS } from "../../shared/pricing";
+ 
+ const STATUSES = ["pending", "approved", "rejected"] as const;
+ const requestSubmitter = alias(users, "contractorAccessSubmitter");
+@@ -153,6 +163,27 @@ async function markupTarget(
+   return { affiliateUserId, affiliateId };
+ }
+ 
++/**
++ * What the target store pays per unit of Cabinet Dealz cost (bps), for the
++ * save-time floor check. Null for a list_discount tier (varies by SKU).
++ */
++async function markupTargetBasisBps(affiliateId: number | null): Promise<number | null> {
++  if (affiliateId != null) {
++    try {
++      const pricing = await loadAffiliatePricingById(affiliateId);
++      if (pricing) return storeCostBasisBps(pricing.tier, pricing.platformSettings.affiliateMarkupBps);
++    } catch (error) {
++      console.warn("[Pricing] Store basis lookup failed; using platform default", error instanceof Error ? error.message : "unknown error");
++    }
++  }
++  return storeCostBasisBps(null, DEFAULT_PRICING_SETTINGS.affiliateMarkupBps);
++}
++
++/** Percent multiplier (1.20) to bps (12000). */
++function multiplierToBps(multiplier: number): number {
++  return Math.round(multiplier * 10000);
++}
++
+ type AccessRequest = typeof contractorAccessRequests.$inferSelect;
+ 
+ async function applyContractorAccessDecision(
+@@ -480,9 +511,17 @@ export const contractorAccessRouter = router({
+         ? item.affiliateId === target.affiliateId || (item.affiliateId == null && item.affiliateUserId === target.affiliateUserId)
+         : item.affiliateUserId === target.affiliateUserId
+     )) ?? markupRows[0];
++    const floors = await getPriceFloorSettings();
++    const overrideBps = await storeContractorOverrideBps(db, target.affiliateId);
++    const floorBps = contractorFloorMultiplierBps(overrideBps, floors);
+     return {
+       markupPercent: row ? markupBpsToPercent(row.markupBps) : null,
+       siteDefaultPercent: siteContractorMarkupPercent(settings.contractorMarkupBps),
++      // Tom's floors (Nov 16, 2026), as multipliers on Cabinet Dealz cost.
++      contractorFloorMultiplier: floorBps / 10000,
++      hardFloorMultiplier: floors.hardFloorBps / 10000,
++      adminOverrideMultiplier: overrideBps != null && overrideBps < floors.contractorFloorBps ? floorBps / 10000 : null,
++      minMarkupPercent: minContractorMarkupPercent(await markupTargetBasisBps(target.affiliateId), overrideBps, floors),
+     };
+   }),
+   setAffiliateMarkup: protectedProcedure.input(z.object({
+@@ -498,10 +537,69 @@ export const contractorAccessRouter = router({
+         });
+       }
+     }),
++    /**
++     * Admin only. Lowers this store's contractor floor below cost × 1.38
++     * (e.g. 1.2 = cost × 1.20), never below cost × 1.15. Null clears it back
++     * to 1.38. Omit to leave the current override unchanged.
++     */
++    adminOverrideMultiplier: z.number().min(1).max(2).nullable().optional(),
++    adminOverrideReason: z.string().trim().max(500).optional(),
+   })).mutation(async ({ ctx, input }) => {
+     const db = await getDb();
+     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+     const target = await markupTarget(db, ctx.user, input);
++    const isAdmin = ctx.user.role === "admin";
++    if (input.adminOverrideMultiplier !== undefined && !isAdmin) {
++      throw new TRPCError({ code: "FORBIDDEN", message: "Only Cabinet Dealz can set a contractor price override." });
++    }
++    const floors = await getPriceFloorSettings();
++    const currentOverrideBps = await storeContractorOverrideBps(db, target.affiliateId);
++    let overrideBps = currentOverrideBps;
++    if (input.adminOverrideMultiplier !== undefined) {
++      if (target.affiliateId == null) {
++        throw new TRPCError({ code: "BAD_REQUEST", message: "Choose which affiliate store the override is for." });
++      }
++      const nextBps = input.adminOverrideMultiplier == null
++        ? floors.contractorFloorBps
++        : multiplierToBps(input.adminOverrideMultiplier);
++      if (!isValidContractorOverrideBps(nextBps, floors)) {
++        throw new TRPCError({
++          code: "BAD_REQUEST",
++          message: `An override must be between cost × ${(floors.hardFloorBps / 10000).toFixed(2)} and cost × ${(floors.contractorFloorBps / 10000).toFixed(2)}.`,
++        });
++      }
++      overrideBps = nextBps;
++    }
++    const settings = await getPricingSettings();
++    const check = checkContractorMarkupSave({
++      markupBps: input.markupPercent == null ? null : markupPercentToBps(input.markupPercent),
++      basisBps: await markupTargetBasisBps(target.affiliateId),
++      siteContractorMarkupBps: settings.contractorMarkupBps,
++      isAdmin,
++      adminOverrideBps: overrideBps,
++      floors,
++    });
++    if (!check.ok) throw new TRPCError({ code: "BAD_REQUEST", message: check.message });
++    if (input.adminOverrideMultiplier !== undefined && target.affiliateId != null && overrideBps !== currentOverrideBps) {
++      try {
++        await db.insert(contractorPriceOverrides).values({
++          subjectKind: STORE_OVERRIDE_SUBJECT,
++          subjectId: target.affiliateId,
++          oldBps: currentOverrideBps,
++          newBps: overrideBps ?? floors.contractorFloorBps,
++          setByUserId: ctx.user.id,
++          setByName: ctx.user.name ?? ctx.user.email ?? null,
++          reason: input.adminOverrideReason || null,
++        });
++        resetPriceFloorCache();
++      } catch (error) {
++        console.warn("[Pricing] Contractor override save failed", error instanceof Error ? error.message : "unknown error");
++        throw new TRPCError({
++          code: "PRECONDITION_FAILED",
++          message: "Contractor price overrides are not set up yet. Run docs/sql/0281_price_floor_enforcement.tidb.sql first.",
++        });
++      }
++    }
+     if (input.markupPercent == null) {
+       await db.delete(affiliateContractorMarkups)
+         .where(target.affiliateId != null
+@@ -518,10 +616,12 @@ export const contractorAccessRouter = router({
+         set: { markupBps, updatedByUserId: ctx.user.id, affiliateId: target.affiliateId, affiliateUserId: target.affiliateUserId },
+       });
+     }
+-    const settings = await getPricingSettings();
++    const floorBps = contractorFloorMultiplierBps(overrideBps, floors);
+     return {
+       markupPercent: input.markupPercent,
+       siteDefaultPercent: siteContractorMarkupPercent(settings.contractorMarkupBps),
++      contractorFloorMultiplier: floorBps / 10000,
++      adminOverrideMultiplier: overrideBps != null && overrideBps < floors.contractorFloorBps ? floorBps / 10000 : null,
+     };
+   }),
+ });
+diff --git a/shared/affiliateBranding.ts b/shared/affiliateBranding.ts
+index 778a7dcf..1451f057 100644
+--- a/shared/affiliateBranding.ts
++++ b/shared/affiliateBranding.ts
+@@ -26,6 +26,7 @@ import {
+   type AffiliatePricingTierRule,
+   type AffiliateProductClass,
+ } from "./affiliatePricingTier";
++import { clampToHardFloorCents, type PriceFloorSettings } from "./priceFloors";
+ 
+ /** A single brand-name override row for one affiliate. */
+ export interface BrandNameOverride {
+@@ -135,6 +136,8 @@ export function resolveAffiliateStorefrontSale(
+     referenceRetailCents?: number | null;
+     tier?: AffiliatePricingTierRule | null;
+     productClass?: AffiliateProductClass;
++    /** Floors from pricing_settings. Absent = cost × 1.15 hard floor. */
++    floors?: PriceFloorSettings | null;
+   } = {},
+ ): AffiliateRetailResult {
+   const source = Math.max(0, roundCents(sourceCostCents));
+@@ -149,8 +152,15 @@ export function resolveAffiliateStorefrontSale(
+   });
+   const affiliateCostCents = resolved.affiliateCostCents
+     ?? priceLadder(source, platformSettings).affiliateCents;
++  const retail = resolveAffiliateRetail(affiliateCostCents, markup, opts);
++  // Hard floor (Tom, Nov 16, 2026): no storefront price below Cabinet Dealz
++  // cost × 1.15, whatever the stored markup, buy-cost tier (including a 0%
++  // list_discount), or attach split produced. Basis is supplier cost, never list.
++  const retailCents = clampToHardFloorCents(retail.retailCents, source, opts.floors);
+   return {
+-    ...resolveAffiliateRetail(affiliateCostCents, markup, opts),
++    ...retail,
++    retailCents,
++    profitCents: retailCents - retail.affiliateCostCents,
+     costSource: resolved.source,
+   };
+ }
+diff --git a/shared/affiliateContractorMarkup.test.ts b/shared/affiliateContractorMarkup.test.ts
+index 73edb00a..5d5d8705 100644
+--- a/shared/affiliateContractorMarkup.test.ts
++++ b/shared/affiliateContractorMarkup.test.ts
+@@ -40,10 +40,13 @@ describe("affiliate contractor markup", () => {
+   it("prices a contractor SKU over the affiliate's cost and leaves other tiers alone", () => {
+     const row = { yourCost: 100, wholesalePrice: 80, listPrice: 90 };
+     // No tier and no platform markup: the affiliate's cost equals Cabinet Dealz cost.
+-    expect(affiliateContractorSellPrice(row, SETTINGS, 29)).toBe(129);
+-    expect(affiliateContractorSellPrice(row, SETTINGS, 0)).toBe(100);
++    // Tom's floors (Nov 16, 2026): 29% and 0% over a $100 cost are lifted to
++    // the cost × 1.38 contractor floor ($138). 200% stays above it.
++    expect(affiliateContractorSellPrice(row, SETTINGS, 29)).toBe(138);
++    expect(affiliateContractorSellPrice(row, SETTINGS, 0)).toBe(138);
+     expect(affiliateContractorSellPrice(row, SETTINGS, 200)).toBe(300);
+-    expect(sellPriceForTier(row, SETTINGS, "contractor")).toBe(129);
++    // Site contractor tier ×1.29 is lifted to the 1.38 floor too.
++    expect(sellPriceForTier(row, SETTINGS, "contractor")).toBe(138);
+     expect(sellPriceForTier(row, SETTINGS, "homeowner")).toBe(158);
+     const overridden = pricingSettingsWithAffiliateContractorMarkup(SETTINGS, 5000);
+     expect(overridden.contractorMarkupBps).toBe(15000);
+@@ -84,8 +87,9 @@ describe("affiliate contractor markup", () => {
+         platformAffiliateMarkupBps: 500,
+       },
+     };
+-    // $100 Cabinet Dealz cost × 1.05 = $105 affiliate cost. 29% over that is $135.45.
+-    expect(sellPriceForTier({ yourCost: 100, category: "Base" }, settings, "contractor")).toBe(135.45);
++    // $100 Cabinet Dealz cost × 1.05 = $105 affiliate cost. 29% over that is $135.45,
++    // which is under Tom's cost × 1.38 contractor floor, so it is lifted to $138.
++    expect(sellPriceForTier({ yourCost: 100, category: "Base" }, settings, "contractor")).toBe(138);
+   });
+ 
+   it("prices a list-discount store from list, then applies the contractor markup", () => {
+diff --git a/shared/margins.ts b/shared/margins.ts
+index 1acdb6b9..0db88e02 100644
+--- a/shared/margins.ts
++++ b/shared/margins.ts
+@@ -4,6 +4,7 @@
+ // All markups are basis points where 10000 = no change (×1.0), 11500 = +15%.
+ 
+ import { classifyAffiliateProduct, resolveAffiliateTierCost } from "./affiliatePricingTier";
++import { clampContractorPriceCents, clampToHardFloorCents, type PriceFloorSettings } from "./priceFloors";
+ 
+ export type PricingTier = "homeowner" | "contractor" | "wholesale";
+ 
+@@ -16,6 +17,12 @@ export interface AffiliateContractorCostContext {
+   markupBps: number;
+   tier: { basis: "cost_multiplier" | "list_discount"; basisPoints: number } | null;
+   platformAffiliateMarkupBps: number;
++  /**
++   * Admin-only override of the 1.38 contractor floor for this store, as a
++   * multiplier on Cabinet Dealz cost (12000 = cost × 1.20). Never below 11500.
++   * Null or absent = the 1.38 floor applies.
++   */
++  adminOverrideBps?: number | null;
+ }
+ 
+ export interface TierMarkupBps {
+@@ -28,6 +35,11 @@ export interface TierMarkupBps {
+    * the site contractor multiplier on Cabinet Dealz cost.
+    */
+   affiliateContractorCost?: AffiliateContractorCostContext | null;
++  /**
++   * Floors from pricing_settings.minMarginOverCostBps / contractorRecommendedBps.
++   * Absent = the 1.15 / 1.38 constants in shared/priceFloors.ts.
++   */
++  priceFloors?: PriceFloorSettings | null;
+ }
+ 
+ export const NEUTRAL_BPS = 10000;
+@@ -183,6 +195,7 @@ function dollarsToPositiveCents(value: number | string | null | undefined): numb
+ export function contractorPriceOverAffiliateCost(
+   row: CostBaseRow,
+   context: AffiliateContractorCostContext,
++  floors?: PriceFloorSettings | null,
+ ): number | null {
+   const listCents = dollarsToPositiveCents(row.listPrice);
+   const resolved = resolveAffiliateTierCost({
+@@ -195,7 +208,47 @@ export function contractorPriceOverAffiliateCost(
+   });
+   if (resolved.affiliateCostCents == null) return null;
+   const multiplierBps = clampBps(NEUTRAL_BPS + context.markupBps);
+-  return Math.round((resolved.affiliateCostCents * multiplierBps) / NEUTRAL_BPS) / 100;
++  const priceCents = Math.round((resolved.affiliateCostCents * multiplierBps) / NEUTRAL_BPS);
++  // Floors (Tom, Nov 16, 2026): never below what the store pays (its affiliate
++  // cost), never below Cabinet Dealz cost × 1.38 unless an admin override is
++  // set, and never below cost × 1.15 even with an override.
++  return clampContractorPriceCents({
++    priceCents,
++    yourCostCents: dollarsToPositiveCents(row.yourCost),
++    storeCostCents: resolved.affiliateCostCents,
++    adminOverrideBps: context.adminOverrideBps ?? null,
++    floors,
++  }) / 100;
++}
++
++/**
++ * Cost used for price floors: Cabinet Dealz landed cost (yourCost), else the
++ * adjusted list (which is the landed cost on cost-plus lines). Never the printed
++ * list. Null means no floor is applied (nothing is invented).
++ */
++export function floorCostCents(row: Pick<CostBaseRow, "yourCost" | "adjustedListPrice">): number | null {
++  return dollarsToPositiveCents(row.yourCost) ?? dollarsToPositiveCents(row.adjustedListPrice);
++}
++
++/**
++ * Apply Tom's floors to a site-level sell price in dollars.
++ * Homeowner and contractor get the 1.15 hard floor; contractor also gets the
++ * 1.38 trade floor (the site tier has no store override). Wholesale is unchanged.
++ */
++function withSiteFloors(
++  price: number | null,
++  row: CostBaseRow,
++  tier: PricingTier,
++  floors?: PriceFloorSettings | null,
++): number | null {
++  if (price == null || tier === "wholesale") return price;
++  const cost = floorCostCents(row);
++  if (cost == null) return price;
++  const cents = Math.round(price * 100);
++  const floored = tier === "contractor"
++    ? clampContractorPriceCents({ priceCents: cents, yourCostCents: cost, floors })
++    : clampToHardFloorCents(cents, cost, floors);
++  return floored === cents ? price : floored / 100;
+ }
+ 
+ /**
+@@ -219,7 +272,7 @@ export function sellPriceForTier(
+   // source-list shortcut for the contractor tier only. When the affiliate cost
+   // cannot be resolved, the site contractor path below still applies.
+   if (tier === "contractor" && s.affiliateContractorCost) {
+-    const overAffiliateCost = contractorPriceOverAffiliateCost(row, s.affiliateContractorCost);
++    const overAffiliateCost = contractorPriceOverAffiliateCost(row, s.affiliateContractorCost, s.priceFloors);
+     if (overAffiliateCost != null) return overAffiliateCost;
+   }
+   // Some suppliers publish a verified customer-facing list and explicitly do
+@@ -227,17 +280,17 @@ export function sellPriceForTier(
+   // Keep that printed value exact. Cost-plus-tier suppliers such as USCD still
+   // follow the normal landed-cost × tier multiplier path below.
+   if (row.retailPriceBasis === "source_list") {
+-    return toNum(row.listPrice);
++    return withSiteFloors(toNum(row.listPrice), row, tier, s.priceFloors);
+   }
+   const vendorWholesale = toNum(row.vendorWholesale);
+   if (tier === "homeowner" && vendorWholesale != null && vendorWholesale > 0) {
+-    return retailFromWholesale(vendorWholesale, s.homeownerMarkupBps, {
++    return withSiteFloors(retailFromWholesale(vendorWholesale, s.homeownerMarkupBps, {
+       vendorMarkupPercent: row.vendorMarkupPercent,
+       categoryMarkupBps: row.categoryMarkupBps,
+-    });
++    }), row, tier, s.priceFloors);
+   }
+   const base = resolveCostBase(row);
+   if (base === null) return null;
+   const bps = clampBps(markupBpsForTier(s, tier));
+-  return Math.round(base * (bps / NEUTRAL_BPS) * 100) / 100;
++  return withSiteFloors(Math.round(base * (bps / NEUTRAL_BPS) * 100) / 100, row, tier, s.priceFloors);
+ }
+diff --git a/shared/priceFloors.test.ts b/shared/priceFloors.test.ts
+new file mode 100644
+index 00000000..2acc7650
+--- /dev/null
++++ b/shared/priceFloors.test.ts
+@@ -0,0 +1,187 @@
++import { describe, expect, it } from "vitest";
++import { resolveAffiliateStorefrontSale } from "./affiliateBranding";
++import { sellPriceForTier, type TierMarkupBps } from "./margins";
++import { DEFAULT_PRICING_SETTINGS } from "./pricing";
++import {
++  CONTRACTOR_FLOOR_MULTIPLIER_BPS,
++  HARD_FLOOR_MULTIPLIER_BPS,
++  checkContractorMarkupSave,
++  checkRetailMarkupSave,
++  clampContractorPriceCents,
++  contractorFloorMultiplierBps,
++  contractorStoreCostFloorCents,
++  costFloorCents,
++  minContractorMarkupPercent,
++  normalizePriceFloors,
++  storeCostBasisBps,
++} from "./priceFloors";
++
++// Live examples (diag-tom-shop-scm-price.md, Nov 16, 2026):
++// SCM 2DB12: list 1414.00, yourCost 347.99. TWP B12: list 721.00, yourCost 177.44.
++const SCM = { yourCost: "347.99", listPrice: "1414.00", category: "Base" };
++const TWP = { yourCost: "177.44", listPrice: "721.00", category: "Base" };
++const PLATFORM = { ...DEFAULT_PRICING_SETTINGS, affiliateMarkupBps: 500 };
++const SITE: TierMarkupBps = { homeownerMarkupBps: 15800, contractorMarkupBps: 12900, wholesaleMarkupBps: 12500 };
++
++type StoreTier = { basis: "cost_multiplier" | "list_discount"; basisPoints: number } | null;
++
++/** Contractor price for a contractor tied to a store with this markup (store pays cost × 1.05 unless a tier is given). */
++function contractor(row: typeof SCM, markupBps: number, adminOverrideBps: number | null = null, tier: StoreTier = null) {
++  return sellPriceForTier(row, {
++    ...SITE,
++    affiliateContractorCost: { markupBps, tier, platformAffiliateMarkupBps: 500, adminOverrideBps },
++  }, "contractor");
++}
++
++describe("constants and floor math", () => {
++  it("uses cost × 1.15 and cost × 1.38, rounded up to the cent", () => {
++    expect(HARD_FLOOR_MULTIPLIER_BPS).toBe(11500);
++    expect(CONTRACTOR_FLOOR_MULTIPLIER_BPS).toBe(13800);
++    expect(costFloorCents(34799, 11500)).toBe(40019);
++    expect(costFloorCents(34799, 13800)).toBe(48023);
++    expect(costFloorCents(17744, 11500)).toBe(20406);
++    expect(costFloorCents(null, 11500)).toBeNull();
++    expect(costFloorCents(0, 11500)).toBeNull();
++  });
++
++  it("reads pricing_settings floors with safe fallbacks and never below 1.15", () => {
++    expect(normalizePriceFloors(null)).toEqual({ hardFloorBps: 11500, contractorFloorBps: 13800 });
++    expect(normalizePriceFloors({ minMarginOverCostBps: 11500, contractorRecommendedBps: 13800 })).toEqual({ hardFloorBps: 11500, contractorFloorBps: 13800 });
++    expect(normalizePriceFloors({ minMarginOverCostBps: 10000 })).toEqual({ hardFloorBps: 11500, contractorFloorBps: 13800 });
++    expect(normalizePriceFloors({ minMarginOverCostBps: "12000", contractorRecommendedBps: "11000" })).toEqual({ hardFloorBps: 12000, contractorFloorBps: 12000 });
++  });
++});
++
++describe("rule 1 + 4: affiliate retail never below cost × 1.15", () => {
++  it("lifts a 0% store markup to the hard floor (SCM 2DB12, TWP B12)", () => {
++    const zero = { globalMarkupBps: 0 };
++    // Before: cost × 1.05 = $365.39 / $186.31. After: cost × 1.15.
++    expect(resolveAffiliateStorefrontSale(34799, PLATFORM, zero).retailCents).toBe(40019);
++    expect(resolveAffiliateStorefrontSale(17744, PLATFORM, zero).retailCents).toBe(20406);
++    const sale = resolveAffiliateStorefrontSale(34799, PLATFORM, zero);
++    expect(sale.affiliateCostCents).toBe(36539);
++    expect(sale.profitCents).toBe(40019 - 36539);
++  });
++
++  it("leaves normal markups alone (55% → cost × 1.6275, SCM $566.35)", () => {
++    expect(resolveAffiliateStorefrontSale(34799, PLATFORM, { globalMarkupBps: 5500 }).retailCents).toBe(56635);
++  });
++
++  it("clamps a 0% list_discount tier only when list is under the floor; a cost tier ×1.00 is lifted", () => {
++    const listTier = { basis: "list_discount" as const, basisPoints: 0 };
++    // Tom Cabinets Shop today: 0% off list + 55% = list × 1.55, far above the floor (unchanged).
++    expect(resolveAffiliateStorefrontSale(34799, PLATFORM, { globalMarkupBps: 5500 }, { listPriceCents: 141400, tier: listTier }).retailCents).toBe(219170);
++    // A list below cost × 1.15 at 0% markup is lifted.
++    expect(resolveAffiliateStorefrontSale(34799, PLATFORM, { globalMarkupBps: 0 }, { listPriceCents: 35000, tier: listTier }).retailCents).toBe(40019);
++    const costTier = { basis: "cost_multiplier" as const, basisPoints: 10000 };
++    expect(resolveAffiliateStorefrontSale(34799, PLATFORM, { globalMarkupBps: 0 }, { tier: costTier }).retailCents).toBe(40019);
++  });
++
++  it("honors a higher floor read from pricing_settings", () => {
++    const floors = normalizePriceFloors({ minMarginOverCostBps: 12000 });
++    expect(resolveAffiliateStorefrontSale(10000, PLATFORM, { globalMarkupBps: 0 }, { floors }).retailCents).toBe(12000);
++  });
++
++  it("rejects retail saves under 1.15 server-side, including style/category overrides", () => {
++    const basis = storeCostBasisBps(null, 500);
++    expect(basis).toBe(10500);
++    expect(checkRetailMarkupSave({ markupBps: 0, basisBps: basis })).toMatchObject({ ok: false });
++    expect(checkRetailMarkupSave({ markupBps: 952, basisBps: basis })).toMatchObject({ ok: false });
++    expect(checkRetailMarkupSave({ markupBps: 953, basisBps: basis })).toEqual({ ok: true });
++    expect(checkRetailMarkupSave({ markupBps: 4000, basisBps: basis })).toEqual({ ok: true });
++    // Unknown per-SKU basis (list_discount tier) and null (fall back to default) pass; sell time clamps.
++    expect(storeCostBasisBps({ basis: "list_discount", basisPoints: 0 }, 500)).toBeNull();
++    expect(checkRetailMarkupSave({ markupBps: 0, basisBps: null })).toEqual({ ok: true });
++    expect(checkRetailMarkupSave({ markupBps: null, basisBps: basis })).toEqual({ ok: true });
++    const rejected = checkRetailMarkupSave({ markupBps: 0, basisBps: basis });
++    expect(rejected.ok ? "" : rejected.message).toContain("below the minimum of cost × 1.15");
++  });
++});
++
++describe("rule 1 on the main site: homeowner never below 1.15, wholesale untouched", () => {
++  it("lifts a homeowner multiplier under 1.15 and leaves 1.58 alone", () => {
++    const row = { yourCost: "347.99" };
++    expect(sellPriceForTier(row, { ...SITE, homeownerMarkupBps: 15800 }, "homeowner")).toBe(549.82);
++    expect(sellPriceForTier(row, { ...SITE, homeownerMarkupBps: 10000 }, "homeowner")).toBe(400.19);
++    expect(sellPriceForTier(row, { ...SITE, wholesaleMarkupBps: 10000 }, "wholesale")).toBe(347.99);
++  });
++
++  it("never uses list as the floor basis", () => {
++    const row = { listPrice: "1414.00" };
++    expect(sellPriceForTier(row, { ...SITE, homeownerMarkupBps: 10000 }, "homeowner")).toBe(1414);
++  });
++});
++
++describe("rule 2: contractor price never below cost × 1.38 without an admin override", () => {
++  it("lifts 0% and 20% store contractor markups to cost × 1.38 (SCM / TWP)", () => {
++    // Before: 0% = cost × 1.05 ($365.39 / $186.31); 20% = cost × 1.26 ($438.47 / $223.57).
++    expect(contractor(SCM, 0)).toBe(480.23);
++    expect(contractor(SCM, 2000)).toBe(480.23);
++    expect(contractor(TWP, 0)).toBe(244.87);
++    expect(contractor(TWP, 2000)).toBe(244.87);
++    // 40% = cost × 1.47 is above the floor and unchanged.
++    expect(contractor(SCM, 4000)).toBe(511.55);
++  });
++
++  it("lifts the site contractor tier (×1.29) to 1.38", () => {
++    expect(sellPriceForTier(SCM, SITE, "contractor")).toBe(480.23);
++    expect(sellPriceForTier(SCM, { ...SITE, contractorMarkupBps: 15000 }, "contractor")).toBe(521.99);
++  });
++
++  it("an admin override at 1.20 lowers the floor to cost × 1.20, never below 1.15", () => {
++    expect(contractor(SCM, 0, 12000)).toBe(417.59);
++    expect(contractor(TWP, 0, 12000)).toBe(212.93);
++    // The markup still sets the price above the override: 20% = cost × 1.26.
++    expect(contractor(SCM, 2000, 12000)).toBe(438.47);
++    expect(contractor(TWP, 2000, 12000)).toBe(223.57);
++    // An override under 1.15 is held at 1.15; at/over 1.38 means "no override".
++    expect(contractorFloorMultiplierBps(11000)).toBe(11500);
++    expect(contractor(SCM, 0, 11000)).toBe(400.19);
++    expect(contractorFloorMultiplierBps(14000)).toBe(13800);
++    expect(contractorFloorMultiplierBps(null)).toBe(13800);
++  });
++
++  it("rejects affiliate saves under 1.38, including 'use site default' when the site tier is under it", () => {
++    const basis = storeCostBasisBps(null, 500);
++    expect(checkContractorMarkupSave({ markupBps: 2000, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: false })).toMatchObject({ ok: false });
++    expect(checkContractorMarkupSave({ markupBps: 3142, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: false })).toMatchObject({ ok: false });
++    expect(checkContractorMarkupSave({ markupBps: 3143, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: false })).toEqual({ ok: true });
++    expect(minContractorMarkupPercent(basis)).toBe(31.43);
++    // Site default is floored at 1.38 at sell time, so clearing never lands under it.
++    expect(checkContractorMarkupSave({ markupBps: null, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: false })).toEqual({ ok: true });
++    // A raised hard floor above the site tier still lets the clamp hold.
++    expect(checkContractorMarkupSave({ markupBps: null, basisBps: basis, siteContractorMarkupBps: 10000, isAdmin: false, floors: { hardFloorBps: 11500, contractorFloorBps: 13800 } })).toEqual({ ok: true });
++  });
++
++  it("admin needs an override to save under 1.38 and can never save under 1.15", () => {
++    const basis = storeCostBasisBps(null, 500);
++    const noOverride = checkContractorMarkupSave({ markupBps: 2000, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: true });
++    expect(noOverride.ok ? "" : noOverride.message).toContain("Set an admin override");
++    expect(checkContractorMarkupSave({ markupBps: 1429, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: true, adminOverrideBps: 12000 })).toEqual({ ok: true });
++    const underHard = checkContractorMarkupSave({ markupBps: 0, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: true, adminOverrideBps: 11500 });
++    expect(underHard.ok ? "" : underHard.message).toContain("No override can go below that");
++    // An affiliate is held to the store's override when one exists.
++    expect(checkContractorMarkupSave({ markupBps: 1429, basisBps: basis, siteContractorMarkupBps: 12900, isAdmin: false, adminOverrideBps: 12000 })).toEqual({ ok: true });
++    expect(minContractorMarkupPercent(basis, 12000)).toBe(14.29);
++  });
++});
++
++describe("rule 3: a contractor never pays less than what the store pays (not the shelf price)", () => {
++  it("compares against the store's affiliate cost in one function", () => {
++    expect(contractorStoreCostFloorCents(36539)).toBe(36539);
++    expect(contractorStoreCostFloorCents(null)).toBeNull();
++    expect(clampContractorPriceCents({ priceCents: 30000, yourCostCents: 20000, storeCostCents: 35000, adminOverrideBps: 11500 })).toBe(35000);
++  });
++
++  it("on a list-based store, the contractor price is lifted to what the store pays (list), not left at the override", () => {
++    const listTier = { basis: "list_discount" as const, basisPoints: 0 };
++    // Store pays list ($1,414). Even with an admin override at 1.20, the contractor pays at least $1,414.
++    expect(contractor(SCM, 0, 12000, listTier)).toBe(1414);
++  });
++
++  it("does not lift the trade price up to the store's shelf price", () => {
++    // Shelf at 55% is cost × 1.6275 = $566.35; trade stays at cost × 1.38 = $480.23.
++    expect(contractor(SCM, 0)).toBe(480.23);
++    expect(contractor(SCM, 0)).toBeLessThan(566.35);
++  });
++});
+diff --git a/shared/priceFloors.ts b/shared/priceFloors.ts
+new file mode 100644
+index 00000000..d6954748
+--- /dev/null
++++ b/shared/priceFloors.ts
+@@ -0,0 +1,248 @@
++// ─────────────────────────────────────────────────────────────────────────────
++// Price floors (Tom, Nov 16, 2026, voice 11:54 and 11:55 AM CT).
++//
++// Every floor is a multiple of Cabinet Dealz cost (yourCost: the line's landed
++// cost, e.g. USCD list × 0.23 × 1.07). A floor is never computed from list.
++//
++//   1. Hard floor: no sell price (homeowner, affiliate retail, contractor, any
++//      payment method) goes below yourCost × 1.15. Admin included.
++//   2. Contractor floor: yourCost × 1.38 is the recommended trade price and the
++//      floor. Going lower needs an explicit admin override (Tom's admin page),
++//      and even an override never goes below the 1.15 hard floor.
++//   3. A contractor never pays less than what the store itself pays Cabinet
++//      Dealz for that store/line (the store's affiliate cost). Confirmed by Tom
++//      at 11:55 AM CT. It is NOT the store's shelf price.
++//
++// All money here is integer cents; multipliers are basis points on cost
++// (10000 = ×1.00, 11500 = ×1.15, 13800 = ×1.38).
++// ─────────────────────────────────────────────────────────────────────────────
++
++/** Hard floor for every sell price: yourCost × 1.15. */
++export const HARD_FLOOR_MULTIPLIER_BPS = 11500;
++/** Recommended / default contractor price and contractor floor: yourCost × 1.38. */
++export const CONTRACTOR_FLOOR_MULTIPLIER_BPS = 13800;
++
++const NEUTRAL = 10000;
++
++/**
++ * Floors in effect. Read from pricing_settings.minMarginOverCostBps and
++ * pricing_settings.contractorRecommendedBps when those columns exist; the
++ * constants above are the fallback. normalizePriceFloors guarantees the hard
++ * floor is never under 1.15 and the contractor floor never under the hard floor.
++ */
++export interface PriceFloorSettings {
++  hardFloorBps: number;
++  contractorFloorBps: number;
++}
++
++export const DEFAULT_PRICE_FLOORS: PriceFloorSettings = {
++  hardFloorBps: HARD_FLOOR_MULTIPLIER_BPS,
++  contractorFloorBps: CONTRACTOR_FLOOR_MULTIPLIER_BPS,
++};
++
++function finiteInt(value: unknown): number | null {
++  const n = typeof value === "string" ? Number(value) : value;
++  return typeof n === "number" && Number.isFinite(n) ? Math.round(n) : null;
++}
++
++export function normalizePriceFloors(raw?: {
++  minMarginOverCostBps?: number | string | null;
++  contractorRecommendedBps?: number | string | null;
++} | null): PriceFloorSettings {
++  const hard = Math.max(HARD_FLOOR_MULTIPLIER_BPS, finiteInt(raw?.minMarginOverCostBps) ?? HARD_FLOOR_MULTIPLIER_BPS);
++  const contractor = Math.max(hard, finiteInt(raw?.contractorRecommendedBps) ?? CONTRACTOR_FLOOR_MULTIPLIER_BPS);
++  return { hardFloorBps: hard, contractorFloorBps: contractor };
++}
++
++function floorsOrDefault(floors?: PriceFloorSettings | null): PriceFloorSettings {
++  return floors ? normalizePriceFloors({ minMarginOverCostBps: floors.hardFloorBps, contractorRecommendedBps: floors.contractorFloorBps }) : DEFAULT_PRICE_FLOORS;
++}
++
++function positiveCents(value: number | null | undefined): number | null {
++  if (value == null || !Number.isFinite(value)) return null;
++  const cents = Math.round(value);
++  return cents > 0 ? cents : null;
++}
++
++/** yourCost × multiplier, rounded up to the cent so the floor is never undercut by rounding. */
++export function costFloorCents(yourCostCents: number | null | undefined, multiplierBps: number): number | null {
++  const cost = positiveCents(yourCostCents);
++  if (cost == null) return null;
++  return Math.ceil((cost * multiplierBps) / NEUTRAL - 1e-9);
++}
++
++/** Hard 1.15 floor in cents, or null when cost is unknown (no floor is invented). */
++export function hardFloorCents(yourCostCents: number | null | undefined, floors?: PriceFloorSettings | null): number | null {
++  return costFloorCents(yourCostCents, floorsOrDefault(floors).hardFloorBps);
++}
++
++/** Lift a price to the 1.15 hard floor. Unknown cost leaves the price unchanged. */
++export function clampToHardFloorCents(
++  priceCents: number,
++  yourCostCents: number | null | undefined,
++  floors?: PriceFloorSettings | null,
++): number {
++  const floor = hardFloorCents(yourCostCents, floors);
++  return floor != null && priceCents < floor ? floor : priceCents;
++}
++
++/** True when an admin override value is usable: from the hard floor (1.15) up to the contractor floor (1.38). */
++export function isValidContractorOverrideBps(value: number | null | undefined, floors?: PriceFloorSettings | null): value is number {
++  const f = floorsOrDefault(floors);
++  return typeof value === "number"
++    && Number.isInteger(value)
++    && value >= f.hardFloorBps
++    && value <= f.contractorFloorBps;
++}
++
++/**
++ * Contractor floor multiplier on yourCost: 1.38 by default. An admin override
++ * lowers it, but never below the 1.15 hard floor. An override at or above 1.38
++ * means "no override".
++ */
++export function contractorFloorMultiplierBps(adminOverrideBps?: number | null, floors?: PriceFloorSettings | null): number {
++  const f = floorsOrDefault(floors);
++  if (adminOverrideBps == null || !Number.isFinite(adminOverrideBps)) return f.contractorFloorBps;
++  const rounded = Math.round(adminOverrideBps);
++  if (rounded >= f.contractorFloorBps) return f.contractorFloorBps;
++  return Math.max(f.hardFloorBps, rounded);
++}
++
++/**
++ * Rule 3 (Tom, 11:55 AM CT): a contractor never pays less than what the store
++ * itself pays for that store/line — the store's affiliate cost — not its shelf
++ * price. Kept as its own function so the comparison is in one place.
++ */
++export function contractorStoreCostFloorCents(storeCostCents: number | null | undefined): number | null {
++  return positiveCents(storeCostCents);
++}
++
++export interface ContractorFloorInput {
++  /** The computed contractor price before floors (cents). */
++  priceCents: number;
++  /** Cabinet Dealz cost for the SKU (cents). Null = unknown: only the store-cost floor applies. */
++  yourCostCents: number | null | undefined;
++  /** What the contractor's store pays for this SKU (cents). Null for site-level contractors. */
++  storeCostCents?: number | null;
++  /** Admin-only override multiplier on yourCost (bps, 11500..13800). Null = 1.38. */
++  adminOverrideBps?: number | null;
++  /** Floors from pricing_settings; defaults to 1.15 / 1.38. */
++  floors?: PriceFloorSettings | null;
++}
++
++/** Contractor price after every floor: max(price, store cost, yourCost × max(1.15, override ?? 1.38)). */
++export function clampContractorPriceCents(input: ContractorFloorInput): number {
++  let price = Math.max(0, Math.round(input.priceCents));
++  const storeFloor = contractorStoreCostFloorCents(input.storeCostCents);
++  if (storeFloor != null && price < storeFloor) price = storeFloor;
++  const tradeFloor = costFloorCents(input.yourCostCents, contractorFloorMultiplierBps(input.adminOverrideBps, input.floors));
++  if (tradeFloor != null && price < tradeFloor) price = tradeFloor;
++  return clampToHardFloorCents(price, input.yourCostCents, input.floors);
++}
++
++/**
++ * Lowest markup over a cost basis that still reaches `floorBps` on yourCost,
++ * where the basis is yourCost × basisMultiplierBps (e.g. the store's 1.05 cost).
++ * Returned in markup bps (100 = 1%), rounded up. 0 when the basis already meets the floor.
++ */
++export function minMarkupBpsForFloor(basisMultiplierBps: number, floorBps: number): number {
++  if (!Number.isFinite(basisMultiplierBps) || basisMultiplierBps <= 0) return 0;
++  const needed = (floorBps / basisMultiplierBps) * NEUTRAL - NEUTRAL;
++  return needed <= 0 ? 0 : Math.ceil(needed - 1e-9);
++}
++
++/** Effective multiplier on yourCost of a markup over a cost basis: basis × (1 + markup). */
++export function effectiveMultiplierBps(basisMultiplierBps: number, markupBps: number): number {
++  return (basisMultiplierBps * (NEUTRAL + markupBps)) / NEUTRAL;
++}
++
++/** Plain message for an affiliate save rejected by a floor. */
++export function floorRejectionMessage(kind: "retail" | "contractor", effectiveBps: number, floorBps: number): string {
++  const fmt = (bps: number) => (bps / NEUTRAL).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
++  if (kind === "retail") {
++    return `That markup would price items at Cabinet Dealz cost × ${fmt(effectiveBps)}, below the minimum of cost × ${fmt(floorBps)}. Choose a higher markup.`;
++  }
++  return `That contractor price would be Cabinet Dealz cost × ${fmt(effectiveBps)}, below the minimum of cost × ${fmt(floorBps)}. Contractor pricing below cost × 1.38 needs an override from Cabinet Dealz.`;
++}
++
++// ─── Write-time checks (server-side rejection of below-floor saves) ──────────
++
++/**
++ * What a store pays per unit of Cabinet Dealz cost, as a multiplier (bps):
++ * a cost_multiplier tier's basis points, else 1 + the platform affiliate markup
++ * (500 → 10500 = cost × 1.05). A list_discount tier depends on each SKU's list,
++ * so it returns null: those stores are covered by the sell-time clamp only.
++ */
++export function storeCostBasisBps(
++  tier: { basis: "cost_multiplier" | "list_discount"; basisPoints: number } | null | undefined,
++  platformAffiliateMarkupBps: number,
++): number | null {
++  if (tier) {
++    const bps = Math.round(tier.basisPoints);
++    if (tier.basis === "cost_multiplier" && bps >= 1 && bps <= 200_000) return bps;
++    if (tier.basis === "list_discount" && bps >= 0 && bps < NEUTRAL) return null;
++  }
++  const platform = Number.isFinite(platformAffiliateMarkupBps) ? Math.max(0, Math.min(200_000, Math.round(platformAffiliateMarkupBps))) : 0;
++  return NEUTRAL + platform;
++}
++
++export type FloorCheck = { ok: true } | { ok: false; message: string };
++
++/**
++ * Rule 4: an affiliate retail markup (default, category, or style) may not
++ * price below cost × 1.15. Applies to admin saves too. Null markup (fall back
++ * to the store default) and unknown basis (list_discount tier) pass here; the
++ * sell-time clamp still applies.
++ */
++export function checkRetailMarkupSave(input: {
++  markupBps: number | null | undefined;
++  basisBps: number | null;
++  floors?: PriceFloorSettings | null;
++}): FloorCheck {
++  if (input.markupBps == null || input.basisBps == null) return { ok: true };
++  const floor = floorsOrDefault(input.floors).hardFloorBps;
++  const effective = effectiveMultiplierBps(input.basisBps, input.markupBps);
++  if (effective + 1e-9 < floor) return { ok: false, message: floorRejectionMessage("retail", effective, floor) };
++  return { ok: true };
++}
++
++/**
++ * Rule 2 at save time for affiliate_contractor_markups.
++ * - markupBps set: basis × (1 + markup) must reach the store's contractor
++ *   floor (1.38, or the admin override). Admin is held to the same floor unless
++ *   an override exists (or is set in the same save), and never below 1.15.
++ * - markupBps null ("use site default"): the store falls back to the site
++ *   contractor multiplier, which is itself floored at 1.38 at sell time, so the
++ *   check uses that floored value.
++ */
++export function checkContractorMarkupSave(input: {
++  markupBps: number | null;
++  basisBps: number | null;
++  siteContractorMarkupBps: number;
++  isAdmin: boolean;
++  adminOverrideBps?: number | null;
++  floors?: PriceFloorSettings | null;
++}): FloorCheck {
++  const f = floorsOrDefault(input.floors);
++  const floor = contractorFloorMultiplierBps(input.adminOverrideBps, f);
++  let effective: number | null;
++  if (input.markupBps == null) {
++    effective = Math.max(Math.round(Number(input.siteContractorMarkupBps) || 0), f.contractorFloorBps);
++  } else if (input.basisBps == null) {
++    return { ok: true };
++  } else {
++    effective = effectiveMultiplierBps(input.basisBps, input.markupBps);
++  }
++  if (effective + 1e-9 >= floor) return { ok: true };
++  if (!input.isAdmin) return { ok: false, message: floorRejectionMessage("contractor", effective, floor) };
++  if (effective + 1e-9 < f.hardFloorBps) {
++    return { ok: false, message: `${floorRejectionMessage("contractor", effective, f.hardFloorBps)} No override can go below that.` };
++  }
++  return { ok: false, message: `${floorRejectionMessage("contractor", effective, floor)} Set an admin override for this store first.` };
++}
++
++/** Lowest contractor markup percent a store can save, for the UI hint. Null when the basis varies by SKU. */
++export function minContractorMarkupPercent(basisBps: number | null, adminOverrideBps?: number | null, floors?: PriceFloorSettings | null): number | null {
++  if (basisBps == null) return null;
++  return minMarkupBpsForFloor(basisBps, contractorFloorMultiplierBps(adminOverrideBps, floors)) / 100;
++}
+-- 
+2.47.3
+
