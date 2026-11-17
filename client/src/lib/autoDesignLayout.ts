@@ -2432,12 +2432,14 @@ export function runAutoDesignLayout(args: {
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
-  // Rule 12: "Glass cabinets above" gives the ordinary uppers the line's own
-  // GD (glass door) version of the same box, never an invented SKU.
+  // Rule 12: "Glass cabinets above" keeps the uppers solid and puts the line's
+  // own 12/15/18 in glass stacker on top of each one (tallest that fits under
+  // the ceiling), never an invented SKU (Tom, Nov 17 2026).
   const glassUppers = applyGlassUpperPreference({
     placed: working,
     wallCatalog: args.wallCatalog,
     intake: input.intake,
+    room,
     wallHeightIn: upperResult.heightUsedIn,
   });
   working = glassUppers.placed;

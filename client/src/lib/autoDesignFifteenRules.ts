@@ -143,7 +143,7 @@ export const PREFERENCE_OPTIONS: readonly { id: PreferenceId; label: string; hin
   {
     id: "glass-uppers",
     label: "Glass cabinets above",
-    hint: "Glass-door wall cabinets above the counter",
+    hint: "12, 15 or 18 in glass stackers on top of the wall cabinets",
   },
   {
     id: "crown-molding",
