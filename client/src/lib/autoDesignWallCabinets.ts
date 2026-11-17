@@ -1,6 +1,7 @@
 import { hasAefPrintedGeometry, isFramelessDeepWallCabinet } from "@shared/aefFramelessGeometry";
 import { AEF_SLAB_DOOR_THICKNESS_IN } from "./aefEndPanelStock";
 import { planWallWidthsOverBase, coverCatalogSpan } from "./autoDesignGapSolver";
+import { isAutoDesignLastResortUpperWidth, isAutoDesignNeverUpperWidth, isAutoDesignSkippedUpperWidth } from "./autoDesignUpperWidths";
 import {
   autoDesignFillerMaxIn, SEAM_MIN_IN, findAutoDesignSeams, fillersForSeam, intersectWithCoverage, lowerCoverageOnWall, upperReservedZones,
   type AutoDesignSeam,
@@ -142,11 +143,16 @@ function rejectsSingleDoorTwentyFour(row: DesignCabinet): boolean {
  * The ordinary wall cabinets the build tiles with at one real catalog height:
  * the same rows `buildAutoDesignWallCabinets` uses for its aligned run.
  */
-export function autoDesignStandardUpperRows(catalog: readonly DesignCabinet[], heightIn: number): DesignCabinet[] {
+export function autoDesignStandardUpperRows(
+  catalog: readonly DesignCabinet[],
+  heightIn: number,
+  options: { keepLastResortWidths?: boolean } = {},
+): DesignCabinet[] {
   return catalog.filter((source) => source.id > 0
     && source.placement === "wall" && Math.abs(dim(source.height, 0) - heightIn) <= SAME_HEIGHT_IN
     && dim(source.width, 0) > 0 && dim(source.depth, 0) > 0
-    && isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source));
+    && isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source)
+    && (options.keepLastResortWidths ? !isAutoDesignNeverUpperWidth(source) : !isAutoDesignSkippedUpperWidth(source)));
 }
 
 /**
@@ -166,7 +172,8 @@ export function enforceFortyTwoWallCabinets(input: {
   const stock = input.catalog.filter((row) => row.id > 0 && row.placement === "wall"
     && Math.abs(dim(row.height, 0) - height) <= SAME_HEIGHT_IN
     && dim(row.width, 0) > 0
-    && !rejectsSingleDoorTwentyFour(row));
+    && !rejectsSingleDoorTwentyFour(row)
+    && !isAutoDesignNeverUpperWidth(row));
   const notes: string[] = [];
   let working = [...input.placed];
   for (const item of input.placed) {
@@ -346,7 +353,11 @@ export function buildAutoDesignWallCabinets(input: {
   const eligible = input.catalog.filter((source) => source.id > 0
     && source.placement === "wall" && Math.abs(dim(source.height, 0) - height) <= SAME_HEIGHT_IN
     && dim(source.width, 0) > 0 && dim(source.depth, 0) > 0);
-  const standard = eligible.filter((source) => isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source));
+  const standard = eligible.filter((source) => isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source)
+    && !isAutoDesignSkippedUpperWidth(source));
+  // Widths the seam closer may still use when no other upper fits a hole (the last-resort list; empty today).
+  const lastResort = eligible.filter((source) => isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source)
+    && isAutoDesignLastResortUpperWidth(dim(source.width, 0)));
   // Corner Wall section (Designer Corner Cabinets tab), not only a drawing-type
   // guess: a diagonal/L/triangle upper in that section must be available even
   // when Cabinet Config left cornerType or graphicType blank.
@@ -631,10 +642,14 @@ export function buildAutoDesignWallCabinets(input: {
             guard += 1;
             const remain = region.end - along;
             const cover = coverCatalogSpan(remain, widths, autoDesignFillerMaxIn());
-            const candidates = Array.from(new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []), ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN)]));
+            const regular = Array.from(new Set([...(cover.widths[0] != null ? [cover.widths[0]] : []), ...widths.filter((width) => width <= remain + COLLISION_EPSILON_IN)]));
+            const candidates = regular.length
+              ? regular
+              : lastResort.map((row) => dim(row.width, 0)).filter((width) => width <= remain + COLLISION_EPSILON_IN);
             let seated = false;
             for (const width of candidates) {
-              const source = standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
+              const source = standard.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN)
+                ?? lastResort.find((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN);
               if (!source) continue;
               // A piece may never be seated inside a deliberate bay (the range, a
               // sink window, the refrigerator) or over a tall box's own span.

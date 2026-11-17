@@ -379,7 +379,8 @@ import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
-import { applyGlassUpperPreference, autoDesignTrimFromIntake } from "@/lib/autoDesignFormOptions";
+import { autoDesignTrimFromIntake } from "@/lib/autoDesignFormOptions";
+import { applyAutoDesignGlassSchedule, dropAutoDesignWindowSideUpperFillers, mirrorAutoDesignUppersAroundWindows } from "@/lib/autoDesignGlassSchedule";
 import { AutoDesignReviewList } from "@/components/design/AutoDesignReviewList";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
@@ -5353,8 +5354,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // Rule 12 on the corner-stage (continue) build as well: glass means the
     // line's own 12/15/18 in glass stackers on top of the uppers, and the crown
     // pick turns on crown trim.
-    const stageGlass = applyGlassUpperPreference({
-      placed: working, wallCatalog: stage.wallPool, intake: stage.input.intake, room, wallHeightIn: upperResult.heightUsedIn,
+    // v2 (Tom, Nov 17 2026): uppers mirror around a window, no exposed filler
+    // beside it, and glass goes only on the glass schedule, all or nothing,
+    // with every upper stack ending at one flush top.
+    working = mirrorAutoDesignUppersAroundWindows({
+      placed: working, room, openings: stageOpenings, wallCatalog: stage.wallPool,
+      heightIn: upperResult.heightUsedIn, styleId: styleIdRef.current ?? null, makeUid,
+    }).placed;
+    working = dropAutoDesignWindowSideUpperFillers({ placed: working, room, openings: stageOpenings }).placed;
+    const stageGlass = applyAutoDesignGlassSchedule({
+      placed: working, wallCatalog: stage.wallPool, panelCatalog: catalogFillers as unknown as DesignCabinet[], intake: stage.input.intake, room, wallHeightIn: upperResult.heightUsedIn,
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);

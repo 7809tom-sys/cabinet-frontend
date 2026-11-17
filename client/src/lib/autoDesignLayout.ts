@@ -16,7 +16,7 @@ import {
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
-import { applyGlassUpperPreference } from "./autoDesignFormOptions";
+import { applyAutoDesignGlassSchedule, dropAutoDesignWindowSideUpperFillers, mirrorAutoDesignUppersAroundWindows } from "./autoDesignGlassSchedule";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -2456,14 +2456,29 @@ export function runAutoDesignLayout(args: {
   // Rule 12: "Glass cabinets above" keeps the uppers solid and puts the line's
   // own 12/15/18 in glass stacker on top of each one (tallest that fits under
   // the ceiling), never an invented SKU (Tom, Nov 17 2026).
-  const glassUppers = applyGlassUpperPreference({
+  // Tom, Nov 17 2026 (v2 Aero Solstice review): the cabinets on each side of a
+  // window mirror, and no filler is left with its window side exposed.
+  const mirrored = mirrorAutoDesignUppersAroundWindows({
+    placed: working, room, openings: workingOpenings, wallCatalog: args.wallCatalog,
+    heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+  });
+  working = mirrored.placed;
+  notes.push(...mirrored.notes);
+  const windowSlivers = dropAutoDesignWindowSideUpperFillers({ placed: working, room, openings: workingOpenings });
+  working = windowSlivers.placed;
+  notes.push(...windowSlivers.notes);
+  // Rule 12 with the v2 glass schedule (Tom, Nov 17 2026, 2:51 PM CT): glass
+  // stackers only on the scheduled spots, all or nothing, every top flush.
+  const glassUppers = applyAutoDesignGlassSchedule({
     placed: working,
     wallCatalog: args.wallCatalog,
+    panelCatalog: [...(args.panelCatalog ?? []), ...args.fillers, ...args.refrigeratorEndPanels],
     intake: input.intake,
     room,
     wallHeightIn: upperResult.heightUsedIn,
   });
   working = glassUppers.placed;
+  notes.push(...glassUppers.notes);
   reviewFindings.push(...glassUppers.findings);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);

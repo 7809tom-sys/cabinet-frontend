@@ -121,11 +121,17 @@ describe("blind corner flank rule — Nov 17 2026 demo kitchen", () => {
       return bottom < flankTop - 0.3 && bottom + Number(item.height) > flankBottom + 0.3;
     });
     expect(overlap.map((item) => item.masterCode)).toEqual([]);
-    // Glass is picked in this demo, so the flank carries its own glass stacker
-    // on top (Tom, Nov 17 2026: every upper gets a stacker).
+    // Glass is picked in this demo, but glass now goes only on the glass
+    // schedule and is all or nothing (Tom, Nov 17 2026, 2:51 PM CT). The 9 in
+    // W0930 beside this window has no 3 in filler for a 12 in stacker to span,
+    // so no glass is placed anywhere, the flank stays a plain solid upper, and
+    // the report says why.
     const stackers = inSpan.filter((item) => !overlap.includes(item));
-    expect(stackers.map((item) => item.masterCode)).toEqual(["W1218GD"]);
-    expect(Number(stackers[0]!.mountBottom)).toBeCloseTo(flankTop, 1);
+    expect(stackers.map((item) => item.masterCode)).toEqual([]);
+    const glassSkipped = result.reviewFindings.filter((finding) => finding.code === "preference-glass-stackers-skipped");
+    expect(glassSkipped).toHaveLength(1);
+    expect(glassSkipped[0]!.detail).toMatch(/all or nothing/);
+    expect(glassSkipped[0]!.detail).toMatch(/W0930/);
   });
 
   it("keeps the WBC2730's open-side flank (W1230 on the range wall at 27–39)", () => {

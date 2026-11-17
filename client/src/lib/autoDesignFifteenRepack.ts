@@ -31,6 +31,7 @@ import {
   LANDING_MIN_IN,
 } from "./autoDesignFifteenRules";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
+import { isAutoDesignSkippedUpperWidth } from "./autoDesignUpperWidths";
 import {
   type RunBlock,
   type RunSpec,
@@ -268,6 +269,7 @@ function wallRows(
     if (w < 9) continue;
     if (w > 42) continue;
     if (Math.abs(w / 3 - Math.round(w / 3)) > EPS) continue;
+    if (isAutoDesignSkippedUpperWidth(row)) continue;
     out.push({ row, width: w });
   }
   return out;

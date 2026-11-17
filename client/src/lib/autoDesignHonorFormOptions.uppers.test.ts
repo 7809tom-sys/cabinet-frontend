@@ -46,6 +46,11 @@ function mismatches(placed: readonly PlacedCabinet[], room: RoomData, wallCatalo
     const above = placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall && !isFillerItem(item))
       .filter((item) => { const s = wallRunOffset(item, wall, room); return s < end - 0.1 && s + wallRunSpan(item, wall, room) > start + 0.1; });
     if (!above.length) continue;
+    // Tom, Nov 17 2026: a 42 in base never gets one wide upper; two 21s side by side match it.
+    const twentyOnes = above.filter((item) => Math.abs(wallRunSpan(item, wall, room) - 21) <= 0.25);
+    if (Math.abs(end - start - 42) <= 0.25 && twentyOnes.length === 2 && above.length === 2
+      && twentyOnes.some((item) => Math.abs(wallRunOffset(item, wall, room) - start) <= 0.25)
+      && twentyOnes.some((item) => Math.abs(wallRunOffset(item, wall, room) - (start + 21)) <= 0.25)) continue;
     const exact = above.some((item) => Math.abs(wallRunOffset(item, wall, room) - start) <= 0.25 && Math.abs(wallRunSpan(item, wall, room) - (end - start)) <= 0.25);
     if (!exact) out.push(`${base.masterCode}@${start.toFixed(2)} under ${above.map((item) => item.masterCode).join("+")}`);
   }
@@ -58,8 +63,17 @@ describe("Auto Design wall cabinets match the base below", () => {
     const codes = run.placed.filter((item) => item.placement === "base").map((item) => item.masterCode);
     expect(codes).toEqual(expect.arrayContaining(["B27", "B12"]));
     expect(mismatches(run.placed, room, CATALOG["510004"]!.wall)).toEqual([]);
-    // This line sells no W4230, so the B42 keeps its uppers and the review says why.
-    expect(run.reviewFindings.some((finding) => finding.code === "upper-width-not-matched" && /42/.test(finding.detail))).toBe(true);
+    // Tom, Nov 17 2026 (v2 review): a 42 in base gets two 21 in uppers side by
+    // side (this line sells no W4230, and one wide upper is never used anyway).
+    const b42 = run.placed.find((item) => item.placement === "base" && item.masterCode === "B42")!;
+    const b42Wall = cabinetWall(b42, room) as string;
+    const b42Start = wallRunOffset(b42, b42Wall, room);
+    const overB42 = run.placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === b42Wall && !isFillerItem(item))
+      .map((item) => ({ code: item.masterCode, start: Math.round((wallRunOffset(item, b42Wall, room) - b42Start) * 100) / 100 }))
+      .filter((entry) => entry.start >= -0.1 && entry.start < 42 - 0.1)
+      .sort((a, b) => a.start - b.start);
+    expect(overB42).toEqual([{ code: "W2130", start: 0 }, { code: "W2130", start: 21 }]);
+    expect(run.reviewFindings.some((finding) => finding.code === "upper-width-not-matched" && /42/.test(finding.detail))).toBe(false);
     expect(run.placed.some((item) => item.masterCode === "W2730")).toBe(true);
     expect(run.placed.some((item) => item.masterCode === "W1230")).toBe(true);
   });

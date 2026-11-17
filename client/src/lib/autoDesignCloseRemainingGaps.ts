@@ -17,6 +17,7 @@ import { formatFillerInches } from "./autoDesignFillerConsolidation";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
+import { isAutoDesignLastResortUpperWidth, isAutoDesignNeverUpperWidth } from "./autoDesignUpperWidths";
 import {
   WALL_OPENING_CLEARANCE_IN,
   appendCollisionFreePlacements,
@@ -56,15 +57,19 @@ function widthOf(row: { width?: string | number | null }): number {
 
 function sellable(row: DesignCabinet, layer: "base" | "wall"): boolean {
   if (row.id <= 0) return false;
-  if (layer === "wall") return row.placement === "wall" && widthOf(row) >= 9 && !/filler|scribe|panel|hood|bridge/i.test(`${row.masterCode} ${row.description} ${row.subCategory ?? ""}`);
+  if (layer === "wall") return row.placement === "wall" && widthOf(row) >= 9 && !isAutoDesignNeverUpperWidth(row)
+    && !/filler|scribe|panel|hood|bridge/i.test(`${row.masterCode} ${row.description} ${row.subCategory ?? ""}`);
   return (row.placement === "base" || !row.placement) && widthOf(row) >= 9
     && !/filler|scribe|panel|corner|lazy|susan|blind|sink|SB\d/i.test(`${row.masterCode} ${row.description} ${row.subCategory ?? ""}`);
 }
 
 function packWidths(span: number, catalog: readonly DesignCabinet[], layer: "base" | "wall", maxFillerIn = 6): number[] {
-  const widths = Array.from(new Set(catalog.filter((row) => sellable(row, layer)).map(widthOf)))
-    .filter((width) => width >= 9 && width <= span + COLLISION)
-    .sort((left, right) => right - left);
+  const fitting = Array.from(new Set(catalog.filter((row) => sellable(row, layer)).map(widthOf)))
+    .filter((width) => width >= 9 && width <= span + COLLISION);
+  // Widths on the "last resort" list are used only when no other upper fits (the list is empty today;
+  // 39" is never placed at all). See autoDesignUpperWidths.ts.
+  const regular = layer === "wall" ? fitting.filter((width) => !isAutoDesignLastResortUpperWidth(width)) : fitting;
+  const widths = (regular.length ? regular : fitting).sort((left, right) => right - left);
   let best: { packed: number[]; leftover: number } = { packed: [], leftover: span };
   const visit = (left: number, packed: number[], depth: number) => {
     const leftover = Math.round(Math.max(0, left) * 1000) / 1000;
@@ -84,7 +89,9 @@ function packWidths(span: number, catalog: readonly DesignCabinet[], layer: "bas
         if (best.leftover <= 0.125) return;
       }
     }
-    if (!progressed) visit(0, packed, 8);
+    // Nothing fits the rest: score the real leftover. (Scoring it as 0 once let a
+    // 39" hole end as W3030 + a 9" scribe once the 39" upper was taken out.)
+    if (!progressed) visit(left, packed, 8);
   };
   visit(span, [], 0);
   // Prefer a combination whose leftover a catalog filler can cover.

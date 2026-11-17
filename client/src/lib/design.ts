@@ -6110,6 +6110,48 @@ export function glassStackerFrontFlushSpot(
 }
 
 /**
+ * Stacker coverage by span, not by equal width (Tom, Nov 17 2026, v2 Aero
+ * Solstice plan): a glass stacker wider than its explicitly linked parent is
+ * still seated when the extra width (at most one 3" filler) is exactly the
+ * wall filler right beside the parent, at the parent's top. Aero Solstice sells
+ * no 9" glass stacker, so the 12" W1212GD spans the 9" W0930 and its 3" filler.
+ * Returns the plan shift that moves a parent-centred stacker over the filler.
+ */
+export function glassStackerSpanCover(
+  stacker: Pick<PlacedCabinet, "width" | "uid">,
+  parent: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): { filler: PlacedCabinet; shift: { x: number; y: number } } | null {
+  const extra = Number(stacker.width) - Number(parent.width);
+  if (!(extra > 0.5) || extra > 3 + COLLISION_EPSILON_IN) return null;
+  const side = cabinetWall(parent, room);
+  if (side !== "top" && side !== "bottom" && side !== "left" && side !== "right") return null;
+  const horizontal = side === "top" || side === "bottom";
+  const parentBox = elevationBox(parent, room);
+  const parentTop = parentBox.bottom + parentBox.height;
+  const parentFootprint = placedFootprint(parent);
+  const parentStart = horizontal ? parent.x : parent.y;
+  const parentEnd = parentStart + (horizontal ? parentFootprint.w : parentFootprint.d);
+  for (const filler of placed) {
+    if (filler.uid === parent.uid || filler.uid === stacker.uid || filler.placement !== "wall" || !isFillerItem(filler)) continue;
+    if (cabinetWall(filler, room) !== side) continue;
+    const footprint = placedFootprint(filler);
+    const start = horizontal ? filler.x : filler.y;
+    const end = start + (horizontal ? footprint.w : footprint.d);
+    if (Math.abs((end - start) - extra) > 0.25) continue;
+    const box = elevationBox(filler, room);
+    if (Math.abs(box.bottom + box.height - parentTop) > 0.5) continue;
+    const after = Math.abs(start - parentEnd) <= 0.25;
+    const before = Math.abs(end - parentStart) <= 0.25;
+    if (!after && !before) continue;
+    const delta = (after ? 1 : -1) * extra / 2;
+    return { filler, shift: horizontal ? { x: delta, y: 0 } : { x: 0, y: delta } };
+  }
+  return null;
+}
+
+/**
  * Resolve the physical cabinet that a glass stacker belongs on. Matching is
  * strict by room wall, installed width, and cabinet family; a WDC glass stacker
  * cannot silently land on a standard W cabinet. The currently selected matching
@@ -6159,7 +6201,8 @@ export function glassStackerParentPlacement(
     const parentSide = cabinetWall(parent, room);
     if (!isAgainstWall(parent, parentSide, room)) return false;
     if (!anyWall && parentSide !== side) return false;
-    if (Math.abs(Number(parent.width) - stackerWidth) > 0.5) return false;
+    if (Math.abs(Number(parent.width) - stackerWidth) > 0.5
+      && !(parent.uid === preferredParentUid && glassStackerSpanCover(stacker, parent, placed, room))) return false;
     const parentFamily = glassStackerFamily(parent);
     return stackerFamily == null || parentFamily === stackerFamily;
   }).map((parent) => ({ parent, parentSide: cabinetWall(parent, room), occupied: anyWall ? hasStacker(parent) : false }))
@@ -6206,10 +6249,13 @@ export function glassStackerParentPlacement(
     const requiredTop = mountBottom + placedHeight(stacker);
     if (requiredTop <= ceiling + COLLISION_EPSILON_IN) {
       const frontFlush = glassStackerFrontFlushSpot(stacker, parent, room);
+      // A stacker that spans its parent plus the filler beside it (a 12" glass
+      // stacker over a 9" upper and its 3" filler) shifts over the filler.
+      const cover = Math.abs(Number(parent.width) - stackerWidth) > 0.5 ? glassStackerSpanCover(stacker, parent, placed, room) : null;
       return {
         ok: true,
-        x: frontFlush.x,
-        y: frontFlush.y,
+        x: frontFlush.x + (cover?.shift.x ?? 0),
+        y: frontFlush.y + (cover?.shift.y ?? 0),
         rotation: frontFlush.rotation,
         mountBottom,
         parentUid: parent.uid,
@@ -7501,6 +7547,29 @@ export function crownEligibleCabinets(placed: readonly PlacedCabinet[], room?: R
     const parentTop = parentBox.bottom + parentBox.height;
     if (Math.abs(stackerBox.bottom - parentTop) <= COLLISION_EPSILON_IN) {
       coveredLowerCabinetUids.add(parent.uid);
+      // Coverage by span: anything else at the parent's top that sits wholly
+      // under the stacker (the 3" filler beside a 9" upper under a 12" stacker)
+      // is covered too, so crown runs once along the stacker top.
+      const side = cabinetWall(stacker, room);
+      const horizontal = side === "top" || side === "bottom";
+      const stackerFootprint = placedFootprint(stacker);
+      const sStart = horizontal ? stacker.x : stacker.y;
+      const sEnd = sStart + (horizontal ? stackerFootprint.w : stackerFootprint.d);
+      const sDepthStart = horizontal ? stacker.y : stacker.x;
+      const sDepthEnd = sDepthStart + (horizontal ? stackerFootprint.d : stackerFootprint.w);
+      for (const other of eligible) {
+        if (other.uid === parent.uid || other.uid === stacker.uid || other.placement !== "wall" || isStacker(other)) continue;
+        if (cabinetWall(other, room) !== side) continue;
+        const footprint = placedFootprint(other);
+        const oStart = horizontal ? other.x : other.y;
+        const oEnd = oStart + (horizontal ? footprint.w : footprint.d);
+        const oDepthStart = horizontal ? other.y : other.x;
+        const oDepthEnd = oDepthStart + (horizontal ? footprint.d : footprint.w);
+        if (oStart < sStart - COLLISION_EPSILON_IN || oEnd > sEnd + COLLISION_EPSILON_IN) continue;
+        if (Math.min(sDepthEnd, oDepthEnd) - Math.max(sDepthStart, oDepthStart) <= 0.5) continue;
+        const box = elevationBox(other, room);
+        if (Math.abs(box.bottom + box.height - stackerBox.bottom) <= 0.5) coveredLowerCabinetUids.add(other.uid);
+      }
     }
   }
 

@@ -11,6 +11,7 @@
  */
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { autoDesignStandardUpperRows } from "./autoDesignWallCabinets";
+import { autoDesignExactUpperTiling } from "./autoDesignUpperWidths";
 import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements, cabinetWall, dim, footprintDepth, formatInches,
@@ -91,7 +92,9 @@ export function matchUppersToBases(input: {
   let working = [...input.placed];
   const height = input.heightIn;
   if (height == null) return { placed: working, notes, findings };
-  const standard = autoDesignStandardUpperRows(input.wallCatalog, height);
+  // A 9" upper stays available here only for a 9" base or corner leg that no
+  // wider box fits (pickWidth takes the widest fit first); 39" never is.
+  const standard = autoDesignStandardUpperRows(input.wallCatalog, height, { keepLastResortWidths: true });
   if (!standard.length) return { placed: working, notes, findings };
   const { room } = input;
   const walls = Array.from(new Set(working.filter(isStraightBase).map((item) => cabinetWall(item, room)).filter(Boolean))) as string[];
@@ -199,12 +202,38 @@ export function matchUppersToBases(input: {
         .sort((a, b) => (exact ? 0 : dim(b.width, 0) - dim(a.width, 0))
           || Math.abs(dim(a.depth, 0) - depth) - Math.abs(dim(b.depth, 0) - depth)
           || a.masterCode.localeCompare(b.masterCode))[0];
+      // Tom, Nov 17 2026 (v2 Aero Solstice review): a 42" base never gets one
+      // wide upper; it gets two 21" uppers side by side. A base width the line
+      // does not sell as one upper (39" is never placed) is split into two real
+      // widths that close it exactly, 21" and 30" first, so no 27"/36" box is
+      // stretched across a base seam and no filler is needed.
+      const splitExact = (width: number): DesignCabinet[] | null => {
+        const halfTwentyOne = Math.abs(width - 42) <= COLLISION_EPSILON_IN ? pickWidth(21, true) : undefined;
+        if (halfTwentyOne) return [halfTwentyOne, halfTwentyOne];
+        const single = pickWidth(width, true);
+        if (single) return [single];
+        const pieces = autoDesignExactUpperTiling(width, standard.map((candidate) => dim(candidate.width, 0)));
+        if (!pieces || pieces.length < 2) return null;
+        const rowsForPieces = pieces.map((value) => pickWidth(value, true));
+        return rowsForPieces.every(Boolean) ? rowsForPieces as DesignCabinet[] : null;
+      };
       for (const base of targets) {
         const baseWidth = base.end - base.start;
         const leg = legs.find((entry) => Math.abs(entry.start - base.start) <= COLLISION_EPSILON_IN && Math.abs(entry.end - base.end) <= COLLISION_EPSILON_IN);
         const slot = windows.length ? slotFor(base) : { start: base.start, end: base.end };
         if (!slot) { rows.push(null); continue; }
         const exact = Math.abs((slot.end - slot.start) - baseWidth) <= COLLISION_EPSILON_IN;
+        if (exact && !leg) {
+          const pieces = splitExact(baseWidth);
+          if (pieces && pieces.length > 1) {
+            let along = base.start;
+            for (const piece of pieces) {
+              rows.push({ row: piece, start: along, base, exact });
+              along += dim(piece.width, 0);
+            }
+            continue;
+          }
+        }
         // A corner leg takes an exact-width upper or nothing (never a narrowed box).
         const row = leg && !exact ? undefined : pickWidth(slot.end - slot.start, exact);
         if (!row) {
