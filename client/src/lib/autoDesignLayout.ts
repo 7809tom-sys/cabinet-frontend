@@ -69,6 +69,7 @@ import {
   tallCabinetPlacement,
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
+import { ensureBlindCornerFlankCabinets } from "./autoDesignBlindCornerFlank";
 import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { placeSinkBridges } from "./autoDesignSinkBridge";
@@ -2429,6 +2430,26 @@ export function runAutoDesignLayout(args: {
   notes.push(...angledUppers.notes);
   working = repairMissingAngledWallFillers(working, room, catalogFillers, makeUid, args.styleId).placed;
   reviewFindings.push(...autoDesignOpenAngledCornerFindings(working, room, catalogFillers));
+  // Corner flank rule (Tom, Nov 17 2026, 11:14 AM CT): every blind corner
+  // (WBC upper or BBC base) gets a real cabinet right beside it on both its
+  // blind side and its open side. The corner-square reservation kept the gap
+  // passes above out of that spot, so it is claimed here, once, after the last
+  // re-tile; when nothing fits, the corner is named on the review list.
+  const flankWallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
+  const cornerFlank = ensureBlindCornerFlankCabinets({
+    placed: working,
+    room,
+    openings: stageOpenings,
+    wallCatalog: args.wallCatalog,
+    baseCatalog: [...stage.straightBaseCatalog, ...args.baseCatalog],
+    wallHeightIn: upperResult.heightUsedIn,
+    styleId: args.styleId,
+    makeUid,
+    wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+  });
+  working = cornerFlank.placed;
+  notes.push(...cornerFlank.notes.filter((note) => !notes.includes(note)));
+  reviewFindings.push(...cornerFlank.findings);
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
@@ -2446,7 +2467,7 @@ export function runAutoDesignLayout(args: {
   reviewFindings.push(...glassUppers.findings);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
-  const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
+  const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
   // The 15-rule findings (spacing, suggested downsizes, oven pairing, intake picks) are
