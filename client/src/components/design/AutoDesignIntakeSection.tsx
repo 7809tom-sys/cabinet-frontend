@@ -228,6 +228,26 @@ export function AutoDesignIntakeSection(props: {
         </div>
       </div>
 
+      {/* ADA kitchen (Tom, Nov 17 2026): one checkbox, off by default. */}
+      <label
+        className="flex items-center gap-2 text-sm font-semibold text-[#244338]"
+        data-testid="intake-ada-label"
+      >
+        <input
+          type="checkbox"
+          data-testid="intake-ada"
+          className="h-4 w-4 accent-[#244338]"
+          checked={intake.ada === true}
+          onChange={(event) => onChange({ ...intake, ada: event.currentTarget.checked })}
+        />
+        Is this an ADA kitchen?
+      </label>
+      {intake.ada === true ? (
+        <p className="text-xs text-neutral-500" data-testid="intake-ada-hint">
+          Uses the line's ADA cabinets where it sells them, 34 in counters, knee space at the sink, and checks 48 in aisles and a 60 in turning circle.
+        </p>
+      ) : null}
+
       {/* Missing answers */}
       {missing.length > 0 ? (
         <ul data-testid="intake-missing" className="grid gap-1">

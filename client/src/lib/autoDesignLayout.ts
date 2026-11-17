@@ -17,6 +17,7 @@ import {
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { applyGlassUpperPreference } from "./autoDesignFormOptions";
+import { applyAdaKitchenPreference } from "./autoDesignAda";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -2465,6 +2466,20 @@ export function runAutoDesignLayout(args: {
   });
   working = glassUppers.placed;
   reviewFindings.push(...glassUppers.findings);
+  // "Is this an ADA kitchen?" (Tom, Nov 17 2026): off changes nothing. On, the
+  // bases switch to the line's own same-width ADA rows (34 in counter), and the
+  // knee space, 48 in aisles, 60 in turning circle and 30 x 48 clear floor are
+  // checked and named on the review list.
+  const adaKitchen = applyAdaKitchenPreference({
+    placed: working,
+    baseCatalog: args.baseCatalog,
+    intake: input.intake,
+    room,
+    wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+  });
+  working = adaKitchen.placed;
+  reviewFindings.push(...adaKitchen.findings);
+  notes.push(...adaKitchen.notes);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];

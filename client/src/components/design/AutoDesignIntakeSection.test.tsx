@@ -70,4 +70,18 @@ describe("AutoDesignIntakeSection", () => {
     expect(container.querySelector('input[type="text"]')).toBeNull();
     expect(container.querySelector("textarea")).toBeNull();
   });
+  it("has one ADA checkbox, off by default, that turns the ADA kitchen on and off", () => {
+    const onChange = vi.fn();
+    render(<Harness onChange={onChange} />);
+    const box = screen.getByLabelText("Is this an ADA kitchen?") as HTMLInputElement;
+    expect(box.type).toBe("checkbox");
+    expect(box.checked).toBe(false);
+    expect(screen.queryByTestId("intake-ada-hint")).toBeNull();
+    fireEvent.click(box);
+    expect(onChange.mock.calls.at(-1)?.[0].ada).toBe(true);
+    expect((screen.getByLabelText("Is this an ADA kitchen?") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId("intake-ada-hint")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("Is this an ADA kitchen?"));
+    expect(onChange.mock.calls.at(-1)?.[0].ada).toBe(false);
+  });
 });

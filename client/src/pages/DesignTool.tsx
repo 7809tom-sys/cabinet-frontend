@@ -307,7 +307,7 @@ import { isPanelPaletteItem } from "./designToolPanels";
 import { normalizePaletteSearch, matchesPaletteSearch, matchesPaletteTextOrSize } from "@/lib/paletteSearch";
 import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AutoDesignRedrawGuard, autoDesignStepFailureText, runWithOneRetry } from "@/lib/autoDesignOneRedraw";
-import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, parseDishwasherSideChoice, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSideChoice } from "@/lib/autoDesignAutoBuild";
+import { adjacentDishwasherCenterIn, anchorAlongStartIn, autoBuildStraightBaseCatalog, autoDesignWallNameByEngineId, buildAutoDesignWallGuides, canRunAutoDesign, closestDishwasherStart, isAutoBuildStraightSinkBaseCandidate, makeAutoDesignSixWallTrainingRoom, keepSingleAutoDesignSink, pickAutoDesignSinkBase, parseDishwasherSideChoice, planAutoDesignAutoBuild, resolveDishwasherSide, subtractAnchorRunReservations, wallLabelToEngineWallId, type AutoDesignInputs, type AutoDesignOriginCorner, type AutoDesignRunDirection, type DishwasherSideChoice, type WallLabel } from "@/lib/autoDesignAutoBuild";
 import { autoDesignBlocksEmptyPlan, autoDesignControlState, isRefrigeratorAppliance, isSinkBasePlacement } from "@/lib/autoDesignAvailability";
 import { anchoredRefrigeratorOf, refrigeratorAnchorMeasurement } from "@/lib/autoDesignRefrigeratorAnchor";
 import { applyChosenAutoDesignFaucet, catalogFaucetSurface, defaultAutoDesignFaucet, ensureAutoDesignFaucet, ensureMandatorySinkFaucets, everySinkHasFaucet, fillAutoFaucet, isCatalogFaucet, sinkFaucetIsSatisfied, type AutoDesignFaucetProduct } from "@/lib/autoDesignFaucet";
@@ -380,6 +380,7 @@ import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
 import { applyGlassUpperPreference, autoDesignTrimFromIntake } from "@/lib/autoDesignFormOptions";
+import { applyAdaKitchenPreference } from "@/lib/autoDesignAda";
 import { AutoDesignReviewList } from "@/components/design/AutoDesignReviewList";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
@@ -5358,6 +5359,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);
+    // "Is this an ADA kitchen?" on the corner-stage build too (off = no change).
+    const stageAda = applyAdaKitchenPreference({
+      placed: working,
+      baseCatalog: (autoFillCabinets as DesignCabinet[] | undefined) ?? [],
+      intake: stage.input.intake,
+      room,
+      wallLabelOf: (wallId) => (autoDesignWallLabelsRef.current as Record<string, WallLabel | undefined>)[wallId] ?? null,
+    });
+    working = stageAda.placed;
+    reviewFindings.push(...stageAda.findings);
     const stageCrownPick = autoDesignTrimFromIntake(stage.input.intake).crown;
     if (stageCrownPick) {
       trimOverride.current.crown = true;
@@ -5445,7 +5456,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     publishAutoDesignReport(reviewFindings);
     return { ok: true as const };
-  }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, publishAutoDesignReport, room, setPlaced, setOpenings, sinks, startAutoDesignReportRun]);
+  }, [announceFaucetWindowNotes, appliancePalette, autoFillCabinets, catalogFillers, autoDesignCornerStage, openings, publishAutoDesignReport, room, setPlaced, setOpenings, sinks, startAutoDesignReportRun]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered

@@ -165,6 +165,12 @@ export type AutoDesignIntake = {
   preferences: PreferenceId[];
   islandOrPeninsula: IslandOrPeninsula;
   peninsulaSide: "left" | "right" | null;
+  /**
+   * "Is this an ADA kitchen?" (Tom, Nov 17 2026). Off unless checked; a missing
+   * value (every intake saved before this question existed) is off, so an
+   * existing design builds exactly as before. See autoDesignAda.ts.
+   */
+  ada?: boolean;
 };
 
 export function emptyAutoDesignIntake(): AutoDesignIntake {
