@@ -55,7 +55,7 @@ export function glassStackerUidsForRemoval(placed: readonly PlacedCabinet[]): st
   ));
 }
 
-function stackerDraft(source: PlacedCabinet, catalog: DesignCabinet, parent: PlacedCabinet): PlacedCabinet {
+export function stackerDraft(source: PlacedCabinet, catalog: DesignCabinet, parent: PlacedCabinet): PlacedCabinet {
   const dimensions = resolvedDesignCabinetDimensions(catalog);
   // Preserve the selected finish/style but never copy the source cabinet's
   // corner geometry onto a different catalog stacker. A DCW source must not

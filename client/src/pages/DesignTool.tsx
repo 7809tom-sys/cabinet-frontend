@@ -5350,10 +5350,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       makeUid, styleId: styleIdRef.current ?? null,
     });
     working = finishedRules.placed;
-    // Rule 12 on the corner-stage (continue) build as well: glass uppers use the
-    // line's own GD rows and the crown pick turns on crown trim.
+    // Rule 12 on the corner-stage (continue) build as well: glass means the
+    // line's own 12/15/18 in glass stackers on top of the uppers, and the crown
+    // pick turns on crown trim.
     const stageGlass = applyGlassUpperPreference({
-      placed: working, wallCatalog: stage.wallPool, intake: stage.input.intake, wallHeightIn: upperResult.heightUsedIn,
+      placed: working, wallCatalog: stage.wallPool, intake: stage.input.intake, room, wallHeightIn: upperResult.heightUsedIn,
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);
