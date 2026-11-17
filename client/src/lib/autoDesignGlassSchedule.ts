@@ -150,7 +150,7 @@ export function mirrorAutoDesignUppersAroundWindows(input: {
     const runEnd = Math.max(...run.map((entry) => entry.end));
     const rest = autoDesignExactUpperTiling(runEnd - runStart - mirrorWidth, widths);
     if (rest == null) {
-      misses.push(`The uppers beside the window on ${wall} do not mirror (${inches(leftWidth)} left, ${inches(rightWidth)} right): the ${inches(runEnd - runStart)} run of ${run.map((entry) => entry.item.masterCode).join(" + ")} cannot close exactly around a ${inches(mirrorWidth)} cabinet with this line's widths${working.some((item) => isAutoDesignCornerFlank(item) && cabinetWall(item, room) === wall) ? ", and the 12″ corner cabinet comes first" : ""}.`);
+      misses.push(`The uppers beside the window on ${wall} do not mirror (${inches(leftWidth)} left, ${inches(rightWidth)} right): the ${inches(runEnd - runStart)} run ${retileRight ? "right" : "left"} of the window cannot close exactly around a ${inches(mirrorWidth)} cabinet with this line's widths${working.some((item) => isAutoDesignCornerFlank(item) && cabinetWall(item, room) === wall) ? ", and the 12″ corner cabinet comes first" : ""}.`);
       continue;
     }
     const pieces = retileRight ? [mirrorWidth, ...rest] : [...rest.reverse(), mirrorWidth];
