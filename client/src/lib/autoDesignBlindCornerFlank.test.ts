@@ -110,10 +110,22 @@ describe("blind corner flank rule — Nov 17 2026 demo kitchen", () => {
     expect(flank!.cabinetId).toBeGreaterThan(0);
     // Same elevation band as the WBC it flanks.
     expect(Number(flank!.mountBottom)).toBeCloseTo(Number(wbc.mountBottom ?? 54), 1);
-    // Nothing else hangs in 120–132 on the sink wall.
-    const overlap = placed.filter((item) => item.uid !== flank!.uid && item.placement === "wall" && item.y < 1 && item.rotation === 0)
+    // Nothing else hangs in 120–132 on the sink wall in the flank's own
+    // elevation band. A glass stacker (glass-uppers pick) may sit on top of it.
+    const flankBottom = Number(flank!.mountBottom ?? 54);
+    const flankTop = flankBottom + Number(flank!.height);
+    const inSpan = placed.filter((item) => item.uid !== flank!.uid && item.placement === "wall" && item.y < 1 && item.rotation === 0)
       .filter((item) => { const s = span(item, "top"); return s.start < 131.7 && s.end > 120.3; });
+    const overlap = inSpan.filter((item) => {
+      const bottom = Number(item.mountBottom ?? 54);
+      return bottom < flankTop - 0.3 && bottom + Number(item.height) > flankBottom + 0.3;
+    });
     expect(overlap.map((item) => item.masterCode)).toEqual([]);
+    // Glass is picked in this demo, so the flank carries its own glass stacker
+    // on top (Tom, Nov 17 2026: every upper gets a stacker).
+    const stackers = inSpan.filter((item) => !overlap.includes(item));
+    expect(stackers.map((item) => item.masterCode)).toEqual(["W1218GD"]);
+    expect(Number(stackers[0]!.mountBottom)).toBeCloseTo(flankTop, 1);
   });
 
   it("keeps the WBC2730's open-side flank (W1230 on the range wall at 27–39)", () => {
