@@ -268,8 +268,18 @@ type AnchorRole = "sink" | "refrigerator" | "range";
 function anchorRoleOf(c: PlacedCabinet): AnchorRole | null {
   if (c.placement === "base" && isSinkBaseCabinet(c)) return "sink";
   if (isRefrigerator(c)) return "refrigerator";
-  if (c.placement === "appliance" && isRangeOrOven(c.masterCode, c.description)) return "range";
+  if (c.placement === "appliance" && isRangeOrOven(c.masterCode, c.description) && !isMountedOverRangeAppliance(c)) return "range";
   return null;
+}
+
+/**
+ * An over-the-range microwave (MW-30 hung above the range) is not a second range: measuring
+ * the range against it reported "Under 15 in between range and range ... Only -30 in".
+ */
+export function isMountedOverRangeAppliance(c: Pick<PlacedCabinet, "masterCode" | "description" | "mountBottom">): boolean {
+  const code = String(c.masterCode ?? "").toUpperCase();
+  const desc = String(c.description ?? "").toLowerCase();
+  return (Number(c.mountBottom) || 0) >= 30 || /^(?:MW|OTR)\b|^MW[-_\d]/.test(code) || /microwave/.test(desc);
 }
 
 function landingStatus(gapIn: number): "ok" | "tight" | "short" {

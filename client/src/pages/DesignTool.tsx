@@ -381,6 +381,7 @@ import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/Pl
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
 import { autoDesignTrimFromIntake } from "@/lib/autoDesignFormOptions";
 import { applyAutoDesignGlassSchedule, dropAutoDesignWindowSideUpperFillers, mirrorAutoDesignUppersAroundWindows } from "@/lib/autoDesignGlassSchedule";
+import { finishAutoDesignVisibleSides, flankAutoDesignDiagonalCornerUppers, mergeAutoDesignUpperCabinetPlusFiller } from "@/lib/autoDesignV2FinalPasses";
 import { AutoDesignReviewList } from "@/components/design/AutoDesignReviewList";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
 import { AutoDesignCornerDialog } from "@/components/design/AutoDesignCornerDialog";
@@ -5357,6 +5358,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // v2 (Tom, Nov 17 2026): uppers mirror around a window, no exposed filler
     // beside it, and glass goes only on the glass schedule, all or nothing,
     // with every upper stack ending at one flush top.
+    // Tom, Nov 17 2026 (3:27 PM CT), in order: corners first, then cabinet before filler.
+    working = mergeAutoDesignUpperCabinetPlusFiller({
+      placed: working, room, wallCatalog: stage.wallPool, heightIn: upperResult.heightUsedIn, styleId: styleIdRef.current ?? null, makeUid,
+    }).placed;
+    const stageCornerFlanks = flankAutoDesignDiagonalCornerUppers({
+      placed: working, room, wallCatalog: stage.wallPool, heightIn: upperResult.heightUsedIn, styleId: styleIdRef.current ?? null, makeUid,
+      wallLabelOf: (wallId) => autoDesignWallLabelsRef.current[wallId] ?? null,
+    });
+    working = stageCornerFlanks.placed;
+    reviewFindings.push(...stageCornerFlanks.findings);
     working = mirrorAutoDesignUppersAroundWindows({
       placed: working, room, openings: stageOpenings, wallCatalog: stage.wallPool,
       heightIn: upperResult.heightUsedIn, styleId: styleIdRef.current ?? null, makeUid,
@@ -5367,6 +5378,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);
+    // Rule 10 on the finished corner-stage plan: 3/4" stock on every visible side.
+    const stageSides = finishAutoDesignVisibleSides({
+      placed: working, room, panelCatalog: autoPanelCatalog as unknown as DesignCabinet[], wallEndsCovered: Boolean(stage.input.intake), openings: stageOpenings,
+    });
+    working = stageSides.placed;
+    reviewFindings.push(...stageSides.findings);
     const stageCrownPick = autoDesignTrimFromIntake(stage.input.intake).crown;
     if (stageCrownPick) {
       trimOverride.current.crown = true;
@@ -5454,7 +5471,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     publishAutoDesignReport(reviewFindings);
     return { ok: true as const };
-  }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, publishAutoDesignReport, room, setPlaced, setOpenings, sinks, startAutoDesignReportRun]);
+  }, [announceFaucetWindowNotes, appliancePalette, autoPanelCatalog, catalogFillers, autoDesignCornerStage, openings, publishAutoDesignReport, room, setPlaced, setOpenings, sinks, startAutoDesignReportRun]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered

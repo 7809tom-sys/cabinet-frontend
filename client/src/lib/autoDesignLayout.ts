@@ -17,6 +17,9 @@ import {
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { applyAutoDesignGlassSchedule, dropAutoDesignWindowSideUpperFillers, mirrorAutoDesignUppersAroundWindows } from "./autoDesignGlassSchedule";
+import {
+  finishAutoDesignVisibleSides, flankAutoDesignDiagonalCornerUppers, mergeAutoDesignUpperCabinetPlusFiller, reconcileAutoDesignCornerReport,
+} from "./autoDesignV2FinalPasses";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -80,7 +83,6 @@ import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from
 import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
 import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
 import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
-import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import {
@@ -2134,9 +2136,8 @@ export function runAutoDesignLayout(args: {
     }
     reviewFindings.push(...repack.findings);
   }
-  // Rule 10: 3/4" stock on every visible side. A side the selected line cannot finish is named.
-  const panelRequirements = exposedPanelRequirements({ placed: working, room, buildWallIds: runWalls, wallEndsCovered: Boolean(input.intake) });
-  reviewFindings.push(...exposedPanelFindings(panelRequirements, new Set()));
+  // Rule 10 (3/4" stock on every visible side) runs on the finished plan, after the v2 passes
+  // below (finishAutoDesignVisibleSides), so its findings name the cabinets actually placed.
   // Rule 8: the design-question door spec applies to every cabinet.
   const doorSpec: DesignQuestionDoorSpec | null = stage.input.designQuestionDoorStyleId == null
     ? null
@@ -2458,12 +2459,27 @@ export function runAutoDesignLayout(args: {
   // the ceiling), never an invented SKU (Tom, Nov 17 2026).
   // Tom, Nov 17 2026 (v2 Aero Solstice review): the cabinets on each side of a
   // window mirror, and no filler is left with its window side exposed.
+  // Tom, Nov 17 2026 (3:27 PM CT), in order: corners first (a 12" on each leg of the 24"
+  // diagonal upper), then cabinet before filler (9" + 3" filler -> one 12").
+  const mergedTwelves = mergeAutoDesignUpperCabinetPlusFiller({
+    placed: working, room, wallCatalog: args.wallCatalog, heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+  });
+  working = mergedTwelves.placed;
+  notes.push(...mergedTwelves.notes);
+  const diagonalFlanks = flankAutoDesignDiagonalCornerUppers({
+    placed: working, room, wallCatalog: args.wallCatalog, heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+    wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+  });
+  working = diagonalFlanks.placed;
+  notes.push(...diagonalFlanks.notes);
+  reviewFindings.push(...diagonalFlanks.findings);
   const mirrored = mirrorAutoDesignUppersAroundWindows({
     placed: working, room, openings: workingOpenings, wallCatalog: args.wallCatalog,
     heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
   });
   working = mirrored.placed;
   notes.push(...mirrored.notes);
+  for (const miss of mirrored.misses) reviewFindings.push({ ruleId: "auto-design-window-mirror", code: "window-uppers-not-mirrored", severity: "warning", title: "Uppers beside the window", detail: miss });
   const windowSlivers = dropAutoDesignWindowSideUpperFillers({ placed: working, room, openings: workingOpenings });
   working = windowSlivers.placed;
   notes.push(...windowSlivers.notes);
@@ -2480,6 +2496,22 @@ export function runAutoDesignLayout(args: {
   working = glassUppers.placed;
   notes.push(...glassUppers.notes);
   reviewFindings.push(...glassUppers.findings);
+  // Rule 10 on the finished plan: 1/4" skins become 3/4" stock and every open visible side gets a
+  // 3/4" panel cut from the line's own S2496 / TDEP / BDEP; what still cannot be finished is named.
+  const visibleSides = finishAutoDesignVisibleSides({
+    placed: working, room, panelCatalog: [...(args.panelCatalog ?? []), ...args.refrigeratorEndPanels],
+    buildWallIds: runWalls, wallEndsCovered: Boolean(input.intake), openings: workingOpenings,
+  });
+  working = visibleSides.placed;
+  notes.push(...visibleSides.notes);
+  reviewFindings.push(...visibleSides.findings);
+  // The report names the corner actually placed (no lazy Susan line when a blind or diagonal sits there).
+  const cornerReport = reconcileAutoDesignCornerReport({
+    placed: working, room, notes, baseCatalog: [...stage.straightBaseCatalog, ...args.baseCatalog],
+    wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+  });
+  notes.splice(0, notes.length, ...cornerReport.notes);
+  reviewFindings.push(...cornerReport.findings);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];

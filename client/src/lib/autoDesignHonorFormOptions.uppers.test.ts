@@ -3,7 +3,7 @@ import matrixCatalog from "@/lib/__fixtures__/autoDesignMatrixCatalog.json";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "./autoDesignLayout";
 import { emptyAutoDesignIntake } from "./autoDesignFifteenRules";
 import type { AutoDesignInputs } from "./autoDesignAutoBuild";
-import { cabinetWall, isFillerItem, wallRunFrame, isSinkBaseCabinet, wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
+import { cabinetWall, elevationBox, isFillerItem, isPanelItem, wallRunFrame, isSinkBaseCabinet, wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
 
 // Tom, Nov 14 2026: a B27 got a W24 (plus filler) above it instead of the W27
 // the line sells. The 15-rule repack re-tiled the wall level apart from the bases.
@@ -43,7 +43,8 @@ function mismatches(placed: readonly PlacedCabinet[], room: RoomData, wallCatalo
     const wall = cabinetWall(base, room) as string;
     const start = wallRunOffset(base, wall, room);
     const end = start + wallRunSpan(base, wall, room);
-    const above = placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall && !isFillerItem(item))
+    // Rule 10's 3/4" side panels are not uppers.
+    const above = placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall && !isFillerItem(item) && !isPanelItem(item))
       .filter((item) => { const s = wallRunOffset(item, wall, room); return s < end - 0.1 && s + wallRunSpan(item, wall, room) > start + 0.1; });
     if (!above.length) continue;
     // Tom, Nov 17 2026: a 42 in base never gets one wide upper; two 21s side by side match it.
@@ -92,14 +93,21 @@ describe("Auto Design wall cabinets match the base below", () => {
         const frame = wallRunFrame(wall, room);
         if (!frame) continue;
         const uppers = run.placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall)
-          .map((item) => ({ code: item.masterCode, start: wallRunOffset(item, wall, room), end: wallRunOffset(item, wall, room) + wallRunSpan(item, wall, room) }))
+          .map((item) => ({ code: item.masterCode, start: wallRunOffset(item, wall, room), end: wallRunOffset(item, wall, room) + wallRunSpan(item, wall, room), bottom: elevationBox(item, room).bottom, top: elevationBox(item, room).bottom + elevationBox(item, room).height }))
           .sort((a, b) => a.start - b.start);
         for (const upper of uppers) {
           expect(upper.start, `${styleId} ${wall} ${upper.code}`).toBeGreaterThanOrEqual(-0.05);
           expect(upper.end, `${styleId} ${wall} ${upper.code}`).toBeLessThanOrEqual(frame.length + 0.05);
         }
-        for (let i = 1; i < uppers.length; i += 1) {
-          expect(uppers[i]!.start - uppers[i - 1]!.end, `${styleId} ${wall} ${uppers[i - 1]!.code}/${uppers[i]!.code} overlap`).toBeGreaterThanOrEqual(-0.05);
+        // Pieces that share height must not overlap along the run (a Rule 10 side panel cut to
+        // the band below a bridge sits under it, not in it).
+        for (let i = 0; i < uppers.length; i += 1) {
+          for (let j = i + 1; j < uppers.length; j += 1) {
+            const a = uppers[i]!;
+            const b = uppers[j]!;
+            if (Math.min(a.top, b.top) - Math.max(a.bottom, b.bottom) <= 0.05) continue;
+            expect(Math.min(a.end, b.end) - Math.max(a.start, b.start), `${styleId} ${wall} ${a.code}/${b.code} overlap`).toBeLessThanOrEqual(0.05);
+          }
         }
       }
     }

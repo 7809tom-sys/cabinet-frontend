@@ -247,7 +247,11 @@ export function reviewRangeFridgeSeparation(placed: readonly PlacedCabinet[], ro
   const findings: AdjacencyFinding[] = [];
   for (const wall of walls) {
     const here = spans.filter((span) => span.wall === wall);
-    const ranges = here.filter((span) => span.item.placement === "appliance" && isRangeOrOven(span.item.masterCode, span.item.description));
+    // An over-the-range microwave is not a second range (it listed the same warning twice).
+    const ranges = here.filter((span) => span.item.placement === "appliance" && isRangeOrOven(span.item.masterCode, span.item.description)
+      && (Number(span.item.mountBottom) || 0) < 30
+      && !/microwave/i.test(String(span.item.description ?? ""))
+      && !/^(?:MW|OTR)(?:\b|[-_\d])/i.test(String(span.item.masterCode ?? "")));
     const fridges = here.filter((span) => isRefrigerator(span.item));
     for (const range of ranges) {
       for (const fridge of fridges) {
@@ -338,7 +342,11 @@ export function separateRangeAndRefrigerator(input: {
   const walls = Array.from(new Set(current.map((span) => span.wall)));
   for (const wall of walls) {
     const here = spans().filter((span) => span.wall === wall);
-    const ranges = here.filter((span) => span.item.placement === "appliance" && isRangeOrOven(span.item.masterCode, span.item.description));
+    // An over-the-range microwave is not a second range (it listed the same warning twice).
+    const ranges = here.filter((span) => span.item.placement === "appliance" && isRangeOrOven(span.item.masterCode, span.item.description)
+      && (Number(span.item.mountBottom) || 0) < 30
+      && !/microwave/i.test(String(span.item.description ?? ""))
+      && !/^(?:MW|OTR)(?:\b|[-_\d])/i.test(String(span.item.masterCode ?? "")));
     const fridges = here.filter((span) => isRefrigerator(span.item));
     for (const range of ranges) {
       for (const fridge of fridges) {

@@ -7531,8 +7531,21 @@ export function crownBlockingCabinets(placed: readonly PlacedCabinet[], room?: R
  * the two boxes. This resolves the same parent with the existing glass-stacker
  * placement contract, avoiding false suppression for nearby or mismatched runs.
  */
+/**
+ * A Rule 10 side panel cut to the band a bridge or microwave leaves open (its top below the top of
+ * the cabinet it finishes) sits under that cabinet's crown line and never carries crown itself.
+ */
+function isPartialSidePanelBelowTop(cabinet: PlacedCabinet, placed: readonly PlacedCabinet[], room?: RoomData): boolean {
+  if (!cabinet.autoPlacedForUid || !isPanelItem(cabinet)) return false;
+  const host = placed.find((item) => item.uid === cabinet.autoPlacedForUid);
+  if (!host) return false;
+  const panelBox = room ? elevationBox(cabinet, room) : { bottom: Number(cabinet.mountBottom) || 0, height: Number(cabinet.height) || 0 };
+  const hostBox = room ? elevationBox(host, room) : { bottom: Number(host.mountBottom) || 0, height: Number(host.height) || 0 };
+  return panelBox.bottom + panelBox.height < hostBox.bottom + hostBox.height - 0.5;
+}
+
 export function crownEligibleCabinets(placed: readonly PlacedCabinet[], room?: RoomData): PlacedCabinet[] {
-  const eligible = placed.filter((cabinet) => isCrownEligibleCabinet(cabinet, room));
+  const eligible = placed.filter((cabinet) => isCrownEligibleCabinet(cabinet, room) && !isPartialSidePanelBelowTop(cabinet, placed, room));
   if (!room) return eligible;
 
   const coveredLowerCabinetUids = new Set<string>();

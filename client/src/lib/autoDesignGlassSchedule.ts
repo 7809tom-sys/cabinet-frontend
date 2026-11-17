@@ -24,6 +24,7 @@ import { autoDesignGlassStackerCatalog, AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN } f
 import { autoDesignStandardUpperRows } from "./autoDesignWallCabinets";
 import { stackerDraft } from "./glassStackerBulkPlacement";
 import { autoDesignExactUpperTiling } from "./autoDesignUpperWidths";
+import { isAutoDesignCornerFlank, isAutoDesignMergedTwelve } from "./autoDesignV2FinalPasses";
 
 export { autoDesignExactUpperTiling };
 import {
@@ -104,11 +105,12 @@ export function mirrorAutoDesignUppersAroundWindows(input: {
   heightIn: number | null;
   styleId: number | null;
   makeUid: () => string;
-}): { placed: PlacedCabinet[]; notes: string[] } {
+}): { placed: PlacedCabinet[]; notes: string[]; misses: string[] } {
   let working = [...input.placed];
   const notes: string[] = [];
+  const misses: string[] = [];
   const height = input.heightIn;
-  if (height == null) return { placed: working, notes };
+  if (height == null) return { placed: working, notes, misses };
   const standard = autoDesignStandardUpperRows(input.wallCatalog, height);
   const widths = Array.from(new Set(standard.map((row) => dim(row.width, 0))));
   const rowFor = (width: number) => standard.find((row) => Math.abs(dim(row.width, 0) - width) <= WIDTH_MATCH_IN);
@@ -119,7 +121,8 @@ export function mirrorAutoDesignUppersAroundWindows(input: {
     const clearFrom = opening.offset - WALL_OPENING_CLEARANCE_IN;
     const clearTo = opening.offset + opening.width + WALL_OPENING_CLEARANCE_IN;
     const onWall = working.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall);
-    const plain = onWall.filter((item) => isPlainUpper(item, height)).map((item) => spanOn(item, wall, room));
+    // The 12" beside a diagonal corner is placed first (corner rule) and is never re-tiled here.
+    const plain = onWall.filter((item) => isPlainUpper(item, height) && !isAutoDesignCornerFlank(item)).map((item) => spanOn(item, wall, room));
     const left = plain.filter((entry) => entry.end <= clearFrom + EPS && entry.end >= clearFrom - 1.5).sort((a, b) => b.end - a.end)[0];
     const right = plain.filter((entry) => entry.start >= clearTo - EPS && entry.start <= clearTo + 1.5).sort((a, b) => a.start - b.start)[0];
     if (!left || !right) continue;
@@ -146,7 +149,10 @@ export function mirrorAutoDesignUppersAroundWindows(input: {
     const runStart = Math.min(...run.map((entry) => entry.start));
     const runEnd = Math.max(...run.map((entry) => entry.end));
     const rest = autoDesignExactUpperTiling(runEnd - runStart - mirrorWidth, widths);
-    if (rest == null) continue;
+    if (rest == null) {
+      misses.push(`The uppers beside the window on ${wall} do not mirror (${inches(leftWidth)} left, ${inches(rightWidth)} right): the ${inches(runEnd - runStart)} run of ${run.map((entry) => entry.item.masterCode).join(" + ")} cannot close exactly around a ${inches(mirrorWidth)} cabinet with this line's widths${working.some((item) => isAutoDesignCornerFlank(item) && cabinetWall(item, room) === wall) ? ", and the 12″ corner cabinet comes first" : ""}.`);
+      continue;
+    }
     const pieces = retileRight ? [mirrorWidth, ...rest] : [...rest.reverse(), mirrorWidth];
     let along = runStart;
     const template = (retileRight ? right : left).item;
@@ -164,7 +170,7 @@ export function mirrorAutoDesignUppersAroundWindows(input: {
     working = accepted.placed;
     notes.push(`Uppers beside the window on ${wall} now mirror: ${replacements.map((item) => item.masterCode).join(" + ")} (was ${run.map((entry) => entry.item.masterCode).join(" + ")}), so the cabinet next to the window is ${inches(mirrorWidth)} on both sides.`);
   }
-  return { placed: working, notes };
+  return { placed: working, notes, misses };
 }
 
 /**
@@ -236,6 +242,11 @@ export function autoDesignGlassScheduleSpots(placed: readonly PlacedCabinet[], r
       continue;
     }
     if (!isPlainUpper(item, heightIn)) continue;
+    if (isAutoDesignMergedTwelve(item)) {
+      // The 12" cabinet that replaced a 9" + 3" filler (cabinet before filler) keeps the 9" spot's glass.
+      spots.push({ tag: "twelve-inch", parent: item, stackerWidth: 12, label: `${code} (12″ cabinet, was a 9″ + filler)` });
+      continue;
+    }
     if (Math.abs(width - 9) <= WIDTH_MATCH_IN) {
       spots.push({ tag: "nine-inch", parent: item, stackerWidth: 9, fallbackWidth: 12, label: `${code} (9″ cabinet)` });
       continue;
@@ -353,7 +364,7 @@ export function applyAutoDesignGlassSchedule(input: {
     return Math.abs(box.bottom + box.height - designTop) <= HEIGHT_MATCH_IN;
   };
   const spots = autoDesignGlassScheduleSpots(original, room, height, designTop, bottom);
-  if (spots.length === 0) return none([skipped("the plan has none of the scheduled glass spots (range bridge, refrigerator cabinet, 9″ cabinet, diagonal corner, 21″ pair over a 42″ base).")]);
+  if (spots.length === 0) return none([skipped("the plan has none of the scheduled glass spots (range bridge, refrigerator cabinet, 9″ / 12″ cabinet, diagonal corner, 21″ pair over a 42″ base).")]);
   const stackerCatalog = autoDesignGlassStackerCatalog(input.wallCatalog);
   const panelCatalog = [...(input.panelCatalog ?? [])];
   const ceiling = Number(room.ceilingHeight) || 0;

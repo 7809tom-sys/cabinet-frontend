@@ -557,18 +557,33 @@ export function finishedBaseEndPanelStock(
     const text = `${item.masterCode ?? ""} ${item.description ?? ""} ${item.subCategory ?? ""}`.toLowerCase();
     if (/dishwasher|return panel|refrigerator|fridge|tall panel|wall end/.test(text)) return [];
     const stock = catalogItemToExposedPanelStock(item, null);
-    return stock ? [stock] : [];
-  }).filter((stock) => stock.stockFace + 0.01 >= face);
+    return stock ? [{ stock, threeQuarter: panelIsThreeQuarter(item) }] : [];
+  // Lines list base end panels a little under the 24" box depth (BSV 23 1/4, BDEP 23 1/2); a
+  // side within about an inch of the cabinet depth is still covered (Tom, Nov 17 2026).
+  }).filter(({ stock }) => stock.stockFace + BASE_END_PANEL_DEPTH_TOLERANCE_IN >= face);
   if (!stocks.length) return null;
   // A panel must cover the whole side it finishes. Among those that do, prefer
-  // one the line names an end panel or skin, then the smallest sheet: a 24" side
-  // is never cut from a 96" tall sheet when a base panel is sold.
+  // Rule 10's 3/4" stock over a 1/4" skin, then one the line names an end panel or skin,
+  // then the smallest sheet: a 24" side is never cut from a 96" tall sheet when a base panel is sold.
   const named = (stock: ExposedPanelStock) => /end\s*panel|\bskin\b/i.test(`${stock.description}`);
-  return stocks.sort((left, right) => (
-    Number(right.stockHeight + 0.01 >= height) - Number(left.stockHeight + 0.01 >= height)
+  return stocks.sort((leftRow, rightRow) => {
+    const left = leftRow.stock;
+    const right = rightRow.stock;
+    return Number(rightRow.threeQuarter) - Number(leftRow.threeQuarter)
+    || Number(right.stockHeight + 0.01 >= height) - Number(left.stockHeight + 0.01 >= height)
     || Number(named(right)) - Number(named(left))
-    || left.stockFace * left.stockHeight - right.stockFace * right.stockHeight
-  ))[0] ?? null;
+    || left.stockFace * left.stockHeight - right.stockFace * right.stockHeight;
+  })[0]?.stock ?? null;
+}
+
+/** How far under the cabinet depth a base end panel may be and still cover the side. */
+export const BASE_END_PANEL_DEPTH_TOLERANCE_IN = 1;
+
+/** True when the catalog row is 3/4" stock (thickness field or "3/4" in its description). */
+export function panelIsThreeQuarter(item: ExposedPanelCatalogItem): boolean {
+  const dims = [Number(item.width), Number(item.depth)].filter((value) => Number.isFinite(value) && value > 0 && value <= 2);
+  if (dims.length) return dims.some((value) => Math.abs(value - 0.75) <= 0.02);
+  return /3\/4|¾/.test(`${item.description ?? ""}`);
 }
 
 /** Where the panel for one flank sits along the run, outside the cabinet body. */

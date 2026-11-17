@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import live from "./__fixtures__/aeroSolsticeLive390019.json";
 import { runAutoDesignLayout, mergeAutoDesignRefrigeratorCaps, type AutoDesignLayoutSuccess } from "./autoDesignLayout";
 import { emptyAutoDesignIntake, type PreferenceId } from "./autoDesignFifteenRules";
+import { finishedBaseEndPanelStock } from "./autoDesignRangeFlanks";
 import { autoDesignExactUpperTiling } from "./autoDesignGlassSchedule";
 import {
   appliancesForRoom, applianceAsDesignCabinet, elevationBox, isFillerItem, isGlassDoorCabinet, isPanelItem, isStacker,
@@ -59,7 +60,7 @@ const at = (item: PlacedCabinet, room: RoomData) => {
 const upperRow = (placed: readonly PlacedCabinet[], room: RoomData, wall: string) => placed
   .filter((item) => item.placement === "wall" && item.wallId === wall && !isStacker(item))
   .map((item) => ({ item, ...at(item, room) }))
-  .sort((a, b) => a.start - b.start)
+  .sort((a, b) => a.start - b.start || b.end - a.end)
   .map((entry) => `${entry.item.masterCode} ${entry.start}-${entry.end}`);
 
 describe("Auto Design v2 Aero Solstice: glass schedule, flush tops, 21s over 42s", () => {
@@ -67,11 +68,14 @@ describe("Auto Design v2 Aero Solstice: glass schedule, flush tops, 21s over 42s
   const placed = result.placed;
 
   it("lays out the v2 uppers on both walls", () => {
+    // Tom, 3:27 PM CT: the corner rule fires first (a 12 in on each leg of the diagonal), and
+    // Rule 10 puts 3/4 in S2496 stock on every visible side (window sides, the band under the
+    // microwave), replacing the 1/4 in WSV skin.
     expect(upperRow(placed, room, "top")).toEqual([
-      "W2130 0-21", "W2130 21-42", "W2142 42-63", "W2142 106-127", "W1842 127-145", "F1.5 145-146",
+      "W2130 0-21", "W2130 21-42", "W2142 42-63", "S2496 63-63.75", "W2742 106-133", "W1242 133-145", "F1.5 145-146",
     ]);
     expect(upperRow(placed, room, "right")).toEqual([
-      "DCW2430 0-24", "W0930 24-33", "F342 33-36", "W3012 36-66", "WSV42 66-66.75", "W1242 66.75-78.75", "F342 78.75-80.75",
+      "DCW2430 0-24", "W1230 24-36", "W3012 36-66", "S2496 36-36.75", "S2496 66-66.75", "W1242 66.75-78.75", "F342 78.75-80.75",
       "W361224 82-118", "W3642 119.25-155.25", "W1242 155.25-167.25",
     ]);
     expect(placed.some((item) => item.placement === "wall" && Math.abs(Number(item.width) - 39) <= 0.05)).toBe(false);
@@ -81,7 +85,7 @@ describe("Auto Design v2 Aero Solstice: glass schedule, flush tops, 21s over 42s
     const stackers = placed.filter((item) => isStacker(item));
     const schedule = stackers.map((stacker) => `${stacker.masterCode} on ${placed.find((item) => item.uid === stacker.stackedOnCabinetUid)?.masterCode}`).sort();
     expect(schedule).toEqual([
-      "DCW2412GD on DCW2430", "W1212GD on W0930", "W2112GD on W2130", "W2112GD on W2130", "W3012GD on W3012", "W3612GD on W361224",
+      "DCW2412GD on DCW2430", "W1212GD on W1230", "W2112GD on W2130", "W2112GD on W2130", "W3012GD on W3012", "W3612GD on W361224",
     ]);
     const byCode = new Map(LIVE.wall.map((row) => [row.masterCode, row]));
     for (const stacker of stackers) {
@@ -130,7 +134,7 @@ describe("Auto Design v2 Aero Solstice: glass schedule, flush tops, 21s over 42s
     expect(at(stacker, room).top).toBeCloseTo(96, 2);
   });
 
-  it("the 12 in glass stacker on the 9 in cabinet spans the cabinet and its 3 in filler", () => {
+  it("the 12 in glass stacker sits on the 12 in cabinet that replaced the 9 in cabinet and its 3 in filler", () => {
     const stacker = placed.find((item) => item.masterCode === "W1212GD")!;
     expect(at(stacker, room).start).toBeCloseTo(24, 2);
     expect(at(stacker, room).end).toBeCloseTo(36, 2);
@@ -143,7 +147,7 @@ describe("Auto Design v2 Aero Solstice: glass schedule, flush tops, 21s over 42s
     const warning = run.reviewFindings.filter((finding) => finding.code === "preference-glass-stackers-skipped");
     expect(warning).toHaveLength(1);
     expect(warning[0]!.detail).toMatch(/all or nothing/);
-    expect(warning[0]!.detail).toMatch(/W0930/);
+    expect(warning[0]!.detail).toMatch(/W1230/);
     // The plan keeps its design-height uppers, flush at 84 in.
     const tops = new Set(run.placed.filter((item) => item.placement === "wall" && !isPanelItem(item)).map((item) => at(item, r).top));
     expect(Array.from(tops)).toEqual([84]);
@@ -155,6 +159,57 @@ describe("Auto Design v2 Aero Solstice: glass schedule, flush tops, 21s over 42s
     const top = upperRow(run.placed, r, "top");
     expect(top.slice(0, 2)).toEqual(["W2130 0-21", "W2130 21-42"]);
     expect(run.placed.some((item) => item.placement === "wall" && Math.abs(Number(item.width) - 39) <= 0.05)).toBe(false);
+  });
+
+  it("corners first: the 24 in diagonal upper has a 12 in cabinet on each leg", () => {
+    const top = upperRow(placed, room, "top");
+    const right = upperRow(placed, room, "right");
+    expect(right.slice(0, 2)).toEqual(["DCW2430 0-24", "W1230 24-36"]);
+    // On the other leg a 1.5 in corner filler sits between the 12 in and the diagonal box.
+    expect(top.slice(-2)).toEqual(["W1242 133-145", "F1.5 145-146"]);
+    expect(result.notes.some((note) => /DCW2430 24″ diagonal corner upper has a 12″ W1230 beside it/.test(note))).toBe(true);
+    // The mirror cannot also be met on that run, and the report says so.
+    expect(result.reviewFindings.some((finding) => finding.code === "window-uppers-not-mirrored" && /12″ corner cabinet comes first/.test(finding.detail))).toBe(true);
+  });
+
+  it("cabinet before filler: the 9 in upper and its 3 in filler become one W1230", () => {
+    expect(placed.some((item) => item.placement === "wall" && Math.abs(Number(item.width) - 9) <= 0.05)).toBe(false);
+    expect(result.notes.some((note) => /W0930 \+ the 3″ F342 on right became one W1230/.test(note))).toBe(true);
+  });
+
+  it("names the corner actually placed and never claims a diagonal base the line does not sell", () => {
+    expect(placed.some((item) => item.masterCode === "ERB36")).toBe(true);
+    expect(result.notes.some((note) => /BBC36 blind corner pulled/.test(note))).toBe(false);
+    expect(result.notes.some((note) => /catalog-fitting lazy Susan \(or a blind/.test(note))).toBe(false);
+    expect(result.notes.some((note) => /^Corner between Wall 1 and Wall 2: ERB36 lazy Susan corner placed/.test(note))).toBe(true);
+    const diagonal = result.reviewFindings.filter((finding) => finding.code === "corner-diagonal-base-unavailable");
+    expect(diagonal).toHaveLength(1);
+    expect(diagonal[0]!.detail).toMatch(/sells no diagonal base corner/);
+  });
+
+  it("Rule 10: 3/4 in stock on every visible side, no 1/4 in skins, no false 'sells no matching panel'", () => {
+    expect(placed.some((item) => /^(WSV|BSV|USV|FPV)/.test(item.masterCode))).toBe(false);
+    // The one side left open is named with the real reason: the window's 3 in clearance (the
+    // W2742 is already 3 in off the window), never "the selected line sells no matching panel".
+    const unfinished = result.reviewFindings.filter((finding) => finding.code === "exposed-side-left-unfinished");
+    expect(unfinished.map((finding) => finding.title)).toEqual(["W2742 keeps an unfinished start side"]);
+    expect(unfinished[0]!.detail).toMatch(/window's 3″ clearance/);
+    expect(result.reviewFindings.some((finding) => /sells no matching panel/.test(finding.detail ?? ""))).toBe(false);
+    for (const panel of placed.filter((item) => item.masterCode === "S2496" && item.placement === "wall")) {
+      expect(Math.min(Number(panel.width), Number(panel.depth))).toBeCloseTo(0.75, 2);
+    }
+  });
+
+  it("measures the range against the refrigerator, not against the microwave over it", () => {
+    expect(result.reviewFindings.some((finding) => /between range and range/.test(finding.title))).toBe(false);
+  });
+
+  it("a base end panel within about 1 in of the cabinet depth covers the side (BDEP 23.5, BSV 23.25 on a 24 in base)", () => {
+    const stock = finishedBaseEndPanelStock(LIVE.accessory as never, { depth: 24, height: 34.5 });
+    // Rule 10 takes 3/4 in stock first: the 3/4 in BDEP, not the 1/4 in BSV skin.
+    expect(stock?.masterCode).toBe("BDEP");
+    const skinOnly = finishedBaseEndPanelStock(LIVE.accessory.filter((row) => row.masterCode !== "BDEP") as never, { depth: 24, height: 34.5 });
+    expect(skinOnly?.masterCode).toBe("BSV");
   });
 
   it("splits spans into real widths, 21 and 30 first", () => {
