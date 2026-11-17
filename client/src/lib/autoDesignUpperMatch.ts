@@ -91,7 +91,9 @@ export function matchUppersToBases(input: {
   let working = [...input.placed];
   const height = input.heightIn;
   if (height == null) return { placed: working, notes, findings };
-  const standard = autoDesignStandardUpperRows(input.wallCatalog, height);
+  // A 9" upper stays available here only for a 9" base or corner leg that no
+  // wider box fits (pickWidth takes the widest fit first); 39" never is.
+  const standard = autoDesignStandardUpperRows(input.wallCatalog, height, { keepLastResortWidths: true });
   if (!standard.length) return { placed: working, notes, findings };
   const { room } = input;
   const walls = Array.from(new Set(working.filter(isStraightBase).map((item) => cabinetWall(item, room)).filter(Boolean))) as string[];
