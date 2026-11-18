@@ -108,17 +108,29 @@ export function catalogFillerForGap(
   const desiredDepth = placement === "wall" ? 12 : 24;
   const desiredHeight = placement === "wall" ? 30 : placement === "tall" ? 96 : 34.5;
   const requiresThreeInchStock = gapWidth <= 3 + 0.001;
+  const covers = (candidate: CatalogFillerCandidate) => numberValue(candidate.width) + 0.001 >= gapWidth;
 
-  return candidates
-    .filter(isCatalogFiller)
+  const fillers = candidates.filter(isCatalogFiller);
+  let pool = fillers
     // AltaEuro's documented 2-7/8-inch "3-inch" overlay is nominal 3-inch stock, so it
     // also satisfies an exact 3-inch seam such as a blind-corner filler.
-    .filter((candidate) => numberValue(candidate.width) + 0.001 >= gapWidth
+    .filter((candidate) => covers(candidate)
       || (requiresThreeInchStock && isNominalThreeInchFillerStock(candidate)))
     // A 5/8-inch, 1-1/2-inch, or 3-inch installed seam is cut from and billed
     // as one real 3-inch stock filler. Do not silently substitute a smaller
     // accessory code or a wider filler when the line has no orderable 3-inch SKU.
-    .filter((candidate) => !requiresThreeInchStock || isNominalThreeInchFillerStock(candidate))
+    .filter((candidate) => !requiresThreeInchStock || isNominalThreeInchFillerStock(candidate));
+  // Tom, Nov 18 2026: a filler is never cut wider than its own stock. A seam
+  // wider than the nominal 3-inch board's physical width (2-7/8-inch OF3xx on a
+  // 3-inch seam) is cut from the narrowest stock in the line that covers it
+  // (OF6xx), so the placed piece stays within fillerWidthRange. Only a line that
+  // sells nothing wider keeps the documented nominal 3-inch board.
+  if (requiresThreeInchStock && pool.length > 0 && !pool.some(covers)) {
+    const covering = fillers.filter(covers);
+    if (covering.length > 0) pool = covering;
+  }
+
+  return pool
     .sort((left, right) => {
       const widthDelta = numberValue(left.width) - numberValue(right.width);
       if (Math.abs(widthDelta) > 0.001) return widthDelta;

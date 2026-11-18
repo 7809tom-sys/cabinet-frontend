@@ -157,4 +157,17 @@ describe("catalogFillerForGap", () => {
 	  // A real 4-inch seam still needs genuinely wider stock, never the nominal 3-inch board.
 	  expect(catalogFillerForGap([aefOverlay], 4, "base")).toBeNull();
 	});
+
+	it("never cuts a filler wider than its stock: a 3-inch seam uses the line's 5-7/8-inch OF6xx when the OF3xx board is only 2-7/8 (Tom, Nov 18 2026)", () => {
+	  const of335 = { id: 905, masterCode: "OF335", description: '3" Filler Overlay — 2-7/8" W × 35-1/8" H × 3/4" D', category: "Accessory", subCategory: "Filler", width: 2.875, depth: 0.75, height: 35.125, catalogImageUrl: null } as const;
+	  const of635 = { ...of335, id: 906, masterCode: "OF635", description: '6" Filler Overlay — 5-7/8" W × 35-1/8" H × 3/4" D', width: 5.875 } as const;
+	  // A seam the 2-7/8 board covers still uses it.
+	  expect(catalogFillerForGap([of335, of635], 2.875, "base")?.masterCode).toBe("OF335");
+	  expect(catalogFillerForGap([of335, of635], 1.5, "base")?.masterCode).toBe("OF335");
+	  // A 3-inch seam (beside an ERB36, say) is wider than the 2-7/8 board, so the covering OF635 is cut.
+	  expect(catalogFillerForGap([of335, of635], 3, "base")?.masterCode).toBe("OF635");
+	  expect(catalogFillerForGap([of335, of635], 2.95, "base")?.masterCode).toBe("OF635");
+	  // Pricing follows the same stock, so the cart bills the board that was cut.
+	  expect(catalogFillerPricingId({ masterCode: "OF335", description: of335.description, category: "Accessory", subCategory: "Filler", width: 3, cabinetId: 905, placement: "base" }, [of335, of635])).toBe(906);
+	});
 });
