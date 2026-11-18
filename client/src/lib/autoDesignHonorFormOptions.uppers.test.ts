@@ -47,7 +47,12 @@ function mismatches(placed: readonly PlacedCabinet[], room: RoomData, wallCatalo
       .filter((item) => { const s = wallRunOffset(item, wall, room); return s < end - 0.1 && s + wallRunSpan(item, wall, room) > start + 0.1; });
     if (!above.length) continue;
     const exact = above.some((item) => Math.abs(wallRunOffset(item, wall, room) - start) <= 0.25 && Math.abs(wallRunSpan(item, wall, room) - (end - start)) <= 0.25);
-    if (!exact) out.push(`${base.masterCode}@${start.toFixed(2)} under ${above.map((item) => item.masterCode).join("+")}`);
+    // Rule 1 (Tom, Nov 18 2026): on a 30 in wall program a B42 takes two 21 in uppers
+    // side by side, even in a line that sells a W4230.
+    const pairOver42 = Math.abs((end - start) - 42) <= 0.25 && above.length === 2
+      && above.every((item) => Math.abs(wallRunSpan(item, wall, room) - 21) <= 0.25)
+      && above.some((item) => Math.abs(wallRunOffset(item, wall, room) - start) <= 0.25);
+    if (!exact && !pairOver42) out.push(`${base.masterCode}@${start.toFixed(2)} under ${above.map((item) => item.masterCode).join("+")}`);
   }
   return out;
 }
@@ -58,8 +63,8 @@ describe("Auto Design wall cabinets match the base below", () => {
     const codes = run.placed.filter((item) => item.placement === "base").map((item) => item.masterCode);
     expect(codes).toEqual(expect.arrayContaining(["B27", "B12"]));
     expect(mismatches(run.placed, room, CATALOG["510004"]!.wall)).toEqual([]);
-    // This line sells no W4230, so each B42 gets two 21s at the design height
-    // (Tom, Nov 18 2026 hard fallback) and nothing over a B42 is "kept".
+    // 30 in wall program, so each B42 gets two W2130s (Tom's rule 1, Nov 18 2026)
+    // and nothing over a B42 is "kept".
     expect(run.reviewFindings.some((finding) => finding.code === "upper-width-not-matched" && /42/.test(finding.detail))).toBe(false);
     for (const base of run.placed.filter((item) => item.placement === "base" && item.masterCode === "B42")) {
       const wall = cabinetWall(base, room) as string;

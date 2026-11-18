@@ -94,6 +94,10 @@ export function matchUppersToBases(input: {
   const standard = autoDesignStandardUpperRows(input.wallCatalog, height);
   if (!standard.length) return { placed: working, notes, findings };
   const { room } = input;
+  // Rule 1: "if the wall is 42 inches" is the wall program (the selected upper
+  // height: 42, or a frameless 42.25 class), not the wall or ceiling height.
+  const atFortyTwo = Math.round(height) === 42;
+  const isB42Width = (base: Span) => Math.abs((base.end - base.start) - 42) <= COLLISION_EPSILON_IN;
   const walls = Array.from(new Set(working.filter(isStraightBase).map((item) => cabinetWall(item, room)).filter(Boolean))) as string[];
   for (const wall of walls) {
     const spanOf = (item: PlacedCabinet): Span => {
@@ -132,7 +136,13 @@ export function matchUppersToBases(input: {
       const aligned = targets.every((base) => above.some((entry) => !isFillerItem(entry.item)
         && Math.abs(entry.start - base.start) <= ADJACENT_IN && Math.abs((entry.end - entry.start) - (base.end - base.start)) <= ADJACENT_IN))
         && above.every((entry) => !isFillerItem(entry.item));
-      if (aligned) continue;
+      // Rule 1 (Tom, Nov 18 2026, 11:08 / 11:10 AM CT): on a 30 or 36 wall program a
+      // B42 takes two 21s at the program height, so a
+      // single 42 wide upper already lined up over it is not "aligned" for this rule.
+      const wantsPair = (base: Span) => !atFortyTwo && isB42Width(base) && !legs.some((leg) => leg.start === base.start && leg.end === base.end)
+        && !(above.some((entry) => Math.abs(entry.start - base.start) <= ADJACENT_IN && Math.abs((entry.end - entry.start) - 21) <= ADJACENT_IN)
+          && above.some((entry) => Math.abs(entry.start - (base.start + 21)) <= ADJACENT_IN && Math.abs((entry.end - entry.start) - 21) <= ADJACENT_IN));
+      if (aligned && !targets.some(wantsPair)) continue;
       const label = chain.map((base) => base.item.masterCode).join(" + ");
       const skip = (detail: string) => findings.push({
         ruleId: "uppers-match-bases",
@@ -199,29 +209,32 @@ export function matchUppersToBases(input: {
         .sort((a, b) => (exact ? 0 : dim(b.width, 0) - dim(a.width, 0))
           || Math.abs(dim(a.depth, 0) - depth) - Math.abs(dim(b.depth, 0) - depth)
           || a.masterCode.localeCompare(b.masterCode))[0];
-      // Hard fallback (Tom, Nov 18 2026, 10:28 / 10:34 AM CT): a 42" base with no
-      // 42" upper at the selected height gets two 21" uppers at that height
-      // (W2130 at 30, W2142 at 42), looked up in the catalog, never invented.
-      // Compatible with the v2 splitExact pair; this pass runs after the last
-      // repack and gap re-tile, so the pair is the final word over that base.
-      const pairFor42 = (width: number): DesignCabinet | null => {
-        if (Math.abs(width - 42) > COLLISION_EPSILON_IN || pickWidth(42, true)) return null;
-        return pickWidth(21, true) ?? null;
-      };
-      const missing21: string[] = [];
+      // Rule 1 (Tom, Nov 18 2026, 11:08 / 11:10 AM CT): the upper height is 30, 36
+      // or 42 in, set by the wall program the customer picks. Over a base 42: if the
+      // wall program is 42 in, place a 42 in upper (W4242; two W2142s when the line
+      // has no 42 wide upper at 42). Otherwise place two 21 in uppers side by side at
+      // the wall program height: W2130 on a 30 program, W2136 on a 36 program, so
+      // the tops stay flush. Everything comes from the catalog; with no fitting SKU
+      // the review says it couldn't be met.
+      const b42NotMet: string[] = [];
+      const b42SingleSkipped: string[] = [];
       for (const base of targets) {
         const baseWidth = base.end - base.start;
         const leg = legs.find((entry) => Math.abs(entry.start - base.start) <= COLLISION_EPSILON_IN && Math.abs(entry.end - base.end) <= COLLISION_EPSILON_IN);
         const slot = windows.length ? slotFor(base) : { start: base.start, end: base.end };
         if (!slot) { rows.push(null); continue; }
         const exact = Math.abs((slot.end - slot.start) - baseWidth) <= COLLISION_EPSILON_IN;
-        if (exact && !leg && Math.abs(baseWidth - 42) <= COLLISION_EPSILON_IN && !pickWidth(42, true)) {
-          const half = pairFor42(baseWidth);
-          if (half) {
+        if (exact && !leg && isB42Width(base)) {
+          const single = pickWidth(42, true);
+          const half = pickWidth(21, true);
+          if (atFortyTwo && single) {
+            rows.push({ row: single, start: base.start, base, exact });
+          } else if (half) {
+            if (single) b42SingleSkipped.push(`${single.masterCode} over ${base.item.masterCode}`);
             rows.push({ row: half, start: base.start, base, exact });
             rows.push({ row: half, start: base.start + dim(half.width, 0), base, exact });
           } else {
-            missing21.push(base.item.masterCode);
+            b42NotMet.push(base.item.masterCode);
             rows.push(null);
           }
           continue;
@@ -258,18 +271,32 @@ export function matchUppersToBases(input: {
         }
         continue;
       }
-      for (const code of missing21) {
+      for (const code of b42NotMet) {
+        const sold42 = pickWidth(42, true);
         findings.push({
           ruleId: "uppers-match-bases",
-          code: "b42-two-21-not-met",
+          code: "b42-upper-rule-not-met",
           severity: "warning",
-          title: `Two 21″ uppers over ${code} couldn't be met`,
-          detail: `This line sells no 42″ and no 21″ wide wall cabinet at ${formatInches(height)}, so the two-21s rule over ${code} could not be applied; no SKU was invented.`,
+          title: `The upper over ${code} couldn't be met`,
+          detail: atFortyTwo
+            ? `This line sells no 42″ wide and no 21″ wide wall cabinet at ${formatInches(height)}, so neither one 42″ upper nor two 21″ uppers could go over ${code}; no SKU was invented and the existing wall cabinets were kept.`
+            : `This line sells no 21″ wide wall cabinet at ${formatInches(height)}, so the two 21″ uppers over ${code} could not be placed${sold42 ? ` (it does sell ${sold42.masterCode}, but on a 30 or 36 in wall program the rule is two 21s)` : ""}; no SKU was invented and the existing wall cabinets were kept.`,
           cabinetUid: chain[0]!.item.uid,
           cabinetCode: code,
         });
       }
-      if (missing21.length) continue;
+      if (b42NotMet.length) continue;
+      if (b42SingleSkipped.length) {
+        findings.push({
+          ruleId: "uppers-match-bases",
+          code: "b42-single-upper-not-used",
+          severity: "info",
+          title: `Two 21″ uppers over the B42 instead of a single 42″`,
+          detail: `This line sells ${b42SingleSkipped.join(", ")} at ${formatInches(height)}, but on a 30 or 36 in wall program the B42 rule is two 21″ uppers at the program height, so that single 42″ upper was not used.`,
+          cabinetUid: chain[0]!.item.uid,
+          cabinetCode: chain[0]!.item.masterCode,
+        });
+      }
       if (missing.length) {
         skip(`This line sells no ${missing.join(", ")} wide wall cabinet at ${formatInches(height)}, so the wall cabinets above ${label} do not match the base width.`);
         continue;
