@@ -58,8 +58,16 @@ describe("Auto Design wall cabinets match the base below", () => {
     const codes = run.placed.filter((item) => item.placement === "base").map((item) => item.masterCode);
     expect(codes).toEqual(expect.arrayContaining(["B27", "B12"]));
     expect(mismatches(run.placed, room, CATALOG["510004"]!.wall)).toEqual([]);
-    // This line sells no W4230, so the B42 keeps its uppers and the review says why.
-    expect(run.reviewFindings.some((finding) => finding.code === "upper-width-not-matched" && /42/.test(finding.detail))).toBe(true);
+    // This line sells no W4230, so each B42 gets two 21s at the design height
+    // (Tom, Nov 18 2026 hard fallback) and nothing over a B42 is "kept".
+    expect(run.reviewFindings.some((finding) => finding.code === "upper-width-not-matched" && /42/.test(finding.detail))).toBe(false);
+    for (const base of run.placed.filter((item) => item.placement === "base" && item.masterCode === "B42")) {
+      const wall = cabinetWall(base, room) as string;
+      const start = wallRunOffset(base, wall, room);
+      const over = run.placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall && !isFillerItem(item)
+        && wallRunOffset(item, wall, room) < start + 41.9 && wallRunOffset(item, wall, room) + wallRunSpan(item, wall, room) > start + 0.1);
+      expect(over.map((item) => item.masterCode)).toEqual(["W2130", "W2130"]);
+    }
     expect(run.placed.some((item) => item.masterCode === "W2730")).toBe(true);
     expect(run.placed.some((item) => item.masterCode === "W1230")).toBe(true);
   });

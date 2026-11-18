@@ -4,11 +4,9 @@ import {
   CORNER_BAND_LAZY_SUSAN_MIN_IN,
   CORNER_BAND_PULL_OUT_MIN_IN,
   CORNER_BAND_ROTATED_BLIND_MIN_IN,
-  NINE_INCH_COMPANION_IN,
   cornerBandForAvailableIn,
   cornerOptionsInTypeOrder,
   decideAutoDesignCornerTypeOrder,
-  pickNineInchCompanion,
 } from "./autoDesignCornerDecision";
 import { autoDesignCornerFamily, isPullOutCornerCabinet } from "./autoDesignCornerStage";
 import { DEFAULT_ROOM, wallPlacementAt, type DesignCabinet, type PlacedCabinet } from "./design";
@@ -52,7 +50,6 @@ function rangeLeaving(availableIn: number): PlacedCabinet {
 }
 
 const CATALOG = [option("DCB36", "36"), option("LSB36", "36"), option("LSB33", "33"), option("BBC36", "36")];
-const NINE_BASE = option("BT9", "9", { description: '9" Tray Base Cabinet', placement: "base" });
 
 function decide(availableIn: number, extras: Parameters<typeof decideAutoDesignCornerTypeOrder>[0] extends infer T ? Partial<T> : never = {}) {
   return decideAutoDesignCornerTypeOrder({
@@ -84,7 +81,6 @@ describe("corner measurement bands", () => {
     expect(decision.availableIn).toBeCloseTo(45, 5);
     expect(decision.order[0]).toBe("lazy-susan");
     expect(decision.blocked).toBe(false);
-    expect(decision.companionNine).toBe(false);
   });
 
   it("at 43.5 in, prefers a pull-out / sliding corner, then the next valid type", () => {
@@ -94,12 +90,12 @@ describe("corner measurement bands", () => {
     expect(decision.order.slice(0, 3)).toEqual(["pull-out", "blind", "lazy-susan"]);
   });
 
-  it("at 42 in, picks a lazy Susan plus a 9 in companion when the catalog can supply both", () => {
-    const decision = decide(CORNER_BAND_LAZY_PLUS_NINE_MIN_IN, { companionCatalog: [NINE_BASE] });
+  it("at 42 in, picks a lazy Susan with no 9 in companion (removed, Tom Nov 18 2026)", () => {
+    const decision = decide(CORNER_BAND_LAZY_PLUS_NINE_MIN_IN);
     expect(decision.band).toBe("lazy-susan-plus-nine");
-    expect(decision.companionNine).toBe(true);
     expect(decision.order[0]).toBe("lazy-susan");
-    expect(pickNineInchCompanion([NINE_BASE])?.masterCode).toBe("BT9");
+    expect(decision).not.toHaveProperty("companionNine");
+    expect(decision.reason).not.toMatch(/9"/);
   });
 
   it("around 36 in, uses a catalog lazy Susan that fits, or a blind if none does", () => {
@@ -164,26 +160,6 @@ describe("catalog decides the SKU and size", () => {
     );
     expect(ordered.map((row) => row.masterCode)).toEqual(["DCB36", "BBC36"]);
     expect(autoDesignCornerFamily(ordered[0]!)).toBe("diagonal");
-  });
-
-  it("on the 42 in band, falls to catalog-fit when the line has no 9 in cabinet, or only a lazy Susan too wide to leave 9 in", () => {
-    const noNine = decide(42, { companionCatalog: [option("B12", "12")], options: CATALOG });
-    expect(noNine.band).toBe("catalog-fit");
-    expect(noNine.companionNine).toBe(false);
-    const only36 = decide(42, {
-      companionCatalog: [NINE_BASE],
-      options: [option("LSB36", "36"), option("BBC36", "36")],
-    });
-    expect(only36.band).toBe("catalog-fit");
-  });
-
-  it("prefers a 9 in base or tray over a 9 in tall, and never invents a SKU", () => {
-    const tall = option("S9", "9", { placement: "tall", description: '9" Tall' });
-    const tray = option("BT9", "9", { placement: "base", description: '9" Tray Base Cabinet' });
-    expect(pickNineInchCompanion([tall, tray])?.masterCode).toBe("BT9");
-    expect(pickNineInchCompanion([tall])?.masterCode).toBe("S9");
-    expect(pickNineInchCompanion([option("B12", "12")])).toBeNull();
-    expect(NINE_INCH_COMPANION_IN).toBe(9);
   });
 
   it("recognizes a pull-out corner from its type, and does not treat a spice-rack pull-out as one", () => {
