@@ -76,6 +76,7 @@ import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRange
 import { placeSinkBridges } from "./autoDesignSinkBridge";
 import { closeRemainingRunGaps } from "./autoDesignCloseRemainingGaps";
 import { tightenRunOpenings } from "./autoDesignTightenOpenings";
+import { removeFillersOutsideExposedPanels } from "./fillerOutsideExposedPanel";
 import { ensureMandatorySinkFaucets, type AutoDesignFaucetProduct } from "./autoDesignFaucet";
 import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
 import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
@@ -2369,6 +2370,16 @@ export function runAutoDesignLayout(args: {
   working = cornerFlank.placed;
   notes.push(...cornerFlank.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...cornerFlank.findings);
+  // Tom, voice, Nov 18 2026, 4:53 PM CT: no filler outside an exposed panel. Every
+  // filler pass above has run, so this is the last word: a board on a panel's outside
+  // face is dropped and named on the review list; fillers between cabinets and
+  // against walls are untouched.
+  const outsidePanelFillers = removeFillersOutsideExposedPanels({
+    placed: working, room, openings: stageOpenings, wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+  });
+  working = outsidePanelFillers.placed;
+  notes.push(...outsidePanelFillers.notes.filter((note) => !notes.includes(note)));
+  reviewFindings.push(...outsidePanelFillers.findings);
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
