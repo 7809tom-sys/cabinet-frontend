@@ -291,7 +291,7 @@ export function applyLazySusanCornerUppers(input: LazySusanCornerUpperInput): La
 
   if (changed) {
     // A flank can cut an old misaligned upper; put the uppers back over the bases first.
-    const rematched = matchUppersToBases({ placed: working, room, openings: input.openings, wallCatalog: input.wallCatalog, heightIn: height, styleId: input.styleId, makeUid: input.makeUid });
+    const rematched = matchUppersToBases({ placed: working, room, openings: input.openings, wallCatalog: input.wallCatalog, heightIn: height, styleId: input.styleId, makeUid: input.makeUid, glass: input.glass });
     working = rematched.placed;
     notes.push(...rematched.notes);
   }
