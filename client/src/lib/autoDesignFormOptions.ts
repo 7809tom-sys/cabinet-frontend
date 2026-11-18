@@ -9,7 +9,7 @@
  */
 import { hasPreference, type AutoDesignIntake } from "./autoDesignFifteenRules";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
-import { glassStackerFamily, glassStackerParentPlacement, isFillerItem, isPanelItem, isStacker, resolvedDesignCabinetDimensions, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
+import { cabinetWall, glassStackerFamily, glassStackerParentPlacement, isFillerItem, isPanelItem, isStacker, resolvedDesignCabinetDimensions, wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
 import { stackerDraft } from "./glassStackerBulkPlacement";
 
 const HEIGHT_MATCH_IN = 0.5;
@@ -113,6 +113,52 @@ function inches(value: number | undefined): string {
   return `${Math.round(value * 100) / 100}″`;
 }
 
+/** Two upper-band items closer than this belong to the same run (a seam, not a break). */
+const RUN_JOIN_IN = 0.5;
+
+export type AutoDesignUpperRun = { wallId: string; start: number; end: number; uppers: PlacedCabinet[] };
+
+/**
+ * Upper runs for the all-or-nothing glass rule (Tom, Nov 18 2026, 11:22 AM CT).
+ *
+ * A run is one continuous stretch of the upper band on ONE wall: the regular
+ * uppers at the design height (the glass parents) plus the fillers between them,
+ * butted within RUN_JOIN_IN. A run ends at a hard break:
+ *  - open wall (a window, the range hood space, an open span) wider than RUN_JOIN_IN;
+ *  - any other wall item: a range or refrigerator bridge, a hood, a panel, an
+ *    open shelf, a cabinet at another height;
+ *  - a tall cabinet or the refrigerator (they leave open upper band, so a gap);
+ *  - the wall end (each wall is its own run; a corner upper belongs to the wall
+ *    it is placed on).
+ */
+export function autoDesignUpperRuns(placed: readonly PlacedCabinet[], parents: readonly PlacedCabinet[], room: RoomData): AutoDesignUpperRun[] {
+  const parentUids = new Set(parents.map((item) => item.uid));
+  const runs: AutoDesignUpperRun[] = [];
+  const walls = Array.from(new Set(parents.map((item) => cabinetWall(item, room)).filter(Boolean))) as string[];
+  for (const wallId of walls) {
+    const band = placed
+      .filter((item) => item.placement === "wall" && !item.islandFace && !isStacker(item) && cabinetWall(item, room) === wallId)
+      .map((item) => {
+        const start = wallRunOffset(item, wallId, room);
+        return { item, start, end: start + wallRunSpan(item, wallId, room) };
+      })
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+    let current: AutoDesignUpperRun | null = null;
+    const close = () => { if (current && current.uppers.length) runs.push(current); current = null; };
+    for (const entry of band) {
+      const isParent = parentUids.has(entry.item.uid);
+      const neutral = !isParent && isFillerItem(entry.item);
+      if (!isParent && !neutral) { close(); continue; } // a bridge, hood, panel, shelf: hard break
+      if (current && entry.start - current.end > RUN_JOIN_IN) close(); // open wall between: hard break
+      if (!current) current = { wallId, start: entry.start, end: entry.end, uppers: [] };
+      current.end = Math.max(current.end, entry.end);
+      if (isParent) current.uppers.push(entry.item);
+    }
+    close();
+  }
+  return runs;
+}
+
 function stackerPass(input: {
   placed: readonly PlacedCabinet[];
   wallCatalog: readonly DesignCabinet[];
@@ -136,33 +182,42 @@ function stackerPass(input: {
     && height != null
     && Math.abs((Number(item.height) || 0) - height) <= HEIGHT_MATCH_IN);
   const stackers: PlacedCabinet[] = [];
-  const noRow: string[] = [];
-  const blind: string[] = [];
-  const ceiling: string[] = [];
-  for (const parent of parents) {
-    const pick = pickStackerFor(parent, placed, input.room, stackerCatalog);
-    if (pick.ok) {
-      stackers.push(pick.stacker);
-      continue;
-    }
-    if (pick.reason === "blind-corner") blind.push(parent.masterCode);
-    else if (pick.reason === "no-row") noRow.push(`${parent.masterCode} (${inches(Number(parent.width))} wide)`);
-    else ceiling.push(`${parent.masterCode} (even the shortest stacker would reach ${inches(pick.topIn)}; ceiling ${inches(pick.ceilingIn)})`);
-  }
   const findings: DesignerReviewFinding[] = [];
   const list = (codes: string[]) => Array.from(new Set(codes)).sort().join(", ");
-  const skipped: string[] = [];
-  if (noRow.length > 0) skipped.push(`This line sells no 12″, 15″ or 18″ glass stacker the same width as ${list(noRow)}, so ${noRow.length === 1 ? "it has" : "they have"} no glass stacker.`);
-  if (blind.length > 0) skipped.push(`${list(blind)} ${blind.length === 1 ? "is a blind corner" : "are blind corners"}; a straight glass stacker is not placed on a blind corner.`);
-  if (ceiling.length > 0) skipped.push(`No glass stacker fits under the ceiling above ${list(ceiling)}.`);
-  if (parents.length === 0) skipped.push("No regular wall cabinet at the design height was found to put a glass stacker on.");
-  if (skipped.length > 0) {
+  const plainRuns: string[] = [];
+  // Rule 1b (Tom, Nov 18 2026, 11:22 AM CT): "If a run of uppers cannot be filled
+  // 100% with glass cabinets, do not put any glass cabinets in that run at all. No
+  // partial glass." Every upper in a run must get its own glass stacker, or the
+  // whole run stays plain; other runs that can be 100% glass keep their glass.
+  for (const run of autoDesignUpperRuns(placed, parents, input.room)) {
+    const picks: PlacedCabinet[] = [];
+    const blockers: string[] = [];
+    for (const parent of run.uppers) {
+      const pick = pickStackerFor(parent, placed, input.room, stackerCatalog);
+      if (pick.ok) { picks.push(pick.stacker); continue; }
+      if (pick.reason === "blind-corner") blockers.push(`${parent.masterCode} (a blind corner takes no straight glass stacker)`);
+      else if (pick.reason === "no-row") blockers.push(`${parent.masterCode} (this line sells no 12″, 15″ or 18″ glass stacker ${inches(Number(parent.width))} wide)`);
+      else blockers.push(`${parent.masterCode} (even the shortest stacker would reach ${inches(pick.topIn)}; ceiling ${inches(pick.ceilingIn)})`);
+    }
+    if (blockers.length === 0) { stackers.push(...picks); continue; }
+    plainRuns.push(`the ${run.wallId} wall run ${inches(run.start)}–${inches(run.end)} (${run.uppers.map((item) => item.masterCode).join(" + ")}) stays plain because of ${list(blockers)}`);
+  }
+  if (plainRuns.length > 0) {
+    findings.push({
+      ruleId: "auto-design-rule-12",
+      code: "preference-glass-run-plain",
+      severity: "warning",
+      title: "Customer pick: Glass cabinets above (no partial glass)",
+      detail: `${stackers.length > 0 ? `Glass stackers placed above ${stackers.length} wall cabinet${stackers.length === 1 ? "" : "s"} in runs that are 100% glass. ` : ""}A run of uppers that cannot be 100% glass gets no glass at all: ${plainRuns.join("; ")}.`,
+    });
+  }
+  if (parents.length === 0) {
     findings.push({
       ruleId: "auto-design-rule-12",
       code: "preference-glass-stackers-skipped",
       severity: "warning",
       title: "Customer pick: Glass cabinets above",
-      detail: `${stackers.length > 0 ? `Glass stackers placed above ${stackers.length} wall cabinet${stackers.length === 1 ? "" : "s"}. ` : ""}${skipped.join(" ")}`,
+      detail: "No regular wall cabinet at the design height was found to put a glass stacker on.",
     });
   }
   const heights = Array.from(new Set(stackers.map((item) => Number(item.height))));
@@ -182,8 +237,10 @@ function stackerPass(input: {
  * Glass cabinets above: the regular uppers stay solid and each one gets the
  * line's own same-width glass stacker on top (18, then 15, then 12 in, the
  * tallest that fits under the ceiling). The stackers are real plan items, so
- * the parts list, the price and the 3D view carry them. A width the line does
- * not sell as a stacker, or a blind corner, is named in one visible warning.
+ * the parts list, the price and the 3D view carry them. No partial glass (Tom,
+ * Nov 18 2026, 11:22 AM CT): a run with any upper that cannot carry a glass
+ * stacker (no same-width row, a blind corner, the ceiling) gets no glass at all,
+ * and one visible warning names the run and the cabinet that blocked it.
  *
  * One-redraw rule: if the pass throws, it is retried once; a second failure is
  * shown on the review list and the plan keeps its solid uppers.

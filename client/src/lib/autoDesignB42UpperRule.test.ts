@@ -128,14 +128,16 @@ describe("Rule 1: the upper over a B42 follows the wall program (Aero)", () => {
 });
 
 /**
- * Rule 1b, Tom (voice, Nov 18 2026, 11:14 AM CT): "If you do not have a glass cabinet
- * for the appropriate cabinet, do not put that cabinet in the plan." With glass on,
- * the upper over a B42 is only placed when the line sells its matching glass stacker.
+ * Rule 1b, Tom (voice, Nov 18 2026, 11:22 AM CT): "If a run of uppers cannot be filled
+ * 100% with glass cabinets, do not put any glass cabinets in that run at all. No partial
+ * glass." Over a B42 the pick prefers widths with a glass stacker; with none, the plain
+ * rule 1 uppers go in and that whole run stays plain.
  */
-describe("Rule 1b: with glass on, a B42 upper is only placed when its glass stacker exists (Aero)", () => {
+describe("Rule 1b: no partial glass; the B42 pick prefers widths with a glass stacker (Aero)", () => {
   const GLASS = ["glass-uppers"];
   const no21Glass = LIVE.wall.filter((row) => !/^W21(?:12|15|18)GD$/.test(row.masterCode));
   const stackersOn = (placed: readonly PlacedCabinet[], uid: string) => placed.filter((item) => item.stackedOnCabinetUid === uid);
+  const parentOf = (placed: readonly PlacedCabinet[], stacker: PlacedCabinet) => placed.find((item) => item.uid === stacker.stackedOnCabinetUid);
 
   it("on a 30 in wall program with the 21 in glass stacker sold: two W2130s, each with its W21 glass stacker", () => {
     const { result, room } = run({ preferences: GLASS });
@@ -161,12 +163,22 @@ describe("Rule 1b: with glass on, a B42 upper is only placed when its glass stac
     expect(result.reviewFindings.some((f) => f.code === "b42-glass-single-upper")).toBe(true);
   });
 
-  it("on a 30 in wall program with no glass stacker for a 21 or a 42: the upper is left out, couldn't be met, no non-glass box in the glass spot", () => {
+  it("on a 30 in wall program with no glass stacker for a 21 or a 42: plain W2130 pair, that run gets no glass and the report names W2130; other runs keep glass", () => {
     const { result, room } = run({ preferences: GLASS, wall: no21Glass });
     const bottom = bottomB42(result.placed, room);
     expect(bottom.length).toBeGreaterThan(0);
-    for (const entry of bottom) expect(entry.over.map((o) => o.item.masterCode)).toEqual([]);
-    expect(result.reviewFindings.some((f) => f.code === "b42-glass-not-met" && f.severity === "warning")).toBe(true);
+    for (const entry of bottom) {
+      expect(entry.over.map((o) => o.item.masterCode)).toEqual(["W2130", "W2130"]);
+      for (const o of entry.over) expect(stackersOn(result.placed, o.item.uid)).toEqual([]);
+    }
+    // No partial glass: nothing on the bottom wall run with the B42s carries glass.
+    const bottomStackers = result.placed.filter((item) => isStacker(item) && parentOf(result.placed, item)?.wallId === "bottom");
+    expect(bottomStackers).toEqual([]);
+    const finding = result.reviewFindings.find((f) => f.code === "preference-glass-run-plain");
+    expect(finding?.detail).toMatch(/bottom wall run .* stays plain because of .*W2130 \(this line sells no 12″, 15″ or 18″ glass stacker 21″ wide\)/);
+    // Another run that can be 100% glass keeps it.
+    expect(result.placed.some((item) => isStacker(item) && parentOf(result.placed, item)?.wallId !== "bottom")).toBe(true);
+    expect(result.reviewFindings.some((f) => f.code === "b42-glass-not-met")).toBe(false);
   });
 
   it("with glass off the same catalog still gets two W2130s (rule 1b only applies with glass)", () => {
