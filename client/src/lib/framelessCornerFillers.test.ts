@@ -36,8 +36,9 @@ const FRAMED = "330014";
 
 type Built = { ok: boolean; message?: string; placed?: PlacedCabinet[]; reviewFindings?: Array<{ code?: string; detail: string }> };
 
-function build(styleId: string, layoutType: "l-shape" | "u-shape"): PlacedCabinet[] {
-  const pack = packFor(styleId);
+function build(styleId: string, layoutType: "l-shape" | "u-shape", dropBaseCode: RegExp | null = null): PlacedCabinet[] {
+  const full = packFor(styleId);
+  const pack = dropBaseCode ? { ...full, base: full.base.filter((row) => !dropBaseCode.test(row.masterCode)) } : full;
   let uid = 0;
   const result = runAutoDesignLayout({
     input: {
@@ -110,12 +111,20 @@ describe.each(FRAMELESS)("frameless corner, fillers and overlap — %s (%s)", (s
   const pack = packFor(styleId);
 
   describe("1) corner legs: uppers line up over the bases beside an ERB33 / WER2430 corner", () => {
-    it("U-shape: the bottom wall's uppers match each base and the 9\" leg gets its own upper", () => {
-      const placed = build(styleId, "u-shape");
+    // Tom, Nov 18 2026: with the 9 in lazy Susan companion removed (PR #442) the full
+    // line seats an ERB36 (12 in leg past the WER2430); before it, ERB33 + a 9 in base
+    // (9 in leg). Both are the same leg rule, so either corner must line up. The ERB33
+    // case is still built on its own from the line without its 36 in lazy Susans (ERB36, LSB36).
+    it.each([
+      ["full line (ERB36 after the 9 in companion removal)", /^ERB3[36]/, null],
+      ["line without a 36 in lazy Susan (ERB33 corner)", /^ERB33/, /^(?:ERB36|LSB36)$/],
+    ] as const)("U-shape, %s: the bottom wall's uppers match each base and the corner leg gets its own upper", (_label, cornerCode, dropCode) => {
+      const placed = build(styleId, "u-shape", dropCode);
       const wall = "bottom";
-      const corner = placed.find((item) => item.placement === "base" && cabinetWall(item, ROOM) === wall && /^ERB33/.test(item.masterCode))!;
+      const corner = placed.find((item) => item.placement === "base" && cabinetWall(item, ROOM) === wall && /^ERB3\d/.test(item.masterCode))!;
       const wallCorner = placed.find((item) => item.placement === "wall" && cabinetWall(item, ROOM) === wall && /^WER24/.test(item.masterCode))!;
-      expect(corner, "ERB33 on the bottom wall").toBeTruthy();
+      expect(corner, "lazy Susan corner on the bottom wall").toBeTruthy();
+      expect(corner.masterCode).toMatch(cornerCode);
       expect(wallCorner, "WER2430 on the bottom wall").toBeTruthy();
       const uppers = placed.filter((item) => item.placement === "wall" && cabinetWall(item, ROOM) === wall && !isFillerItem(item));
       // Every straight base on that wall has an upper with its start and width.
@@ -124,11 +133,12 @@ describe.each(FRAMELESS)("frameless corner, fillers and overlap — %s (%s)", (s
         const match = uppers.find((item) => Math.abs(span(item, wall).start - b.start) <= 0.25 && Math.abs(item.width - base.width) <= 0.25);
         expect(match?.masterCode, `upper over ${base.masterCode}@${b.start}`).toMatch(new RegExp(`^W${String(Math.round(base.width)).padStart(2, "0")}30`));
       }
-      // The strip of ERB33 the WER2430 leaves uncovered holds a real 9" upper.
+      // The strip of the base corner the WER2430 leaves uncovered (33 - 24 = 9, 36 - 24 = 12) holds a real upper that wide.
       const leg = { start: span(corner, wall).start, end: span(wallCorner, wall).start };
-      expect(leg.end - leg.start).toBeCloseTo(9, 1);
+      const legWidth = Math.round(corner.width) - 24;
+      expect(leg.end - leg.start).toBeCloseTo(legWidth, 1);
       const legUpper = uppers.find((item) => Math.abs(span(item, wall).start - leg.start) <= 0.25);
-      expect(legUpper?.masterCode).toBe("W0930");
+      expect(legUpper?.masterCode).toBe(`W${String(legWidth).padStart(2, "0")}30`);
     });
 
     it("leg matching is catalog-driven: no 9\" wall cabinet means the uppers are kept and a warning names the corner", () => {
