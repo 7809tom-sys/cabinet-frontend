@@ -4,9 +4,17 @@
  *  - A 33" lazy Susan base (ERB33 or any catalog lazy Susan 33" wide) gets the
  *    line's DCW24<h> diagonal corner upper with a 9" W09<h> on each leg
  *    (24 + 9 = 33), at the selected upper height. When "Glass cabinets above"
- *    is selected the 9s are skipped (the line sells no 9" glass stacker).
+ *    is selected the 9s are skipped (the line sells no 9" glass stacker): the
+ *    leg is filled from the diagonal's edge with 12" or wider uppers that have
+ *    a same-width glass stacker, so nothing is left blank beside the corner.
  *  - A 36" lazy Susan base (ERB36 or any 36" lazy Susan) gets DCW24<h> with a
  *    12" W12<h> on each leg (24 + 12 = 36).
+ *  - After the flank, any open wall span on that leg (to the next upper,
+ *    appliance, tall, window or the wall end) is filled with catalog wall
+ *    cabinets at the selected height: one exact width first, otherwise the
+ *    fewest pieces; never a 39" and never a 9" here. A remainder no cabinet
+ *    closes is left beside the corner for the line's filler; a span nothing
+ *    fits is named.
  *
  * Nothing is invented: a missing DCW24<h> or flank width is a "couldn't be met"
  * line and no substitute is placed. The pass runs after the last upper re-tile
@@ -14,10 +22,12 @@
  */
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { autoDesignStandardUpperRows } from "./autoDesignWallCabinets";
+import { autoDesignGlassStackerCatalog } from "./autoDesignFormOptions";
 import { autoDesignCornerFamily } from "./autoDesignCornerStage";
+import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import {
-  COLLISION_EPSILON_IN, appendCollisionFreePlacements, cabinetWall, dim, elevationBox, footprintDepth,
+  COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements, cabinetWall, dim, elevationBox, footprintDepth,
   formatInches, isCornerCabinet, isFillerItem, isPanelItem, isStacker, wallLength, wallPlacementAt, wallRunFrame, wallRunOffset, wallRunSpan,
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallSide,
 } from "./design";
@@ -105,6 +115,39 @@ function overlapsBand(item: PlacedCabinet, room: RoomData, bottom: number, top: 
   return box.bottom < top - COLLISION_EPSILON_IN && box.bottom + box.height > bottom + COLLISION_EPSILON_IN;
 }
 
+/**
+ * Fewest catalog pieces that close `span` exactly; otherwise the fewest that
+ * leave a remainder no wider than the line's filler cap. Widths in 1/8".
+ */
+export function tileUpperSpan(span: number, widths: readonly number[], fillerMaxIn: number): { pieces: number[]; remainder: number } | null {
+  const unit = 8;
+  const total = Math.floor(span * unit + 1e-6);
+  const sizes = Array.from(new Set(widths.map((width) => Math.round(width * unit)).filter((value) => value > 0))).sort((a, b) => b - a);
+  if (total <= 0 || !sizes.length) return null;
+  const best: Array<number | null> = new Array(total + 1).fill(null);
+  const pick: number[] = new Array(total + 1).fill(0);
+  best[0] = 0;
+  for (let reach = 1; reach <= total; reach += 1) {
+    for (const size of sizes) {
+      if (size > reach) continue;
+      const prev = best[reach - size];
+      if (prev == null) continue;
+      if (best[reach] == null || prev + 1 < best[reach]!) { best[reach] = prev + 1; pick[reach] = size; }
+    }
+  }
+  const maxRemainder = Math.floor(fillerMaxIn * unit + 1e-6);
+  for (let remainder = 0; remainder <= Math.min(maxRemainder, total); remainder += 1) {
+    const reach = total - remainder;
+    if (reach <= 0 || best[reach] == null) continue;
+    const pieces: number[] = [];
+    let at = reach;
+    while (at > 0) { pieces.push(pick[at]! / unit); at -= pick[at]!; }
+    pieces.sort((a, b) => b - a);
+    return { pieces, remainder: span - reach / unit };
+  }
+  return null;
+}
+
 function wallRow(catalog: readonly DesignCabinet[], width: number, depth: number): DesignCabinet | undefined {
   return catalog
     .filter((row) => Math.abs(dim(row.width, 0) - width) <= COLLISION_EPSILON_IN)
@@ -151,6 +194,11 @@ export function applyLazySusanCornerUppers(input: LazySusanCornerUpperInput): La
   const standard = autoDesignStandardUpperRows(input.wallCatalog, height);
   const diagonalRows = input.wallCatalog.filter((row) => row.placement === "wall" && /^DCW24/i.test(row.masterCode)
     && !/GD$/i.test(row.masterCode) && sameHeight(row.height, height));
+  const stackerWidths = new Set(autoDesignGlassStackerCatalog(input.wallCatalog).map((row) => Math.round(dim(row.width, 0) * 8) / 8));
+  // Leg fill widths: never 39" (Tom) and never 9" (the 9 is only the 33" corner flank).
+  const fillWidths = Array.from(new Set(standard.map((row) => dim(row.width, 0))))
+    .filter((width) => Math.abs(width - 39) > 0.05 && Math.abs(width - 9) > 0.05)
+    .filter((width) => !input.glass || stackerWidths.has(Math.round(width * 8) / 8));
   const unmet = (title: string, detail: string, corner: PlacedCabinet) => findings.push({
     ruleId: "lazy-susan-corner-uppers",
     code: "lazy-susan-corner-uppers-not-met",
@@ -248,5 +296,81 @@ export function applyLazySusanCornerUppers(input: LazySusanCornerUpperInput): La
     notes.push(...rematched.notes);
   }
 
+  // Open-span fill after the corner flank (Tom, 10:30 AM CT): fill each leg's open
+  // run from the flank to the next upper, appliance, tall, window or the wall end.
+  for (const leg of fillLegs) {
+    const top = leg.mountBottom + height;
+    const length = wallLength(leg.wall, room);
+    const dir = leg.atStart ? 1 : -1;
+    const lockedB42 = (item: PlacedCabinet) => Math.abs(dim(item.width as never, 0) - 21) <= 0.05 && working.some((base) => base.placement === "base"
+      && base.masterCode === "B42" && cabinetWall(base, room) === leg.wall
+      && (() => { const b = spanOn(base, leg.wall, room); const s = spanOn(item, leg.wall, room); return s.start >= b.start - ADJ && s.end <= b.end + ADJ; })());
+    const onWall = working.filter((item) => item.placement !== "base" && (cabinetWall(item, room) === leg.wall || item.uid === leg.cornerUpperUid)
+      && !isStacker(item) && overlapsBand(item, room, leg.mountBottom, top));
+    // Glass leg: the uppers that follow the diagonal are re-tiled from its edge so the
+    // skipped 9" is absorbed into a glass-capable width (never a blank 9" gap).
+    if (input.glass && lazySusanCornerClass(leg.corner) === 33) {
+      const ahead = onWall.map((item) => ({ item, ...spanOn(item, leg.wall, room) }))
+        .filter((entry) => dir > 0 ? entry.end > leg.from + ADJ : entry.start < leg.from - ADJ)
+        .sort((a, b) => dir > 0 ? a.start - b.start : b.end - a.end);
+      const clear = new Set<string>();
+      for (const entry of ahead) {
+        if (!isPlainUpper(entry.item, height) || lockedUids.includes(entry.item.uid) || lockedB42(entry.item)) break;
+        clear.add(entry.item.uid);
+      }
+      if (clear.size) {
+        working = working.filter((item) => !clear.has(item.uid) && !(item.stackedOnCabinetUid && clear.has(item.stackedOnCabinetUid)));
+        changed = true;
+      }
+    }
+    const blockers: Array<{ start: number; end: number }> = working
+      .filter((item) => item.placement !== "base" && (cabinetWall(item, room) === leg.wall || item.uid === leg.cornerUpperUid) && !isStacker(item)
+        && overlapsBand(item, room, leg.mountBottom, top))
+      .map((item) => spanOn(item, leg.wall, room));
+    for (const opening of input.openings) {
+      if (opening.side !== leg.wall) continue;
+      const sill = Number((opening as { sill?: number }).sill ?? 0);
+      const openTop = sill + Number((opening as { height?: number }).height ?? 0);
+      if (opening.kind === "window" && !(sill < top && openTop > leg.mountBottom)) continue;
+      blockers.push({ start: opening.offset - WALL_OPENING_CLEARANCE_IN, end: opening.offset + opening.width + WALL_OPENING_CLEARANCE_IN });
+    }
+    let limit = dir > 0 ? length : 0;
+    for (const block of blockers) {
+      if (dir > 0 && block.end > leg.from + ADJ && block.start >= leg.from - ADJ) limit = Math.min(limit, block.start);
+      if (dir > 0 && block.start < leg.from - ADJ && block.end > leg.from + ADJ) limit = leg.from; // already covered
+      if (dir < 0 && block.start < leg.from - ADJ && block.end <= leg.from + ADJ) limit = Math.max(limit, block.end);
+      if (dir < 0 && block.end > leg.from + ADJ && block.start < leg.from - ADJ) limit = leg.from;
+    }
+    const open = Math.abs(limit - leg.from);
+    if (open <= ADJ) continue;
+    const plan = tileUpperSpan(open, fillWidths, autoDesignFillerMaxIn());
+    if (!plan) {
+      unmet(`${formatInches(open)} open beside the ${leg.corner.masterCode} corner on ${leg.wall}`, `No ${input.glass ? "glass-capable " : ""}wall cabinet combination at ${formatInches(height)} in this line fits the ${formatInches(open)} open span after the corner, and a filler that wide is not allowed, so it is reported instead of left silently blank.`, leg.corner);
+      continue;
+    }
+    // Pieces go from the far end back toward the corner, so any remainder sits beside
+    // the corner flank for the filler. With glass the first cabinet must start at the
+    // diagonal (it carries a stacker; a filler cannot), so the pieces start there.
+    const rows = plan.pieces.map((width) => wallRow(standard, width, leg.depth)!);
+    const fromCorner = input.glass && plan.remainder > ADJ;
+    const additions: PlacedCabinet[] = [];
+    let cursor = fromCorner ? leg.from : limit;
+    const toward = fromCorner ? dir : -dir;
+    for (const row of rows) {
+      const width = dim(row.width, 0);
+      const along = toward > 0 ? cursor : cursor - width;
+      additions.push(placeRow(row, along, leg.wall, room, leg.mountBottom, height, input.styleId, input.makeUid(), "Corner rule: open span after the diagonal corner filled from the catalog"));
+      cursor += toward * width;
+    }
+    const accepted = appendCollisionFreePlacements(working, additions, room);
+    if (accepted.rejected.length) {
+      unmet(`${formatInches(open)} open beside the ${leg.corner.masterCode} corner on ${leg.wall}`, `${rows.map((row) => row.masterCode).join(" + ")} would collide with another item, so the span was not filled.`, leg.corner);
+      continue;
+    }
+    working = accepted.placed;
+    lockedUids.push(...additions.map((item) => item.uid));
+    changed = true;
+    notes.push(`Open ${formatInches(open)} after the ${leg.corner.masterCode} corner on ${leg.wall} filled with ${rows.map((row) => row.masterCode).join(" + ")}${plan.remainder > ADJ ? ` and ${formatInches(plan.remainder)} left ${fromCorner ? "at the far end (glass: the cabinet beside the diagonal carries a stacker)" : "beside the corner"} for the filler` : ""}.`);
+  }
   return done();
 }

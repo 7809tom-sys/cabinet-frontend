@@ -2,18 +2,20 @@ import { describe, expect, it } from "vitest";
 import live from "./__fixtures__/aeroSolsticeLive390019.json";
 import { runAutoDesignLayout, mergeAutoDesignRefrigeratorCaps, type AutoDesignLayoutSuccess } from "./autoDesignLayout";
 import { emptyAutoDesignIntake, type PreferenceId } from "./autoDesignFifteenRules";
-import { lazySusanCornerClass, lazySusanCornerLegs } from "./autoDesignLazySusanCornerUppers";
+import { applyLazySusanCornerUppers, lazySusanCornerClass, lazySusanCornerLegs, tileUpperSpan } from "./autoDesignLazySusanCornerUppers";
 import {
-  appliancesForRoom, applianceAsDesignCabinet, cabinetWall, elevationBox, isCornerCabinet, isPanelItem, isStacker,
-  wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData,
+  appliancesForRoom, applianceAsDesignCabinet, cabinetWall, elevationBox, isCornerCabinet, isFillerItem, isPanelItem, isStacker,
+  wallPlacementAt, wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData,
 } from "./design";
 
 /**
  * Tom, Nov 18 2026 (voice 10:28-10:34 AM CT), lazy Susan corner uppers on the
  * Aero Solstice line, 192 x 144 U-shape, 108 in ceiling:
  *  - 33 in lazy Susan (ERB33): DCW24<h> + a W09<h> on each leg, glass not selected.
- *    With glass selected the 9s are skipped.
+ *    With glass selected the 9s are skipped and the leg is filled from the
+ *    diagonal with glass-capable widths (each gets its same-width stacker).
  *  - 36 in lazy Susan (ERB36): DCW24<h> + a W12<h> on each leg.
+ *  - The open span after the flank is filled from the catalog.
  */
 const LIVE = live as unknown as {
   base: DesignCabinet[]; wall: DesignCabinet[]; accessory: DesignCabinet[]; tall: DesignCabinet[];
@@ -73,6 +75,7 @@ function cornerLegs(placed: readonly PlacedCabinet[], room: RoomData) {
   });
 }
 
+const stackerOn = (placed: readonly PlacedCabinet[], item: PlacedCabinet) => placed.find((other) => isStacker(other) && other.stackedOnCabinetUid === item.uid);
 
 describe("33 in lazy Susan: DCW24 + W09 on each leg (glass not selected)", () => {
   const { result, room } = run({ base: BASE_33 });
@@ -120,6 +123,42 @@ describe("33 in lazy Susan: DCW24 + W09 on each leg (glass not selected)", () =>
   });
 });
 
+describe("33 in lazy Susan with glass selected: no 9s, leg filled from the diagonal with glass-capable widths", () => {
+  const { result, room } = run({ base: BASE_33, preferences: ["glass-uppers"] });
+  const corners = cornerLegs(result.placed, room);
+
+  it("places no W0930 and leaves no gap after the DCW2430", () => {
+    expect(result.placed.some((item) => /^W09/.test(item.masterCode))).toBe(false);
+    expect(corners.length).toBe(2);
+    for (const { upper, legs } of corners) {
+      expect(upper.masterCode).toBe("DCW2430");
+      for (const leg of legs) {
+        const first = leg.row[0]!;
+        expect(leg.atStart ? first.start : first.end, `${leg.wall} first upper starts at the diagonal`).toBeCloseTo(leg.edge, 1);
+        expect(Number(first.item.width)).toBeGreaterThanOrEqual(12);
+      }
+    }
+  });
+
+  it("every leg upper has its same-width glass stacker and the tops stay flush", () => {
+    const tops = new Set<number>();
+    for (const { upper, legs } of corners) {
+      const cap = stackerOn(result.placed, upper);
+      expect(cap, "diagonal has a stacker").toBeTruthy();
+      tops.add(Math.round((elevationBox(cap!, room).bottom + elevationBox(cap!, room).height) * 10) / 10);
+      for (const leg of legs) {
+        const first = leg.row[0]!.item;
+        expect(isFillerItem(first)).toBe(false);
+        const stacker = stackerOn(result.placed, first);
+        expect(stacker, `${first.masterCode} on ${leg.wall} has a glass stacker`).toBeTruthy();
+        expect(Number(stacker!.width)).toBeCloseTo(Number(first.width), 1);
+        tops.add(Math.round((elevationBox(stacker!, room).bottom + elevationBox(stacker!, room).height) * 10) / 10);
+      }
+    }
+    expect(tops.size).toBe(1);
+  });
+});
+
 describe("36 in lazy Susan: DCW24 + W12 on each leg", () => {
   it("at 30 in: ERB36 gets DCW2430 + W1230 on both legs", () => {
     const { result, room } = run();
@@ -142,5 +181,45 @@ describe("36 in lazy Susan: DCW24 + W12 on each leg", () => {
       expect(upper.masterCode).toBe("DCW2442");
       for (const leg of legs) expect(leg.row[0]!.item.masterCode).toBe("W1242");
     }
+  });
+});
+
+describe("open span after the corner flank is filled from the catalog", () => {
+  it("tiles one exact width first, else the fewest pieces, never 39 or 9", () => {
+    const widths = [12, 15, 18, 21, 24, 27, 30, 33, 36];
+    expect(tileUpperSpan(30, widths, 3)).toEqual({ pieces: [30], remainder: 0 });
+    expect(tileUpperSpan(21, widths, 3)).toEqual({ pieces: [21], remainder: 0 });
+    expect(tileUpperSpan(42, widths, 3)!.pieces).toHaveLength(2);
+    expect(tileUpperSpan(20.25, widths, 3)).toEqual({ pieces: [18], remainder: 2.25 });
+    expect(tileUpperSpan(8, widths, 3)).toBeNull();
+  });
+
+  function reopenRightLeg(openTo: number) {
+    const { result, room } = run();
+    const height = 30;
+    // Clear the uppers on the right wall after the top-right corner's W1230 (24-36) and
+    // stand a panel at `openTo`, so the span 36..openTo is open after the flank.
+    const kept = result.placed.filter((item) => {
+      if (cabinetWall(item, room) !== "right" || item.placement === "base") return true;
+      if (/RANGE/i.test(item.masterCode)) return true;
+      const s = span(item, "right", room);
+      return s.end <= 36.3 || s.start >= 108 - 0.3;
+    });
+    const panel = { ...result.placed.find((item) => item.masterCode === "WSV30")!, uid: "probe-panel" };
+    const at = { ...panel, ...wallPlacementAt(openTo, Number(panel.width), Number(panel.depth), "right", room) } as PlacedCabinet;
+    const out = applyLazySusanCornerUppers({
+      placed: [...kept, at], room, openings: [], wallCatalog: LIVE.wall, heightIn: height, glass: false, styleId: 390019,
+      makeUid: (() => { let n = 0; return () => `fill-${++n}`; })(),
+    });
+    return out.placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === "right" && !isPanelItem(item))
+      .map((item) => ({ code: item.masterCode, ...span(item, "right", room) })).filter((e) => e.start >= 35.7 && e.end <= openTo + 0.3);
+  }
+
+  it("30 in of open wall after the W1230 gets a W3030", () => {
+    expect(reopenRightLeg(66)).toEqual([{ code: "W3030", start: 36, end: 66 }]);
+  });
+
+  it("21 in of open wall after the W1230 gets a W2130", () => {
+    expect(reopenRightLeg(57)).toEqual([{ code: "W2130", start: 36, end: 57 }]);
   });
 });
