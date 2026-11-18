@@ -17,13 +17,10 @@
  *       - 43.5 up to (but not including) 45: a pull-out / sliding / adjustable
  *         corner base that slides 3–6". If the line sells none, try the next
  *         valid type (a blind that can pull 3–6", then a lazy Susan that fits).
- *       - 42 up to (but not including) 43.5: a lazy Susan from the catalog
- *         plus a 9" cabinet beside it (see pickNineInchCompanion). Interpretation
- *         of Tom's "9 inch tall cabinet": 9" is the *width* to look up in the
- *         catalog. Prefer a 9" base, pull-out, or tray base so the countertop
- *         stays continuous; use a 9"-wide tall only when the line sells no 9"
- *         base. If the line has no 9" SKU, or no lazy Susan that leaves 9"
- *         beside it, fall to the next valid type.
+ *       - 42 up to (but not including) 43.5: a lazy Susan from the catalog.
+ *         (The 9" companion beside it was removed, Tom, Nov 18 2026 voice
+ *         10:27 AM CT; the space beside the corner is left to the normal base
+ *         fill and gap passes. The band id keeps its old name for compatibility.)
  *       - 33 up to (but not including) 42: the best catalog fit — a lazy
  *         Susan whose published width fits the available run, or a blind
  *         corner with its 3" filler and its catalog pull distance.
@@ -43,34 +40,26 @@ import { autoBuildSelectedWallCornerReservations, subtractAnchorRunReservations,
 import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
 import {
   autoDesignCornerFamily,
-  isPullOutCornerCabinet,
   type AutoBuildCornerCandidate,
   type AutoDesignCornerFamily,
 } from "./autoDesignCornerStage";
-import { isTrueBlindCornerCode } from "./designerCornerSection";
 import { LANDING_MIN_IN } from "./autoDesignFifteenRules";
 import { cornerLegClearance } from "./cornerFirst";
 import {
   BLIND_CORNER_FILLER_WIDTH_IN,
   STD,
-  appendCollisionFreePlacements,
   cabinetWall,
   dim,
   isFillerItem,
   isPanelItem,
-  isPlainBaseCode,
   isRangeOrOven,
   isRefrigerator,
-  standardHeight,
   wallLength,
-  wallPlacementAt,
   wallRunFrame,
   wallRunOffset,
   wallRunSpan,
-  type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
-  type WallSide,
 } from "./design";
 
 /** Width may be optional or null on catalog rows; keep this looser than DesignCabinet. */
@@ -84,9 +73,6 @@ export const BLIND_OPEN_LEG_IN = INSIDE_CORNER_SQUARE_IN + BLIND_CORNER_FILLER_W
 
 /** Typical two-leg corner width only when the line has not published one. */
 export const TWO_LEG_CORNER_DEFAULT_IN = 36;
-
-/** The 9" companion width Tom named for the 42" band — looked up in the catalog, never invented. */
-export const NINE_INCH_COMPANION_IN = 9;
 
 /** Measured-run type bands (inches). These are not cabinet sizes. */
 export const CORNER_BAND_LAZY_SUSAN_MIN_IN = 45;
@@ -129,8 +115,6 @@ export type CornerTypeDecision = {
   order: AutoDesignCornerFamily[];
   reason: string;
   twoLegNeedIn: number;
-  /** True when a 9" catalog companion should sit beside a lazy Susan (42" band). */
-  companionNine: boolean;
   /** True when the blind must be turned so its open leg is on the tight run. */
   rotateBlind: boolean;
   /** Under 27": do not seat anything; raise corner-cabinet-not-seated. */
@@ -264,90 +248,6 @@ function lazySusanFitting(options: readonly CornerOptionForDecision[], available
 }
 
 /**
- * A 9"-wide catalog cabinet to sit beside the lazy Susan on the 42" band.
- *
- * Interpretation of Tom's "a 9 inch tall cabinet" (document so he can correct
- * it): 9" is the width to look up in the live catalog. Prefer a 9" base,
- * pull-out, or tray base so the countertop stays continuous. Use a 9"-wide
- * tall only when the line sells no 9" base. Never invent a SKU or a price,
- * and never use a wall cabinet (that would break the counter).
- */
-export function pickNineInchCompanion<T extends Pick<DesignCabinet, "masterCode" | "description" | "subCategory" | "placement" | "width" | "cornerType">>(
-  catalog: readonly T[],
-): T | null {
-  const matches = catalog.filter((row) => {
-    const width = widthOf(row);
-    if (Math.abs(width - NINE_INCH_COMPANION_IN) > 0.2) return false;
-    const placement = (row.placement ?? "").toLowerCase();
-    if (placement === "wall" || placement === "appliance" || placement.includes("accessory") || placement.includes("trim")) return false;
-    if (isPlainBaseCode(row.masterCode) || placement === "base" || placement === "tall") {
-      if (isTrueBlindCornerCode(row.masterCode)) return false;
-      if (autoDesignCornerFamily(row) !== "other" && autoDesignCornerFamily(row) !== "pull-out") {
-        // A 9" lazy Susan / diagonal / blind is not the companion beside the corner.
-        if (!isPlainBaseCode(row.masterCode)) return false;
-      }
-      if (isPullOutCornerCabinet(row)) return false;
-      return placement === "base" || placement === "tall" || isPlainBaseCode(row.masterCode);
-    }
-    return false;
-  });
-  if (!matches.length) return null;
-  const rank = (row: T): number => {
-    const placement = (row.placement ?? "").toLowerCase();
-    const text = `${row.masterCode} ${row.description ?? ""} ${row.subCategory ?? ""}`.toLowerCase();
-    const trayOrPull = placement === "base" && /(?:^|\b)(?:bt|tray|pull-?out|pullout|spice)/.test(text);
-    if (placement === "base" || isPlainBaseCode(row.masterCode)) return trayOrPull ? 0 : 1;
-    if (placement === "tall") return 2;
-    return 3;
-  };
-  return [...matches].sort((left, right) => rank(left) - rank(right) || left.masterCode.localeCompare(right.masterCode))[0] ?? null;
-}
-
-export function placeCompanionBesideCorner(input: {
-  source: DesignCabinet;
-  corner: PlacedCabinet;
-  wallId: string;
-  cornerPoint: { x: number; y: number };
-  room: RoomData;
-  placed: readonly PlacedCabinet[];
-  makeUid: () => string;
-  styleId: number | null;
-}): { placed: PlacedCabinet[]; companion: PlacedCabinet } | null {
-  const width = dim(input.source.width, 0);
-  const depth = dim(input.source.depth, STD.BASE_DEPTH);
-  if (!(width > 0)) return null;
-  const frame = wallRunFrame(input.wallId, input.room);
-  if (!frame) return null;
-  const atStart = Math.hypot(frame.start.x - input.cornerPoint.x, frame.start.y - input.cornerPoint.y) <= 0.01;
-  const cornerStart = wallRunOffset(input.corner, input.wallId, input.room);
-  const cornerSpan = wallRunSpan(input.corner, input.wallId, input.room);
-  if (!(cornerSpan > 0)) return null;
-  const along = atStart ? cornerStart + cornerSpan : cornerStart - width;
-  if (along < -0.05 || along + width > frame.length + 0.05) return null;
-  const spot = wallPlacementAt(Math.max(0, along), width, depth, input.wallId as WallSide, input.room);
-  const companion: PlacedCabinet = {
-    uid: input.makeUid(),
-    cabinetId: input.source.id,
-    masterCode: input.source.masterCode,
-    description: input.source.description,
-    category: input.source.category,
-    subCategory: input.source.subCategory,
-    placement: (input.source.placement as PlacedCabinet["placement"]) ?? "base",
-    ...spot,
-    width,
-    depth,
-    height: dim(input.source.height, standardHeight((input.source.placement as "base" | "tall" | "wall") ?? "base")),
-    catalogImageUrl: input.source.catalogImageUrl ?? null,
-    numberOfDoors: input.source.numberOfDoors,
-    numberOfDrawers: input.source.numberOfDrawers,
-    styleId: input.styleId,
-  };
-  const accepted = appendCollisionFreePlacements([...input.placed], [companion], input.room);
-  if (accepted.rejected.length > 0) return null;
-  return { placed: accepted.placed, companion };
-}
-
-/**
  * Decide the corner TYPE from the available run (appliance-first), then let
  * the catalog supply the SKU. The customer's lazy Susan / blind corner pick
  * goes first when the measured run can take it; it never overrides a band
@@ -359,8 +259,6 @@ export function decideAutoDesignCornerTypeOrder(input: {
   corner: { x: number; y: number };
   placed: readonly PlacedCabinet[];
   options: readonly CornerOptionForDecision[];
-  /** Full line catalog, used only to see whether a 9" companion SKU exists. */
-  companionCatalog?: readonly Pick<DesignCabinet, "masterCode" | "description" | "subCategory" | "placement" | "width" | "cornerType">[];
   wiggleLimitIn?: number;
   preferLazySusan?: boolean;
   preferBlind?: boolean;
@@ -406,7 +304,7 @@ export function decideAutoDesignCornerTypeOrder(input: {
     band: CornerBandId,
     measuredOrder: AutoDesignCornerFamily[],
     measuredReason: string,
-    extras: Partial<Pick<CornerTypeDecision, "companionNine" | "rotateBlind" | "blocked" | "tightness">> = {},
+    extras: Partial<Pick<CornerTypeDecision, "rotateBlind" | "blocked" | "tightness">> = {},
   ): CornerTypeDecision => {
     const { order, reason } = customerOrder(band, measuredOrder, measuredReason);
     return {
@@ -418,7 +316,6 @@ export function decideAutoDesignCornerTypeOrder(input: {
     order,
     reason,
     twoLegNeedIn: need,
-    companionNine: extras.companionNine ?? false,
     rotateBlind: extras.rotateBlind ?? false,
     blocked: extras.blocked ?? false,
     };
@@ -431,18 +328,7 @@ export function decideAutoDesignCornerTypeOrder(input: {
       : ["blind", "lazy-susan", "diagonal", "pull-out", "other"];
   };
 
-  let band = cornerBandForAvailableIn(availableIn);
-
-  if (band === "lazy-susan-plus-nine") {
-    // When the full line catalog is supplied, confirm a 9" SKU exists and a
-    // lazy Susan leaves 9" beside it. If either is missing, fall to 33–42 logic.
-    // When the catalog is omitted (unit tests of the band itself), keep the type.
-    if (input.companionCatalog) {
-      const nine = pickNineInchCompanion(input.companionCatalog);
-      const fitting = lazySusanFitting(input.options, availableIn, NINE_INCH_COMPANION_IN);
-      if (!nine || !fitting.length) band = "catalog-fit";
-    }
-  }
+  const band = cornerBandForAvailableIn(availableIn);
 
   if (band === "blocked") {
     const tightLeg = legs.find((leg) => leg.wallId === relevantWallId) ?? [...legs].sort((a, b) => a.availableIn - b.availableIn)[0];
@@ -473,8 +359,8 @@ export function decideAutoDesignCornerTypeOrder(input: {
     return finish(
       "lazy-susan-plus-nine",
       ["lazy-susan", "blind", "diagonal", "pull-out", "other"],
-      `Available run is ${fmt(availableIn)}" (42" up to 43.5"). A catalog lazy Susan plus a 9" cabinet beside it (prefer a 9" base, pull-out, or tray so the counter stays continuous).`,
-      { companionNine: true, tightness: "tight" },
+      `Available run is ${fmt(availableIn)}" (42" up to 43.5"). A catalog lazy Susan.`,
+      { tightness: "tight" },
     );
   }
   if (band === "pull-out") {
@@ -524,7 +410,7 @@ export function describeCornerTypeDecision(slotLabel: string, decision: CornerTy
   const typeName = decision.band === "blocked" ? "no corner cabinet (square stays blocked)"
     : decision.band === "rotated-blind" ? "a turned blind corner"
     : decision.band === "pull-out" ? "a pull-out / sliding corner"
-    : decision.band === "lazy-susan-plus-nine" ? "a lazy Susan with a 9 in cabinet beside it"
+    : decision.band === "lazy-susan-plus-nine" ? "a lazy Susan"
     : decision.band === "catalog-fit" ? (decision.order[0] === "lazy-susan" ? "a catalog-fitting lazy Susan (or a blind if none fits)" : "a blind corner, or a smaller lazy Susan that fits")
     : "a lazy Susan";
   return `${slotLabel}: ${typeName} — ${decision.reason}`;
