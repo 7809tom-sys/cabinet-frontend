@@ -5,6 +5,8 @@
  *    line's DCW24<h> diagonal corner upper with a 9" W09<h> on each leg
  *    (24 + 9 = 33), at the selected upper height. When "Glass cabinets above"
  *    is selected the 9s are skipped (the line sells no 9" glass stacker).
+ *  - A 36" lazy Susan base (ERB36 or any 36" lazy Susan) gets DCW24<h> with a
+ *    12" W12<h> on each leg (24 + 12 = 36).
  *
  * Nothing is invented: a missing DCW24<h> or flank width is a "couldn't be met"
  * line and no substitute is placed. The pass runs after the last upper re-tile
@@ -56,12 +58,13 @@ function spanOn(item: PlacedCabinet, wall: string, room: RoomData): { start: num
   return { start, end: start + wallRunSpan(item, wall, room) };
 }
 
-/** The 33" lazy Susan width class of a base corner, or null. */
-export function lazySusanCornerClass(item: Pick<PlacedCabinet, "masterCode" | "description" | "cornerType" | "subCategory" | "placement" | "width">): 33 | null {
+/** The 33" / 36" lazy Susan width class of a base corner, or null. */
+export function lazySusanCornerClass(item: Pick<PlacedCabinet, "masterCode" | "description" | "cornerType" | "subCategory" | "placement" | "width">): 33 | 36 | null {
   if (item.placement !== "base") return null;
   if (autoDesignCornerFamily(item as never) !== "lazy-susan") return null;
   const width = dim(item.width as never, 0);
   if (Math.abs(width - 33) <= 0.3) return 33;
+  if (Math.abs(width - 36) <= 0.3) return 36;
   return null;
 }
 
@@ -191,7 +194,7 @@ export function applyLazySusanCornerUppers(input: LazySusanCornerUpperInput): La
     lockedUids.push(cornerUpper.uid);
     const mountBottom = cornerUpper.mountBottom ?? 54;
     const top = mountBottom + height;
-    const flankWidth = 9;
+    const flankWidth = size === 33 ? 9 : 12;
     const skipFlank = size === 33 && input.glass;
     const flankRow = skipFlank ? undefined : wallRow(standard, flankWidth, 12);
     if (!skipFlank && !flankRow) {

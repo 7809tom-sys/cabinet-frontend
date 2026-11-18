@@ -13,6 +13,7 @@ import {
  * Aero Solstice line, 192 x 144 U-shape, 108 in ceiling:
  *  - 33 in lazy Susan (ERB33): DCW24<h> + a W09<h> on each leg, glass not selected.
  *    With glass selected the 9s are skipped.
+ *  - 36 in lazy Susan (ERB36): DCW24<h> + a W12<h> on each leg.
  */
 const LIVE = live as unknown as {
   base: DesignCabinet[]; wall: DesignCabinet[]; accessory: DesignCabinet[]; tall: DesignCabinet[];
@@ -116,5 +117,30 @@ describe("33 in lazy Susan: DCW24 + W09 on each leg (glass not selected)", () =>
     const noNine = run({ base: BASE_33, wall: LIVE.wall.filter((row) => row.masterCode !== "W0930") });
     expect(noNine.result.reviewFindings.some((f) => f.code === "lazy-susan-corner-uppers-not-met")).toBe(true);
     expect(noNine.result.placed.some((item) => item.masterCode === "W0930")).toBe(false);
+  });
+});
+
+describe("36 in lazy Susan: DCW24 + W12 on each leg", () => {
+  it("at 30 in: ERB36 gets DCW2430 + W1230 on both legs", () => {
+    const { result, room } = run();
+    const corners = cornerLegs(result.placed, room);
+    expect(corners.length).toBe(2);
+    for (const { corner, upper, legs } of corners) {
+      expect(corner.masterCode).toBe("ERB36");
+      expect(upper.masterCode).toBe("DCW2430");
+      expect(legs).toHaveLength(2);
+      for (const leg of legs) {
+        expect(leg.row[0]!.item.masterCode).toBe("W1230");
+        expect(leg.atStart ? leg.row[0]!.start : leg.row[0]!.end).toBeCloseTo(leg.edge, 1);
+      }
+    }
+  });
+
+  it("at 42 in: DCW2442 + W1242", () => {
+    const { result, room } = run({ heightIn: 42 });
+    for (const { upper, legs } of cornerLegs(result.placed, room)) {
+      expect(upper.masterCode).toBe("DCW2442");
+      for (const leg of legs) expect(leg.row[0]!.item.masterCode).toBe("W1242");
+    }
   });
 });
