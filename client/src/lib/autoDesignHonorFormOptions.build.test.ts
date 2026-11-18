@@ -61,9 +61,10 @@ describe("Auto Design honors the finish picks in the form", () => {
   it("Glass cabinets above on a line with no glass stackers: no stacker and one warning names the uppers", () => {
     const run = build(["glass-uppers"], CATALOG["540005"]!, 540005);
     expect(run.placed.some((item) => item.glassDoor === true || item.stackedOnCabinetUid)).toBe(false);
-    const warning = run.reviewFindings.filter((finding) => finding.code === "preference-glass-stackers-skipped");
+    // No partial glass (rule 1b, Tom, Nov 18 2026): every run stays plain, one warning names the blockers.
+    const warning = run.reviewFindings.filter((finding) => finding.code === "preference-glass-run-plain");
     expect(warning).toHaveLength(1);
-    expect(warning[0]!.detail).toMatch(/sells no 12″, 15″ or 18″ glass stacker the same width as W/);
+    expect(warning[0]!.detail).toMatch(/stays plain because of W\S+ \(this line sells no 12″, 15″ or 18″ glass stacker/);
   });
 
   it("Crown molding turns on the designer's crown trim", () => {
