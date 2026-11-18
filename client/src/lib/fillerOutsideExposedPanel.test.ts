@@ -60,6 +60,29 @@ describe("fillersOutsideExposedPanels (pure)", () => {
     expect(fillersOutsideExposedPanels({ placed, room: ROOM })).toEqual([]);
   });
 
+  describe("refrigerator panel (Tom, Nov 18 2026, 5:04 PM CT)", () => {
+    const fridge = (start: number) => seat({ uid: "fr", width: 36, masterCode: "FRIDGE-36", description: "Refrigerator", category: "Appliance", subCategory: "Appliance", placement: "appliance", height: 70 }, start);
+    const fpanel = (uid: string, start: number) => seat({ uid, width: 0.75, masterCode: "REPV2496", description: "Refrigerator end panel", category: "Panels", subCategory: "Refrigerator End Panel", placement: "tall", height: 96, numberOfDoors: 0 }, start);
+
+    it("never allows a filler on the OUTSIDE of a fridge panel, even with a cabinet beyond it", () => {
+      const placed = [cabinet("a", 30, 0), filler("f", 1, 30), fpanel("p", 31), fridge(31.75)];
+      const hits = fillersOutsideExposedPanels({ placed, room: ROOM });
+      expect(hits.map((h) => [h.filler.uid, h.panel.uid, h.farSide])).toEqual([["f", "p", "cabinet"]]);
+    });
+
+    it("keeps a last-resort filler on the INSIDE of the fridge panel, between the panel and the fridge", () => {
+      const placed = [cabinet("a", 30, 0), fpanel("p", 30), filler("f", 2, 30.75), fridge(32.75)];
+      expect(fillersOutsideExposedPanels({ placed, room: ROOM })).toEqual([]);
+    });
+
+    it("same on the other side of the fridge: inside kept, outside flagged", () => {
+      const inside = [fridge(0), filler("f", 2, 36), fpanel("p", 38), cabinet("a", 30, 38.75)];
+      expect(fillersOutsideExposedPanels({ placed: inside, room: ROOM })).toEqual([]);
+      const outside = [fridge(0), fpanel("p", 36), filler("f", 2, 36.75), cabinet("a", 30, 38.75)];
+      expect(fillersOutsideExposedPanels({ placed: outside, room: ROOM }).map((h) => h.filler.uid)).toEqual(["f"]);
+    });
+  });
+
   it("removes the board and names it on the review list", () => {
     const placed = [filler("f", 3, 0), panel("p", 3), cabinet("c", 30, 3.75)];
     const out = removeFillersOutsideExposedPanels({ placed, room: ROOM });

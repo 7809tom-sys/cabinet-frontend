@@ -16,6 +16,7 @@ import {
   applianceAsDesignCabinet,
   cabinetWall,
   isFillerItem,
+  isPanelItem,
   isRangeOrOven,
   isSinkBaseCabinet,
   wallPlacementAt,
@@ -143,7 +144,17 @@ function primaryRunWalls(layout: AutoDesignLayoutType, room: RoomData, placed: r
 
 function assertNoOpenGaps(placed: readonly PlacedCabinet[], room: RoomData, openings: readonly WallOpening[] = [], walls?: string[], opts?: { allowCatalogHoles?: boolean }) {
   const wallIds = walls ?? runWallsFor(room, placed);
-  const gaps = remainingRunGaps({ placed, room, openings, wallIds, minIn: 0.125 });
+  // Tom, Nov 18 2026, 4:53 PM CT: no filler outside an exposed panel. A gap that
+  // sits flush against a panel's outside face is left open on purpose (and named
+  // on the review list), so it is not a gap this helper may demand a filler for.
+  const panelEdges = placed.filter((item) => isPanelItem(item) && !isFillerItem(item)).map((item) => {
+    const wall = cabinetWall(item, room);
+    const start = wallRunOffset(item, wall, room);
+    return { wall, start, end: start + wallRunSpan(item, wall, room) };
+  });
+  const gaps = remainingRunGaps({ placed, room, openings, wallIds, minIn: 0.125 }).filter((gap) => !panelEdges.some((panel) => (
+    panel.wall === gap.wallId && (Math.abs(panel.end - gap.start) <= 0.3 || Math.abs(panel.start - (gap.start + gap.width)) <= 0.3)
+  )));
   // Tom: leftover slivers (> 1/8 in, within filler stock) must be closed with a
   // catalog filler. Larger holes still get cabinets-first + filler in the closer;
   // a few peninsula / unused-leg leftovers are reported rather than inventing a SKU.

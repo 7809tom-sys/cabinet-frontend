@@ -14,6 +14,11 @@
  * - A filler that does have a cabinet or appliance on its far side closes a
  *   cabinet-to-panel seam. The panel's face is then covered by that cabinet, so the
  *   panel is not exposed there, and the filler stays (the sub 1.5 inch seam rule).
+ * - Refrigerator panel (Tom, Nov 18 2026, 5:04 PM CT): the only optional filler is
+ *   on the INSIDE of the panel, between the panel and the refrigerator, as a last
+ *   resort for a small leftover gap (Nov 16 rule). A filler on the OUTSIDE of a
+ *   refrigerator panel, the side away from the refrigerator, is never placed, even
+ *   when a cabinet stands beyond it.
  *
  * Required corner fillers (blind-corner 3 inch filler, 45 degree miter pair,
  * angled wedge, provisional corner board, the wall blind filler) are tagged by the
@@ -27,13 +32,18 @@
 import {
   cabinetWall,
   isFillerItem,
+  isCornerCabinet,
   isPanelItem,
+  isRefrigerator,
+  isSinkBaseCabinet,
   isRefrigeratorEndPanel,
+  wallPlacementAt,
   wallRunFrame,
   wallRunOffset,
   wallRunSpan,
   type PlacedCabinet,
   type RoomData,
+  type WallSide,
 } from "./design";
 import { isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
@@ -48,7 +58,7 @@ export type FillerOutsidePanel = {
   /** Which side of the panel the filler is on, along the run. */
   side: "start" | "end";
   /** What stands on the filler's far side. */
-  farSide: "wall" | "opening" | "panel" | "nothing";
+  farSide: "cabinet" | "wall" | "opening" | "panel" | "nothing";
 };
 
 function isExposedPanelCandidate(item: PlacedCabinet): boolean {
@@ -102,13 +112,43 @@ export function fillersOutsideExposedPanels(input: {
       const touchesEndOfFiller = Math.abs(theirs.start - mine.end) <= FILLER_PANEL_TOUCH_IN; // panel is after the filler
       if (!touchesStartOfFiller && !touchesEndOfFiller) continue;
       const farEdge = touchesStartOfFiller ? mine.end : mine.start;
+      const outsideFridgePanel = isRefrigeratorEndPanel(panel)
+        && fridgeIsOnOtherSide({ panel, filler, wallId, placed, room, fillerAfterPanel: touchesStartOfFiller });
       const far = farSideOf({ filler, panel, farEdge, direction: touchesStartOfFiller ? "end" : "start", wallId, placed, room, openings: input.openings ?? [] });
-      if (far === "cabinet") continue;
+      if (far === "cabinet" && !outsideFridgePanel) continue;
       found.push({ filler, panel, wallId, side: touchesStartOfFiller ? "end" : "start", farSide: far });
       break;
     }
   }
   return found;
+}
+
+/**
+ * True when the refrigerator stands on the far side of the panel from this filler,
+ * which puts the filler on the panel's outside face. The refrigerator is the one in
+ * the panel's own assembly, else the nearest one on the wall.
+ */
+function fridgeIsOnOtherSide(input: {
+  panel: PlacedCabinet;
+  filler: PlacedCabinet;
+  wallId: string;
+  placed: readonly PlacedCabinet[];
+  room: RoomData;
+  fillerAfterPanel: boolean;
+}): boolean {
+  const { panel, wallId, room } = input;
+  const mine = interval(panel, wallId, room);
+  const center = (mine.start + mine.end) / 2;
+  const fridges = input.placed.filter((item) => item.uid !== panel.uid && !isFillerItem(item) && !isPanelItem(item)
+    && isRefrigerator(item) && cabinetWall(item, room) === wallId);
+  const owned = panel.refrigeratorAssemblyId ? fridges.filter((item) => item.uid === panel.refrigeratorAssemblyId || item.refrigeratorAssemblyId === panel.refrigeratorAssemblyId) : [];
+  const pool = owned.length ? owned : fridges;
+  if (!pool.length) return false;
+  const nearest = pool
+    .map((item) => { const span = interval(item, wallId, room); return { span, distance: Math.abs((span.start + span.end) / 2 - center) }; })
+    .sort((a, b) => a.distance - b.distance)[0]!;
+  const fridgeAfterPanel = (nearest.span.start + nearest.span.end) / 2 > center;
+  return fridgeAfterPanel !== input.fillerAfterPanel;
 }
 
 function farSideOf(input: {
@@ -155,39 +195,106 @@ export function isFillerOutsideExposedPanel(filler: PlacedCabinet, input: {
 export type RemoveFillersOutsidePanelsResult = {
   placed: PlacedCabinet[];
   removed: FillerOutsidePanel[];
+  /** Fillers that were moved from the outside of a panel to the far side of the next cabinet. */
+  relocated: FillerOutsidePanel[];
   notes: string[];
   findings: DesignerReviewFinding[];
 };
 
 const inches = (value: number) => `${Math.round(value * 100) / 100}″`;
 
+type Openings = readonly { side: string; offset: number; width: number }[];
+
+/** A plain run cabinet that may slide a few inches: not an anchor, corner, sink, appliance or owner of other boards. */
+function isSlidableNeighbour(item: PlacedCabinet, placed: readonly PlacedCabinet[]): boolean {
+  if (item.placement !== "base" && item.placement !== "wall") return false;
+  if (isFillerItem(item) || isPanelItem(item) || isSinkBaseCabinet(item) || isRefrigerator(item)) return false;
+  if (isCornerCabinet(item.masterCode ?? "", item.description ?? undefined, item.cornerType ?? undefined) || item.cornerType) return false;
+  if (item.refrigeratorAssemblyRole || item.refrigeratorAssemblyId || item.overRangeMicrowaveBridge) return false;
+  return !placed.some((other) => other.uid !== item.uid && (other.stackedOnCabinetUid === item.uid || other.fillerForCabinetUid === item.uid));
+}
+
 /**
- * Drops every filler on a panel's outside face and names each one on the review
- * list. The freed width is not covered by a board hung on the panel: where a
- * cabinet can take it, the run's own passes already did; what is left is reported
- * so the shopper can slide the run or accept the gap.
+ * Take the board's width up between cabinets instead of outside the panel: the
+ * cabinet beyond the filler slides against the panel, and the same board closes
+ * the space that opens on that cabinet's far side. That board then sits between
+ * two cabinets (or a cabinet and a wall), which is where a filler belongs.
+ */
+function relocateBehindNeighbour(entry: FillerOutsidePanel, placed: readonly PlacedCabinet[], room: RoomData, openings: Openings): PlacedCabinet[] | null {
+  if (entry.farSide !== "cabinet") return null;
+  const { filler, wallId } = entry;
+  const mine = interval(filler, wallId, room);
+  const width = mine.end - mine.start;
+  const after = entry.side === "end";
+  const farEdge = after ? mine.end : mine.start;
+  const neighbour = placed.find((item) => {
+    if (item.uid === filler.uid || item.uid === entry.panel.uid || isFillerItem(item) || !sharesLayer(item, filler)) return false;
+    if (cabinetWall(item, room) !== wallId) return false;
+    const span = interval(item, wallId, room);
+    return Math.abs((after ? span.start : span.end) - farEdge) <= FILLER_PANEL_TOUCH_IN;
+  });
+  if (!neighbour || neighbour.placement !== filler.placement || !isSlidableNeighbour(neighbour, placed)) return null;
+  const span = interval(neighbour, wallId, room);
+  const neighbourWidth = span.end - span.start;
+  const beyondEdge = after ? span.end : span.start;
+  const beyond = farSideOf({ filler: neighbour, panel: entry.panel, farEdge: beyondEdge, direction: after ? "end" : "start", wallId, placed: placed.filter((item) => item.uid !== filler.uid), room, openings });
+  // What stands past the neighbour must close the board's new seat: a cabinet, appliance or the wall.
+  if (beyond !== "cabinet" && beyond !== "wall") return null;
+  const neighbourStart = after ? mine.start : mine.end - neighbourWidth;
+  const fillerStart = after ? mine.start + neighbourWidth : mine.end - neighbourWidth - width;
+  const seat = (item: PlacedCabinet, along: number) => {
+    const depth = Number(item.depth) || 0;
+    const spot = wallPlacementAt(along, Number(item.width) || 0, depth, wallId as WallSide, room, item.peninsulaSide ?? null, false);
+    if (Math.abs(Number(spot.wallOffset ?? along) - along) > 0.2) return null;
+    return { ...item, x: spot.x, y: spot.y, rotation: spot.rotation, wallOffset: spot.wallOffset ?? along };
+  };
+  const movedNeighbour = seat(neighbour, neighbourStart);
+  const movedFiller = seat(filler, fillerStart);
+  if (!movedNeighbour || !movedFiller) return null;
+  return placed.map((item) => (item.uid === neighbour.uid ? movedNeighbour : item.uid === filler.uid ? movedFiller : item));
+}
+
+/**
+ * No filler outside an exposed panel. For each board on a panel's outside face:
+ * 1. if a plain cabinet stands beyond it, slide that cabinet against the panel and
+ *    seat the same board on the cabinet's far side (between cabinets or against the
+ *    wall), so the run still closes with no gap;
+ * 2. otherwise (a wall, an opening, open space or another panel lies beyond), drop
+ *    the board, leave the width open, and name it on the review list. A board is
+ *    never hung on the panel.
  */
 export function removeFillersOutsideExposedPanels(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
-  openings?: readonly { side: string; offset: number; width: number }[];
+  openings?: Openings;
   wallLabelOf?: (wallId: string) => string | null | undefined;
 }): RemoveFillersOutsidePanelsResult {
-  const removed = fillersOutsideExposedPanels(input);
-  if (!removed.length) return { placed: [...input.placed], removed: [], notes: [], findings: [] };
-  const drop = new Set(removed.map((entry) => entry.filler.uid));
+  const hits = fillersOutsideExposedPanels(input);
+  if (!hits.length) return { placed: [...input.placed], removed: [], relocated: [], notes: [], findings: [] };
+  let working: PlacedCabinet[] = [...input.placed];
+  const dropped: FillerOutsidePanel[] = [];
+  const relocated: FillerOutsidePanel[] = [];
   const notes: string[] = [];
   const findings: DesignerReviewFinding[] = [];
-  const seen = new Set<string>();
-  for (const entry of removed) {
+  for (const entry of hits) {
+    const current = working.find((item) => item.uid === entry.filler.uid);
+    if (!current) continue;
+    const live: FillerOutsidePanel = { ...entry, filler: current };
     const width = Number(entry.filler.fillerTotalWidth) || Number(entry.filler.width) || 0;
     const layer = entry.filler.placement === "wall" ? "upper" : "base";
-    const beyond = entry.farSide === "wall" ? "the wall" : entry.farSide === "opening" ? "the opening" : entry.farSide === "panel" ? "the next panel" : "open space";
     const label = input.wallLabelOf?.(entry.wallId) ?? null;
-    const key = `${entry.wallId}|${layer}|${entry.filler.masterCode}|${Math.round(wallRunOffset(entry.filler, entry.wallId, input.room) * 4)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    notes.push(`No ${entry.filler.masterCode} filler outside the ${entry.panel.masterCode} panel on ${label ?? entry.wallId} (${layer} run): ${inches(width)} beside ${beyond} stays open.`);
+    const where = `${label ?? entry.wallId} (${layer} run)`;
+    const moved = relocateBehindNeighbour(live, working, input.room, input.openings ?? []);
+    if (moved) {
+      working = moved;
+      relocated.push(live);
+      notes.push(`${entry.filler.masterCode} filler (${inches(width)}) moved from outside the ${entry.panel.masterCode} panel to the far side of the next cabinet on ${where}.`);
+      continue;
+    }
+    working = working.filter((item) => item.uid !== entry.filler.uid);
+    dropped.push(entry);
+    const beyond = entry.farSide === "wall" ? "the wall" : entry.farSide === "opening" ? "the opening" : entry.farSide === "panel" ? "the next panel" : entry.farSide === "cabinet" ? "the next cabinet" : "open space";
+    notes.push(`No ${entry.filler.masterCode} filler outside the ${entry.panel.masterCode} panel on ${where}: ${inches(width)} beside ${beyond} stays open.`);
     findings.push({
       ruleId: "no-filler-outside-exposed-panel",
       code: "filler-outside-exposed-panel-removed",
@@ -199,5 +306,5 @@ export function removeFillersOutsideExposedPanels(input: {
       cabinetCode: entry.panel.masterCode,
     });
   }
-  return { placed: input.placed.filter((item) => !drop.has(item.uid)), removed, notes, findings };
+  return { placed: working, removed: dropped, relocated, notes, findings };
 }
