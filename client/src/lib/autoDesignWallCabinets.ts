@@ -38,6 +38,9 @@ const SAME_HEIGHT_IN = 0.005;
 const NOT_A_STRAIGHT_UPPER = /glass|open shelf|plate rack|wine|microwave|refrigerator|hood|garage|stacker/i;
 
 function isStraightStandardUpper(source: DesignCabinet): boolean {
+  // Tom, Nov 18 2026, 4:49 PM CT: no drawer fronts in an upper run. A wall box
+  // with a drawer (WD1848 and kin) is never tiled into a run of doors.
+  if ((Number(source.numberOfDrawers) || 0) > 0 || /^WD\d/i.test(source.masterCode ?? "")) return false;
   return cabinetDrawingType(source) === "standard-door"
     && source.glassDoor !== true && source.isCornerCabinet !== true
     && !isCornerCabinet(source.masterCode, source.description)
