@@ -88,26 +88,25 @@ export function matchUppersToBases(input: {
   makeUid: () => string;
   /** "Glass cabinets above" is on: every upper this pass places needs the line's own glass stacker (rule 1b). */
   glass?: boolean;
-}): { placed: PlacedCabinet[]; notes: string[]; findings: DesignerReviewFinding[]; glassHolds: Array<{ wallId: string; start: number; end: number }> } {
+}): { placed: PlacedCabinet[]; notes: string[]; findings: DesignerReviewFinding[] } {
   const notes: string[] = [];
-  // Rule 1b: B42 spans left without an upper because no glass stacker exists, so the
-  // gap closer that runs next does not fill them with a non-glass box.
-  const glassHolds: Array<{ wallId: string; start: number; end: number }> = [];
   const findings: DesignerReviewFinding[] = [];
   let working = [...input.placed];
   const height = input.heightIn;
-  if (height == null) return { placed: working, notes, findings, glassHolds };
+  if (height == null) return { placed: working, notes, findings };
   const standard = autoDesignStandardUpperRows(input.wallCatalog, height);
-  if (!standard.length) return { placed: working, notes, findings, glassHolds };
+  if (!standard.length) return { placed: working, notes, findings };
   const { room } = input;
   // Rule 1: "if the wall is 42 inches" is the wall program (the selected upper
   // height: 42, or a frameless 42.25 class), not the wall or ceiling height.
   const atFortyTwo = Math.round(height) === 42;
   const isB42Width = (base: Span) => Math.abs((base.end - base.start) - 42) <= COLLISION_EPSILON_IN;
-  // Rule 1b (Tom, Nov 18 2026, 11:14 AM CT): "If you do not have a glass cabinet for
-  // the appropriate cabinet, do not put that cabinet in the plan." With glass on, a
-  // B42 upper is only placed when the line sells its matching glass stacker (same
-  // width and wall family, 12/15/18 in); never a non-glass box in a glass spot.
+  // Rule 1b (Tom, Nov 18 2026, 11:22 AM CT): "If a run of uppers cannot be filled
+  // 100% with glass cabinets, do not put any glass cabinets in that run at all. No
+  // partial glass." Here, with glass on, the B42 pick first prefers the widths the
+  // line sells a matching glass stacker for (same width and wall family, 12/15/18
+  // in); with none it falls back to the plain rule 1 uppers, and the glass stacker
+  // pass (applyGlassUpperPreference) then leaves that whole run plain.
   const glass = input.glass === true;
   const stackerCatalog = glass ? autoDesignGlassStackerCatalog(input.wallCatalog) : [];
   const hasGlass = (row: DesignCabinet) => !glass
@@ -156,7 +155,7 @@ export function matchUppersToBases(input: {
       const wantsPair = (base: Span) => !atFortyTwo && isB42Width(base) && !legs.some((leg) => leg.start === base.start && leg.end === base.end)
         && !(above.some((entry) => Math.abs(entry.start - base.start) <= ADJACENT_IN && Math.abs((entry.end - entry.start) - 21) <= ADJACENT_IN)
           && above.some((entry) => Math.abs(entry.start - (base.start + 21)) <= ADJACENT_IN && Math.abs((entry.end - entry.start) - 21) <= ADJACENT_IN));
-      // With glass on, a B42's uppers are re-checked for a glass stacker (rule 1b).
+      // With glass on, a B42's uppers are re-checked for a glass-capable pick (rule 1b).
       const glassB42 = (base: Span) => glass && isB42Width(base) && !legs.some((leg) => leg.start === base.start && leg.end === base.end);
       if (aligned && !targets.some((base) => wantsPair(base) || glassB42(base))) continue;
       const label = chain.map((base) => base.item.masterCode).join(" + ");
@@ -234,7 +233,6 @@ export function matchUppersToBases(input: {
       // the review says it couldn't be met.
       const b42NotMet: string[] = [];
       const b42SingleSkipped: string[] = [];
-      const b42GlassNotMet: string[] = [];
       const b42GlassSingle: string[] = [];
       for (const base of targets) {
         const baseWidth = base.end - base.start;
@@ -245,24 +243,23 @@ export function matchUppersToBases(input: {
         if (exact && !leg && isB42Width(base)) {
           const sold42 = pickWidth(42, true);
           const sold21 = pickWidth(21, true);
-          // Rule 1b: with glass on, a width without its glass stacker is not placed.
-          const single = sold42 && hasGlass(sold42) ? sold42 : undefined;
-          const half = sold21 && hasGlass(sold21) ? sold21 : undefined;
+          // Rule 1b: with glass on, prefer the widths that have a glass stacker; with
+          // neither, the plain rule 1 pick below (that run then stays plain).
+          const glassSingle = sold42 && hasGlass(sold42) ? sold42 : undefined;
+          const glassHalf = sold21 && hasGlass(sold21) ? sold21 : undefined;
+          const anyGlass = glass && (glassSingle || glassHalf);
+          const single = anyGlass ? glassSingle : sold42;
+          const half = anyGlass ? glassHalf : sold21;
           if (atFortyTwo && single) {
             rows.push({ row: single, start: base.start, base, exact });
           } else if (half) {
             if (single) b42SingleSkipped.push(`${single.masterCode} over ${base.item.masterCode}`);
             rows.push({ row: half, start: base.start, base, exact });
             rows.push({ row: half, start: base.start + dim(half.width, 0), base, exact });
-          } else if (glass && single) {
+          } else if (anyGlass && single) {
             // 30/36 program, glass on, no glass stacker for the 21: the 42 that has one.
             b42GlassSingle.push(`${single.masterCode} over ${base.item.masterCode} (no 21″ glass stacker for ${sold21?.masterCode ?? "a 21″ upper"})`);
             rows.push({ row: single, start: base.start, base, exact });
-          } else if (glass && (sold42 || sold21)) {
-            // The line sells the upper but not its glass stacker: leave that upper out.
-            glassHolds.push({ wallId: wall, start: base.start, end: base.end });
-            b42GlassNotMet.push(`${base.item.masterCode} (${[sold42, sold21].filter(Boolean).map((row) => row!.masterCode).join(", ")} sold without a matching glass stacker)`);
-            rows.push(null);
           } else {
             b42NotMet.push(base.item.masterCode);
             rows.push(null);
@@ -316,17 +313,6 @@ export function matchUppersToBases(input: {
         });
       }
       if (b42NotMet.length) continue;
-      for (const entry of b42GlassNotMet) {
-        findings.push({
-          ruleId: "uppers-match-bases",
-          code: "b42-glass-not-met",
-          severity: "warning",
-          title: "A glass upper over a B42 couldn't be met",
-          detail: `Glass is on, but this line sells no glass stacker for the upper over ${entry} at ${formatInches(height)}, so that upper was left out of the plan (rule 1b: no glass cabinet, no cabinet); no SKU was invented.`,
-          cabinetUid: chain[0]!.item.uid,
-          cabinetCode: chain[0]!.item.masterCode,
-        });
-      }
       if (b42GlassSingle.length) {
         findings.push({
           ruleId: "uppers-match-bases",
@@ -353,7 +339,7 @@ export function matchUppersToBases(input: {
         skip(`This line sells no ${missing.join(", ")} wide wall cabinet at ${formatInches(height)}, so the wall cabinets above ${label} do not match the base width.`);
         continue;
       }
-      if (rows.every((entry) => entry == null) && !b42GlassNotMet.length) continue;
+      if (rows.every((entry) => entry == null)) continue;
       // Nothing to gain when the uppers already sit exactly where these would.
       const planned = rows.filter((entry): entry is NonNullable<typeof entry> => entry != null);
       const alreadyThere = planned.length === uppers.length && planned.every((entry) => uppers.some((upper) => upper.item.masterCode === entry.row.masterCode
@@ -392,7 +378,7 @@ export function matchUppersToBases(input: {
         continue;
       }
       working = accepted.placed;
-      notes.push(`Wall cabinets over ${label} now match the bases: ${replacements.length ? replacements.map((item) => item.masterCode).join(" + ") : "none (no glass stacker for the B42 upper, rule 1b)"} (was ${uppers.map((entry) => entry.item.masterCode).join(" + ")}${above.length > uppers.length ? " and filler" : ""}).`);
+      notes.push(`Wall cabinets over ${label} now match the bases: ${replacements.map((item) => item.masterCode).join(" + ")} (was ${uppers.map((entry) => entry.item.masterCode).join(" + ")}${above.length > uppers.length ? " and filler" : ""}).`);
       for (const leg of legs) {
         if (!planned.some((entry) => Math.abs(entry.start - leg.start) <= ADJACENT_IN)) continue;
         notes.push(`${leg.corner.item.masterCode} reaches ${formatInches(leg.end - leg.start)} past ${leg.upper.item.masterCode}; that leg got its own upper so the uppers line up over the bases on ${wall}.`);
@@ -410,5 +396,5 @@ export function matchUppersToBases(input: {
       }
     }
   }
-  return { placed: working, notes, findings, glassHolds };
+  return { placed: working, notes, findings };
 }

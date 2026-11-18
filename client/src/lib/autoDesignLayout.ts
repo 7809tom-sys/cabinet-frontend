@@ -2329,8 +2329,7 @@ export function runAutoDesignLayout(args: {
       styleId: args.styleId,
       makeUid,
       wallHeightIn: wallDesignHeight ?? stage.input.wallCabinetHeightIn ?? 30,
-      // Rule 1b: a B42 left without an upper (no glass stacker) stays open.
-      reservedSpans: [...cornerReserved, ...matchedFinal.glassHolds],
+      reservedSpans: cornerReserved,
     });
     working = closedAfterMatch.placed;
     notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
