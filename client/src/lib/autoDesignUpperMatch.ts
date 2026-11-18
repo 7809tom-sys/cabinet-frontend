@@ -199,12 +199,33 @@ export function matchUppersToBases(input: {
         .sort((a, b) => (exact ? 0 : dim(b.width, 0) - dim(a.width, 0))
           || Math.abs(dim(a.depth, 0) - depth) - Math.abs(dim(b.depth, 0) - depth)
           || a.masterCode.localeCompare(b.masterCode))[0];
+      // Hard fallback (Tom, Nov 18 2026, 10:28 / 10:34 AM CT): a 42" base with no
+      // 42" upper at the selected height gets two 21" uppers at that height
+      // (W2130 at 30, W2142 at 42), looked up in the catalog, never invented.
+      // Compatible with the v2 splitExact pair; this pass runs after the last
+      // repack and gap re-tile, so the pair is the final word over that base.
+      const pairFor42 = (width: number): DesignCabinet | null => {
+        if (Math.abs(width - 42) > COLLISION_EPSILON_IN || pickWidth(42, true)) return null;
+        return pickWidth(21, true) ?? null;
+      };
+      const missing21: string[] = [];
       for (const base of targets) {
         const baseWidth = base.end - base.start;
         const leg = legs.find((entry) => Math.abs(entry.start - base.start) <= COLLISION_EPSILON_IN && Math.abs(entry.end - base.end) <= COLLISION_EPSILON_IN);
         const slot = windows.length ? slotFor(base) : { start: base.start, end: base.end };
         if (!slot) { rows.push(null); continue; }
         const exact = Math.abs((slot.end - slot.start) - baseWidth) <= COLLISION_EPSILON_IN;
+        if (exact && !leg && Math.abs(baseWidth - 42) <= COLLISION_EPSILON_IN && !pickWidth(42, true)) {
+          const half = pairFor42(baseWidth);
+          if (half) {
+            rows.push({ row: half, start: base.start, base, exact });
+            rows.push({ row: half, start: base.start + dim(half.width, 0), base, exact });
+          } else {
+            missing21.push(base.item.masterCode);
+            rows.push(null);
+          }
+          continue;
+        }
         // A corner leg takes an exact-width upper or nothing (never a narrowed box).
         const row = leg && !exact ? undefined : pickWidth(slot.end - slot.start, exact);
         if (!row) {
@@ -237,6 +258,18 @@ export function matchUppersToBases(input: {
         }
         continue;
       }
+      for (const code of missing21) {
+        findings.push({
+          ruleId: "uppers-match-bases",
+          code: "b42-two-21-not-met",
+          severity: "warning",
+          title: `Two 21″ uppers over ${code} couldn't be met`,
+          detail: `This line sells no 42″ and no 21″ wide wall cabinet at ${formatInches(height)}, so the two-21s rule over ${code} could not be applied; no SKU was invented.`,
+          cabinetUid: chain[0]!.item.uid,
+          cabinetCode: code,
+        });
+      }
+      if (missing21.length) continue;
       if (missing.length) {
         skip(`This line sells no ${missing.join(", ")} wide wall cabinet at ${formatInches(height)}, so the wall cabinets above ${label} do not match the base width.`);
         continue;
