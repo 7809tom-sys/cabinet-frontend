@@ -202,7 +202,7 @@ export function isFillableBoundary(boundary: SeamBoundary): boolean {
  * in the inside-corner hold are required there. A board in the open middle of
  * a run is unchanged.
  */
-export function isRequiredCornerFiller(filler: PlacedCabinet, room: RoomData): boolean {
+function isRequiredCornerFiller(filler: PlacedCabinet, room: RoomData): boolean {
   if (
     filler.fillerTransitionKind === "front-miter-pair"
     || filler.fillerTransitionKind === "angled-wedge"
