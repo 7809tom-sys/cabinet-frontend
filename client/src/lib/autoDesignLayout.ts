@@ -16,6 +16,7 @@ import {
 } from "./autoDesignAutoBuild";
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
+import { applyLazySusanCornerUppers } from "./autoDesignLazySusanCornerUppers";
 import { applyGlassUpperPreference } from "./autoDesignFormOptions";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
@@ -2301,7 +2302,17 @@ export function runAutoDesignLayout(args: {
   working = matchedFinal.placed;
   notes.push(...matchedFinal.notes);
   reviewFindings.push(...matchedFinal.findings);
-  if (matchedFinal.notes.length > 0) {
+  // Lazy Susan corner uppers (Tom, Nov 18 2026; see autoDesignLazySusanCornerUppers).
+  // Runs after the last upper re-tile so nothing later replaces or merges these pieces.
+  const lazySusanUppers = applyLazySusanCornerUppers({
+    placed: working, room, openings: workingOpenings, wallCatalog: args.wallCatalog,
+    heightIn: upperResult.heightUsedIn, glass: hasPreference(input.intake, "glass-uppers"),
+    styleId: args.styleId, makeUid,
+  });
+  working = lazySusanUppers.placed;
+  notes.push(...lazySusanUppers.notes);
+  reviewFindings.push(...lazySusanUppers.findings);
+  if (matchedFinal.notes.length > 0 || lazySusanUppers.changed) {
     // Re-matching can leave a seam sliver (at most a seam filler wide) where an
     // old upper reached past the bases; close it with the line's own filler
     // like every other leftover, so the run still closes and never overflows.
