@@ -20,7 +20,7 @@ const LIVE = live as unknown as {
   surround: { deepAbove: DesignCabinet[]; endPanels: DesignCabinet[] };
 };
 
-function run(opts: { wall?: DesignCabinet[]; heightIn?: number } = {}): { result: AutoDesignLayoutSuccess; room: RoomData } {
+function run(opts: { wall?: DesignCabinet[]; heightIn?: number; preferences?: string[] } = {}): { result: AutoDesignLayoutSuccess; room: RoomData } {
   const room = { width: 192, depth: 144, ceilingHeight: 108, openWallPath: false } as RoomData;
   const wall = opts.wall ?? LIVE.wall;
   let uid = 0;
@@ -32,7 +32,7 @@ function run(opts: { wall?: DesignCabinet[]; heightIn?: number } = {}): { result
       dishwasherSide: "right", skipDishwasher: true, tallCabinets: null, overRangeAnswer: "microwave-bridge",
       kitchenUsage: { uses: [], skipped: true, acceptedSuggestionIds: [] },
       designQuestionDoorStyleId: 390019, designQuestionDoorStyleName: "Aero Solstice",
-      intake: { ...emptyAutoDesignIntake(), construction: "new", preferences: [], islandOrPeninsula: "none" },
+      intake: { ...emptyAutoDesignIntake(), construction: "new", preferences: opts.preferences ?? [], islandOrPeninsula: "none" },
     } as never,
     room, openings: [], baseCatalog: LIVE.base, wallCatalog: wall, fillers: LIVE.accessory,
     appliancePalette: appliancesForRoom("kitchen" as never).map(applianceAsDesignCabinet),
@@ -124,5 +124,53 @@ describe("Rule 1: the upper over a B42 follows the wall program (Aero)", () => {
     const { result } = run({ heightIn: 42, wall: LIVE.wall.filter((row) => row.masterCode !== "W2142") });
     expect(result.reviewFindings.some((f) => f.code === "b42-upper-rule-not-met" && f.severity === "warning" && /42″ wide and no 21″/.test(f.detail))).toBe(true);
     expect(result.placed.some((item) => /^W(?:21|42)42$/.test(item.masterCode))).toBe(false);
+  });
+});
+
+/**
+ * Rule 1b, Tom (voice, Nov 18 2026, 11:14 AM CT): "If you do not have a glass cabinet
+ * for the appropriate cabinet, do not put that cabinet in the plan." With glass on,
+ * the upper over a B42 is only placed when the line sells its matching glass stacker.
+ */
+describe("Rule 1b: with glass on, a B42 upper is only placed when its glass stacker exists (Aero)", () => {
+  const GLASS = ["glass-uppers"];
+  const no21Glass = LIVE.wall.filter((row) => !/^W21(?:12|15|18)GD$/.test(row.masterCode));
+  const stackersOn = (placed: readonly PlacedCabinet[], uid: string) => placed.filter((item) => item.stackedOnCabinetUid === uid);
+
+  it("on a 30 in wall program with the 21 in glass stacker sold: two W2130s, each with its W21 glass stacker", () => {
+    const { result, room } = run({ preferences: GLASS });
+    const bottom = bottomB42(result.placed, room);
+    expect(bottom.length).toBeGreaterThan(0);
+    for (const entry of bottom) {
+      expect(entry.over.map((o) => o.item.masterCode)).toEqual(["W2130", "W2130"]);
+      for (const o of entry.over) expect(stackersOn(result.placed, o.item.uid).map((item) => item.masterCode)).toEqual([expect.stringMatching(/^W21(?:12|15|18)GD$/)]);
+    }
+    expect(result.reviewFindings.filter((f) => /^b42-glass/.test(f.code ?? ""))).toEqual([]);
+  });
+
+  it("on a 30 in wall program with no 21 in glass stacker but a 42 that has one: a single W4230 with its glass stacker, flagged", () => {
+    const w4230 = injected("W3630", "W4230", 42);
+    const w4218gd = injected("W3618GD", "W4218GD", 42);
+    const { result, room } = run({ preferences: GLASS, wall: [...no21Glass, w4230, w4218gd] });
+    const bottom = bottomB42(result.placed, room);
+    expect(bottom.length).toBeGreaterThan(0);
+    for (const entry of bottom) {
+      expect(entry.over.map((o) => o.item.masterCode)).toEqual(["W4230"]);
+      expect(stackersOn(result.placed, entry.over[0]!.item.uid).map((item) => item.masterCode)).toEqual(["W4218GD"]);
+    }
+    expect(result.reviewFindings.some((f) => f.code === "b42-glass-single-upper")).toBe(true);
+  });
+
+  it("on a 30 in wall program with no glass stacker for a 21 or a 42: the upper is left out, couldn't be met, no non-glass box in the glass spot", () => {
+    const { result, room } = run({ preferences: GLASS, wall: no21Glass });
+    const bottom = bottomB42(result.placed, room);
+    expect(bottom.length).toBeGreaterThan(0);
+    for (const entry of bottom) expect(entry.over.map((o) => o.item.masterCode)).toEqual([]);
+    expect(result.reviewFindings.some((f) => f.code === "b42-glass-not-met" && f.severity === "warning")).toBe(true);
+  });
+
+  it("with glass off the same catalog still gets two W2130s (rule 1b only applies with glass)", () => {
+    const { result, room } = run({ wall: no21Glass });
+    for (const entry of bottomB42(result.placed, room)) expect(entry.over.map((o) => o.item.masterCode)).toEqual(["W2130", "W2130"]);
   });
 });

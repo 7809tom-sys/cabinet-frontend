@@ -2045,6 +2045,7 @@ export function runAutoDesignLayout(args: {
     const matchedAfterRepack = matchUppersToBases({
       placed: working, room, openings: stageOpenings, wallCatalog: args.wallCatalog,
       heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+      glass: hasPreference(input.intake, "glass-uppers"),
     });
     working = matchedAfterRepack.placed;
     notes.push(...matchedAfterRepack.notes);
@@ -2298,6 +2299,7 @@ export function runAutoDesignLayout(args: {
   const matchedFinal = matchUppersToBases({
     placed: working, room, openings: workingOpenings, wallCatalog: args.wallCatalog,
     heightIn: upperResult.heightUsedIn, styleId: args.styleId, makeUid,
+    glass: hasPreference(input.intake, "glass-uppers"), // rule 1b
   });
   working = matchedFinal.placed;
   notes.push(...matchedFinal.notes);
@@ -2327,7 +2329,8 @@ export function runAutoDesignLayout(args: {
       styleId: args.styleId,
       makeUid,
       wallHeightIn: wallDesignHeight ?? stage.input.wallCabinetHeightIn ?? 30,
-      reservedSpans: cornerReserved,
+      // Rule 1b: a B42 left without an upper (no glass stacker) stays open.
+      reservedSpans: [...cornerReserved, ...matchedFinal.glassHolds],
     });
     working = closedAfterMatch.placed;
     notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
