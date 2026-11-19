@@ -117,3 +117,12 @@ describe("photo tile lights", () => {
     expect(snapshots).toContain("if (texture) applyLights(photoTileLights(studioLights));");
   });
 });
+
+describe("shaker photo tiles", () => {
+  it("renders a shaker photo tile as one plain color, not the cropped patch", () => {
+    const snapshots = readFileSync(new URL("./doorColorSourceCabinetSnapshots.ts", import.meta.url), "utf8");
+    expect(snapshots).toContain("shakerPhotoTileUsesPlainColor(input)");
+    expect(snapshots).toContain("plainColorFromPhotoTexture(texture)");
+    expect(snapshots).toContain("samplePhotoUrl: null, renderHex: tileHex");
+  });
+});

@@ -18,7 +18,7 @@
  */
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { buildAuditDoor, disposeObject, loadSampleTexture } from "@/lib/doorAuditDoorRender";
+import { buildAuditDoor, disposeObject, loadSampleTexture, plainColorFromPhotoTexture, shakerPhotoTileUsesPlainColor } from "@/lib/doorAuditDoorRender";
 import { DOOR_AUDIT_LIGHTS, type DoorAuditRenderInput } from "@/lib/doorRenderingAudit";
 import { resolveDoorStyleAppearance } from "@/lib/doorStyleAppearance";
 import { hexFromCanvas } from "@/lib/doorColorProbe";
@@ -241,13 +241,23 @@ export function createCabinetSnapshotSession(): CabinetSnapshotSession {
         threshold: input.colorDeltaEMax ?? null,
         measure: measurePatch,
       });
-      const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl, { rejectBlank: true }) : null;
+      let texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl, { rejectBlank: true }) : null;
       if (disposed) {
         texture?.dispose();
         throw new Error("The cabinet renderer was closed.");
       }
       if (texture) applyLights(photoTileLights(studioLights));
-      const cabinet = buildCabinet(kind, input, texture, gate.hex);
+      // A shaker's photo tile is the shaker generic image in one plain color from the photo,
+      // never the photo's patch tiled over the rails and stiles.
+      let tileInput = input;
+      let tileHex = gate.hex;
+      if (texture && shakerPhotoTileUsesPlainColor(input)) {
+        tileHex = plainColorFromPhotoTexture(texture);
+        texture.dispose();
+        texture = null;
+        tileInput = { ...input, samplePhotoUrl: null, renderHex: tileHex, color: tileHex };
+      }
+      const cabinet = buildCabinet(kind, tileInput, texture, tileHex);
       scene.add(cabinet);
       current = cabinet;
       renderer.render(scene, camera);
