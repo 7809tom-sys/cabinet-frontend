@@ -61,9 +61,10 @@ import { budgetSlideRefrigeratorToWallEnd, buildMandatoryAutoDesignRefrigeratorB
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
-import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
+import { pickBudgetDefaultSink, pickBudgetSinkBase } from "./autoDesignBudgetSink";
 import { applyDishwasherRunEndRule } from "./autoDesignDishwasherRunEnd";
-import { enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
+import { economyKeepClearShifts, type KeepClearAnchor } from "./autoDesignEconomyKeepClear";
+import { economyCornerClaimSpan, enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
 import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
 import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
@@ -852,6 +853,11 @@ export function runAutoDesignLayout(rawArgs: {
    */
   sinkCatalog?: readonly AutoDesignSinkProduct[];
   /**
+   * The line's real price per cabinet id (cabinet id -> homeowner price for the active style). Budget friendly
+   * ranks sink bases by it; never invented, and a base with no entry ranks after every priced one.
+   */
+  cabinetPriceById?: ReadonlyMap<number, number> | null;
+  /**
    * The selected line's end/finished panel stock. The build seats the line's own
    * panel on the outside of the base cabinet it puts on each side of the range,
    * as a real placed catalog row so it is drawn and billed.
@@ -923,9 +929,15 @@ export function runAutoDesignLayout(rawArgs: {
     measuredKind: input.sinkBaseKind ?? "regular",
     baseCatalog: pool,
   });
-  const sinkBaseWidth = resolvedSinkBase.widthIn;
+  // Budget friendly (Tom, voice, Nov 19 2026): with no sink picked by hand and no explicit farmhouse request,
+  // the build seats the SMALLEST, lowest-priced regular sink base that takes a double-bowl sink. The measured
+  // sink base size is only the starting point for every other mode.
+  const budgetSinkBase = hasPreference(input.intake, "budget-friendly") && !primaryPickedSink && resolvedSinkBase.kind === "regular"
+    ? pickBudgetSinkBase({ baseCatalog: pool, lineSinkProducts: args.sinkCatalog ?? [], priceByCabinetId: args.cabinetPriceById })
+    : null;
+  const sinkBaseWidth = budgetSinkBase ? budgetSinkBase.widthIn : resolvedSinkBase.widthIn;
   const sinkBaseKind = resolvedSinkBase.kind;
-  const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
+  const sinkBaseSource = budgetSinkBase ? budgetSinkBase.row : pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
   if (!sinkBaseSource) {
     return fail(sinkBaseKind === "farmhouse"
       ? `No source-priced ${sinkBaseWidth}″ farmhouse sink base is available for the selected line. Choose the regular sink base or another door style, then try again.`
@@ -988,6 +1000,45 @@ export function runAutoDesignLayout(rawArgs: {
     if (anchorWall && !selectedWalls.includes(anchorWall)) selectedWalls.push(anchorWall);
     notes.push("The refrigerator already on the plan is a fixed anchor: it keeps its position, and the cabinets are designed around it.");
   }
+  // Economic corner keep-clear (Tom, voice, Nov 19 2026, 11:59 AM CT): in budget mode the dishwasher, sink
+  // base and range never sit inside the 27" economic corner footprint (24" void + 3" mitered filler).
+  // The measured positions are slid out along their own wall before anything is seated.
+  const keepClear = (() => {
+    if (!budgetFriendly || hasPreference(input.intake, "lazy-susan") || hasPreference(input.intake, "blind-corner")) return null;
+    const rows: KeepClearAnchor[] = [];
+    const wallIdsSeen: WallSide[] = [];
+    for (const anchor of plan.plan.anchors) {
+      if (anchor.kind === "refrigerator" && anchoredRefrigerator) continue;
+      const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind];
+      if (!source) continue;
+      const width = anchor.kind === "sink" ? sinkBaseWidth : anchor.kind === "refrigerator" ? refrigeratorWidth : dim(source.width, 24);
+      const adjacent = anchor.kind === "dishwasher" && anchor.source === "adjacent-to-sink";
+      const measured = adjacent
+        ? { ...anchor, wallLabel: input.sink.wallLabel, centerOffsetIn: adjacentDishwasherCenterIn(input.sink.centerOffsetIn, sinkBaseWidth, width, input.dishwasherSide === "left" ? "left" : "right") }
+        : anchor;
+      const wall = wallLabelToEngineWallId(measured.wallLabel, room, input.originCorner, input.runDirection);
+      if (!wall) continue;
+      wallIdsSeen.push(wall.engineWallId as WallSide);
+      rows.push({
+        kind: anchor.kind, wallId: wall.engineWallId as WallSide, along: anchorAlongStartIn(measured, width, wall), width, depth: dim(source.depth, 24),
+        group: adjacent || anchor.kind === "sink" ? "sink" : anchor.kind,
+      });
+    }
+    if (anchoredRefrigerator) {
+      const wallId = cabinetWall(anchoredRefrigerator, room);
+      if (wallId) rows.push({ kind: "refrigerator", wallId: wallId as WallSide, along: wallRunOffset(anchoredRefrigerator, wallId, room), width: wallRunSpan(anchoredRefrigerator, wallId, room), depth: anchoredRefrigerator.depth, group: "refrigerator" });
+    }
+    return economyKeepClearShifts({
+      anchors: rows,
+      movableKinds: ["sink", "dishwasher", "stove"],
+      lockedKinds: lockedAnchorKinds(input.intake),
+      room,
+      openings,
+      frameOf: (wallId) => wallRunFrame(wallId, room),
+      label: (kind) => (kind === "stove" ? "range" : kind === "sink" ? "sink base" : kind),
+    });
+  })();
+  if (keepClear) notes.push(...keepClear.notes);
   for (const anchor of plan.plan.anchors) {
     // Already seated from the plan above.
     if (anchor.kind === "refrigerator" && anchoredRefrigerator) continue;
@@ -1010,7 +1061,7 @@ export function runAutoDesignLayout(rawArgs: {
     }
     const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
     if (!wall) return fail(`${anchor.kind} cannot be placed because ${measuredAnchor.wallLabel} is not available in this room.`);
-    const along = anchorAlongStartIn(measuredAnchor, width, wall);
+    const along = anchorAlongStartIn(measuredAnchor, width, wall) + (keepClear?.shifts.get(anchor.kind) ?? 0);
     if (along < wall.frame.runStart - COLLISION_EPSILON_IN || along + width > wall.frame.runEnd + COLLISION_EPSILON_IN) {
       return fail(`${anchor.kind} does not fit on ${measuredAnchor.wallLabel} at the selected center measurement.`);
     }
@@ -1162,6 +1213,7 @@ export function runAutoDesignLayout(rawArgs: {
   const sinkBase = anchorsByKind.get("sink");
   let sinks: SinkFixture[] = [];
   if (sinkBase) {
+    if (budgetSinkBase) notes.push(budgetSinkBase.note);
     // A sink picked in the sink pop-up is seated in the sink base the build
     // actually placed, so the pairing decided above is what gets a basin.
     const pickedSink = pickedSinkProducts[0];
@@ -1494,7 +1546,13 @@ export function runAutoDesignLayout(rawArgs: {
     }
   }
 
+  // Economic corner (Tom, Nov 19 2026, 11:59 AM CT): the 27" footprint of every accepted economic corner leg.
+  const economyClaims = economyCorners.flatMap((economy) => economy.wallIds.flatMap((wallId) => {
+    const claim = economyCornerClaimSpan(wallId, economy.corner, room);
+    return claim ? [claim] : [];
+  }));
   const wiggle = applyAutoDesignWiggleRoom({
+    keepClearSpans: economyClaims,
     placed: working,
     room,
     openings: stageOpenings,
@@ -1598,6 +1656,13 @@ export function runAutoDesignLayout(rawArgs: {
   // Reserve every inside-corner square of the cabineted runs before the base
   // fill (and every later leftover / "use every inch" / intake-repack pass).
   const cornerReserved = [...autoDesignInsideCornerReservations(room, runWalls)];
+  const cornerReservedUpper = [...cornerReserved]; // the 24" voids only: the upper row keeps its own corner decision
+  // Economic corner (Tom, Nov 19 2026, 11:59 AM CT): the whole 27" footprint (24" void + the 3" filler seat)
+  // is reserved on every leg whose economic corner was accepted, so no later pass seats or slides a box into it.
+  for (const claim of economyClaims) {
+    const at24 = cornerReserved.findIndex((span) => span.wallId === claim.wallId && (Math.abs(span.start - claim.start) <= 0.01 || Math.abs(span.end - claim.end) <= 0.01));
+    if (at24 >= 0) cornerReserved[at24] = claim;
+  }
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
@@ -1849,7 +1914,7 @@ export function runAutoDesignLayout(rawArgs: {
       : kitchenRuleNumber("jog_max_in")),
     wallHeightIn: wallDesignHeight,
     // Only the 45° filler seats: the 90° corner square keeps today's behavior here.
-    reservedSpans: cornerReserved.filter((span) => fortyFiveSeatSpan(room, span, runWalls)),
+    reservedSpans: [...cornerReserved.filter((span) => fortyFiveSeatSpan(room, span, runWalls) && !economyClaims.some((claim) => claim.wallId === span.wallId && Math.abs(claim.start - span.start) <= 0.01 && Math.abs(claim.end - span.end) <= 0.01)), ...economyClaims], // economic corner footprint (Tom, Nov 19 2026, 11:59 AM CT)
   });
   working = realCabinets.placed;
   notes.push(...realCabinets.notes);
@@ -2133,6 +2198,7 @@ export function runAutoDesignLayout(rawArgs: {
       room,
       openings: stageOpenings,
       reservedSpans: cornerReserved,
+      reservedUpperSpans: cornerReservedUpper,
       keepUids: companionKeepUids,
       intake: input.intake,
       baseCatalog: args.baseCatalog,
@@ -2522,6 +2588,7 @@ export function runAutoDesignLayout(rawArgs: {
       },
       glassUppers: hasPreference(input.intake, "glass-uppers"),
       wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+      keepClearSpans: economyClaims,
     });
     working = minimumFiller.placed;
     if (minimumFiller.changes.length > 0) {
@@ -2563,15 +2630,17 @@ export function runAutoDesignLayout(rawArgs: {
     }
   }
   // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): claim the 3" filler first, then size the base.
+  const economyWarnings: string[] = [];
   if (economyCorners.length > 0) {
     const economyFinal = enforceEconomyCornerFillers({
       corners: economyCorners, placed: working, room,
       baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog] as never,
       wallCatalog: args.wallCatalog as never,
-      catalogFillers, makeUid, styleId: args.styleId,
+      catalogFillers, makeUid, styleId: args.styleId, openings: stageOpenings,
     });
     working = economyFinal.placed;
     notes.push(...economyFinal.notes);
+    economyWarnings.push(...economyFinal.warnings);
   }
   // Tom, voice, Nov 19 2026, 8:42 / 8:44 AM CT: a dishwasher at a run end keeps a base filler only
   // where a wall follows; an opening or an unknown end takes the line's dishwasher panel instead.
@@ -2602,15 +2671,21 @@ export function runAutoDesignLayout(rawArgs: {
   // Last word on the bridge's 1/2 in boards: flush with the bridge face, and one taller board per side when the glass
   // pass above put a glass cabinet on the bridge (the glass pass runs after the boards were first seated).
   working = normalizeBridgeBoards(working, room);
-  const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
+  const warnings = [...economyWarnings, ...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
   // The 15-rule findings (spacing, suggested downsizes, oven pairing, intake picks) are
   // suggestions only and run when the build was given the upfront intake.
-  // Budget friendly report line: name each inside corner where the countertop now runs back to the walls.
-  if (hasPreference(input.intake, "budget-friendly")) {
-    const cornerFills = countertopSurfaces(working, room, null).filter((surface) => surface.cabinetRunId?.startsWith("corner-fill"));
-    if (cornerFills.length > 0) {
+  // Countertop corner report (Tom, Nov 19 2026, 1:06 PM CT): the top covers every inside corner; where two runs meet they
+  // are cut on a 45° miter seam. Any square corner top still added (one run only) is named as before in budget mode.
+  {
+    const tops = countertopSurfaces(working, room, null);
+    const cornerFills = tops.filter((surface) => surface.cabinetRunId?.startsWith("corner-fill"));
+    const miterKeys = Array.from(new Set(tops.flatMap((surface) => (surface.insideCornerMiterKey ?? "").split("+").filter(Boolean))));
+    if (miterKeys.length > 0) {
+      notes.push(`Countertop: the two runs meet at a 45° miter seam at ${miterKeys.length === 1 ? "the inside corner" : `${miterKeys.length} inside corners`}, so the top covers the corner with no overlap and no gap.${hasPreference(input.intake, "budget-friendly") ? " Budget friendly: it runs over the open 24″ corner void and the 3″ mitered filler on both legs." : ""}`);
+    }
+    if (cornerFills.length > 0 && hasPreference(input.intake, "budget-friendly")) {
       notes.push(`Budget friendly: the countertop runs all the way back to the wall at ${cornerFills.length === 1 ? "the inside corner" : `${cornerFills.length} inside corners`} (${cornerFills.map((surface) => `${Math.round(surface.width * 100) / 100}″ × ${Math.round(surface.depth * 100) / 100}″`).join(", ")} corner top added).`);
     }
   }

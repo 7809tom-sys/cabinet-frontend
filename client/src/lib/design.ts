@@ -12470,6 +12470,12 @@ export interface CountertopSurface {
 	supportWallId?: WallSide;
 	/** Stable physical cabinet run represented by this single countertop piece. */
 	cabinetRunId?: string;
+  /**
+   * Set on the two slabs of an inside 90° corner that meet at a 45° miter seam (Tom, Nov 19 2026, 1:06 PM CT):
+   * the seam runs from the room corner to the inside corner point of the two front edges. Both slabs carry the
+   * same key; the fabrication sheet lists the pair as one "45° mitered joint".
+   */
+  insideCornerMiterKey?: string;
   /** Lower-only structural fill at a peninsula miter, never a raised-bar source. */
   peninsulaMiterInfill?: boolean;
   /** Along-wall start for a measured continuous-wall countertop piece. */
@@ -14984,6 +14990,8 @@ function closeInsideCornersAndClipInteriorWalls(
   const wallOf = (surface: CountertopSurface): string | null =>
     surface.peninsulaRunId || surface.raisedBar ? null : surface.customWallId ?? surface.supportWallId ?? null;
   const result = surfaces.slice();
+  type MiterJob = { role: "a" | "b"; V: Pt; uA: Pt; uB: Pt; runEnd: "start" | "end"; key: string };
+  const miterJobs = new Map<CountertopSurface, MiterJob[]>();
   const frames = roomWallRunFrames(room).filter((frame) => frame.kind !== "peninsula");
   const seen = new Set<string>();
   for (const frame of frames) {
@@ -15025,7 +15033,18 @@ function closeInsideCornersAndClipInteriorWalls(
       // corner square is enough; the other may stop short behind a range or a gap (the fill is then clipped
       // to the free part of the square below).
       const reachesA = reachA <= dB + 1, reachesB = reachB <= dA + 1;
-      if (dA < 1 || dB < 1 || (!reachesA && !reachesB)) continue;
+      // Budget economic corner (a 24″ void + the 3″ mitered filler on each leg): the countertop always covers the corner and
+      // bridges any open run between the filler and the first cabinet (Tom, Nov 19 2026, 1:06 PM CT; plumbing and windows never
+      // stop the top). A leg counts as economic when its base row carries the economic-corner filler near the corner.
+      const isEconLeg = (wallId: string, u: Pt) => placed.some((cabinet) => {
+        if (cabinet.placement === "wall" || typeof cabinet.fillerPieceGroupId !== "string" || !cabinet.fillerPieceGroupId.startsWith("economy-corner:") || cabinet.fillerPieceGroupId.endsWith(":wall")) return false;
+        if (cabinetWall(cabinet, room) !== wallId) return false;
+        const f = placedFootprint(cabinet);
+        const along = dot({ x: cabinet.x + f.w / 2 - V.x, y: cabinet.y + f.d / 2 - V.y }, u);
+        return along >= 0 && along <= 30;
+      });
+      const econA = isEconLeg(frame.id, uA), econB = isEconLeg(join.frame.id, uB);
+      if (dA < 1 || dB < 1 || (!reachesA && !reachesB && !(econA && econB))) continue;
       const sA = thickA.max >= -thickA.min ? 1 : -1, sB = thickB.max >= -thickB.min ? 1 : -1;
       // Local corner frame: a runs along wall A away from the corner, b along wall B. The fill is the
       // dB-by-dA square (a in [0, aMax], b in [0, bMax]); a base item that does not bear counter (a range)
@@ -15049,6 +15068,41 @@ function closeInsideCornersAndClipInteriorWalls(
           else if (b0 > 3) bMax = Math.min(bMax, b0);
         }
       }
+      // 45° MITER at the inside corner (Tom, Nov 19 2026, 1:06 PM CT: every inside corner). Two distinct rectangular runs of
+      // equal depth meet on the diagonal from the room corner to the inside corner point; each run is extended to the corner
+      // (bridging any open run beside it for an economic corner) and cut on the seam, so there is no overlap and no hole.
+      // Anything else (one run only, a different depth, an L-shaped corner top, a range or tall unit in the square) keeps the
+      // square corner top below.
+      const localExtent = (poly: Pt[]) => {
+        const as = poly.map((pt) => dot({ x: pt.x - V.x, y: pt.y - V.y }, uA));
+        const bs = poly.map((pt) => dot({ x: pt.x - V.x, y: pt.y - V.y }, uB));
+        return { aLo: Math.min(...as), aHi: Math.max(...as), bLo: Math.min(...bs), bHi: Math.max(...bs) };
+      };
+      const exA = localExtent(polyA), exB = localExtent(polyB);
+      const isRect = (poly: Pt[], ex: ReturnType<typeof localExtent>) => poly.length === 4
+        && Math.abs(countertopPolygonArea(poly) - (ex.aHi - ex.aLo) * (ex.bHi - ex.bLo)) <= Math.max(0.05, 0.002 * (ex.aHi - ex.aLo) * (ex.bHi - ex.bLo));
+      const squareHasObstacle = (aFrom: number, aTo: number, bFrom: number, bTo: number) => placed.some((cabinet) => {
+        if (cabinet.placement === "wall" || bearsCountertop(cabinet) || isFillerItem(cabinet) || isPanelItem(cabinet)) return false;
+        const f = placedFootprint(cabinet);
+        const pts: Pt[] = [{ x: cabinet.x, y: cabinet.y }, { x: cabinet.x + f.w, y: cabinet.y }, { x: cabinet.x + f.w, y: cabinet.y + f.d }, { x: cabinet.x, y: cabinet.y + f.d }];
+        const as = pts.map((pt) => dot({ x: pt.x - V.x, y: pt.y - V.y }, uA)), bs = pts.map((pt) => dot({ x: pt.x - V.x, y: pt.y - V.y }, uB));
+        return Math.min(...as) < aTo - 0.1 && Math.max(...as) > aFrom + 0.1 && Math.min(...bs) < bTo - 0.1 && Math.max(...bs) > bFrom + 0.1;
+      });
+      const miterable = slabA !== slabB && sA === 1 && sB === 1 && Math.abs(dA - dB) <= 0.1
+        && aMax >= dB - 0.01 && bMax >= dA - 0.01
+        && isRect(polyA, exA) && isRect(polyB, exB)
+        && Math.abs(exA.bLo) <= 0.1 && Math.abs(exB.aLo) <= 0.1
+        && exA.aHi > 0.5 && exB.bHi > 0.5
+        && (reachesA || econA) && (reachesB || econB)
+        && !squareHasObstacle(0, dB, 0, dA)
+        && !(exA.aLo > dB + 1 && squareHasObstacle(0, exA.aLo, 0, dA))
+        && !(exB.bLo > dA + 1 && squareHasObstacle(0, dB, 0, exB.bLo));
+      if (miterable) {
+        const jobsFor = (surface: CountertopSurface) => { let list = miterJobs.get(surface); if (!list) { list = []; miterJobs.set(surface, list); } return list; };
+        jobsFor(slabA).push({ role: "a", V, uA, uB, runEnd: at, key });
+        jobsFor(slabB).push({ role: "b", V, uA, uB, runEnd: bAt, key });
+        continue;
+      }
       const quad: Pt[] = [toWorld(0, 0), toWorld(aMax, 0), toWorld(aMax, bMax), toWorld(0, bMax)];
       // sB/sA are +1 here because uA/uB already point along the run; the band
       // sits on the room side, which is where the cabinets' own slabs are.
@@ -15071,6 +15125,53 @@ function closeInsideCornersAndClipInteriorWalls(
       const fill = countertopSurfaceFromWorldPolygon(quad);
       if (fill) result.push({ ...fill, linearInches: fill.width, areaInches: countertopPolygonArea(quad), cabinetRunId: `corner-fill:${key}` });
     }
+  }
+  // (a2) Apply the 45° miter cuts recorded above, one rebuilt slab per run (a run that turns two corners takes both cuts).
+  for (const [surface, jobs] of Array.from(miterJobs.entries())) {
+    const index = result.indexOf(surface);
+    if (index < 0) continue;
+    let poly = countertopSurfacePlanPolygon(surface).map((pt) => ({ ...pt }));
+    const axisOf = (job: MiterJob) => (job.role === "a" ? job.uA : job.uB);
+    const along = (pt: Pt, job: MiterJob) => (pt.x - job.V.x) * axisOf(job).x + (pt.y - job.V.y) * axisOf(job).y;
+    let startShift = 0;
+    for (const job of jobs) {
+      // Extend the end nearest the corner back to the corner line (bridges an open run beside an economic corner).
+      const low = Math.min(...poly.map((pt) => along(pt, job)));
+      if (low > 0.01) {
+        const axis = axisOf(job);
+        poly = poly.map((pt) => (Math.abs(along(pt, job) - low) <= 0.01 ? { x: pt.x - axis.x * low, y: pt.y - axis.y * low } : pt));
+        if (job.runEnd === "start") startShift += low;
+      }
+    }
+    for (const job of jobs) {
+      const side = (pt: Pt) => {
+        const a = (pt.x - job.V.x) * job.uA.x + (pt.y - job.V.y) * job.uA.y;
+        const b = (pt.x - job.V.x) * job.uB.x + (pt.y - job.V.y) * job.uB.y;
+        return job.role === "a" ? a - b : b - a;
+      };
+      const clipped: Pt[] = [];
+      for (let k = 0; k < poly.length; k += 1) {
+        const P = poly[k]!, Q = poly[(k + 1) % poly.length]!, sp = side(P), sq = side(Q);
+        if (sp >= -1e-9) clipped.push(P);
+        if ((sp >= -1e-9) !== (sq >= -1e-9)) {
+          const t = sp / (sp - sq);
+          clipped.push({ x: P.x + (Q.x - P.x) * t, y: P.y + (Q.y - P.y) * t });
+        }
+      }
+      poly = clipped;
+    }
+    const fresh = poly.length >= 3 ? countertopSurfaceFromWorldPolygon(poly) : null;
+    if (!fresh) continue;
+    const { x: _x, y: _y, width: _w, depth: _d, polygon: _pg, rotation: _r, ...meta } = surface as CountertopSurface & Record<string, unknown>;
+    const lengthAlong = Math.max(...poly.map((pt) => along(pt, jobs[0]!))) - Math.min(...poly.map((pt) => along(pt, jobs[0]!)));
+    const customStart = typeof surface.customWallRunStartIn === "number" ? { customWallRunStartIn: Math.max(0, surface.customWallRunStartIn - startShift) } : {};
+    result[index] = {
+      ...(meta as Partial<CountertopSurface>), ...fresh, ...customStart,
+      linearInches: lengthAlong, areaInches: countertopPolygonArea(poly),
+      miteredStart: surface.miteredStart || jobs.some((job) => job.runEnd === "start") || undefined,
+      miteredEnd: surface.miteredEnd || jobs.some((job) => job.runEnd === "end") || undefined,
+      insideCornerMiterKey: jobs.map((job) => job.key).join("+"),
+    } as CountertopSurface;
   }
   // (b) trim against interior (non-peninsula) pony walls.
   for (const wall of ponyWalls) {

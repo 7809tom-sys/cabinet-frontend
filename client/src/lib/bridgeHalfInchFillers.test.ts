@@ -138,10 +138,11 @@ describe("bridge 1/2 inch fillers: budget mode is exempt", () => {
     const uppers = topWall(placed, room).filter((item) => item.placement === "wall")
       .map((item) => `${item.masterCode} ${span(item, room).start}-${span(item, room).end}`)
       .sort((a, b) => parseFloat(a.split(" ")[1]!) - parseFloat(b.split(" ")[1]!));
-    // Snapshot taken on main (3486f67) for the same inputs.
-    expect(uppers).toEqual([
-      "W3630 0-36", "W1230 36-48", "W3612 48-84", "W1830 84-102", "W3012 102-132", "W1230 132-144",
-    ]);
+    // The bridge area (0-84) is exactly the snapshot taken on main (3486f67) for the same inputs.
+    expect(uppers.slice(0, 3)).toEqual(["W3630 0-36", "W1230 36-48", "W3612 48-84"]);
+    // Past the bridge the far upper row changed with the economic-corner keep-clear commit (4c35444): the budget build now builds
+    // the economic corner in this budget build, so the far end carries the 3 in corner filler (it was W1830/W3012/W1230 on main).
+    expect(uppers.slice(3)).toEqual(["W2730 84-111", "W3012 111-141", "F342 141-144"]);
     expect(String(result.notes?.join("\n"))).not.toMatch(/Bridge fillers/);
   });
 });

@@ -810,11 +810,17 @@ function buildCorners(
         : piece.measurement.world.some((own) =>
           candidate.measurement.world.some((corner) => Math.hypot(corner.x - own.x, corner.y - own.y) <= WALL_TOLERANCE_IN)));
     if (partners.length === 0) return;
+    const runs = [piece.label, ...partners.map(({ candidate }) => candidate.label)];
+    // One entry per joint: both pieces of a seam find each other, so the second pass would list it twice.
+    if (corners.some((corner) => corner.kind === "45° mitered joint" && corner.runs.length === runs.length && runs.every((run) => corner.runs.includes(run)))) return;
+    const insideCorner = Boolean(surface.insideCornerMiterKey);
     corners.push({
       kind: "45° mitered joint",
-      runs: [piece.label, ...partners.map(({ candidate }) => candidate.label)],
+      runs,
       legsIn: [round(piece.measurement.lengthIn), ...partners.map(({ candidate }) => round(candidate.measurement.lengthIn))],
-      notes: ["Two pieces meet at a mitered seam the design already draws."],
+      notes: [insideCorner
+        ? "Inside 90° corner: the two runs meet at a 45° miter seam from the room corner to the inside corner point (no overlap, no gap)."
+        : "Two pieces meet at a mitered seam the design already draws."],
     });
   });
 

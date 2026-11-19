@@ -809,6 +809,8 @@ export function repackFifteenRuleLayout(input: {
   openings: readonly WallOpening[];
   /** Inside-corner squares that a straight base or upper must not fill. */
   reservedSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
+  /** Spans blocked on the UPPER layer only (default: reservedSpans). The economic corner reserves 27 in below but only the 24 in void above. */
+  reservedUpperSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
   intake: AutoDesignIntake;
   baseCatalog: readonly DesignCabinet[];
   wallCatalog: readonly DesignCabinet[];
@@ -1226,7 +1228,7 @@ export function repackFifteenRuleLayout(input: {
 
       const upperBlocked = mergeIntervals([
         ...buildBlocked(allItems, side, input.room, frame, input.openings, "wall", D - 0.5),
-        ...((input.reservedSpans ?? []).filter((span) => span.wallId === side).map((span) => ({ start: span.start, end: span.end }))),
+        ...((input.reservedUpperSpans ?? input.reservedSpans ?? []).filter((span) => span.wallId === side).map((span) => ({ start: span.start, end: span.end }))),
       ]);
 
       // Uppers only hang over base cabinets: block intervals with no base support
