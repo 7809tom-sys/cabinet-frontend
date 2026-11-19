@@ -148,6 +148,8 @@ export type DoorAuditRenderInput = {
   profileSource?: DoorProfileSource;
   renderExposure?: number | null;
   colorDeltaEMax?: number | null;
+  /** Previews only: get as close to `renderHex` as possible and never throw a color gate block. */
+  bestEffortColor?: boolean;
   sourceFingerprint: string;
   doorProfile: DoorAuditDoorProfile;
 };

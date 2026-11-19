@@ -30,6 +30,7 @@ import {
   type AcceptedDoorAppearance,
   type DoorColorDecision,
 } from "@shared/doorColorResolve";
+import { styleWithChosenColorHex } from "@shared/doorColorSourceSelection";
 
 export type AcceptedDoorStyleInput = {
   id?: number | null;
@@ -89,7 +90,9 @@ export function doorColorInputFor(style: AcceptedDoorStyleInput | null | undefin
 
 /** The one color a kitchen renders for this style, and where it came from. */
 export function resolveKitchenDoorColor(style: AcceptedDoorStyleInput | null | undefined): DoorColorDecision {
-  return resolveDoorColor(doorColorInputFor(style));
+  // A confirmed Sherwin-Williams or hex choice is the render hex, so the finish
+  // follows the same pick the door face is painted with.
+  return resolveDoorColor(doorColorInputFor(style ? styleWithChosenColorHex(style) : style));
 }
 
 /**

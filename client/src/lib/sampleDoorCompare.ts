@@ -94,21 +94,26 @@ export function sampleDoorComparisonRenderInput(input: {
   // The identity carries the style's own `renderHex`. Drop it here: the colour
   // gate would compare against it and refuse to render on a mismatch.
   delete (identity as Record<string, unknown>).renderHex;
+  // The identity may carry its own copy of these keys. The caller's explicit photo, the
+  // door profile and the no-gate setting always win over it, so a style row never swaps
+  // the picture or turns the color gate back on.
+  const pinned = {
+    samplePhotoUrl: input.samplePhotoUrl,
+    doorProfile: profile,
+    colorDeltaEMax: null,
+    sourceFingerprint: "designer-sample-door-compare",
+  };
   return {
     styleId: Number.isFinite(styleId) && styleId > 0 ? styleId : 0,
     name: (style.name ?? "").trim() || "This door",
     code: style.code ?? null,
     distributorName: style.distributorName ?? null,
-    samplePhotoUrl: input.samplePhotoUrl,
     color: null,
     renderHex: null,
     renderExposure: input.renderExposure ?? null,
-    // No colour gate: a customer comparison must always produce a picture.
-    colorDeltaEMax: null,
-    sourceFingerprint: "designer-sample-door-compare",
-    doorProfile: profile,
     // The finish resolver reads these straight off the style.
     ...identity,
+    ...pinned,
   } as DoorAuditRenderInput;
 }
 

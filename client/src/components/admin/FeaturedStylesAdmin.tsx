@@ -43,9 +43,11 @@ import {
   awaitingConfirm,
   doorColorSourceReducer,
   doorColorSourceSaveMessage,
+  hasAcceptedAiRender,
   hasApprovedAiImage,
   initialDoorColorSourceDraft,
   normalizeHex,
+  parseDoorColorSourceSelection,
   selectionForStyle,
   styleForDoorColorSource,
   writeDoorColorSourceSelection,
@@ -521,7 +523,10 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     (s: AdminStyle) => initialDoorColorSourceDraft(selectionForStyle(s)),
   );
   const approvedVersionId = (style as AdminStyle & { approvedVersionId?: number | null }).approvedVersionId ?? null;
-  const aiAvailable = hasApprovedAiImage({ approvedVersionId, approvedReferenceImageUrl: style.approvedReferenceImageUrl });
+  // 3D can use an AI picture when a run was accepted OR a Gemini picture was saved (the official AI profile picture).
+  const aiPictureSource = { approvedVersionId, approvedReferenceImageUrl: style.approvedReferenceImageUrl, aiProfileImageUrl: style.aiProfileImageUrl };
+  const aiAvailable = hasApprovedAiImage(aiPictureSource);
+  const aiAccepted = hasAcceptedAiRender(aiPictureSource);
   /** A save that failed only because the 0280 migration is missing; shown inline, not just as a toast. */
   const [colorSourceSaveError, setColorSourceSaveError] = useState<string | null>(null);
   /** The wizard's Apply patch, held until Sherwin-Williams is confirmed. */
@@ -543,6 +548,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     renderHex,
     approvedVersionId,
     approvedReferenceImageUrl: style.approvedReferenceImageUrl ?? null,
+    aiProfileImageUrl: style.aiProfileImageUrl ?? null,
   }, colorSource.stored);
   // The resolver sees only the explicitly chosen source (supplier photo by default).
   const doorColor = resolveDoorColor({ ...colorSourceStyle });
@@ -643,12 +649,15 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     const hydrating = lastStoredColorSource.current === undefined;
     lastStoredColorSource.current = stored;
     writeDoorColorSourceSelection(style.id, stored);
-    if (stored?.source === "hex") setRenderHex(stored.hex);
+    // A confirmed hex or Sherwin-Williams chip is also the style's render hex, saved with the
+    // selection, so the cabinet finish and the door face stay on one color.
+    const chosenHex = stored?.source === "hex" ? stored.hex : stored?.source === "sherwin-williams" ? stored.color.hex : null;
+    if (chosenHex) setRenderHex(chosenHex);
     // Persist at once through the existing adminUpdateDoorStyle input (null clears). A tile
     // click that is still waiting for Confirm is never sent: it only turns the saved
     // choice off locally, and Confirm (or Save) is what writes.
     const persist = !hydrating && shouldPersistColorSource(colorSource);
-    const selectionField = { doorColorSourceSelection: stored };
+    const selectionField = { doorColorSourceSelection: stored, ...(chosenHex ? { renderHex: chosenHex } : {}) };
     if (stored?.source === "sherwin-williams") {
       writeWizardDoorFinish(style.id, stored.color as WizardDoorFinish);
       if (pendingSherwinPatch.current) applyWizardPatch(pendingSherwinPatch.current, persist ? selectionField : {});
@@ -1187,6 +1196,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   draft={colorSource}
                   dispatch={dispatchColorSource}
                   aiAvailable={aiAvailable}
+                  aiAccepted={aiAccepted}
                   supplierPhotoUrl={doorSampleImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl || null}
                   // An accepted render wins. Failing that, the AI profile image the editor already
           // saved (0281) belongs on this tile - otherwise the generated image is
@@ -1210,6 +1220,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     supplierPhotoUrl: supplierPhoto,
                     aiImageUrl: aiPicture,
                     aiAvailable,
+                    aiAccepted,
                     stored: colorSource.stored,
                     listing: sourcesListing.listing,
                     now: new Date().toISOString(),
@@ -1246,6 +1257,23 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                         if (!slot.selection) return;
                         dispatchColorSource({ type: "reset", stored: slot.selection });
                       }}
+                      // An empty Hex tile confirms its own hex: it fills, checks and saves through the same effect.
+                      onPickHex={(hex) => {
+                        const picked = parseDoorColorSourceSelection({ source: "hex", confirmed: true, chosenAt: new Date().toISOString(), hex });
+                        if (picked) dispatchColorSource({ type: "reset", stored: picked });
+                      }}
+                      // An empty Sherwin-Williams tile opens the wizard's wheels (the one picker) and waits for Confirm.
+                      onRequestSherwin={() => {
+                        if (colorSource.active !== "sherwin-williams") {
+                          dispatchColorSource({ type: "choose", option: "sherwin-williams", aiAvailable, now: new Date().toISOString() });
+                        }
+                        const wizard = document.querySelector('[data-testid="door-color-source-wizard-tools"]');
+                        (wizard as { scrollIntoView?: (options?: unknown) => void } | null)?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+                      }}
+                      pendingSherwin={colorSource.active === "sherwin-williams" && colorSource.pendingSherwin
+                        ? { label: colorSource.pendingSherwin.label || colorSource.pendingSherwin.code, hex: colorSource.pendingSherwin.hex }
+                        : null}
+                      onConfirmSherwin={() => dispatchColorSource({ type: "confirm", now: new Date().toISOString() })}
                     />
                   );
                 })()}

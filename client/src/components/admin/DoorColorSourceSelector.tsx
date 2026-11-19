@@ -26,8 +26,10 @@ type TileVisual =
 export type DoorColorSourceSelectorProps = {
   draft: DoorColorSourceDraft;
   dispatch: Dispatch<DoorColorSourceAction>;
-  /** True when this style has an accepted AI render. */
+  /** True when 3D can use an AI picture: an accepted render or a saved Gemini picture. */
   aiAvailable: boolean;
+  /** True when that picture is an accepted render (default). False: a saved Gemini picture. */
+  aiAccepted?: boolean;
   /** Supplier photo shown for the Original image tile. */
   supplierPhotoUrl?: string | null;
   /** Saved approved AI picture shown for the Approved image tile (accepted render or official AI profile image). */
@@ -63,6 +65,7 @@ export function DoorColorSourceSelector({
   draft,
   dispatch,
   aiAvailable,
+  aiAccepted = true,
   supplierPhotoUrl,
   aiImageUrl,
   sherwinHex,
@@ -210,7 +213,9 @@ export function DoorColorSourceSelector({
 
       {draft.active === "approved-ai-image" && (
         <div data-testid="door-color-source-ai" className="space-y-1 text-xs">
-          {aiAvailable && aiImageUrl ? (
+          {aiAvailable && aiImageUrl && !aiAccepted ? (
+            <p data-testid="door-color-source-ai-saved-used">The saved Gemini picture above is used for this door.</p>
+          ) : aiAvailable && aiImageUrl ? (
             <p data-testid="door-color-source-ai-present">The approved AI render above is used for this door.</p>
           ) : aiImageUrl ? (
             <p data-testid="door-color-source-ai-saved">The saved AI picture above is not an accepted render yet, so the door keeps its supplier photo until one is accepted.</p>
