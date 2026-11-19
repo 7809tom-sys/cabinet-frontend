@@ -166,6 +166,42 @@ describe("DoorColorSourceFourPreview", () => {
     expect(onPickHex).toHaveBeenCalledWith("#3a6ea5");
   });
 
+  it("prefills the hex box from hexSeed while untouched, follows a new seed, and never saves it", async () => {
+    const onPickHex = vi.fn();
+    const props = { slots: slotsFor(null), onChoose: () => {}, onPickHex, style: STYLE, doorProfile: PROFILE, allSlotsSaved: false };
+    const { rerender } = render(<DoorColorSourceFourPreview {...props} hexSeed="#B9B2A9" />);
+    await settle();
+    const input = () => screen.getByTestId("four-source-hex-input") as HTMLInputElement;
+    expect(input().value).toBe("#b9b2a9");
+    // Only a draft: it previews as not confirmed and nothing was picked.
+    expect(screen.getByTestId("four-source-caption-hex").textContent).toMatch(/#b9b2a9.*not confirmed yet/);
+    expect(onPickHex).not.toHaveBeenCalled();
+    rerender(<DoorColorSourceFourPreview {...props} hexSeed="#d1c7b7" />);
+    expect(input().value).toBe("#d1c7b7");
+    fireEvent.click(screen.getByTestId("four-source-hex-use"));
+    expect(onPickHex).toHaveBeenCalledWith("#d1c7b7");
+  });
+
+  it("does not overwrite what the admin typed when the seed changes", async () => {
+    const props = { slots: slotsFor(null), onChoose: () => {}, onPickHex: () => {}, style: STYLE, doorProfile: PROFILE, allSlotsSaved: false };
+    const { rerender } = render(<DoorColorSourceFourPreview {...props} hexSeed="#b9b2a9" />);
+    const input = () => screen.getByTestId("four-source-hex-input") as HTMLInputElement;
+    fireEvent.change(input(), { target: { value: "#3A6EA5" } });
+    rerender(<DoorColorSourceFourPreview {...props} hexSeed="#d1c7b7" />);
+    expect(input().value).toBe("#3A6EA5");
+    fireEvent.change(input(), { target: { value: "" } });
+    rerender(<DoorColorSourceFourPreview {...props} hexSeed="#aaaaaa" />);
+    expect(input().value).toBe("");
+  });
+
+  it("leaves the hex box empty with no seed or an invalid seed", () => {
+    const props = { slots: slotsFor(null), onChoose: () => {}, onPickHex: () => {}, style: STYLE, doorProfile: PROFILE, allSlotsSaved: false };
+    const { rerender } = render(<DoorColorSourceFourPreview {...props} />);
+    expect((screen.getByTestId("four-source-hex-input") as HTMLInputElement).value).toBe("");
+    rerender(<DoorColorSourceFourPreview {...props} hexSeed="BSB2A9" />);
+    expect((screen.getByTestId("four-source-hex-input") as HTMLInputElement).value).toBe("");
+  });
+
   it("an empty Sherwin-Williams tile opens the picker, previews the chip, and confirms it", async () => {
     const onRequestSherwin = vi.fn();
     const onConfirmSherwin = vi.fn();

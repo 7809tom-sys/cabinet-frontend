@@ -81,6 +81,7 @@ export function DoorEditorWalzAudit({
   onProfileImage,
   onSaveFinish,
   uploadImage,
+  awaitingConfirm = false,
 }: {
   style: WizardStyle;
   sampleUrl?: string | null;
@@ -99,6 +100,11 @@ export function DoorEditorWalzAudit({
    * Without it the wizard falls back to a local object URL, which lasts for this page only.
    */
   uploadImage?: (file: File) => Promise<string | null>;
+  /**
+   * True while the editor holds the applied chip and waits for Confirm. Apply only picks the
+   * chip then, so the line under Apply must not say Saved until Confirm has happened.
+   */
+  awaitingConfirm?: boolean;
 }) {
   const suggestion = suggestWizardMatch(style);
   // Always four suggested profiles: the sheet's ranked matches first, then real
@@ -546,7 +552,7 @@ export function DoorEditorWalzAudit({
       <button type="button" data-testid="wizard-apply" className="rounded bg-[#244338] px-2 py-1 text-xs font-semibold text-[#fffdf9]" onClick={apply}>Apply</button>
       {saved && (
         <p data-testid="wizard-applied" className="text-xs">
-          Saved {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}
+          {awaitingConfirm ? "Picked, press Confirm to save:" : "Saved"} {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}
           {savedColor ? ` · ${savedColor.label}` : ""}
           {selectedProfile ? ` · ${selectedProfile.name}${selectedProfile.kind === "match" ? ` (${selectedProfile.pct}% profile match)` : " (library default)"}` : ""}
         </p>
