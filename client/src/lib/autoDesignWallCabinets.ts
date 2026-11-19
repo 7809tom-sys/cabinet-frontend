@@ -152,6 +152,20 @@ export function autoDesignStandardUpperRows(catalog: readonly DesignCabinet[], h
     && isStraightStandardUpper(source) && !rejectsSingleDoorTwentyFour(source));
 }
 
+/** No 39 wide (or 39 tall) glass stacker exists in any line, so a 39 upper can never carry glass. */
+export const NO_GLASS_STACKER_UPPER_IN = 39;
+
+/**
+ * Tom, Nov 18 2026, 5:22 PM CT: no 39 wall cabinet where glass is offered, because
+ * no 39 in glass exists. Drops the ordinary 39 wide / 39 tall uppers from the pool the
+ * uppers are tiled from, so every width the tiler and the base matcher can choose has
+ * a glass stacker to match (bridges, corners and appliance caps are left alone).
+ */
+export function withoutNoGlassUppers(catalog: readonly DesignCabinet[]): DesignCabinet[] {
+  return catalog.filter((row) => !(row.placement === "wall" && isStraightStandardUpper(row)
+    && (Math.abs(dim(row.width, 0) - NO_GLASS_STACKER_UPPER_IN) <= 0.05 || Math.abs(dim(row.height, 0) - NO_GLASS_STACKER_UPPER_IN) <= 0.05)));
+}
+
 /**
  * When the design is 42" uppers, an ordinary wall cabinet that is not that
  * tall is replaced by the same-width 42" SKU. If that width is not sold at

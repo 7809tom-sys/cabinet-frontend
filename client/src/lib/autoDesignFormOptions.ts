@@ -9,8 +9,9 @@
  */
 import { hasPreference, type AutoDesignIntake } from "./autoDesignFifteenRules";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
-import { cabinetWall, glassStackerFamily, glassStackerParentPlacement, isFillerItem, isPanelItem, isStacker, resolvedDesignCabinetDimensions, wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
+import { cabinetWall, glassStackerFamily, glassStackerParentPlacement, isFillerItem, isPanelItem, isStacker, ordinaryWallMountBottom, resolvedDesignCabinetDimensions, roomCeiling, wallRunOffset, wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData } from "./design";
 import { stackerDraft } from "./glassStackerBulkPlacement";
+import { resolveWallHeightClass } from "./autoDesignWallCabinets";
 
 const HEIGHT_MATCH_IN = 0.5;
 const WIDTH_MATCH_IN = 0.05;
@@ -50,6 +51,32 @@ export function autoDesignGlassStackerCatalog(wallCatalog: readonly DesignCabine
     if (!AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN.some((wanted) => Math.abs(height - wanted) <= HEIGHT_MATCH_IN)) return false;
     return isStacker({ ...row, height });
   });
+}
+
+/**
+ * Glass is offered when "Glass cabinets above" is on, the line sells glass stackers,
+ * and the shortest one (12 in) still fits between the upper run's top and the
+ * ceiling. Where it is not offered the plain uppers (39s included) are unchanged.
+ */
+export function autoDesignGlassOffered(input: {
+  intake: AutoDesignIntake | null | undefined;
+  wallCatalog: readonly DesignCabinet[];
+  room: RoomData;
+  wallCabinetHeightIn: number;
+}): boolean {
+  return hasPreference(input.intake, "glass-uppers") && autoDesignLineTakesGlass(input);
+}
+
+/** The line-and-ceiling half of `autoDesignGlassOffered`, for callers that already know the preference is on. */
+export function autoDesignLineTakesGlass(input: {
+  wallCatalog: readonly DesignCabinet[];
+  room: RoomData;
+  wallCabinetHeightIn: number;
+}): boolean {
+  if (autoDesignGlassStackerCatalog(input.wallCatalog).length === 0) return false;
+  const height = resolveWallHeightClass(input.wallCatalog, input.wallCabinetHeightIn) ?? input.wallCabinetHeightIn;
+  const top = ordinaryWallMountBottom({ placement: "wall", height }) + height;
+  return roomCeiling(input.room) - top >= Math.min(...AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN) - HEIGHT_MATCH_IN;
 }
 
 /**
