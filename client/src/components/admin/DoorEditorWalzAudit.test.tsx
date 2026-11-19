@@ -132,6 +132,24 @@ describe("door editor wizard: Sherwin-Williams stain and paint", () => {
     expect(screen.getByTestId("wizard-applied").textContent).toMatch(/MW230 Early American/);
   });
 
+  it("says Picked, press Confirm to save after Apply until Confirm happens, then Saved", () => {
+    const props = { style, sampleUrl: "/uploads/stone-gray.jpg", onApply: vi.fn(), onSaveFinish: vi.fn() };
+    const { rerender } = render(<DoorEditorWalzAudit {...props} awaitingConfirm={false} />);
+    fireEvent.change(screen.getByTestId("wizard-paint-code"), { target: { value: "SW 7005" } });
+    fireEvent.click(screen.getByTestId("wizard-paint-code-apply"));
+    fireEvent.click(screen.getByTestId("wizard-apply"));
+    // The editor now holds the chip and waits for Confirm.
+    rerender(<DoorEditorWalzAudit {...props} awaitingConfirm />);
+    const line = screen.getByTestId("wizard-applied").textContent ?? "";
+    expect(line).toMatch(/^Picked, press Confirm to save/);
+    expect(line).not.toMatch(/Saved/);
+    expect(line).toContain("#edece6");
+    expect(line).toContain("SW 7005 Pure White");
+    // Confirm happened: the editor no longer waits.
+    rerender(<DoorEditorWalzAudit {...props} awaitingConfirm={false} />);
+    expect(screen.getByTestId("wizard-applied").textContent).toMatch(/^Saved #edece6/);
+  });
+
   it("refuses to apply a stain with no grain instead of guessing one", () => {
     const onApply = vi.fn();
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);

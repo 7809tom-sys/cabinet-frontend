@@ -1144,6 +1144,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               }}
               sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || ""}
               others={catalogStyles.map((item) => ({ id: item.id, distributorId: item.distributorId, ourName: item.ourName, styleCode: item.styleCode }))}
+              awaitingConfirm={Boolean(colorSource.pendingSherwin)}
               onApply={(patch: MatchSavePatch) => {
                 // Held until Confirm in the door color source selector.
                 pendingSherwinPatch.current = patch;
@@ -1278,6 +1279,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                         const wizard = document.querySelector('[data-testid="door-color-source-wizard-tools"]');
                         (wizard as { scrollIntoView?: (options?: unknown) => void } | null)?.scrollIntoView?.({ behavior: "smooth", block: "center" });
                       }}
+                      hexSeed={sherwinHex ?? normalizeHex(renderHex) ?? null}
                       pendingSherwin={colorSource.active === "sherwin-williams" && colorSource.pendingSherwin
                         ? { label: colorSource.pendingSherwin.label || colorSource.pendingSherwin.code, hex: colorSource.pendingSherwin.hex }
                         : null}

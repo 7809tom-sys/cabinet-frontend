@@ -55,6 +55,12 @@ export type DoorColorSourceFourPreviewProps = {
   pendingSherwin?: { label: string; hex: string } | null;
   /** Confirm the pending Sherwin-Williams chip. The caller fills, checks and saves it. */
   onConfirmSherwin?: () => void;
+  /**
+   * Starting text for the Hex tile's draft: the picked or stored Sherwin-Williams chip's hex,
+   * else the render hex. Only a draft: it fills the box until the admin types, and nothing is
+   * confirmed or saved until "Use this hex" is pressed.
+   */
+  hexSeed?: string | null;
 };
 
 /** How many cabinet pictures stay in memory while colors are being tried. */
@@ -83,9 +89,12 @@ export function DoorColorSourceFourPreview({
   onRequestSherwin,
   pendingSherwin = null,
   onConfirmSherwin,
+  hexSeed = null,
 }: DoorColorSourceFourPreviewProps) {
   const [kind, setKind] = useState<SnapshotCabinetKind>("base");
-  const [hexDraft, setHexDraft] = useState("");
+  // null = untouched: the box follows the seed. Once the admin types it is theirs and never overwritten.
+  const [typedHex, setHexDraft] = useState<string | null>(null);
+  const hexDraft = typedHex ?? normalizeHex(hexSeed) ?? "";
   const draftHex = normalizeHex(hexDraft);
   const pendingSherwinHex = normalizeHex(pendingSherwin?.hex);
 
@@ -317,7 +326,7 @@ export function DoorColorSourceFourPreview({
                     onClick={() => {
                       if (!draftHex) return;
                       onPickHex(draftHex);
-                      setHexDraft("");
+                      setHexDraft(null);
                     }}
                     className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground"
                   >
