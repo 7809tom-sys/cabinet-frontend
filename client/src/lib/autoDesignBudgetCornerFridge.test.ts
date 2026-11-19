@@ -198,7 +198,9 @@ describe("Countertop runs all the way back to the wall at an inside corner", () 
 
   it("a Budget friendly build reports the corner top it added", () => {
     const budget = build({ budget: true });
-    expect(budget.notes.some((note) => note.includes("the countertop runs all the way back to the wall"))).toBe(true);
+    // Tom, Nov 19 2026, 1:06 PM CT: where two runs reach the corner they now meet on a 45° miter seam (no square corner top is
+    // added); the note names the miter. The square-corner wording is still used when only one run reaches the corner.
+    expect(budget.notes.some((note) => note.includes("the countertop runs all the way back to the wall") || /45° miter seam at the inside corner/.test(note))).toBe(true);
   });
 });
 

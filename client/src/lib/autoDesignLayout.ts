@@ -1020,6 +1020,7 @@ export function runAutoDesignLayout(rawArgs: {
     return economyKeepClearShifts({
       anchors: rows,
       movableKinds: ["sink", "dishwasher", "stove"],
+      lockedKinds: lockedAnchorKinds(input.intake),
       room,
       openings,
       frameOf: (wallId) => wallRunFrame(wallId, room),
@@ -2617,15 +2618,17 @@ export function runAutoDesignLayout(rawArgs: {
     }
   }
   // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): claim the 3" filler first, then size the base.
+  const economyWarnings: string[] = [];
   if (economyCorners.length > 0) {
     const economyFinal = enforceEconomyCornerFillers({
       corners: economyCorners, placed: working, room,
       baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog] as never,
       wallCatalog: args.wallCatalog as never,
-      catalogFillers, makeUid, styleId: args.styleId,
+      catalogFillers, makeUid, styleId: args.styleId, openings: stageOpenings,
     });
     working = economyFinal.placed;
     notes.push(...economyFinal.notes);
+    economyWarnings.push(...economyFinal.warnings);
   }
   // Tom, voice, Nov 19 2026, 8:42 / 8:44 AM CT: a dishwasher at a run end keeps a base filler only
   // where a wall follows; an opening or an unknown end takes the line's dishwasher panel instead.
@@ -2653,15 +2656,21 @@ export function runAutoDesignLayout(rawArgs: {
   reviewFindings.push(...glassUppers.findings);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
-  const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
+  const warnings = [...economyWarnings, ...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
   // The 15-rule findings (spacing, suggested downsizes, oven pairing, intake picks) are
   // suggestions only and run when the build was given the upfront intake.
-  // Budget friendly report line: name each inside corner where the countertop now runs back to the walls.
-  if (hasPreference(input.intake, "budget-friendly")) {
-    const cornerFills = countertopSurfaces(working, room, null).filter((surface) => surface.cabinetRunId?.startsWith("corner-fill"));
-    if (cornerFills.length > 0) {
+  // Countertop corner report (Tom, Nov 19 2026, 1:06 PM CT): the top covers every inside corner; where two runs meet they
+  // are cut on a 45° miter seam. Any square corner top still added (one run only) is named as before in budget mode.
+  {
+    const tops = countertopSurfaces(working, room, null);
+    const cornerFills = tops.filter((surface) => surface.cabinetRunId?.startsWith("corner-fill"));
+    const miterKeys = Array.from(new Set(tops.flatMap((surface) => (surface.insideCornerMiterKey ?? "").split("+").filter(Boolean))));
+    if (miterKeys.length > 0) {
+      notes.push(`Countertop: the two runs meet at a 45° miter seam at ${miterKeys.length === 1 ? "the inside corner" : `${miterKeys.length} inside corners`}, so the top covers the corner with no overlap and no gap.${hasPreference(input.intake, "budget-friendly") ? " Budget friendly: it runs over the open 24″ corner void and the 3″ mitered filler on both legs." : ""}`);
+    }
+    if (cornerFills.length > 0 && hasPreference(input.intake, "budget-friendly")) {
       notes.push(`Budget friendly: the countertop runs all the way back to the wall at ${cornerFills.length === 1 ? "the inside corner" : `${cornerFills.length} inside corners`} (${cornerFills.map((surface) => `${Math.round(surface.width * 100) / 100}″ × ${Math.round(surface.depth * 100) / 100}″`).join(", ")} corner top added).`);
     }
   }

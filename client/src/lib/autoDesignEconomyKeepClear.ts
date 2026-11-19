@@ -10,9 +10,15 @@
  * sliver. A slide that would run into another anchor, an opening or the far wall end is not taken:
  * the group stays where it was measured and the engine's existing "economy corner skipped" note
  * says why.
+ *
+ * Countertop-first rules (Tom, voice, Nov 19 2026, 12:59 + 1:06 PM CT): the countertop is decorative and
+ * never yields to plumbing or windows. (1) Only an opening whose sill is BELOW the finished countertop
+ * (a door, or a window under 36″) blocks a slide; a window higher than the counter is no obstacle, so
+ * the sink and dishwasher may slide 3″ under it. (2) Anchors the customer said cannot move
+ * (`lockedKinds`) stay put; the countertop then bridges whatever gap that leaves.
  */
 import { autoBuildSelectedWallCornerReservations } from "./autoDesignAutoBuild";
-import { wallPlacementAt, type RoomData, type WallOpening, type WallSide } from "./design";
+import { STD, wallPlacementAt, type RoomData, type WallOpening, type WallSide } from "./design";
 import { ECONOMY_CORNER_FOOTPRINT_IN } from "./autoDesignEconomyCorner";
 
 /** Smallest stock base AND upper that fills a gap with no sliver (B12 / W12); a gap under this beside the footprint is closed (a 9–11″ gap can only be a BT9 plus a sliver filler, and no upper fits it). */
@@ -42,6 +48,8 @@ export function economyKeepClearShifts(input: {
   room: RoomData;
   openings: readonly WallOpening[];
   frameOf: (wallId: WallSide) => { runStart: number; runEnd: number } | null;
+  /** Kinds the customer said cannot move (sink/dishwasher via plumbing or sink base, range via hookup). They never slide. */
+  lockedKinds?: readonly string[];
   label?: (kind: string) => string;
 }): KeepClearResult {
   const shifts = new Map<string, number>();
@@ -72,6 +80,7 @@ export function economyKeepClearShifts(input: {
       if (Math.abs(shift) < 0.01) continue;
       const names = group.map((anchor) => label(anchor.kind)).join(" + ");
       const skip = (why: string) => notes.push(`Economic corner keep-clear: the ${names} on ${wallId} stays where it was measured — ${why}.`);
+      if (group.some((anchor) => (input.lockedKinds ?? []).includes(anchor.kind))) { skip("the customer said it cannot move, so it stays and the countertop bridges the gap beside the corner"); continue; }
       const movedStart = start + shift;
       const movedEnd = end + shift;
       if (movedStart < frame.runStart - 0.01 || movedEnd > frame.runEnd + 0.01) { skip("sliding it clear of the 27″ corner footprint would run past the wall end"); continue; }
@@ -80,6 +89,8 @@ export function economyKeepClearShifts(input: {
       if (blocker) { skip(`sliding it would run into the ${label(blocker.kind)}`); continue; }
       const opening = input.openings.find((item) => {
         if (item.side !== wallId) return false;
+        // A window above the finished countertop (sill at or over 36″) does not stop a base from sliding under it.
+        if (item.sill >= STD.COUNTERTOP_HEIGHT - 0.01) return false;
         const spot = wallPlacementAt(movedStart, movedEnd - movedStart, group[0].depth, wallId, input.room);
         const from = spot?.wallOffset ?? movedStart;
         return item.offset < from + (movedEnd - movedStart) - 0.01 && item.offset + item.width > from + 0.01;
