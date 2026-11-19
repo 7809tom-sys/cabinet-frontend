@@ -88,14 +88,31 @@ export function isCatalogDecorativeLeg(candidate: Pick<CatalogFillerCandidate, "
 export function isFlutedFiller(candidate: { masterCode?: string | null; description?: string | null }): boolean {
   const code = String(candidate.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (/^WFF/.test(code)) return true;
+  // A decorative filler overlay rides on a 6 in filler; it is never a standalone filler.
+  if (isFillerOverlay(candidate)) return true;
   // BFF base fillers keep their job: on line 330011 BFF3 is described as "Fluted Base Filler" but it
   // is the line's only 3 in base filler (corner clearance pairs), so only the code decides there.
   if (/^BFF/.test(code)) return false;
   return /\bfluted\b/i.test(String(candidate.description ?? ""));
 }
 
+/**
+ * Decorative filler overlays (USCD Capital FOL630 / FOL636 / FOL642: 5-1/2" W x 29 / 35 / 41" H x 3/4",
+ * "6" filler required for application (purchased separately)" — Capital spec book V8 p55,
+ * https://www.uscabinetdepot.com/media/wysiwyg/PDF/sales_materials/Capital_Single_Pages_V8_DIGITAL_ONLY_1.pdf).
+ * They are applied over a real filler, so the engine never uses one as a standalone filler
+ * (Tom, voice, Nov 19 2026, 8:42 AM CT). AltaEuro's OF "3-inch filler overlay" is different: the
+ * spec book prints it as nominal 3 in filler stock, so OF codes keep their filler job.
+ */
+export function isFillerOverlay(candidate: { masterCode?: string | null; description?: string | null }): boolean {
+  const code = String(candidate.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (/^OF\d/.test(code)) return false;
+  if (/^FOL\d/.test(code)) return true;
+  return /\bfiller\s+overlay\b/i.test(String(candidate.description ?? ""));
+}
+
 export function isCatalogFiller(candidate: Pick<CatalogFillerCandidate, "masterCode" | "description" | "category" | "subCategory">): boolean {
-  if (isCatalogPanel(candidate) || isCatalogDecorativeLeg(candidate)) return false;
+  if (isCatalogPanel(candidate) || isCatalogDecorativeLeg(candidate) || isFillerOverlay(candidate)) return false;
   const text = `${candidate.masterCode} ${candidate.description ?? ""} ${candidate.category ?? ""} ${candidate.subCategory ?? ""}`.toLowerCase();
   // Only CabinetDealz filler stock may be field-cut. Dishwasher panels and
   // toe-kick/utility trim are not filler boards and must never be substituted
