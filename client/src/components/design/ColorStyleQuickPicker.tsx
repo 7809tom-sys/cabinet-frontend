@@ -1,3 +1,5 @@
+import { Pencil } from "lucide-react";
+
 export type ColorStyleChoice = {
   id: number;
   name: string;
@@ -14,12 +16,15 @@ export function ColorStyleQuickPicker({
   onChange,
   disabled = false,
   testId = "color-style-quick-picker",
+  editHref = null,
 }: {
   styles: readonly ColorStyleChoice[];
   value: number | null;
   onChange: (styleId: number) => void;
   disabled?: boolean;
   testId?: string;
+  /** Admin only: the door editor link for the chosen style. A pencil shows beside the control when set. */
+  editHref?: string | null;
 }) {
   return (
     <label
@@ -44,6 +49,17 @@ export function ColorStyleQuickPicker({
           <option key={style.id} value={style.id}>{style.name}</option>
         ))}
       </select>
+      {editHref && value != null && (
+        <a
+          href={editHref}
+          data-testid={`${testId}-edit`}
+          title="Edit this door style in the door editor"
+          aria-label="Edit this door style in the door editor"
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-[#1a2744] hover:bg-[#1a2744] hover:text-white"
+        >
+          <Pencil className="h-3 w-3" />
+        </a>
+      )}
     </label>
   );
 }
