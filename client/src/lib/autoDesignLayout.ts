@@ -56,7 +56,7 @@ import {
 } from "./autoDesignFillerConsolidation";
 import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
-import { buildMandatoryAutoDesignRefrigeratorBay, holdRefrigeratorPanelsOnWall } from "./autoDesignRefrigeratorBay";
+import { budgetSlideRefrigeratorToWallEnd, buildMandatoryAutoDesignRefrigeratorBay, holdRefrigeratorPanelsOnWall } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase } from "./autoDesignSink";
@@ -135,6 +135,7 @@ import {
   NON_APRON_SINK_FRONT_SETBACK,
   standardHeight,
   cabinetWall,
+  countertopSurfaces,
   wallPlacementAt,
   wallRunOffset,
   wallRunSpan,
@@ -934,6 +935,10 @@ export function runAutoDesignLayout(rawArgs: {
   // else that is pre-existing stays a real obstacle, and a refrigerator on the
   // plan stays exactly where it is as this build's fixed anchor.
   const preExisting = [...(args.preExistingPlacements ?? [])].filter((item) => !isSinkBaseCabinet(item));
+  // Budget friendly pick (Tom, Nov 19 2026): a standing rule set applied to every budget layout.
+  // Refrigerator: no end panels and a 12-inch-deep cabinet above. Corners: the countertop runs back
+  // to the wall and an empty upper corner gets a diagonal corner wall cabinet.
+  const budgetFriendly = hasPreference(input.intake, "budget-friendly");
 
   const notes: string[] = [];
   let working: PlacedCabinet[] = [...preExisting];
@@ -990,7 +995,7 @@ export function runAutoDesignLayout(rawArgs: {
       category: source.category, subCategory: source.subCategory,
       placement: anchor.kind === "sink" ? "base" : "appliance",
       ...(anchor.kind === "sink" ? {} : { applianceRole: "base-height" as const }),
-      ...(anchor.kind === "refrigerator" ? { refrigeratorPanelMode: "both" as const, refrigeratorOptionsChosen: true } : {}),
+      ...(anchor.kind === "refrigerator" ? { refrigeratorPanelMode: (budgetFriendly ? "none" : "both") as "none" | "both", refrigeratorOptionsChosen: true } : {}),
       ...spot, width, depth, height, mountBottom: source.mountBottom ?? 0, catalogImageUrl: source.catalogImageUrl ?? null,
       numberOfDoors: source.numberOfDoors, numberOfDrawers: source.numberOfDrawers, styleId: args.styleId,
     };
@@ -1027,14 +1032,28 @@ export function runAutoDesignLayout(rawArgs: {
       // Same frameless answer as a generated bay: the geometry marker, or a
       // 40-1/4" wall box when the palette does not ship the marker.
       framelessLine: isFramelessWallCatalog(args.wallCatalog),
+      budget: budgetFriendly,
     });
     working = anchoredBay.placed;
     refrigeratorReservation = anchoredBay.reservation;
     notes.push(...anchoredBay.notes);
   } else if (refrigerator) {
     const nominal = input.wallCabinetHeightIn ?? 30;
+    // Budget friendly re-flow: with no end panels, a refrigerator a few inches off a free wall end slides
+    // flush to it so the other side closes with stock cabinets instead of a sliver filler.
+    let bayRefrigerator = refrigerator;
+    if (budgetFriendly) {
+      // A wall end is "free" when the wall joined there carries no anchor (so no run continues past it).
+      const slid = budgetSlideRefrigeratorToWallEnd(refrigerator, room, (joinedWallId) => joinedWallId == null || !selectedWalls.includes(joinedWallId as WallSide));
+      if (slid) {
+        bayRefrigerator = slid.refrigerator;
+        working = working.map((item) => (item.uid === refrigerator.uid ? bayRefrigerator : item));
+        anchorsByKind.set("refrigerator", bayRefrigerator);
+        notes.push(slid.note);
+      }
+    }
     const refrigeratorBay = buildMandatoryAutoDesignRefrigeratorBay({
-      refrigerator,
+      refrigerator: bayRefrigerator,
       room,
       caps: args.refrigeratorCaps,
       endPanels: args.refrigeratorEndPanels,
@@ -1045,6 +1064,7 @@ export function runAutoDesignLayout(rawArgs: {
       // marker. `wallCatalog` is the authoritative line list, so this is where
       // the answer is decided (issue #354 item 5 needs it for the cap's line).
       framelessLine: isFramelessWallCatalog(args.wallCatalog),
+      budget: budgetFriendly,
     });
     if (!refrigeratorBay.ok) return fail(refrigeratorBay.message);
     // The refrigerator must stay inside its end panels: take the clamped copy (depth/height) before fitting.
@@ -1073,21 +1093,33 @@ export function runAutoDesignLayout(rawArgs: {
     }
     working = committedBay.placed;
     // Final containment pass after all fitting: the refrigerator and its cabinet above stay inside the end panels.
-    const contained = clampRefrigeratorAssemblyToPanels({
-      placed: working,
-      refrigeratorUid: refrigerator.uid,
-      room,
-      addPanel: (panelSide, opening) => refrigeratorBay.panelFor(panelSide, opening),
-    });
-    working = contained.placed;
-    for (const warning of contained.warnings) if (!refrigeratorBayWarnings.includes(warning)) refrigeratorBayWarnings.push(warning);
-    notes.push(...contained.notes);
+    // Budget friendly has no end panels, so there is nothing to clamp to or to add back.
+    if (!budgetFriendly) {
+      const contained = clampRefrigeratorAssemblyToPanels({
+        placed: working,
+        refrigeratorUid: refrigerator.uid,
+        room,
+        addPanel: (panelSide, opening) => refrigeratorBay.panelFor(panelSide, opening),
+      });
+      working = contained.placed;
+      for (const warning of contained.warnings) if (!refrigeratorBayWarnings.includes(warning)) refrigeratorBayWarnings.push(warning);
+      notes.push(...contained.notes);
+    }
     refrigeratorReservation = {
       ...refrigeratorBay.reservation,
       start: refrigeratorBay.reservation.start + appliedBayShift,
       end: refrigeratorBay.reservation.end + appliedBayShift,
     };
     notes.push(...refrigeratorBay.notes, ...(refrigeratorBay.refrigeratorClampNote ? [refrigeratorBay.refrigeratorClampNote] : []));
+  }
+  if (budgetFriendly && refrigerator) {
+    const budgetBridge = working.find((item) => item.refrigeratorAssemblyId === refrigerator.uid && item.refrigeratorAssemblyRole === "bridge");
+    notes.push("Budget friendly: no refrigerator end panels, so the run closes against the refrigerator with stock cabinet widths.");
+    notes.push(budgetBridge
+      ? Math.abs((Number(budgetBridge.depth) || 0) - 12) <= 0.05
+        ? `Budget friendly: ${budgetBridge.masterCode} above the refrigerator is 12″ deep (the line's standard wall depth).`
+        : `Budget friendly: this line sells no 12″-deep cabinet at the refrigerator width, so ${budgetBridge.masterCode} (${Number(budgetBridge.depth) || 0}″ deep) is the closest real option above the refrigerator.`
+      : "Budget friendly: no cabinet could be seated above the refrigerator, so none was added.");
   }
 
   const sinkBase = anchorsByKind.get("sink");
@@ -1729,7 +1761,8 @@ export function runAutoDesignLayout(rawArgs: {
     wallIds: runWalls,
     // Anchors (range, refrigerator, sink base) move at most 2 inches; every other
     // cabinet may use the normal allowance.
-    slideLimitFor: (item) => (isSinkBaseCabinet(item)
+    // The Budget friendly cabinet over the refrigerator has no panels to hold it, so it stays centered on the appliance.
+    slideLimitFor: (item) => (item.refrigeratorBudgetBridge === true ? 0 : isSinkBaseCabinet(item)
       || (item.placement === "appliance" && (isRangeOrOven(item.masterCode, item.description) || isRefrigerator(item)))
       ? kitchenRuleNumber("anchor_wiggle_cap_in")
       : kitchenRuleNumber("jog_max_in")),
@@ -1844,6 +1877,8 @@ export function runAutoDesignLayout(rawArgs: {
     placed: working, room, openings: stageOpenings, catalog: [...stage.wallPool],
     wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
+    // Budget friendly standing rule: a diagonal corner wall cabinet in any empty inside upper corner.
+    diagonalCornerUppers: hasPreference(stage.input.intake, "budget-friendly"),
   });
   working = upperResult.placed;
   notes.push(...upperResult.substitutions);
@@ -2409,6 +2444,13 @@ export function runAutoDesignLayout(rawArgs: {
   const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
   // The 15-rule findings (spacing, suggested downsizes, oven pairing, intake picks) are
   // suggestions only and run when the build was given the upfront intake.
+  // Budget friendly report line: name each inside corner where the countertop now runs back to the walls.
+  if (hasPreference(input.intake, "budget-friendly")) {
+    const cornerFills = countertopSurfaces(working, room, null).filter((surface) => surface.cabinetRunId?.startsWith("corner-fill"));
+    if (cornerFills.length > 0) {
+      notes.push(`Budget friendly: the countertop runs all the way back to the wall at ${cornerFills.length === 1 ? "the inside corner" : `${cornerFills.length} inside corners`} (${cornerFills.map((surface) => `${Math.round(surface.width * 100) / 100}″ × ${Math.round(surface.depth * 100) / 100}″`).join(", ")} corner top added).`);
+    }
+  }
   if (input.intake) reviewFindings.push(...fifteenRuleFindings({ placed: working, room, baseCatalog: args.baseCatalog, intake: input.intake, wallLabelOf: (wallId) => wallNames[wallId] ?? null, peninsulaBuilt: peninsulaSummary != null }));
   return {
     ok: true,
