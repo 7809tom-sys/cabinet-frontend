@@ -81,6 +81,7 @@ import { searchCatalogItems } from "@shared/catalogCodeSearch";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { DLC_FRAME_DETAIL, dlcFaceGrainRepeat, dlcFaceTextureWindow, dlcFrameStrips, dlcPhotoCompensationApplies, dlcPhotoLightCompensation, type DlcFaceCrop } from "@shared/dlcFr26Textures";
 import { SHAKER_NOTCH_THICKNESS, shakerNotchMaterial, shakerNotchPieces } from "./shakerNotch";
+import { attachShakerFrameOutline } from "@/lib/shakerFrameOutline";
 import { exposedSideSolidHex } from "@shared/exposedSideFinish";
 import { rememberDoorPanelHex } from "@/lib/doorPanelColor";
 import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, relativeLuminance } from "@shared/doorRenderLights";
@@ -6560,6 +6561,8 @@ export function addCabinet(
         frameGroup.add(mesh);
       }
     }
+    // Shaker generic image edges on every painted or solid-color shaker front (Tom, Nov 18 2026). One merged line object.
+    if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish)) attachShakerFrameOutline(frameGroup, { faceWidth, faceHeight, rail, stile, color: dlcDoorFinish ?? color, proud: Boolean(dlcDoorFinish) });
     frontGroup.add(frameGroup);
   };
   const addDrawerReveal = (faceWidth: number, faceHeight: number, x: number, y: number, z = THREE_D_DRAWER_REVEAL_DEPTH) => {

@@ -32,6 +32,7 @@ import { DLC_FRAME_DETAIL as SHAKER_GENERIC_IMAGE_FRAME } from "@shared/dlcFr26T
 import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
 import { hexFromCanvas } from "@/lib/doorColorProbe";
 import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
+import { outlineEdges } from "@/lib/shakerFrameOutline";
 
 const INCH = 1 / 12;
 
@@ -245,23 +246,6 @@ function faceMaterial(
   });
   material.userData = { grainPiece: piece };
   return material;
-}
-
-function lerpHexTowardWhite(color: THREE.Color, amount: number) {
-  return color.clone().lerp(new THREE.Color("#ffffff"), amount);
-}
-
-/** Thin edge lines for one rail or stile: darker than the paint, lighter when the paint is already dark. */
-function outlineEdges(geometry: THREE.BufferGeometry, hex: string): THREE.LineSegments {
-  const paint = new THREE.Color(hex);
-  const luminance = 0.2126 * paint.r + 0.7152 * paint.g + 0.0722 * paint.b;
-  const edge = luminance < 0.12 ? lerpHexTowardWhite(paint, 0.4) : paint.clone().multiplyScalar(0.45);
-  const lines = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geometry, 30),
-    new THREE.LineBasicMaterial({ color: edge, transparent: true, opacity: 0.85 }),
-  );
-  lines.userData = { shakerOutline: true };
-  return lines;
 }
 
 /**

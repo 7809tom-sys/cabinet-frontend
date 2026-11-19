@@ -50,3 +50,13 @@ DL Cabinetry has 11 door-style rows (distributor 450001). They are not all shake
 Two more standard shakers exist as DLC finish photos and are references even though they are not among those 11 style rows: Grey Shaker (`grey-shaker`, painted) and Espresso Shaker (`expresso-shaker`, wood). The code does not invent a light/medium/dark split. DL does not define those three buckets. Each other 2.75 or 3 inch shaker is matched to the closest of these four by paint-versus-stain and by color distance.
 
 Painted doors inherit a painted reference only as a template id. The face itself is the opaque hex. Wood doors inherit Versa or Espresso grain. The grain is then tinted toward the door's own color.
+
+## Visible edges on every painted shaker front (Tom, Nov 18 2026, 10:02 PM CT)
+
+This overrides two earlier decisions: the Nov 1 rule that soft inner-frame edges render on Driftwood only (`DLC_FRAME_STRIP_FINISHES` in `shared/dlcFr26Textures.ts`), and the earlier removal of door-front outlines.
+
+- Every painted or solid-color shaker front in the 3D Designer (door and drawer front, any distributor, any picked Sherwin-Williams or hex color) gets one merged edge outline: the outer rectangle plus the opening rectangle of the frame. Raised panels, glass frames and photo faces are unchanged.
+- Driftwood keeps its own soft shadow and highlight strips as well.
+- The outline is `attachShakerFrameOutline` in `client/src/lib/shakerFrameOutline.ts`, called from one line in `addShakerFrame` (`InteractiveRoom3D.tsx`). It is a single `LineSegments` per frame (one draw call), drawn as its own paint-derived color (darker than the paint, lighter on a very dark paint) with the tone map off. It owns its geometry and material, so the Designer's `disposeObject` frees it on every rebuild; nothing is cached or shared.
+- Phones (`threeDRenderQualityProfile` tier `mobile`) draw the opening edge only and fainter. The Designer has a "Door edges" on/off toggle (remembered in the browser) that hides or shows built outlines without a rebuild.
+- The door audit and the four-source cabinet preview use `outlineEdges` from the same module.
