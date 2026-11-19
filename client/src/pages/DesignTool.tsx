@@ -65,6 +65,7 @@ import { usePersistFn } from "@/hooks/usePersistFn";
 import { trpc } from "@/lib/trpc";
 import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
+import { ShakerEdgesToggle } from "@/components/design/ShakerEdgesToggle";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
 import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer, resolveAutoDesignOverRangeAnswer } from "@/lib/overRangeFill";
 import {
@@ -17152,17 +17153,20 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // single floating column so they line up with zoom, pan and the rest instead
   // of floating in separate rows. Same handlers, same shared enable rule.
   const threeDFloatingQuickActions = (
-    <CanvasActionRail
-      inline
-      testIdPrefix="three-d-floating"
-      actions={["cabinet", "hardware"]}
-      onAddCabinet={() => {
-        setPaletteType(paletteType === "closetparts" ? "closetparts" : paletteType);
-        setMobilePanel("catalog");
-      }}
-      onAddHardware={() => setHardwarePickerSignal((signal) => signal + 1)}
-      addCabinetLabel={paletteType === "closetparts" ? "Add closet parts" : "Add cabinet"}
-    />
+    <>
+      <CanvasActionRail
+        inline
+        testIdPrefix="three-d-floating"
+        actions={["cabinet", "hardware"]}
+        onAddCabinet={() => {
+          setPaletteType(paletteType === "closetparts" ? "closetparts" : paletteType);
+          setMobilePanel("catalog");
+        }}
+        onAddHardware={() => setHardwarePickerSignal((signal) => signal + 1)}
+        addCabinetLabel={paletteType === "closetparts" ? "Add closet parts" : "Add cabinet"}
+      />
+      <ShakerEdgesToggle />
+    </>
   );
   const threeDFloatingAutoDesignAction = autoDesignAvailable ? (
     <CanvasActionRail
