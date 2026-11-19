@@ -35,6 +35,8 @@ import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
+import { DoorColorSourceFourPreview } from "@/components/admin/DoorColorSourceFourPreview";
+import { buildFourSlots, listingIsAvailable, type DoorColorSourcesListing, type FourSlot } from "@/lib/doorColorSourceSlots";
 import { initialProfileDescription, shouldPersistColorSource } from "@/components/admin/doorColorSourcePersist";
 import { DoorBestPicturePicker } from "@/components/admin/DoorBestPicturePicker";
 import {
@@ -445,6 +447,23 @@ interface EditDialogProps {
   onSaved: () => void;
 }
 
+/**
+ * The saved color source slots for one door. Tolerates a backend without the
+ * procedure (tRPC "No procedure" error) and a mocked client without it: both read
+ * as "not available" and nothing else in the editor changes.
+ */
+function useDoorColorSourcesListing(styleId: number): { listing: DoorColorSourcesListing; refetch: () => Promise<unknown> | void } {
+  const procedure = (trpc.doorStyles as unknown as {
+    listDoorColorSources?: { useQuery?: (input: { id: number }, options: Record<string, unknown>) => { data?: unknown; refetch?: () => Promise<unknown> } };
+  }).listDoorColorSources;
+  // The procedure either exists for every render or for none, so the hook order is stable.
+  const query = procedure?.useQuery ? procedure.useQuery({ id: styleId }, { retry: false, refetchOnWindowFocus: false, staleTime: 15_000 }) : null;
+  return {
+    listing: (query?.data as DoorColorSourcesListing) ?? null,
+    refetch: () => query?.refetch?.(),
+  };
+}
+
 function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialogProps) {
   const [featuredLabel, setFeaturedLabel] = useState(style.featuredLabel ?? "");
   const [aliasName, setAliasName] = useState(style.aliasName ?? "");
@@ -590,7 +609,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     if (stored) writeDoorColorSourceSelection(s.id, stored);
   };
 
+  // Every stored color source for this door (backend 0283 table). Absent or { available: false }
+  // until that backend is live: the four-slot preview then shows only the slot in use.
+  const sourcesListing = useDoorColorSourcesListing(style.id);
+
   const update = trpc.doorStyles.adminUpdateDoorStyle.useMutation({
+    onSuccess: () => { void sourcesListing.refetch(); },
     onError: (e) => {
       const message = doorColorSourceSaveMessage(e.message);
       // Only a missing-migration failure is worth keeping on screen; everything
@@ -1179,6 +1203,52 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     {colorSourceSaveError}
                   </p>
                 )}
+                {(() => {
+                  const supplierPhoto = doorSampleImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl || null;
+                  const aiPicture = style.approvedReferenceImageUrl || style.aiProfileImageUrl || null;
+                  const slots = buildFourSlots({
+                    supplierPhotoUrl: supplierPhoto,
+                    aiImageUrl: aiPicture,
+                    aiAvailable,
+                    stored: colorSource.stored,
+                    listing: sourcesListing.listing,
+                    now: new Date().toISOString(),
+                  });
+                  const doorProfile = {
+                    doorStyle: doorStyle || null,
+                    doorPanelType: null,
+                    railWidth: railWidth || null,
+                    stileWidth: stileWidth || null,
+                    panelConstruction: panelConstruction as "raised" | "flat" | "slab" | "glass",
+                    bevelWidth: bevelWidth || null,
+                    bevelDepth: bevelDepth || null,
+                    insideEdgeProfile: insideEdgeProfile || null,
+                    drawerFrontType: drawerFrontType as "five-piece-raised" | "five-piece-flat" | "slab",
+                    grainDirection: grainDirection as "vertical-stiles-horizontal-rails" | "vertical" | "horizontal" | "none",
+                    finishSheen: finishSheen as "satin" | "matte" | "gloss",
+                  };
+                  return (
+                    <DoorColorSourceFourPreview
+                      slots={slots}
+                      saving={update.isPending}
+                      allSlotsSaved={listingIsAvailable(sourcesListing.listing)}
+                      doorProfile={doorProfile}
+                      style={{
+                        styleId: style.id,
+                        name: ourName || style.ourName,
+                        code: style.styleCode ?? null,
+                        distributorName: style.distributorName ?? null,
+                        identity: colorSourceStyle as unknown as Record<string, unknown>,
+                      }}
+                      // Checking a slot goes through the same reducer and the same persist effect as
+                      // a Confirm: Sherwin-Williams and hex slots already hold a confirmed value.
+                      onChoose={(slot: FourSlot) => {
+                        if (!slot.selection) return;
+                        dispatchColorSource({ type: "reset", stored: slot.selection });
+                      }}
+                    />
+                  );
+                })()}
                 <p data-testid="door-color-source-resolved" className="text-xs text-muted-foreground">
                   Resolved colour: <span className="font-mono">{doorColor.appliedHex}</span> · from {DOOR_COLOR_ORIGIN_LABEL[doorColor.appliedSource] ?? doorColor.appliedSource}
                 </p>
