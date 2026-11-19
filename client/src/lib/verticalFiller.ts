@@ -7,6 +7,7 @@
  * uppers, which left two visible seams on the same elevation. This module owns the one
  * elevation contract every filler writer uses.
  */
+import { isBridgeAreaFiller } from "./bridgeHalfInchFillers";
 import {
   STD,
   isFillerItem,
@@ -144,6 +145,8 @@ export function normalizeContinuousVerticalFillers(
   let changed = false;
   const next = placed.map((item) => {
     if (!isFillerItem(item) || item.islandFace) return item;
+    // Rich's bridge rule: the bridge's 1/2" boards stay the bridge's own height; they are not full-height boards.
+    if (isBridgeAreaFiller(item)) return item;
     const owner = item.fillerForCabinetUid
       ? placed.find((candidate) => candidate.uid === item.fillerForCabinetUid) ?? null
       : null;

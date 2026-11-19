@@ -12,6 +12,7 @@
  * Budget friendly keeps its own rule: no refrigerator panels at all, so here it
  * only loses any wall-side filler.
  */
+import { BRIDGE_FILLER_WIDTH_IN, isBridgeHalfInchFiller } from "./bridgeHalfInchFillers";
 import {
   cabinetWall,
   isFillerItem,
@@ -88,7 +89,12 @@ export function trimRefrigeratorWallSide(input: {
           return end === "start" ? s.start >= f.end - EPS && s.end <= p.start + EPS : s.end <= f.start + EPS && s.start >= p.end - EPS;
         })
         : [];
-      const removeIds = new Set([...between, ...insideFillers].map((item) => item.uid));
+      // The bridge's 1/2" board on the open side is required, so it stays (Rich's bridge rule).
+      const keepInside = insideFillers.filter((item) => isBridgeHalfInchFiller(item));
+      const dropInside = insideFillers.filter((item) => !isBridgeHalfInchFiller(item));
+      const hasBridgeBoardOnOpenSide = keepInside.length > 0 || working.some((item) => item.refrigeratorAssemblyId === fridge.uid
+        && isBridgeHalfInchFiller(item) && item.fillerPlacementMode === (end === "start" ? "right" : "left"));
+      const removeIds = new Set([...between, ...dropInside].map((item) => item.uid));
       const movedFridgeStart = f.start + delta;
       const movedFridgeEnd = f.end + delta;
       working = working
@@ -101,15 +107,18 @@ export function trimRefrigeratorWallSide(input: {
           }
           if (openPanel && item.uid === openPanel.uid) {
             const width = Number(item.width) || 0;
-            const along = end === "start" ? movedFridgeEnd : movedFridgeStart - width;
+            // Rich's bridge rule: when the bridge keeps its 1/2" board on this side, the panel stands beyond
+            // that board (the 37" opening), not against the appliance.
+            const bridgeBoard = hasBridgeBoardOnOpenSide ? BRIDGE_FILLER_WIDTH_IN : 0;
+            const along = end === "start" ? movedFridgeEnd + bridgeBoard : movedFridgeStart - bridgeBoard - width;
             const spot = wallPlacementAtUnbounded(along, width, Number(item.depth) || 0, wallId as WallSide, input.room);
             return { ...item, ...spot };
           }
           return item;
         });
       removedUids.push(...Array.from(removeIds));
-      const removedText = [...between, ...insideFillers].map((item) => item.masterCode).join(", ");
-      notes.push(`Refrigerator: the wall side needs no end panel and no filler, so ${removedText} ${between.length + insideFillers.length === 1 ? "was" : "were"} removed and ${fridge.masterCode} sits against the wall${openPanel ? `; only the open side keeps its ${openPanel.masterCode} panel` : ""}.`);
+      const removedText = [...between, ...dropInside].map((item) => item.masterCode).join(", ");
+      notes.push(`Refrigerator: the wall side needs no end panel and no filler, so ${removedText} ${between.length + dropInside.length === 1 ? "was" : "were"} removed and ${fridge.masterCode} sits against the wall${openPanel ? `; only the open side keeps its ${openPanel.masterCode} panel` : ""}.`);
       break;
     }
   }

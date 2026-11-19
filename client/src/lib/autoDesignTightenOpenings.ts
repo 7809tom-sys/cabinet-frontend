@@ -17,6 +17,7 @@
  * the appliance opening or between cabinets instead of being collected as
  * one filler at the run end.
  */
+import { BRIDGE_FILLER_WIDTH_IN, isBridgeHalfInchFiller } from "./bridgeHalfInchFillers";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { formatFillerInches } from "./autoDesignFillerConsolidation";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
@@ -236,6 +237,13 @@ export function tightenRunOpenings(input: {
         // width) as the opening; do not invent a different appliance size.
         const bodyWidth = wallRunSpan(appliance, wallId, input.room);
         const openingEnd = start + bodyWidth;
+        // Rich's bridge rule: a refrigerator whose bridge keeps its 1/2" boards has a 37" opening, so each end
+        // panel stands 1/2" off the appliance, beyond the board, instead of butting the refrigerator.
+        const bridgeBoardGap = (side: "left" | "right"): number => (isRefrigerator(appliance)
+          && Array.from(byUid.values()).some((item) => item.refrigeratorAssemblyId === appliance.uid
+            && isBridgeHalfInchFiller(item) && item.fillerPlacementMode === side) ? BRIDGE_FILLER_WIDTH_IN : 0);
+        const leftBridgeGap = bridgeBoardGap("left");
+        const rightBridgeGap = bridgeBoardGap("right");
         if (Math.abs(bodyWidth - width) > 0.05) {
           notes.push(`${appliance.masterCode} opening is ${formatFillerInches(bodyWidth)} (its placed body), not a padded ${formatFillerInches(width)} rough opening.`);
         }
@@ -265,7 +273,7 @@ export function tightenRunOpenings(input: {
               notes.push(`${left.masterCode} was grown to butt ${appliance.masterCode} so the opening is exactly ${formatFillerInches(bodyWidth)}.`);
             }
           } else if (!isFixedOnRun(left) || isRefrigeratorEndPanel(left)) {
-            const desired = start - leftWidth;
+            const desired = start - leftWidth - (isRefrigeratorEndPanel(left) ? leftBridgeGap : 0);
             const current = leftStart;
             if (Math.abs(current - desired) > EPS && Math.abs(current - desired) <= 48 + EPS) {
               const moved = relocate(left, desired, wallId, input.room);
@@ -287,8 +295,8 @@ export function tightenRunOpenings(input: {
               commit(grown);
               notes.push(`${right.masterCode} was grown to butt ${appliance.masterCode} so the opening is exactly ${formatFillerInches(bodyWidth)}.`);
             }
-          } else if ((!isFixedOnRun(right) || isRefrigeratorEndPanel(right)) && Math.abs(current - openingEnd) > EPS && Math.abs(current - openingEnd) <= 48 + EPS) {
-            const moved = relocate(right, openingEnd, wallId, input.room);
+          } else if ((!isFixedOnRun(right) || isRefrigeratorEndPanel(right)) && Math.abs(current - (openingEnd + (isRefrigeratorEndPanel(right) ? rightBridgeGap : 0))) > EPS && Math.abs(current - openingEnd) <= 48 + EPS) {
+            const moved = relocate(right, openingEnd + (isRefrigeratorEndPanel(right) ? rightBridgeGap : 0), wallId, input.room);
             if (moved) {
               commit(moved);
               notes.push(`${right.masterCode} was butted to ${appliance.masterCode} so the opening is exactly ${formatFillerInches(bodyWidth)}.`);
