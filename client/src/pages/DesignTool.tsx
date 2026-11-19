@@ -1110,6 +1110,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
    */
   const autoDesignFaucetProductsRef = useRef<AutoDesignFaucetProduct[]>([]);
   const autoDesignSinkProductsRef = useRef<AutoDesignSinkProduct[]>([]);
+  // The line's real price per cabinet id for the active style, read at build time (the build callback is declared
+  // above the price query). Budget friendly ranks sink bases by it; empty until prices load, never invented.
+  const autoDesignCabinetPriceRef = useRef<ReadonlyMap<number, number>>(new Map());
   const applyOpeningSinkAfterBuildRef = useRef<(hostUid: string, product: AutoDesignSinkProduct) => void>(() => {});
   const autoDesignFaucetPromptedRef = useRef(new Set<string>());
   const autoDesignOwnedFaucetIdsRef = useRef(new Set<number>());
@@ -4937,6 +4940,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       })(),
       // Budget friendly picks the sink from these rows without asking (Tom, voice, Nov 19 2026, 8:40 AM CT).
       sinkCatalog: autoDesignSinkProductsRef.current,
+      cabinetPriceById: autoDesignCabinetPriceRef.current,
       // The line's own end/finished panel stock: the build finishes the outside
       // of the base cabinet on each side of the range with a real placed panel.
       panelCatalog: autoPanelCatalog,
@@ -5928,6 +5932,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	    // prospective rows, a physically required filler could never pass the
 	    // positive-price gate until it had somehow already been added.
 	    catalogFillers.filter(isCatalogFiller).forEach((filler) => push(filler.id, designStyleId, filler.masterCode));
+    // Budget friendly picks the smallest, lowest-priced double-bowl sink base for the line, so every regular
+    // sink base in the line's catalog is priced before the build runs (same prospective-row pattern as fillers).
+    ((autoFillCabinets as DesignCabinet[] | undefined) ?? [])
+      .filter((cabinet) => cabinet.placement === "base" && isSinkBaseCabinet(cabinet) && !isFarmSinkBasePaletteItem(cabinet))
+      .forEach((cabinet) => push(cabinet.id, designStyleId, cabinet.masterCode));
     // Panel sheets are priced before they are placed so adding an auto panel
     // does not change the pricing key and refetch in a loop.
     const stylesById = new Map((doorStyles ?? []).map((style) => [style.id, style as DoorStyleEndPanelInput & { id: number }]));
@@ -5964,7 +5973,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ...(refrigeratorParts?.smoothPanels ?? []),
       ].forEach((part) => push(part.id, designStyleId, part.masterCode));
 	    return pairs;
-	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, designStyleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, autoPanelCatalog, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles]);
+	  }, [placed, pricingIdForPlacedCabinet, pricingStyleIdFor, designStyleId, glassDoorAddonCodeFor, glassDoorCatalogProduct, catalogFillers, autoPanelCatalog, aefWindowEndPanels, refrigeratorSurroundCatalog, doorStyles, autoFillCabinets]);
 
   const pricePairKey = stablePricePairKey(pricePairs, lockedDistributorId);
   const stablePricePairs = useMemo(() => pricePairs, [pricePairKey]);
@@ -6040,6 +6049,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     return m;
   }, [priceRows, tier]);
+
+  useEffect(() => {
+    const byId = new Map<number, number>();
+    if (designStyleId != null) {
+      ((autoFillCabinets as DesignCabinet[] | undefined) ?? []).forEach((cabinet) => {
+        const price = priceMap.get(`${cabinet.id}:${designStyleId}`);
+        if (price != null) byId.set(cabinet.id, price);
+      });
+    }
+    autoDesignCabinetPriceRef.current = byId;
+  }, [autoFillCabinets, designStyleId, priceMap]);
 
   // Resolve a placed item's unit price at its EFFECTIVE finish. Closet parts
   // carry id=0 (skipped by the kitchen pricing engine) so they price from the
