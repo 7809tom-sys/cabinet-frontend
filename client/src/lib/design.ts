@@ -974,6 +974,12 @@ export interface PlacedCabinet {
   rotation: number;
   // Set after an intentional 3D Move In/Move Out action. Legacy placements
   // without this flag are seated against their nearest physical wall in 3D.
+  /**
+   * Budget friendly refrigerator bridge (Tom, Nov 19 2026): the bay has no end panels and the cabinet
+   * above is the line's 12-inch-deep box against the wall. The depth rule that pulls a bridge forward
+   * flush with the appliance does not apply to it.
+   */
+  refrigeratorBudgetBridge?: boolean;
   depthPositionAdjusted?: boolean;
   // Set after an intentional left/right move of a mounted range hood. Hoods
   // without this flag remain auto-centered above their matching range.
@@ -14940,8 +14946,13 @@ function closeInsideCornersAndClipInteriorWalls(
       if (seen.has(key)) continue;
       seen.add(key);
       const V = at === "start" ? frame.start : frame.end;
-      const slabA = result.find((surface) => wallOf(surface) === frame.id);
-      const slabB = result.find((surface) => wallOf(surface) === join.frame.id);
+      // The slab of each wall NEAREST this corner (a wall can carry several slabs, split by a range or sink).
+      const nearestSlab = (wallId: string) => result
+        .filter((surface) => wallOf(surface) === wallId)
+        .map((surface) => ({ surface, gap: Math.min(...countertopSurfacePlanPolygon(surface).map((pt) => Math.hypot(pt.x - V.x, pt.y - V.y))) }))
+        .sort((a, b) => a.gap - b.gap)[0]?.surface;
+      const slabA = nearestSlab(frame.id);
+      const slabB = nearestSlab(join.frame.id);
       if (!slabA || !slabB) continue;
       const polyA = countertopSurfacePlanPolygon(slabA), polyB = countertopSurfacePlanPolygon(slabB);
       const axis = (f: typeof frame, end: "start" | "end") => {
@@ -14962,14 +14973,35 @@ function closeInsideCornersAndClipInteriorWalls(
       const thickA = ext(polyA, uB), thickB = ext(polyB, uA);
       const dA = Math.max(Math.abs(thickA.min), Math.abs(thickA.max)), dB = Math.max(Math.abs(thickB.min), Math.abs(thickB.max));
       const reachA = ext(polyA, uA).min, reachB = ext(polyB, uB).min;
-      if (dA < 1 || dB < 1 || reachA > dB + 1 || reachB > dA + 1) continue;
+      // Tom, Nov 19 2026: the top runs all the way back to the wall at the corner. One run reaching the
+      // corner square is enough; the other may stop short behind a range or a gap (the fill is then clipped
+      // to the free part of the square below).
+      const reachesA = reachA <= dB + 1, reachesB = reachB <= dA + 1;
+      if (dA < 1 || dB < 1 || (!reachesA && !reachesB)) continue;
       const sA = thickA.max >= -thickA.min ? 1 : -1, sB = thickB.max >= -thickB.min ? 1 : -1;
-      const quad: Pt[] = [
-        { x: V.x, y: V.y },
-        { x: V.x + sB * dB * uA.x, y: V.y + sB * dB * uA.y },
-        { x: V.x + sB * dB * uA.x + sA * dA * uB.x, y: V.y + sB * dB * uA.y + sA * dA * uB.y },
-        { x: V.x + sA * dA * uB.x, y: V.y + sA * dA * uB.y },
-      ];
+      // Local corner frame: a runs along wall A away from the corner, b along wall B. The fill is the
+      // dB-by-dA square (a in [0, aMax], b in [0, bMax]); a base item that does not bear counter (a range)
+      // inside it clips the fill back to the part nearer the walls instead of cancelling it.
+      let aMax = sB * dB, bMax = sA * dA;
+      const toWorld = (a: number, b: number): Pt => ({ x: V.x + a * uA.x + b * uB.x, y: V.y + a * uA.y + b * uB.y });
+      const axisAligned = (Math.abs(uA.x) > 0.999 || Math.abs(uA.y) > 0.999) && (Math.abs(uB.x) > 0.999 || Math.abs(uB.y) > 0.999);
+      if (axisAligned) {
+        for (const cabinet of placed) {
+          if (cabinet.placement === "wall" || bearsCountertop(cabinet)) continue;
+          const f = placedFootprint(cabinet);
+          const corners: Pt[] = [
+            { x: cabinet.x, y: cabinet.y }, { x: cabinet.x + f.w, y: cabinet.y },
+            { x: cabinet.x + f.w, y: cabinet.y + f.d }, { x: cabinet.x, y: cabinet.y + f.d },
+          ];
+          const as = corners.map((c) => dot({ x: c.x - V.x, y: c.y - V.y }, uA));
+          const bs = corners.map((c) => dot({ x: c.x - V.x, y: c.y - V.y }, uB));
+          const a0 = Math.min(...as), a1 = Math.max(...as), b0 = Math.min(...bs), b1 = Math.max(...bs);
+          if (a0 >= aMax - 0.1 || a1 <= 0.1 || b0 >= bMax - 0.1 || b1 <= 0.1) continue;
+          if (a0 > 3) aMax = Math.min(aMax, a0);
+          else if (b0 > 3) bMax = Math.min(bMax, b0);
+        }
+      }
+      const quad: Pt[] = [toWorld(0, 0), toWorld(aMax, 0), toWorld(aMax, bMax), toWorld(0, bMax)];
       // sB/sA are +1 here because uA/uB already point along the run; the band
       // sits on the room side, which is where the cabinets' own slabs are.
       const xs = quad.map((pt) => pt.x), ys = quad.map((pt) => pt.y);

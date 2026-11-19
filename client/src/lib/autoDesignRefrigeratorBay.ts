@@ -16,6 +16,7 @@ import {
   wallPlacementAt,
   wallPlacementAtUnbounded,
   wallRunFrame,
+  wallRunJoinAt,
   wallRunOffset,
   wallRunSpan,
   type DesignCabinet,
@@ -27,7 +28,8 @@ import {
 export type AutoDesignRefrigeratorBayResult =
   | {
       ok: true;
-      additions: [PlacedCabinet, PlacedCabinet, PlacedCabinet];
+      /** Bridge + left panel + right panel; only the bridge in a Budget friendly bay (no end panels). */
+      additions: PlacedCabinet[];
       /** Full physical enclosure span: left panel, 1/2-in clearance, fridge, 1/2-in clearance, right panel. */
       reservation: { wall: string; start: number; end: number };
       /** Material-list sentences for a substituted or pulled-forward cabinet above. */
@@ -42,7 +44,7 @@ export type AutoDesignRefrigeratorBayResult =
       /** Things that could not be made to fit inside the panels. Shown to the user instead of letting them stick out. */
       warnings: string[];
       /** Builds a source-priced end panel for one side of the given opening (used to add a missing panel back). */
-      panelFor: (side: "left-panel" | "right-panel", opening: { openingStart: number; openingEnd: number }) => PlacedCabinet;
+      panelFor: (side: "left-panel" | "right-panel", opening: { openingStart: number; openingEnd: number }) => PlacedCabinet | null;
     }
   | { ok: false; message: string };
 
@@ -61,7 +63,16 @@ type Input = {
    * Omitted means "decide from the height", which preserves existing callers.
    */
   framelessLine?: boolean;
+  /**
+   * Budget friendly pick (Tom, Nov 19 2026): no refrigerator end panels, and the cabinet over the
+   * refrigerator is the line's ordinary 12-inch-deep wall box instead of the 24-inch-deep one.
+   * Outside budget mode this is omitted and the bay is built exactly as before.
+   */
+  budget?: boolean;
 };
+
+/** Depth of the cabinet over the refrigerator in a Budget friendly build. */
+export const BUDGET_REFRIGERATOR_CAP_DEPTH_IN = 12;
 
 /** Tolerance when comparing a part's face to its end panels' faces. */
 export const PANEL_FIT_EPSILON_IN = 0.05;
@@ -82,10 +93,10 @@ export const OVER_FRIDGE_FALLBACK_MAX_HEIGHT_IN = 30;
  */
 export const AUTO_DESIGN_REFRIGERATOR_WALL_END_SHIFT_IN = 0.25;
 
-export function overFridgeSubstitutionNote(masterCode: string, heightIn: number): string {
+export function overFridgeSubstitutionNote(masterCode: string, heightIn: number, depthIn: number = 24): string {
   const rounded = Math.round(heightIn * 1000) / 1000;
   const height = Number.isInteger(rounded) ? String(rounded) : String(rounded);
-  return `Over-fridge 36x24 not in line; used ${masterCode} (${height}" H)`;
+  return `Over-fridge 36x${depthIn} not in line; used ${masterCode} (${height}" H)`;
 }
 
 /** One-eighth-inch label used by the bay's review notes. */
@@ -125,6 +136,8 @@ export function pickAutoDesignRefrigeratorCap(
    */
   framelessLine = false,
   refrigeratorWidthIn = 36,
+  /** Depth of the box above. 24 (the full-depth refrigerator box) unless a Budget friendly build asks for 12. */
+  capDepthIn: number = REFRIGERATOR_CAP_DEPTH_IN,
 ): RefrigeratorCapPick | null {
   // The box above matches the refrigerator width (30, 33, 36 or 42). When that width is not in
   // the line, the nearest narrower width that fits inside the panels is used instead, centered.
@@ -154,7 +167,7 @@ export function pickAutoDesignRefrigeratorCap(
     const match = caps
       .filter((candidate) => (
         exactWidth(candidate)
-        && Math.abs(dim(candidate.depth, 0) - REFRIGERATOR_CAP_DEPTH_IN) <= 0.01
+        && Math.abs(dim(candidate.depth, 0) - capDepthIn) <= 0.01
         && Math.abs(dim(candidate.height, 0) - framelessCapHeight) <= 0.05
         && fitsCeiling(candidate)
       ))
@@ -180,10 +193,10 @@ export function pickAutoDesignRefrigeratorCap(
       exactWidth(candidate)
       && dim(candidate.height, 0) > 0
       && dim(candidate.depth, 0) > 0
-      && dim(candidate.depth, 0) <= REFRIGERATOR_CAP_DEPTH_IN + 0.01
+      && dim(candidate.depth, 0) <= capDepthIn + 0.01
       && fitsCeiling(candidate)
     ));
-    const fullDepth = sameWidth.filter((candidate) => dim(candidate.depth, 0) >= REFRIGERATOR_CAP_DEPTH_IN - 0.01);
+    const fullDepth = sameWidth.filter((candidate) => dim(candidate.depth, 0) >= capDepthIn - 0.01);
     const rank = (list: readonly DesignCabinet[]) => list
       .map((candidate) => ({ candidate, ...placedAt(candidate) }))
       .sort((a, b) => (
@@ -196,7 +209,7 @@ export function pickAutoDesignRefrigeratorCap(
     if (chosen) return { cabinet: chosen.candidate, substitutionNote: null };
   }
   const fitsOpening = (candidate: DesignCabinet) => dim(candidate.width, 0) > 0 && dim(candidate.width, 0) <= openingIn + 0.01;
-  return fallbackOverFridgeCap(caps, fitsCeiling, refrigeratorWidthIn, fitsOpening);
+  return fallbackOverFridgeCap(caps, fitsCeiling, refrigeratorWidthIn, fitsOpening, capDepthIn);
 }
 
 /**
@@ -209,6 +222,7 @@ function fallbackOverFridgeCap(
   fitsCeiling: (candidate: DesignCabinet) => boolean,
   refrigeratorWidthIn = 36,
   fitsOpening: (candidate: DesignCabinet) => boolean = () => true,
+  capDepthIn: number = REFRIGERATOR_CAP_DEPTH_IN,
 ): RefrigeratorCapPick | null {
   const underThirty = caps.filter((candidate) => {
     const size = capSize(candidate);
@@ -216,7 +230,7 @@ function fallbackOverFridgeCap(
   });
   const preferredShape = pickClosestCatalogSize({
     candidates: underThirty,
-    wanted: { width: refrigeratorWidthIn, depth: REFRIGERATOR_CAP_DEPTH_IN },
+    wanted: { width: refrigeratorWidthIn, depth: capDepthIn },
     read: capSize,
     require: ["width", "depth"],
     toleranceIn: 0.5,
@@ -224,7 +238,7 @@ function fallbackOverFridgeCap(
   });
   const closestDepth = preferredShape ?? pickClosestCatalogSize({
     candidates: underThirty,
-    wanted: { width: refrigeratorWidthIn, depth: REFRIGERATOR_CAP_DEPTH_IN },
+    wanted: { width: refrigeratorWidthIn, depth: capDepthIn },
     read: capSize,
     rank: [
       { axis: "width", by: "closest" },
@@ -235,7 +249,7 @@ function fallbackOverFridgeCap(
   if (!closestDepth) return null;
   return {
     cabinet: closestDepth.item,
-    substitutionNote: overFridgeSubstitutionNote(closestDepth.item.masterCode, closestDepth.size.height),
+    substitutionNote: overFridgeSubstitutionNote(closestDepth.item.masterCode, closestDepth.size.height, capDepthIn),
   };
 }
 
@@ -284,6 +298,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   makeUid,
   wallCabinetHeightIn = 30,
   framelessLine = false,
+  budget = false,
 }: Input): AutoDesignRefrigeratorBayResult {
   const fridgeWidthIn = Number(refrigerator.width) || 0;
   if (!AUTO_DESIGN_REFRIGERATOR_WIDTHS_IN.some((width) => Math.abs(fridgeWidthIn - width) <= 0.01)) {
@@ -291,14 +306,22 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   }
 
   const ceilingIn = Math.max(0, Number(room.ceilingHeight) || 96);
-  const capPick = pickAutoDesignRefrigeratorCap(caps, refrigerator.height ?? 70, wallCabinetHeightIn, ceilingIn, framelessLine, fridgeWidthIn);
+  const capPick = pickAutoDesignRefrigeratorCap(
+    caps, refrigerator.height ?? 70, wallCabinetHeightIn, ceilingIn, framelessLine, fridgeWidthIn,
+    budget ? BUDGET_REFRIGERATOR_CAP_DEPTH_IN : REFRIGERATOR_CAP_DEPTH_IN,
+  );
   if (!capPick) {
-    return { ok: false, message: `No source-priced ${fridgeWidthIn}-inch-wide (or narrower, fitting inside the panels), 24-inch-deep refrigerator cabinet above is available for the selected cabinet line, and the line has no bridge under 30 inches to use instead.` };
+    return { ok: false, message: `No source-priced ${fridgeWidthIn}-inch-wide (or narrower, fitting inside the panels), ${budget ? BUDGET_REFRIGERATOR_CAP_DEPTH_IN : REFRIGERATOR_CAP_DEPTH_IN}-inch-deep refrigerator cabinet above is available for the selected cabinet line, and the line has no bridge under 30 inches to use instead.` };
   }
   const cap = capPick.cabinet;
-  const panelEntry = endPanels
-    .map((candidate) => ({ candidate, dimensions: refrigeratorPanelDimensions(candidate) }))
-    .find((entry): entry is { candidate: DesignCabinet; dimensions: { thickness: number; installedDepth: number; stockDepth: number } } => entry.dimensions !== null);
+  // Budget friendly (Tom, Nov 19 2026): no end panels at all. The bay is the appliance plus its
+  // 1/2 inch clearances, the cabinet above is 12 inches deep, and nothing is clamped to a panel.
+  const capDepthForBudget = Math.max(0, dim(cap.depth, 0)) || BUDGET_REFRIGERATOR_CAP_DEPTH_IN;
+  const panelEntry = budget
+    ? { candidate: null as DesignCabinet | null, dimensions: { thickness: 0, installedDepth: capDepthForBudget, stockDepth: 0 } }
+    : endPanels
+      .map((candidate) => ({ candidate, dimensions: refrigeratorPanelDimensions(candidate) }))
+      .find((entry): entry is { candidate: DesignCabinet; dimensions: { thickness: number; installedDepth: number; stockDepth: number } } => entry.dimensions !== null);
   if (!panelEntry) {
     return { ok: false, message: "No source-priced refrigerator end panel is available for the selected cabinet line." };
   }
@@ -309,7 +332,9 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   // The filler-depth cap still applies when the refrigerator is at least as
   // deep as the stock sheet. A shallower refrigerator is shown cut to the
   // appliance, and the stock depth is kept for the master BOM note.
-  const panelCut = refrigeratorEndPanelInstalledDepth(panelDimensions.stockDepth, Number(refrigerator.depth) || 0);
+  const panelCut = budget
+    ? { cutDown: false, installedDepth: panelDimensions.installedDepth, stockDepth: 0 }
+    : refrigeratorEndPanelInstalledDepth(panelDimensions.stockDepth, Number(refrigerator.depth) || 0);
   const panelDepth = panelCut.cutDown ? panelCut.installedDepth : panelDimensions.installedDepth;
   const capDepth = Math.max(0, dim(cap.depth, 0)) || 24;
   const capHeight = Math.max(0, dim(cap.height, 0)) || 24;
@@ -376,12 +401,12 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
   let clampNote: string | null = null;
   const fridgeDepth = Number(refrigerator.depth) || 0;
   const fridgeHeight = Number(refrigerator.height) || 0;
-  if (fridgeDepth > panelDepth + PANEL_FIT_EPSILON_IN) {
+  if (!budget && fridgeDepth > panelDepth + PANEL_FIT_EPSILON_IN) {
     const reseat = wallPlacementAt(bay.refrigeratorStart, refrigerator.width, panelDepth, bay.side, room);
     placedRefrigerator = { ...placedRefrigerator, ...reseat, depth: panelDepth, rotation: reseat.rotation };
     clampNote = `Refrigerator set to ${panelDepth}" deep so it stays inside its end panels (was ${fridgeDepth}")`;
   }
-  if (fridgeHeight > panelHeight + PANEL_FIT_EPSILON_IN) {
+  if (!budget && fridgeHeight > panelHeight + PANEL_FIT_EPSILON_IN) {
     placedRefrigerator = { ...placedRefrigerator, height: panelHeight };
     clampNote = [clampNote, `Refrigerator set to ${panelHeight}" high so it stays inside its end panels (was ${fridgeHeight}")`].filter(Boolean).join("; ");
   }
@@ -405,6 +430,7 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     wallId: flushSpot.wallId,
     wallOffset: flushSpot.wallOffset,
     ...(pullForward ? { depthPositionAdjusted: true } : {}),
+    ...(budget ? { refrigeratorBudgetBridge: true } : {}),
     ...(notes.length ? { fieldModificationNote: notes.join("; ") } : {}),
     numberOfDoors: cap.numberOfDoors,
     numberOfDrawers: cap.numberOfDrawers,
@@ -416,9 +442,9 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
 
   const makePanel = (side: "left-panel" | "right-panel", spot: ReturnType<typeof wallPlacementAtUnbounded>): PlacedCabinet => ({
     uid: makeUid(),
-    cabinetId: panel.id,
-    masterCode: panel.masterCode,
-    description: panel.description,
+    cabinetId: panel!.id,
+    masterCode: panel!.masterCode,
+    description: panel!.description,
     category: "Panel",
     subCategory: "Refrigerator End Panel",
     placement: "tall",
@@ -433,26 +459,29 @@ export function buildMandatoryAutoDesignRefrigeratorBay({
     wallOffset: spot.wallOffset,
     numberOfDoors: 0,
     numberOfDrawers: 0,
-    catalogImageUrl: panel.catalogImageUrl ?? null,
+    catalogImageUrl: panel!.catalogImageUrl ?? null,
     customProfile: "refrigerator-end-panel",
     refrigeratorAssemblyRole: side,
     mountBottom: 0,
     ...shared,
   });
 
-  const panelFor = (side: "left-panel" | "right-panel", opening: { openingStart: number; openingEnd: number }) => makePanel(
+  const panelFor = (side: "left-panel" | "right-panel", opening: { openingStart: number; openingEnd: number }): PlacedCabinet | null => (budget ? null : makePanel(
     side,
     wallPlacementAtUnbounded(side === "left-panel" ? opening.openingStart - panelThickness : opening.openingEnd, panelThickness, panelDepth, bay.side, room),
-  );
+  ));
   return {
     ok: true,
     panelFor,
-    additions: [bridge, makePanel("left-panel", leftPanelSpot), makePanel("right-panel", rightPanelSpot)],
-    reservation: {
-      wall: bay.side,
-      start: bay.openingStart - panelThickness,
-      end: bay.openingEnd + panelThickness,
-    },
+    additions: budget ? [bridge] : [bridge, makePanel("left-panel", leftPanelSpot), makePanel("right-panel", rightPanelSpot)],
+    // Budget friendly has no panels, so the neighbors close against the appliance itself.
+    reservation: budget
+      ? { wall: bay.side, start: bay.refrigeratorStart, end: bay.refrigeratorEnd }
+      : {
+        wall: bay.side,
+        start: bay.openingStart - panelThickness,
+        end: bay.openingEnd + panelThickness,
+      },
     notes,
     refrigerator: placedRefrigerator,
     refrigeratorClampNote: clampNote,
@@ -610,5 +639,48 @@ function pullWallCabinetFaceTo(
     ...spot,
     x: spot.x + frame.inward.x * inset,
     y: spot.y + frame.inward.y * inset,
+  };
+}
+
+/**
+ * Budget friendly re-flow (Tom, Nov 19 2026). With no end panels, a refrigerator that stands a few
+ * inches off a free wall end would leave a sliver no stock cabinet can close and a wide filler. The
+ * run is shifted instead: the refrigerator slides flush to that wall end , so the cabinets on its other side take the freed width in stock sizes.
+ *
+ * Only a gap of at most BUDGET_FRIDGE_SLIDE_MAX_IN is slid, and only toward a wall end that no run
+ * continues past (`isFreeWallEnd` says whether the joined wall carries no cabinets). Anything else
+ * is left exactly where it was measured.
+ */
+export const BUDGET_FRIDGE_SLIDE_MAX_IN = 6.05;
+
+export function budgetSlideRefrigeratorToWallEnd(
+  refrigerator: PlacedCabinet,
+  room: RoomData,
+  isFreeWallEnd: (joinedWallId: string | null) => boolean,
+): { refrigerator: PlacedCabinet; note: string } | null {
+  const side = cabinetWall(refrigerator, room);
+  const frame = wallRunFrame(side, room);
+  if (!side || !frame) return null;
+  const width = Number(refrigerator.width) || 0;
+  const start = wallRunOffset(refrigerator, side, room);
+  const end = start + wallRunSpan(refrigerator, side, room);
+  // No panels, so no 1/2 inch clearance is held: the appliance goes flush against the wall end.
+  const flushStart = 0;
+  const startGap = start;
+  const endGap = frame.length - end;
+  const candidates: Array<{ gap: number; target: number }> = [];
+  if (startGap > flushStart + 0.05 && startGap <= BUDGET_FRIDGE_SLIDE_MAX_IN && isFreeWallEnd(wallRunJoinAt(frame, "start", room)?.frame.id ?? null)) {
+    candidates.push({ gap: startGap, target: flushStart });
+  }
+  if (endGap > flushStart + 0.05 && endGap <= BUDGET_FRIDGE_SLIDE_MAX_IN && isFreeWallEnd(wallRunJoinAt(frame, "end", room)?.frame.id ?? null)) {
+    candidates.push({ gap: endGap, target: frame.length - flushStart - width });
+  }
+  const pick = candidates.sort((a, b) => a.gap - b.gap)[0];
+  if (!pick) return null;
+  const spot = wallPlacementAt(pick.target, width, Number(refrigerator.depth) || 0, side, room);
+  const moved = Math.round(Math.abs(pick.target - start) * 100) / 100;
+  return {
+    refrigerator: { ...refrigerator, ...spot, rotation: spot.rotation },
+    note: `Budget friendly: refrigerator slid ${moved}″ flush to the wall end (no end panels), so the cabinets beside it close with stock widths instead of a filler.`,
   };
 }

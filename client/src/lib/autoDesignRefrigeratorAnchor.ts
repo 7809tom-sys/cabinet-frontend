@@ -121,6 +121,8 @@ export function buildAnchoredRefrigeratorBay(input: {
   makeUid: () => string;
   wallCabinetHeightIn?: number;
   framelessLine?: boolean;
+  /** Budget friendly pick: no end panels, 12-inch-deep cabinet above (see buildMandatoryAutoDesignRefrigeratorBay). */
+  budget?: boolean;
 }): AnchoredRefrigeratorBay {
   const { room, refrigerator } = input;
   const wall = cabinetWall(refrigerator, room);
@@ -135,6 +137,7 @@ export function buildAnchoredRefrigeratorBay(input: {
     makeUid: input.makeUid,
     wallCabinetHeightIn: input.wallCabinetHeightIn,
     framelessLine: input.framelessLine,
+    budget: input.budget,
   });
   if (!bay.ok) {
     notes.push(`The refrigerator surround was not added: ${bay.message} The refrigerator itself stays exactly where it is.`);
@@ -174,7 +177,7 @@ export function buildAnchoredRefrigeratorBay(input: {
     start = Math.min(start, pieceStart);
     end = Math.max(end, pieceStart + wallRunSpan(addition, wall, room));
   }
-  if (Number(refrigerator.depth) > 24.05) {
+  if (!input.budget && Number(refrigerator.depth) > 24.05) {
     notes.push(`The refrigerator's 24" end panels finish at the panel line; the appliance keeps its wall position and floor space.`);
   }
   return {
