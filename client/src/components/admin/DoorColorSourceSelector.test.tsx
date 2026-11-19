@@ -12,12 +12,13 @@ import {
 
 afterEach(cleanup);
 
-function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwatch = null, onOpenAiMaker, onState }: {
+function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwatch = null, onOpenAiMaker, aiImageUrl, onState }: {
   stored?: DoorColorSourceSelection | null;
   aiAvailable?: boolean;
   sherwinHex?: string | null;
   hexSwatch?: string | null;
   onOpenAiMaker?: () => void;
+  aiImageUrl?: string | null;
   onState?: (state: DoorColorSourceDraft) => void;
 }) {
   const [draft, dispatch] = useReducer(doorColorSourceReducer, stored, initialDoorColorSourceDraft);
@@ -28,7 +29,7 @@ function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwa
       dispatch={dispatch}
       aiAvailable={aiAvailable}
       supplierPhotoUrl="/uploads/door.jpg"
-      aiImageUrl={aiAvailable ? "/uploads/ai.png" : null}
+      aiImageUrl={aiImageUrl !== undefined ? aiImageUrl : aiAvailable ? "/uploads/ai.png" : null}
       sherwinHex={sherwinHex}
       hexSwatch={hexSwatch}
       sherwinPicker={<div data-testid="existing-sw-wheels">wheels</div>}
@@ -140,5 +141,32 @@ describe("DoorColorSourceSelector", () => {
     render(<Harness aiAvailable />);
     fireEvent.click(screen.getByTestId("door-color-source-approved-ai-image"));
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Approved AI image/);
+  });
+
+  it("paints the AI tile for a saved picture even when no accepted render exists", () => {
+    render(<Harness aiAvailable={false} aiImageUrl="/uploads/gemini.png" />);
+    const img = screen.getByTestId("door-color-source-approved-photo") as HTMLImageElement;
+    expect(img.getAttribute("src")).toBe("/uploads/gemini.png");
+    expect(screen.queryByTestId("door-color-source-approved-ai-image-empty")).toBeNull();
+  });
+
+  it("keeps the AI tile empty when there is no picture at all", () => {
+    render(<Harness aiAvailable={false} aiImageUrl={null} />);
+    expect(screen.getByTestId("door-color-source-approved-ai-image-empty")).toBeTruthy();
+  });
+
+  it("says a saved but unaccepted AI picture is not used yet, and does not claim it is", () => {
+    render(<Harness aiAvailable={false} aiImageUrl="/uploads/gemini.png" stored={{ source: "approved-ai-image", chosenAt: "2026-11-12T18:45:00.000Z" }} />);
+    // With no accepted render the choice cannot stay on the AI tile (mutually exclusive rule), so choose it.
+    fireEvent.click(screen.getByTestId("door-color-source-approved-ai-image"));
+    expect(screen.queryByTestId("door-color-source-ai-present")).toBeNull();
+    expect(screen.getByTestId("door-color-source-ai-saved").textContent).toMatch(/not an accepted render yet/);
+  });
+
+  it("still says the render is used when it is accepted", () => {
+    render(<Harness aiAvailable aiImageUrl="/uploads/ai.png" />);
+    fireEvent.click(screen.getByTestId("door-color-source-approved-ai-image"));
+    expect(screen.getByTestId("door-color-source-ai-present")).toBeTruthy();
+    expect(screen.queryByTestId("door-color-source-ai-saved")).toBeNull();
   });
 });
