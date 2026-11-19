@@ -177,7 +177,7 @@ import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp"
 import { normalizeRefrigeratorBridgeDepth } from "@/lib/refrigeratorBridgeDepth";
 import { fillGapsUnderOneAndAHalf } from "@/lib/subOneAndHalfFiller";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
-import { seatRequiredBridgeFillers } from "@/lib/bridgeHalfInchFillers";
+import { normalizeBridgeBoards, seatRequiredBridgeFillers } from "@/lib/bridgeHalfInchFillers";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -1129,7 +1129,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       // and a drag. A shallow box over a refrigerator comes forward to the
       // panel face before the seat pass, which keeps that wall id.
       const flushed = normalizeRefrigeratorBridgeDepth(next, roomRef.current);
-      const synced = syncWallRunOffsets(flushed, roomRef.current);
+      // The bridge's two 1/2 in boards always ride with the bridge: re-seated along the wall, front face flush with
+      // the bridge (and the panel), one taller board per side when a glass cabinet sits above (Tom, Nov 19 2026).
+      const boarded = normalizeBridgeBoards(flushed, roomRef.current);
+      const synced = syncWallRunOffsets(boarded, roomRef.current);
       const filled = fillGapsUnderOneAndAHalf({
         placed: synced,
         room: roomRef.current,

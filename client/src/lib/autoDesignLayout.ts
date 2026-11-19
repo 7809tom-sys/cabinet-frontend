@@ -1,4 +1,4 @@
-import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers } from "./bridgeHalfInchFillers";
+import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers, normalizeBridgeBoards } from "./bridgeHalfInchFillers";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { FRAMELESS_TOP_WALL_HEIGHT_IN } from "./framelessWallTopAlignment";
 import {
@@ -2599,6 +2599,9 @@ export function runAutoDesignLayout(rawArgs: {
   reviewFindings.push(...glassUppers.findings);
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
+  // Last word on the bridge's 1/2 in boards: flush with the bridge face, and one taller board per side when the glass
+  // pass above put a glass cabinet on the bridge (the glass pass runs after the boards were first seated).
+  working = normalizeBridgeBoards(working, room);
   const warnings = [...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
