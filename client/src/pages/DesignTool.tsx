@@ -13,7 +13,7 @@ import {
   ChevronUp, ChevronDown, Check, ScanLine, Printer, Palette, Minus, UserRound, Info,
   ChevronRight, Wrench, Crown as CrownIcon, Pencil,
   Save, FolderOpen, Refrigerator, Waves, Percent, StickyNote, Undo2, Redo2, FileText, SquareDashedMousePointer,
-  Flame, Zap, Droplets, Building2, Download, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightLeft, Move, Magnet, PackageOpen, TriangleAlert, Compass, LoaderCircle, MapPin } from "lucide-react";
+  Flame, Zap, Droplets, Building2, Download, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowRightLeft, Move, Magnet, Group, PackageOpen, TriangleAlert, Compass, LoaderCircle, MapPin } from "lucide-react";
 import { useUndoRedo } from "@/hooks/useUndoRedo";
 import { SelectedCabinetDropActions } from "@/components/design/SelectedCabinetDropActions";
 import { Button } from "@/components/ui/button";
@@ -409,6 +409,9 @@ import { buildMaterialsListRows, type MaterialsListSupplement } from "@/lib/desi
 import { RoomSizeControl, RoomSizeInline } from "@/components/design/RoomSizeControl";
 import { RoomLayoutStarter } from "@/components/design/RoomLayoutStarter";
 import type { WallBuilderDraft } from "@/components/design/WallBuilder";
+import { cabinetStackFor, fillerInsideOpenedGap, planGroupWallMove, toggleGroupMember, type GroupMoveGap } from "@/lib/cabinetGroupMove";
+import { describeFreeSpaceOnWall, planSwapForAdd } from "@/lib/cabinetSwapForAdd";
+import { deletedFillerRecords, dropResurrectedFillers, isSuppressedFiller, isSuppressedSeam, mergeDeletedFillerRecords, suppressedFillerGroupIds, type DeletedFillerRecord } from "@/lib/deletedFillerMemory";
 import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
 import { DesignerErrorBoundary, designerCrashDraftKey, useDesignerCrashFlush, useLastCommitted } from "@/components/design/DesignerErrorBoundary";
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
@@ -1353,6 +1356,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // index within its section. Populated when the user clicks move-up/move-down.
   const [bomOrder, setBomOrder] = useState<Record<string, number>>({});
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
+  // Group move (Tom, Nov 19 2026): Shift/Ctrl/Cmd-click (or "Select stack") gathers cabinets
+  // that then slide together by one offset. Members never block each other.
+  const [groupSelectionUids, setGroupSelectionUids] = useState<string[]>([]);
+  const groupSelectionRef = useRef<string[]>([]);
+  groupSelectionRef.current = groupSelectionUids;
+  const groupModifierHeldRef = useRef(false);
+  useEffect(() => {
+    const track = (event: KeyboardEvent) => { groupModifierHeldRef.current = event.shiftKey || event.ctrlKey || event.metaKey; };
+    const release = () => { groupModifierHeldRef.current = false; };
+    window.addEventListener("keydown", track);
+    window.addEventListener("keyup", track);
+    window.addEventListener("blur", release);
+    return () => { window.removeEventListener("keydown", track); window.removeEventListener("keyup", track); window.removeEventListener("blur", release); };
+  }, []);
+  // Spans a group move or a confirmed swap just opened. The seam-filler repair does not
+  // refill them (the minimum-filler rules decide fillers, not a respawn).
+  const suppressedSeamGapsRef = useRef<GroupMoveGap[]>([]);
   const [placementWarning, setPlacementWarningState] = useState<string | null>(null);
   const [placementNoticeEpoch, setPlacementNoticeEpoch] = useState(0);
   const setPlacementWarning = useCallback((value: string | null) => {
@@ -4914,6 +4934,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const picked = autoDesignFaucetProductsRef.current.find((product) => product.id === fixturePickRef.current.faucetId);
         return picked ? [picked] : autoDesignFaucetProductsRef.current;
       })(),
+      // Budget friendly picks the sink from these rows without asking (Tom, voice, Nov 19 2026, 8:40 AM CT).
+      sinkCatalog: autoDesignSinkProductsRef.current,
       // The line's own end/finished panel stock: the build finishes the outside
       // of the base cabinet on each side of the range with a real placed panel.
       panelCatalog: autoPanelCatalog,
@@ -4951,6 +4973,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const overRangeResolved = resolveAutoDesignOverRangeAnswer(input.overRangeAnswer);
     setRoom((current) => ({
       ...current,
+      // A fresh Auto Design run starts from a clean plan: earlier deleted-filler memory is cleared.
+      deletedFillerSuppressions: undefined,
       kitchenUsage: normalizeKitchenUsage(input.kitchenUsage),
       // The answer given in the design questions is saved with the layout, and the
       // add-only over-range pass applies it once the plan is committed.
@@ -5047,7 +5071,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       } else {
         autoDesignFaucetQueueAfterSinkRef.current = autoDesignFaucetPrompt;
       }
-      if (!prompts.askSink && openingPick.sinkId != null) {
+      const budgetPickedSink = (input.intake?.preferences ?? []).includes("budget-friendly")
+        && run.notes.some((note) => /^Budget friendly: .*(sink was picked for you|so the default .* sink)/.test(note));
+      if (budgetPickedSink && openingPick.sinkId == null) {
+        // Budget friendly: the build already picked and placed the sink; never ask.
+        autoDesignSinkPromptedRef.current.add(builtSinkBase);
+      } else if (!prompts.askSink && openingPick.sinkId != null) {
         const product = productFromOpeningPick(autoDesignSinkProductsRef.current, openingPick.sinkId);
         autoDesignSinkPromptedRef.current.add(builtSinkBase);
         if (product) applyOpeningSinkAfterBuildRef.current(builtSinkBase, product);
@@ -5490,11 +5519,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     toast.info(`Replaced legacy WSC30 microwave bridge with the selected ${repaired.placed.find((cabinet) => repaired.repairedUids.includes(cabinet.uid))?.masterCode ?? "W30"} bridge at the 72″ datum.`);
   }), [placed, room, appliancePalette, wallCabPool, wallCabHeight]);
   useEffect(() => autoDesignRedrawGuardRef.current?.run("door clearance fillers", () => {
+    const deletedFillers = room.deletedFillerSuppressions ?? [];
     const clearance = applyFramelessDoorClearanceFillers({
       placed,
       room,
       fillers: catalogFillers,
       makeUid,
+      // A clearance filler the person deleted stays deleted (Tom, Nov 19 2026).
+      suppressSeam: deletedFillers.length ? (seam) => isSuppressedSeam(seam, deletedFillers) : undefined,
     });
     if (clearance.placed === placed) return;
     if (autoDesignRedrawGuardRef.current?.allowWrite("door clearance fillers", placed, clearance.placed) === false) return;
@@ -6314,7 +6346,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		  useEffect(() => {
 		    if (catalogFillers.length === 0) return;
 		    const styleFor = (cabinet: PlacedCabinet) => cabinet.styleId ?? null;
-		    const angled = repairMissingAngledWallFillers(
+		    // Fillers the person deleted stay deleted (Tom, Nov 19 2026): every repair below skips them.
+		    const deletedFillers = room.deletedFillerSuppressions ?? [];
+		    const angledRaw = repairMissingAngledWallFillers(
 		      placedRef.current,
 		      room,
 		      catalogFillers,
@@ -6325,6 +6359,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		    // Straight seams between two cabinets, and a filler-sized gap at a
 		    // 90° inside corner, close on both the base and the upper. This does
 		    // not add a board at an open run end.
+		    const angledPlaced = dropResurrectedFillers(placedRef.current, angledRaw.placed, deletedFillers, room);
+		    const angled = { placed: angledPlaced, added: angledRaw.added.filter((filler) => angledPlaced.some((item) => item.uid === filler.uid)) };
+		    const deletedGroupIds = suppressedFillerGroupIds(deletedFillers);
 		    const adjoining = repairMissingAdjoiningFillers(
 		      angled.placed,
 		      room,
@@ -6332,11 +6369,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		      catalogFillers,
 		      makeUid,
 		      styleFor,
+		      {
+		        suppressGroupIds: deletedGroupIds,
+		        suppress: (draft) => isSuppressedFiller(draft, deletedFillers, room)
+		          || fillerInsideOpenedGap(draft, suppressedSeamGapsRef.current, room),
+		      },
 		    );
+		    const repairedPlaced = adjoining.placed;
 		    const added = [...angled.added, ...adjoining.added];
 	    if (added.length === 0) return;
-	    placedRef.current = adjoining.placed;
-	    setPlaced(() => adjoining.placed);
+	    placedRef.current = repairedPlaced;
+	    setPlaced(() => repairedPlaced);
 	    setFillerInsertionTransition({ uids: added.map((filler) => filler.uid), key: Date.now() });
 	    if (angled.added.length > 0) {
 	      toast.success("The open 45° cabinet front was closed with two catalog filler boards joined on one continuous miter.");
@@ -6922,6 +6965,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        .map((candidate) => combinedFillerNote(candidate, placed))
 	        .filter((note): note is string => Boolean(note));
 	      const combinedCutNote = combinedCutNotes.join("; ");
+	      // Boards that are cut from this purchase (secondary pieces, combined small fillers) have no
+	      // line of their own, so this row carries their uids: deleting it in Materials & Parts
+	      // removes the whole filler (Tom, Nov 19 2026).
+	      const cutPieceUids = isFillerItem(p)
+	        ? placed.filter((candidate) => candidate.uid !== p.uid && (
+	          (candidate.fillerBillingRole === "secondary" && p.fillerPieceGroupId != null && candidate.fillerPieceGroupId === p.fillerPieceGroupId)
+	          || fillerCutSourceFor(candidate, placed)?.uid === p.uid
+	        )).map((candidate) => candidate.uid)
+	        : [];
 	      const panelCutNote = refrigeratorEndPanelCutDownNote(p.refrigeratorPanelStockDepth, p.depth) ?? "";
       const key = `${p.masterCode}|${Math.round(p.width)}|${Math.round(placedHeight(p))}|${Math.round(p.depth)}|${sw}|${p.noDoor ? "nd" : ""}|${p.handleSide ?? ""}|${miterCutNote}|${fillerInstallNote}|${panelCutNote}|${p.fieldModificationNote ?? ""}|${cabStyleId ?? "_"}|${discKey}|${gdFlag}`;
       const closet = isClosetPart(p.masterCode);
@@ -6935,11 +6987,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const existing = map.get(key);
       if (existing) {
         existing.qty += 1;
-        existing.sourceUids = [...(existing.sourceUids ?? []), p.uid];
+        existing.sourceUids = [...(existing.sourceUids ?? []), p.uid, ...cutPieceUids];
       }
       else
         map.set(key, {
-          sourceUids: [p.uid],
+          sourceUids: [p.uid, ...cutPieceUids],
 	          // The base cabinet keeps its canonical SKU. A separately priced glass
 	          // door appears as its own cart/material line instead of replacing it.
 	          // Part 2: when the active line sells this cabinet under an equivalent
@@ -8650,7 +8702,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     defaultDistributorId: lockedDistributorId,
     defaultDistributorName: lockedDistributorId != null ? distributorNameById.get(lockedDistributorId) ?? null : null,
     defaultStyleName: designStyleName,
-  }), [designStyleName, buildRows, cartableLines, distributorNameById, lockedDistributorId, materialsListSupplements, selectedPlanSurfaces]);
+    // A filler priced only as a cart line still points at its placed boards, so its row can be deleted.
+    fillerSourceUidsByCode: placed.reduce((map, item) => {
+      if (isFillerItem(item)) map.set(item.masterCode, [...(map.get(item.masterCode) ?? []), item.uid]);
+      return map;
+    }, new Map<string, string[]>()),
+  }), [designStyleName, buildRows, cartableLines, distributorNameById, lockedDistributorId, materialsListSupplements, selectedPlanSurfaces, placed]);
   // The Materials button repeats the same exact affected-placement count used by
   // the canvas notice and the conflict-only Materials filter. It is advisory;
   // existing cart and secure-order safeguards remain authoritative.
@@ -8690,8 +8747,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return fit;
   }, [openings, room]);
 
+  const addCabinetRef = useRef<((...args: any[]) => void) | null>(null);
   const addCabinet = useCallback(
     (c: DesignCabinet, x?: number, y?: number, forceAccessory = false, rotation = 0, strictDropTarget = false, targetCabinetUid?: string | null, targetIslandFace?: IslandFace | null, forceBackDepthAdjustment = false, resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide }, blindPullOverride?: number, attachedFillerChoice?: AttachedFillerChoice) => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => {
+      // A fresh add ends any group-move / swap seam-filler hold (a confirmed swap re-sets it after).
+      suppressedSeamGapsRef.current = [];
       // Cabinets are priced and sized per supplier line, so none may enter the
       // plan before a vendor and door style/color are chosen. Every entry path
       // (room layout, Continuous Wall Builder, catalog click or drag) lands
@@ -9187,10 +9247,53 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              accPlacement === "wall" && !isRefrigeratorWallCabinet({ masterCode: c.masterCode, description: c.description, placement: accPlacement }),
 	              aefWindowClearanceCandidate,
 	            );
+	            const swapLayer = accPlacement === "wall" ? "wall" as const : "base" as const;
+	            const freeSpace = describeFreeSpaceOnWall({ placed: prev, room, openings, wallId: activeWall, layer: swapLayer });
 	            const message = spanBlocker
 	              ? `${c.masterCode} was not added: the ${formatEighthInches(spanBlocker.spanLengthIn)} opening on the ${wallNameFor(activeWall, room)} wall is wide enough, but ${c.masterCode} would overlap ${spanBlocker.blocker.cabinet.masterCode} by ${formatEighthInches(spanBlocker.blocker.penetration)} there. The existing layout was not changed.`
-	              : `${c.masterCode} was not added because there is no ${width}\" opening after the current ${runName} run on the selected ${wallNameFor(activeWall, room)} wall. The existing layout was not changed.${categoryHint}`;
+	              : `${c.masterCode} was not added because there is no ${width}\" opening after the current ${runName} run on the selected ${wallNameFor(activeWall, room)} wall. ${freeSpace.text} The existing layout was not changed.${categoryHint}`;
+	            // Swap offer (Tom, Nov 19 2026): instead of only refusing, offer to swap an existing
+	            // run cabinet for this one, sliding neighbors and absorbing ordinary fillers.
+	            // Nothing changes unless the person confirms.
+	            const swapPlan = !spanBlocker && (accPlacement === "base" || accPlacement === "wall")
+	              ? planSwapForAdd({ placed: prev, room, openings, wallId: activeWall, layer: swapLayer, newMasterCode: c.masterCode, newWidthIn: width })
+	              : null;
 	            setPlacementWarning(message);
+	            if (swapPlan && window.confirm(`${message}\n\n${swapPlan.question}`)) {
+	              const before = placedRef.current;
+	              const sinkSlides = swapPlan.slid.filter((entry) => entry.isSinkBase);
+	              const sinksBefore = sinksRef.current;
+	              if (sinkSlides.length) {
+	                setSinks((prevSinks) => prevSinks.map((sinkItem) => {
+	                  for (const slide of sinkSlides) {
+	                    const base = before.find((item) => item.uid === slide.uid);
+	                    if (!base) continue;
+	                    const fp = placedFootprint(base);
+	                    const cx = sinkItem.x + sinkItem.width / 2;
+	                    const cy = sinkItem.y + sinkItem.depth / 2;
+	                    if (cx >= base.x && cx <= base.x + fp.w && cy >= base.y && cy <= base.y + fp.d) return { ...sinkItem, x: sinkItem.x + slide.dx, y: sinkItem.y + slide.dy };
+	                  }
+	                  return sinkItem;
+	                }));
+	              }
+	              placedRef.current = swapPlan.placedWithoutNew;
+	              setPlaced(() => swapPlan.placedWithoutNew);
+	              const countBefore = swapPlan.placedWithoutNew.length;
+	              window.setTimeout(() => {
+	                addCabinetRef.current?.(c, undefined, undefined, forceAccessory, rotation, false, null, null, false, { wallId: activeWall, wallOffset: swapPlan.newStartIn });
+	                if (placedRef.current.length <= countBefore) {
+	                  placedRef.current = before;
+	                  setPlaced(() => before);
+	                  if (sinkSlides.length) setSinks(() => sinksBefore);
+	                  toast.error(`The swap was undone: ${c.masterCode} could not be seated where ${swapPlan.replaceCode} was.`);
+	                  return;
+	                }
+	                suppressedSeamGapsRef.current = [...suppressedSeamGapsRef.current, ...swapPlan.openedGaps];
+	                setPlacementWarning(null);
+	                toast.success(`Swapped ${swapPlan.replaceCode} for ${c.masterCode}.`);
+	              }, 0);
+	              return;
+	            }
 	            toast.error(message);
 	            return;
           }
@@ -12967,6 +13070,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // cabinet selection (selectedUid) untouched and the Delete button — which was
   // gated on selectedUid — stayed disabled, so a sink could never be deleted.
 	  const selectCabinet = useCallback((uid: string | null) => {
+	    if (uid && groupModifierHeldRef.current) {
+	      // Shift/Ctrl/Cmd-click adds to (or drops from) the group, starting from the current pick.
+	      setGroupSelectionUids((prev) => {
+	        const seed = prev.length ? prev : (selectedUid && selectedUid !== uid ? [selectedUid] : []);
+	        return toggleGroupMember(seed, uid);
+	      });
+	    } else if (!uid || !groupSelectionRef.current.includes(uid)) {
+	      setGroupSelectionUids([]);
+	    }
 	    setSelectedUid(uid);
 	    if (uid) setCompassVisible(false);
 			    if (uid) {
@@ -12979,7 +13091,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      }
 	      setSelectedSinkUid(null); setSelectedOpeningUid(null); setSelectedPonyWallUid(null);
 	    }
-	  }, [island, placed, room, setPlacementTarget]);
+	  }, [island, placed, room, selectedUid, setPlacementTarget]);
+  const selectSelectedStack = useCallback(() => {
+    if (!selectedUid) return;
+    const stack = cabinetStackFor(placedRef.current, room, selectedUid);
+    setGroupSelectionUids(stack);
+    const codes = stack.map((uid) => placedRef.current.find((item) => item.uid === uid)?.masterCode).filter(Boolean);
+    toast.info(stack.length > 1
+      ? `Group selected: ${codes.join(" + ")}. Move any one of them and the whole group slides together.`
+      : "Nothing is stacked with this cabinet. Shift-click (or Ctrl/Cmd-click) more cabinets to build a group.");
+  }, [room, selectedUid]);
   const selectSink = useCallback((uid: string | null) => {
     setSelectedSinkUid(uid);
     if (uid) { setSelectedUid(null); setSelectedOpeningUid(null); setSelectedPonyWallUid(null); }
@@ -13584,6 +13705,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setPlacementWarning(null);
   }, [addCabinet, peninsulaFitRecommendation, room]);
 
+  addCabinetRef.current = addCabinet;
 			const moveCabinet = useCallback((uid: string, x: number, y: number, rotation?: number, exactWallDrag = false, target?: { wallId?: string; wallOffset?: number }, attributePatch?: Partial<PlacedCabinet>) => {
 		    setPlaced((prev) => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => {
 		      const cabinet = prev.find((p) => p.uid === uid);
@@ -13591,6 +13713,41 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		      if (cabinet.locked) {
 		        toast.info(`${cabinet.masterCode} is locked — unlock it before moving.`);
 		        return prev;
+		      }
+		      const group = groupSelectionRef.current;
+		      if (group.length > 1 && group.includes(uid) && !cabinet.islandFace) {
+		        // Group move: every member slides by the same offset along the wall run.
+		        const side = cabinetWall(cabinet, room);
+		        const currentAlong = wallRunOffset(cabinet, side, room);
+		        const deltaAlongIn = target?.wallOffset != null && (target.wallId == null || target.wallId === side)
+		          ? target.wallOffset - currentAlong
+		          : side === "left" || side === "right" ? y - cabinet.y : x - cabinet.x;
+		        const groupMove = planGroupWallMove({ placed: prev, room, uids: group, deltaAlongIn, customPlacementMode });
+		        if (!groupMove.ok) {
+		          setPlacementWarning(groupMove.reason);
+		          toast.error(groupMove.reason);
+		          return prev;
+		        }
+		        const sinkShifts = groupMove.shifts.filter((shift) => {
+		          const member = prev.find((item) => item.uid === shift.uid);
+		          return member != null && isSinkBaseCabinet(member);
+		        });
+		        if (sinkShifts.length) {
+		          setSinks((prevSinks) => prevSinks.map((sinkItem) => {
+		            for (const shift of sinkShifts) {
+		              const base = prev.find((item) => item.uid === shift.uid)!;
+		              const fp = placedFootprint(base);
+		              const cx = sinkItem.x + sinkItem.width / 2;
+		              const cy = sinkItem.y + sinkItem.depth / 2;
+		              if (cx >= base.x && cx <= base.x + fp.w && cy >= base.y && cy <= base.y + fp.d) return { ...sinkItem, x: sinkItem.x + shift.dx, y: sinkItem.y + shift.dy };
+		            }
+		            return sinkItem;
+		          }));
+		        }
+		        suppressedSeamGapsRef.current = [...suppressedSeamGapsRef.current, ...groupMove.openedGaps];
+		        if (groupMove.clamped) toast.info(`The group stopped at the end of the wall run (moved ${formatEighthInches(Math.abs(groupMove.appliedDeltaIn))}).`);
+		        placedRef.current = groupMove.placed;
+		        return groupMove.placed;
 		      }
 		      const requiredFillerGroupId = requiredBlindCornerFillerGroupId(cabinet);
 		      const workingPrev = prev.filter((item) => item.fillerPieceGroupId !== requiredFillerGroupId);
@@ -13864,6 +14021,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     }
     const removed = committed.filter((cabinet) => uidSet.has(cabinet.uid));
     removed.forEach((cabinet) => deleteAttachedSinkFixtures(cabinet));
+    // Tom, Nov 19 2026: a filler the person deletes (canvas, keyboard or Materials & Parts) stays
+    // deleted. Remember it by purchase group and by seam so no repair pass rebuilds it.
+    const deletedFillerMemory = deletedFillerRecords(removed, room);
+    if (deletedFillerMemory.length > 0) {
+      setRoom((current) => ({
+        ...current,
+        deletedFillerSuppressions: mergeDeletedFillerRecords(current.deletedFillerSuppressions, deletedFillerMemory),
+      }));
+    }
     const fillerGroups = new Set(
       removed
         .map((cabinet) => cabinet.fillerPieceGroupId)
@@ -15433,6 +15599,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         setSelectedPonyWallUid(null);
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedUid) {
         e.preventDefault();
+        // Same lock checks as the toolbar Delete.
+        if (cabinetsLocked) { toast.info("Cabinets are locked — click \"Lock Cabs\" to unlock first"); return; }
+        if (placedRef.current.find((p) => p.uid === selectedUid)?.locked) { toast.info("This cabinet is locked — unlock it before deleting."); return; }
         deleteCabinet(selectedUid);
       } else if ((e.key === "r" || e.key === "R") && selectedUid && !measureMode) {
         e.preventDefault();
@@ -15440,6 +15609,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       } else if ((e.key === "s" || e.key === "S") && selectedUid && !measureMode) {
         e.preventDefault();
         swingSelected();
+      } else if ((e.key === "g" || e.key === "G") && selectedUid && !measureMode && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        selectSelectedStack();
       } else if (selectedUid && !measureMode && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
         // Arrow keys nudge the selected cabinet. Default 1"; hold Shift for a
         // fine 1/4" step. This lets users move a cabinet left/right/up/down
@@ -15460,7 +15632,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedUid, deleteCabinet, selectedOpeningUid, deleteOpening, selectedSinkUid, deleteSink, selectedPonyWallUid, measureMode, rotateSelected, swingSelected, nudgeSelected]);
+  }, [selectedUid, deleteCabinet, selectedOpeningUid, deleteOpening, selectedSinkUid, deleteSink, selectedPonyWallUid, measureMode, rotateSelected, swingSelected, nudgeSelected, selectSelectedStack, cabinetsLocked]);
 
   const dragDataRef = useState<{ current: DesignCabinet | null }>(() => ({ current: null }))[0];
 
@@ -19010,6 +19182,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           </Button>
 	          <Button variant="outline" size="icon" disabled={!selectedUid || measureMode} onClick={swingSelected} className="h-7 w-7" title={`${t("dt_sh_swing")} (S)`}>
 	            <DoorOpen className="h-3.5 w-3.5" />
+	          </Button>
+	          <Button
+	            variant={groupSelectionUids.length > 1 ? "default" : "outline"}
+	            size="icon"
+	            disabled={!selectedUid || measureMode}
+	            onClick={() => (groupSelectionUids.length > 1 ? setGroupSelectionUids([]) : selectSelectedStack())}
+	            className="h-7 w-7"
+	            data-testid="designer-group-select"
+	            title={groupSelectionUids.length > 1 ? `Group of ${groupSelectionUids.length} selected — click to clear` : "Select stack / group (G). Shift-click more cabinets to add them."}
+	          >
+	            <Group className="h-3.5 w-3.5" />
 	          </Button>
 		  <div className="h-5 w-px bg-border mx-0.5" />
           {/* Lock Cabs */}
@@ -23490,6 +23673,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               label="Rotate"
               disabled={!selectedUid || measureMode}
               onClick={rotateSelected}
+            />
+            <MobileBarButton
+              icon={<Group className="h-5 w-5" />}
+              label={groupSelectionUids.length > 1 ? `Group ${groupSelectionUids.length}` : "Stack"}
+              disabled={!selectedUid || measureMode}
+              onClick={() => (groupSelectionUids.length > 1 ? setGroupSelectionUids([]) : selectSelectedStack())}
             />
             <MobileBarButton
               icon={<Trash2 className="h-5 w-5" />}

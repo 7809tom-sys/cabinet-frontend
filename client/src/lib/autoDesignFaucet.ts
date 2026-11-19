@@ -83,6 +83,18 @@ export function defaultAutoDesignFaucet(products: readonly AutoDesignFaucetProdu
   return pool[0] ?? null;
 }
 
+/**
+ * Budget friendly (Tom, voice, Nov 19 2026, 8:45 AM CT): the LOWEST-PRICED deck faucet the line sells,
+ * by its real catalog sell price. An unpriced row never wins; null when the line sells no priced faucet.
+ */
+export function cheapestAutoDesignFaucet(products: readonly AutoDesignFaucetProduct[]): AutoDesignFaucetProduct | null {
+  const priced = products
+    .filter(isAutoDesignDeckFaucet)
+    .filter((product) => Number.isFinite(Number(product.sellPrice)) && Number(product.sellPrice) > 0);
+  priced.sort((left, right) => Number(left.sellPrice) - Number(right.sellPrice) || left.name.localeCompare(right.name) || left.id - right.id);
+  return priced[0] ?? null;
+}
+
 export function groupFaucetsByBrand(products: readonly AutoDesignFaucetProduct[]): AutoDesignFaucetGroup[] {
   const groups = new Map<string, AutoDesignFaucetProduct[]>();
   for (const product of products) {
@@ -241,9 +253,12 @@ export type MandatoryFaucetResult<T extends FaucetSink> = {
 export function ensureMandatorySinkFaucets<T extends FaucetSink>(
   sinks: readonly T[],
   catalogProducts: readonly AutoDesignFaucetProduct[],
-  options: { bathroom?: boolean; bathroomForSink?: (sink: T) => boolean } = {},
+  options: { bathroom?: boolean; bathroomForSink?: (sink: T) => boolean; budgetFriendly?: boolean } = {},
 ): MandatoryFaucetResult<T> {
-  const catalog = defaultAutoDesignFaucet(catalogProducts);
+  // Budget friendly picks the cheapest faucet the line sells for the customer (billed like a pick);
+  // with no priced faucet it falls back to the normal default below and says so.
+  const budgetPick = options.budgetFriendly ? cheapestAutoDesignFaucet(catalogProducts) : null;
+  const catalog = budgetPick ?? defaultAutoDesignFaucet(catalogProducts);
   const notes: string[] = [];
   const attachedUids: string[] = [];
   let usedDefault = false;
@@ -261,7 +276,7 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
       return sink;
     }
     const withFaucet = catalog
-      ? withCatalogFaucet(sink, catalog, true)
+      ? withCatalogFaucet(sink, catalog, !budgetPick)
       : withDefaultFaucet(sink, bathroomSink(sink));
     if (!catalog) usedDefault = true;
     source = catalog ? "catalog" : "default";
@@ -269,7 +284,12 @@ export function ensureMandatorySinkFaucets<T extends FaucetSink>(
     return withFaucet;
   });
 
-  if (attachedUids.length > 0) {
+  if (attachedUids.length > 0 && budgetPick) {
+    notes.push(`Budget friendly: the faucet was picked for you, no question asked: ${budgetPick.name} (${budgetPick.pelicanCode ?? budgetPick.id}), $${Number(budgetPick.sellPrice).toFixed(2)}, the lowest-priced faucet the line sells.`);
+  } else if (attachedUids.length > 0) {
+    if (options.budgetFriendly) notes.push(catalog
+      ? `Budget friendly: the line sells no priced faucet, so the default catalog faucet ${catalog.name} was placed (drawn, not billed).`
+      : "Budget friendly: the line sells no faucet, so the default faucet below was placed (drawn, not billed).");
     notes.push(catalog
       ? `${catalog.name} was placed at ${attachedUids.length === 1 ? "the sink" : `each of the ${attachedUids.length} sinks`}, centered on the sink base.`
       : (() => {

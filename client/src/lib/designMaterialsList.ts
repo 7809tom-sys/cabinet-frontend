@@ -52,6 +52,11 @@ export type MaterialsListArgs = {
   defaultDistributorId?: number | null;
   defaultDistributorName?: string | null;
   defaultStyleName?: string | null;
+  /**
+   * Placed filler uids by SKU. A filler that reaches the list only as a cart line (no build row
+   * matched it) still gets its placed boards as sources, so the row can be deleted (Tom, Nov 19 2026).
+   */
+  fillerSourceUidsByCode?: ReadonlyMap<string, readonly string[]>;
 };
 
 function dimensionsFor(row: Pick<BuildSheetRow, "widthIn" | "heightIn" | "depthIn">): string {
@@ -214,7 +219,9 @@ export function buildMaterialsListRows(args: MaterialsListArgs): MaterialsListRo
     const unitPrice = safePrice(line.unitPrice);
     const section = materialsListSectionFor({ code: line.masterCode, description: line.name, category: line.category });
     const priceStatus = priceStatusFor({ section, unitPrice });
+    const fillerSources = args.fillerSourceUidsByCode?.get(line.masterCode);
     rows.push({
+      ...(fillerSources?.length ? { sourceUids: [...fillerSources] } : {}),
       section,
       code: line.masterCode,
       description: line.name,

@@ -59,7 +59,10 @@ import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { budgetSlideRefrigeratorToWallEnd, buildMandatoryAutoDesignRefrigeratorBay, holdRefrigeratorPanelsOnWall } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
-import { resolveAutoDesignSinkBase } from "./autoDesignSink";
+import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
+import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
+import { applyDishwasherRunEndRule } from "./autoDesignDishwasherRunEnd";
+import { enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
 import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
 import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
@@ -84,6 +87,9 @@ import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerR
 import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
 import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
+import { applyMinimumFiller } from "./autoDesignMinimumFiller";
+import { isFlutedFiller } from "./catalogFiller";
+import { trimRefrigeratorWallSide } from "./autoDesignRefrigeratorWallSide";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import {
   autoDesignInsideCornerReservations,
@@ -833,6 +839,11 @@ export function runAutoDesignLayout(rawArgs: {
    */
   faucetCatalog?: readonly AutoDesignFaucetProduct[];
   /**
+   * The sink rows the build may pick from (Pelican/surfaces sink catalog). Budget friendly picks one
+   * for the customer without asking (Tom, voice, Nov 19 2026, 8:40 AM CT); other modes ask as before.
+   */
+  sinkCatalog?: readonly AutoDesignSinkProduct[];
+  /**
    * The selected line's end/finished panel stock. The build seats the line's own
    * panel on the outside of the base cabinet it puts on each side of the range,
    * as a real placed catalog row so it is drawn and billed.
@@ -863,7 +874,15 @@ export function runAutoDesignLayout(rawArgs: {
     intake: rawArgs.input.intake, wallCatalog: rawArgs.wallCatalog, room: rawArgs.room,
     wallCabinetHeightIn: rawArgs.input.wallCabinetHeightIn ?? 30,
   });
-  const args = glassOffered ? { ...rawArgs, wallCatalog: withoutNoGlassUppers(rawArgs.wallCatalog) } : rawArgs;
+  const glassArgs = glassOffered ? { ...rawArgs, wallCatalog: withoutNoGlassUppers(rawArgs.wallCatalog) } : rawArgs;
+  // Fluted fillers (WFF) are decorative only (Tom, voice, Nov 19 2026, 7:41 AM CT): Auto Design never
+  // places one on its own, so they leave every catalog the build picks fillers and panels from.
+  const args = {
+    ...glassArgs,
+    fillers: glassArgs.fillers.filter((row) => !isFlutedFiller(row)),
+    ...(glassArgs.panelCatalog ? { panelCatalog: glassArgs.panelCatalog.filter((row) => !isFlutedFiller(row)) } : {}),
+    refrigeratorEndPanels: glassArgs.refrigeratorEndPanels.filter((row) => !isFlutedFiller(row)),
+  };
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
   const fail = (message: string): AutoDesignLayoutResult => {
@@ -1138,10 +1157,30 @@ export function runAutoDesignLayout(rawArgs: {
         size: pickedSink.size ?? null,
       }, sinkBase, room, { frontSetbackIn: setbackIn })
       : null;
+    const budgetSink = !pelicanSink && budgetFriendly ? pickBudgetDefaultSink({ base: sinkBase, lineProducts: args.sinkCatalog ?? [] }) : null;
     if (pelicanSink) {
       sinks = keepSingleAutoDesignSink([pelicanSink], sinkBase.uid);
       if (resolvedSinkBase.note) notes.push(resolvedSinkBase.note);
+    } else if (budgetSink && budgetSink.source !== "none") {
+      const seated = budgetSink.source === "line"
+        ? buildPelicanSinkOnCabinet({
+          id: budgetSink.product.id,
+          pelicanCode: budgetSink.product.pelicanCode ?? null,
+          name: budgetSink.product.name,
+          imageUrl: budgetSink.product.imageUrl ?? null,
+          size: budgetSink.product.size ?? null,
+        }, sinkBase, room, { frontSetbackIn: setbackIn })
+        : (() => {
+          // The verified default has no catalog row: drawn from its published geometry, never billed.
+          const { pelicanProductId: _id, pelicanProductImage: _image, ...drawn } = buildPelicanSinkOnCabinet({
+            id: 0, pelicanCode: budgetSink.profile.pelicanCode, name: budgetSink.profile.name, imageUrl: null, size: null,
+          }, sinkBase, room, { frontSetbackIn: setbackIn });
+          return drawn as SinkFixture;
+        })();
+      sinks = keepSingleAutoDesignSink([seated], sinkBase.uid);
+      notes.push(budgetSink.note);
     } else {
+      if (budgetSink) notes.push(budgetSink.note);
       const defaultSinkType = isFarmSinkBasePaletteItem(sinkBase) ? "farmhouse" : sinkBase.width >= 33 ? "double" : "single";
       // The basin is centered on its own sink base and set back into the approved
       // 2"–2½" band from the finished countertop front. No build path seats it
@@ -1237,6 +1276,7 @@ export function runAutoDesignLayout(rawArgs: {
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
   const companionKeepUids: string[] = [];
+  const economyCorners: Array<{ label: string; wallIds: WallSide[]; corner: { x: number; y: number } }> = [];
   const wantedCornerFamily = hasPreference(input.intake, "lazy-susan") ? "lazy-susan" : hasPreference(input.intake, "blind-corner") ? "blind" : null;
   if (wantedCornerFamily && !stage.cornerOptions.some((option) => autoDesignCornerFamily(option) === wantedCornerFamily)) {
     notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the type is chosen from the appliances and the run math.`);
@@ -1258,6 +1298,27 @@ export function runAutoDesignLayout(rawArgs: {
     if (cornerFridge) {
       notes.push(`${slot.label}: the refrigerator already occupies this corner. A corner cabinet is not seated on top of it.`);
       continue;
+    }
+    // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): a budget build buys no corner
+    // cabinet. Each leg claims 24" + a 3" filler first; the bases are sized to what is left.
+    if (budgetFriendly && !wantedCornerFamily) {
+      const economy = seatEconomyCorner({
+        label: slot.label,
+        wallIds: [firstWall.engineWallId, secondWall.engineWallId] as WallSide[],
+        corner: point,
+        placed: working,
+        room,
+        catalogFillers,
+        makeUid,
+        styleId: args.styleId,
+      });
+      notes.push(economy.note);
+      if (economy.ok) {
+        // The boards themselves are seated by the final economy pass, after every re-tile; here the
+        // corner only skips the corner cabinet (the 24" square stays reserved by the corner stage).
+        economyCorners.push({ label: slot.label, wallIds: [firstWall.engineWallId, secondWall.engineWallId] as WallSide[], corner: point });
+        continue;
+      }
     }
     const typeDecision = decideAutoDesignCornerTypeOrder({
       room,
@@ -1305,7 +1366,9 @@ export function runAutoDesignLayout(rawArgs: {
         wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
       })
       : null;
-    if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
+    // Only report the blind plan when the blind is the corner being built; a lazy Susan corner
+    // used to get both notes for the same corner (Natura Maple 12x10 L report, Nov 19 2026).
+    if (cornerPlan && typeDecision.order[0] === "blind") notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
     const plannedBlind = typeDecision.order[0] === "blind" && cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
       ? cornerOptionsForBuild.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
       : null;
@@ -2195,7 +2258,7 @@ export function runAutoDesignLayout(rawArgs: {
   // on the sink base, on the countertop, drawn in 3D. Add-only: an existing faucet
   // is never replaced; with no catalog faucet row the built-in default fixture is
   // used and reported.
-  const mandatoryFaucet = ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? []);
+  const mandatoryFaucet = ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? [], { budgetFriendly });
   if (mandatoryFaucet.attachedUids.length > 0) {
     sinks = mandatoryFaucet.sinks;
     notes.push(...mandatoryFaucet.notes);
@@ -2412,6 +2475,47 @@ export function runAutoDesignLayout(rawArgs: {
   working = cornerFlank.placed;
   notes.push(...cornerFlank.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...cornerFlank.findings);
+  // Minimum filler (Tom, voice, Nov 19 2026, 7:19 AM CT): every inch of filler is a missed
+  // cabinet. After every re-tile above, spare inches upgrade a stock width or slide the range
+  // inside its wiggle; what is left is one strip against the wall end or the refrigerator,
+  // never between cabinets or beside a bridge, on the base and wall rows alike. Runs before
+  // the outside-panel rule below so that rule keeps the last word.
+  // Refrigerator (Tom, voice, Nov 19 2026, 7:41 AM CT): only the open side keeps an end panel; the
+  // wall side gets no panel and no filler. Runs before the minimum-filler pass so the freed inches
+  // are put to use there.
+  const fridgeWallSide = trimRefrigeratorWallSide({ placed: working, room });
+  if (fridgeWallSide.removedUids.length > 0) {
+    working = fridgeWallSide.placed;
+    for (let i = notes.length - 1; i >= 0; i--) {
+      if (/REPV\S* is held on the wall|panel gap\.|was butted to FRIDGE/.test(notes[i]!)) notes.splice(i, 1);
+    }
+    notes.push(...fridgeWallSide.notes);
+  }
+  if (input.intake) {
+    const intakeForWiggle = input.intake;
+    const minimumFiller = applyMinimumFiller({
+      placed: working, room, openings: stageOpenings, wallIds: runWalls,
+      baseCatalog: args.baseCatalog, wallCatalog: args.wallCatalog, fillerCatalog: catalogFillers,
+      styleId: args.styleId, makeUid,
+      rangeWiggleIn: (range) => {
+        if (lockedAnchorKinds(intakeForWiggle).includes("stove")) return 0;
+        const used = fifteenRepackMoves.filter((move) => move.uid === range.uid).reduce((sum, move) => sum + move.deltaAlongIn, 0);
+        return Math.max(0, 3 - Math.abs(used));
+      },
+      glassUppers: hasPreference(input.intake, "glass-uppers"),
+      wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+    });
+    working = minimumFiller.placed;
+    if (minimumFiller.changes.length > 0) {
+      // Earlier lines that named a board or opening this pass just re-planned are no longer true.
+      const replanned = /filled a .* leftover on|filled the opening on|left beside the corner for the filler|for the filler\.$/;
+      for (let i = notes.length - 1; i >= 0; i--) {
+        if (replanned.test(notes[i]!)) notes.splice(i, 1);
+      }
+    }
+    notes.push(...minimumFiller.notes);
+    fifteenRepackMoves.push(...minimumFiller.moves);
+  }
   // Tom, voice, Nov 18 2026, 4:53 PM CT: no filler outside an exposed panel. Every
   // filler pass above has run, so this is the last word: a board on a panel's outside
   // face is dropped and named on the review list; fillers between cabinets and
@@ -2422,6 +2526,26 @@ export function runAutoDesignLayout(rawArgs: {
   working = outsidePanelFillers.placed;
   notes.push(...outsidePanelFillers.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...outsidePanelFillers.findings);
+  // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): claim the 3" filler first, then size the base.
+  if (economyCorners.length > 0) {
+    const economyFinal = enforceEconomyCornerFillers({
+      corners: economyCorners, placed: working, room,
+      baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog] as never,
+      wallCatalog: args.wallCatalog as never,
+      catalogFillers, makeUid, styleId: args.styleId,
+    });
+    working = economyFinal.placed;
+    notes.push(...economyFinal.notes);
+  }
+  // Tom, voice, Nov 19 2026, 8:42 / 8:44 AM CT: a dishwasher at a run end keeps a base filler only
+  // where a wall follows; an opening or an unknown end takes the line's dishwasher panel instead.
+  const dishwasherRunEnd = applyDishwasherRunEndRule({
+    placed: working, room, openings: stageOpenings,
+    panelCatalog: [...(args.panelCatalog ?? []), ...(args.fillers as unknown as DesignCabinet[])],
+    budgetFriendly: hasPreference(input.intake, "budget-friendly"),
+  });
+  working = dishwasherRunEnd.placed;
+  notes.push(...dishwasherRunEnd.notes);
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
