@@ -75,6 +75,23 @@ describe("DoorColorSourceFourPreview", () => {
     expect(screen.queryByTestId("door-four-source-legacy-note")).toBeNull();
   });
 
+  it("a stained style reads Stain on the checked tile and a Sherwin-Williams stain chip reads Stain too", async () => {
+    render(<DoorColorSourceFourPreview slots={slotsFor(null, { ...ALL_FILLED, styleFinish: "stain" })} onChoose={() => {}} style={STYLE} doorProfile={PROFILE} allSlotsSaved />);
+    await settle();
+    expect(screen.getByTestId("four-source-finish-original-image").textContent).toBe("Stain");
+    expect(screen.getByTestId("four-source-slot-original-image").getAttribute("data-state")).toBe("on");
+    expect(screen.getByTestId("four-source-check-original-image").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("four-source-finish-sherwin-williams").textContent).toBe("Paint");
+    expect(screen.queryByTestId("four-source-finish-hex")).toBeNull();
+  });
+
+  it("an unconfirmed Sherwin-Williams stain chip shows Stain on its empty tile", async () => {
+    const pending = { label: "MW230 Early American", hex: "#9a6e51", finish: "stain" as const };
+    render(<DoorColorSourceFourPreview slots={slotsFor(null)} onChoose={() => {}} style={STYLE} doorProfile={PROFILE} allSlotsSaved={false} pendingSherwin={pending} onConfirmSherwin={() => {}} />);
+    await settle();
+    expect(screen.getByTestId("four-source-finish-sherwin-williams").textContent).toBe("Stain");
+  });
+
   it("draws a cabinet under EVERY filled tile, all from one shared renderer run", async () => {
     render(<DoorColorSourceFourPreview slots={slotsFor(null, ALL_FILLED)} onChoose={() => {}} style={STYLE} doorProfile={PROFILE} allSlotsSaved />);
     await settle();

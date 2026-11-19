@@ -150,13 +150,80 @@ describe("door editor wizard: Sherwin-Williams stain and paint", () => {
     expect(screen.getByTestId("wizard-applied").textContent).toMatch(/^Saved #edece6/);
   });
 
-  it("refuses to apply a stain with no grain instead of guessing one", () => {
+  it("saves a Sherwin-Williams stain with no grain picked, using the door style's own wood, and says so", () => {
+    const onApply = vi.fn();
+    const onSaveFinish = vi.fn();
+    const treasureChest = { id: 390009, distributorId: 180001, ourName: "Treasure Chest", aliasName: "Aurum Vault (Preston)", woodSpecies: "Solid Birch", doorStyle: "Shaker" };
+    render(<DoorEditorWalzAudit style={treasureChest} sampleUrl="/uploads/tc.jpg" onApply={onApply} onSaveFinish={onSaveFinish} />);
+    fireEvent.change(screen.getByTestId("wizard-stain-code"), { target: { value: "MW230" } });
+    fireEvent.click(screen.getByTestId("wizard-stain-code-apply"));
+    fireEvent.click(screen.getByTestId("wizard-apply"));
+    expect(onApply).toHaveBeenCalledWith({ renderHex: "#9a6e51", woodSpecies: "Birch", grainDirection: "vertical" });
+    expect(onSaveFinish).toHaveBeenCalledWith(expect.objectContaining({ finish: "stain", code: "MW230", woodSpecies: "Birch" }));
+    expect(screen.getByTestId("wizard-apply-note").textContent).toMatch(/No grain was picked.*door style's own wood, Birch/);
+  });
+
+  it("falls back to Birch and says the style names no wood when the door style has no species", () => {
     const onApply = vi.fn();
     render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);
     fireEvent.change(screen.getByTestId("wizard-stain-code"), { target: { value: "MW230" } });
     fireEvent.click(screen.getByTestId("wizard-stain-code-apply"));
     fireEvent.click(screen.getByTestId("wizard-apply"));
+    expect(onApply).toHaveBeenCalledWith({ renderHex: "#9a6e51", woodSpecies: "Birch", grainDirection: "vertical" });
+    expect(screen.getByTestId("wizard-apply-note").textContent).toMatch(/names no wood.*Birch/);
+  });
+
+  it("a grain the admin picked still wins over the default, and no default note shows", () => {
+    const onApply = vi.fn();
+    render(<DoorEditorWalzAudit style={{ ...style, woodSpecies: "Solid Birch" }} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);
+    fireEvent.change(screen.getByTestId("wizard-stain-code"), { target: { value: "MW230" } });
+    fireEvent.click(screen.getByTestId("wizard-stain-code-apply"));
+    selectGrain("TGW");
+    fireEvent.click(screen.getByTestId("wizard-apply"));
+    expect(onApply).toHaveBeenCalledWith({ renderHex: "#9a6e51", woodSpecies: "Grey Wood", grainDirection: "horizontal" });
+    expect(screen.queryByTestId("wizard-apply-note")).toBeNull();
+  });
+
+  it("says what is missing instead of failing silently when nothing is picked", () => {
+    const onApply = vi.fn();
+    render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);
+    fireEvent.click(screen.getByTestId("wizard-apply"));
     expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByTestId("wizard-apply-note").textContent).toMatch(/Pick a Sherwin-Williams stain or paint color first.*Nothing was saved/);
+  });
+
+  it("repeats the not-published message on Apply after a bad typed code", () => {
+    const onApply = vi.fn();
+    render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);
+    fireEvent.change(screen.getByTestId("wizard-stain-code"), { target: { value: "MW9999" } });
+    fireEvent.click(screen.getByTestId("wizard-stain-code-apply"));
+    fireEvent.click(screen.getByTestId("wizard-apply"));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByTestId("wizard-apply-note").textContent).toMatch(/not on a published Sherwin-Williams stain page/);
+  });
+
+  it("the Stain/Paint switch follows the chip: a stained style with only a paint chip applies it as paint", () => {
+    const onApply = vi.fn();
+    // Birch reads as a stain, so the switch starts on Stain with no stain chip picked.
+    render(<DoorEditorWalzAudit style={{ ...style, woodSpecies: "Solid Birch" }} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);
+    expect((screen.getByTestId("wizard-working-door") as HTMLElement).dataset.finish).toBe("none");
+    fireEvent.change(screen.getByTestId("wizard-paint-code"), { target: { value: "SW 7005" } });
+    fireEvent.click(screen.getByTestId("wizard-paint-code-apply"));
+    expect((screen.getByTestId("wizard-working-door") as HTMLElement).dataset.finish).toBe("paint");
+    fireEvent.click(screen.getByTestId("wizard-apply"));
+    expect(onApply).toHaveBeenCalledWith({ renderHex: "#edece6", woodSpecies: null, grainDirection: "none" });
+  });
+
+  it("a stain is not silently applied under a failed paint code: the error stays and nothing saves", () => {
+    const onApply = vi.fn();
+    render(<DoorEditorWalzAudit style={style} sampleUrl="/uploads/stone-gray.jpg" onApply={onApply} />);
+    fireEvent.change(screen.getByTestId("wizard-stain-code"), { target: { value: "MW230" } });
+    fireEvent.click(screen.getByTestId("wizard-stain-code-apply"));
+    fireEvent.change(screen.getByTestId("wizard-paint-code"), { target: { value: "SW 9999" } });
+    fireEvent.click(screen.getByTestId("wizard-paint-code-apply"));
+    fireEvent.click(screen.getByTestId("wizard-apply"));
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.getByTestId("wizard-apply-note").textContent).toMatch(/SW9999 is not in the published Sherwin-Williams chart/);
   });
 
   it("clicking a swatch changes the canvas door and leaves the sample door alone", () => {

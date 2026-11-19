@@ -1233,6 +1233,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     stored: colorSource.stored,
                     listing: sourcesListing.listing,
                     now: new Date().toISOString(),
+                    styleFinish: doorColor.appliedCategory,
                   });
                   const doorProfile = {
                     doorStyle: doorStyle || null,
@@ -1281,7 +1282,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                       }}
                       hexSeed={sherwinHex ?? normalizeHex(renderHex) ?? null}
                       pendingSherwin={colorSource.active === "sherwin-williams" && colorSource.pendingSherwin
-                        ? { label: colorSource.pendingSherwin.label || colorSource.pendingSherwin.code, hex: colorSource.pendingSherwin.hex }
+                        ? { label: colorSource.pendingSherwin.label || colorSource.pendingSherwin.code, hex: colorSource.pendingSherwin.hex, finish: colorSource.pendingSherwin.finish }
                         : null}
                       onConfirmSherwin={() => dispatchColorSource({ type: "confirm", now: new Date().toISOString() })}
                     />

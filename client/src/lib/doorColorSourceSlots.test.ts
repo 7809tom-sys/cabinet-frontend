@@ -143,3 +143,20 @@ describe("paintForSlot", () => {
     expect(paintForSlot(undefined)).toEqual({ kind: "photo", url: null });
   });
 });
+
+describe("finishKind: Stain or Paint on each tile", () => {
+  it("a stained style reads Stain on its photo tiles, and the Sherwin-Williams tile reads its chip's own finish", () => {
+    const stored: DoorColorSourceSelection = { source: "sherwin-williams", confirmed: true, chosenAt: NOW, color: { ...SW, finish: "stain", code: "MW230", label: "Early American", woodSpecies: "Birch", grainDirection: "vertical" } };
+    const slots = bySource(buildFourSlots({ ...base, stored, styleFinish: "stain" }));
+    expect(slots["original-image"].finishKind).toBe("stain");
+    expect(slots["approved-ai-image"].finishKind).toBe("stain");
+    expect(slots["sherwin-williams"]).toMatchObject({ finishKind: "stain", checked: true });
+    expect(slots.hex.finishKind).toBeNull();
+  });
+
+  it("a paint chip reads Paint even on a stained style, and no style finish means no label", () => {
+    const stored: DoorColorSourceSelection = { source: "sherwin-williams", confirmed: true, chosenAt: NOW, color: SW };
+    expect(bySource(buildFourSlots({ ...base, stored, styleFinish: "stain" }))["sherwin-williams"].finishKind).toBe("paint");
+    expect(bySource(buildFourSlots(base))["original-image"].finishKind).toBeNull();
+  });
+});

@@ -27,6 +27,7 @@ import {
   wizardColorByStainCode,
   wizardColorPosition,
   wizardSavePatch,
+  defaultStainGrain,
   type WizardColor,
   type WizardFinish,
 } from "@shared/walzcraftWizardColor";
@@ -126,6 +127,7 @@ export function DoorEditorWalzAudit({
   const [stainNote, setStainNote] = useState<string | null>(null);
   const [paintNote, setPaintNote] = useState<string | null>(null);
   const [uploadNote, setUploadNote] = useState<string | null>(null);
+  const [applyNote, setApplyNote] = useState<string | null>(null);
   const [modelNumber, setModelNumber] = useState("");
   const [profileImage, setProfileImage] = useState<WalzCraftProfileImage | null>(null);
   const [library, setLibrary] = useState<Record<string, WalzCraftProfileImage>>({});
@@ -148,7 +150,13 @@ export function DoorEditorWalzAudit({
   const grain = grains.find((item) => item.code === grainCode) ?? null;
   const stain = stainCode ? wizardColorByStainCode(stainCode) : null;
   const paint = paintCode ? wizardColorByPaintCode(paintCode) : null;
-  const active: WizardColor | null = finish === STAIN_FINISH ? stain : paint;
+  // The Stain/Paint switch follows the chip. If the switch is on one side but only the other
+  // side holds a chip (and that side has no error showing), the chip that exists is the one
+  // in use and the switch moves to it, instead of Apply finding nothing and doing nothing.
+  const own: WizardColor | null = finish === STAIN_FINISH ? stain : paint;
+  const other: WizardColor | null = finish === STAIN_FINISH ? paint : stain;
+  const ownNote = finish === STAIN_FINISH ? stainNote : paintNote;
+  const active: WizardColor | null = own ?? (ownNote ? null : other);
   const hex = active?.hex ?? "";
   const ends = active && hex ? grainEnds(hex) : null;
   const rotation = previewRotationDegrees(grain?.orientation ?? null, orientation);
@@ -165,6 +173,7 @@ export function DoorEditorWalzAudit({
   });
 
   const clearSaved = () => {
+    setApplyNote(null);
     setSaved(null);
     setSavedColor(null);
   };
@@ -232,12 +241,29 @@ export function DoorEditorWalzAudit({
   };
 
   const apply = () => {
-    if (!active) return;
-    const patch = wizardSavePatch(
-      active,
-      grain ? { name: grain.name, orientation: grain.hasGrain ? (orientation ?? grain.orientation) : null } : null,
+    if (!active) {
+      setApplyNote(
+        stainNote ?? paintNote ?? "Pick a Sherwin-Williams stain or paint color first (slider or code), then press Apply. Nothing was saved.",
+      );
+      return;
+    }
+    // A stain with no grain picked saves with the door style's own species (Solid Birch saves as
+    // Birch). Paint never uses a grain.
+    const chosenGrain = grain ? { name: grain.name, orientation: grain.hasGrain ? (orientation ?? grain.orientation) : null } : null;
+    const fallback = active.finish === STAIN_FINISH && !chosenGrain?.name ? defaultStainGrain(style) : null;
+    const patch = wizardSavePatch(active, chosenGrain, fallback);
+    if (!patch) {
+      setApplyNote(`${active.label} (${active.hex}) could not be saved: its hex is not a full 6-digit color. Pick the color again. Nothing was saved.`);
+      return;
+    }
+    setFinish(active.finish);
+    setApplyNote(
+      fallback
+        ? fallback.fromStyle
+          ? `No grain was picked, so this stain saves with the door style's own wood, ${fallback.name}, running ${fallback.orientation}. Pick a grain first to use a different one.`
+          : `No grain was picked and this door style names no wood, so this stain saves with ${fallback.name}, running ${fallback.orientation}. Pick a grain first to use a different one.`
+        : null,
     );
-    if (!patch) return;
     setSaved(patch);
     setSavedColor(active);
     commitWizardFinish(active, patch);
@@ -550,6 +576,7 @@ export function DoorEditorWalzAudit({
       </div>
 
       <button type="button" data-testid="wizard-apply" className="rounded bg-[#244338] px-2 py-1 text-xs font-semibold text-[#fffdf9]" onClick={apply}>Apply</button>
+      {applyNote && <p data-testid="wizard-apply-note" role="status" className="text-xs">{applyNote}</p>}
       {saved && (
         <p data-testid="wizard-applied" className="text-xs">
           {awaitingConfirm ? "Picked, press Confirm to save:" : "Saved"} {saved.renderHex} · {saved.woodSpecies ?? "no grain"} · {saved.grainDirection}
