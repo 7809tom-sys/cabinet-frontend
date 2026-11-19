@@ -27,6 +27,7 @@
  * This module is the single judge for those rules. It is pure: it looks at the
  * finished placements and answers "is this board legal, and if not, why".
  */
+import { isBridgeAreaFiller } from "./bridgeHalfInchFillers";
 import {
   cabinetWall,
   formatEighthInches,
@@ -255,6 +256,9 @@ export function fillerRuleViolation(input: {
 }): FillerRuleViolation | null {
   const { filler, placed, room } = input;
   if (!isFillerItem(filler)) return null;
+  // Rich's bridge rule (Tom, Nov 19 2026): the two 1/2" boards beside a refrigerator bridge are required, so they are
+  // never an "open side" or "against a panel" violation, whatever stands beside them when the pass runs.
+  if (isBridgeAreaFiller(filler)) return null;
   // A wall blind corner's 3-inch face board is drawn by its owner cabinet and
   // has no independent footprint. It is not a placed seam board.
   if (filler.integratedWallBlindFiller === true) return null;

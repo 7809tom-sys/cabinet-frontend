@@ -244,8 +244,9 @@ describe("Budget friendly: no spacer between cabinets (Tom, Nov 19 2026, 6:33 AM
   it("outside budget mode nothing changes: the 3/4 in WSV30 end panel and the W3630 + W1230 uppers are still placed, no spacer report", () => {
     const normal = build({ budget: false });
     const top = wallRun(normal.placed, "top");
-    expect(top.map((item) => item.masterCode)).toEqual(["W361224", "W3630", "W1230", "WSV30", "W3012"]);
-    expect(wallRunOffset(top[3]!, "top", ROOM)).toBeCloseTo(89.25, 2);
+    // Rich's bridge rule (Tom, Nov 19 2026): the standard flow now puts a 1/2 in F342 board at the bridge junction (the other side keeps the refrigerator's own full-height 1/2 in board).
+    expect(top.map((item) => item.masterCode)).toEqual(["F342", "W361224", "W3630", "W1230", "WSV30", "W3012"]);
+    expect(wallRunOffset(top[4]!, "top", ROOM)).toBeCloseTo(89.25, 2);
     expect(normal.notes.some((note) => note.includes("spacer skipped"))).toBe(false);
   });
 });

@@ -78,10 +78,12 @@ describe("144 x 120 L, standard mode", () => {
     const bridge = result.placed.find((p) => p.overRangeMicrowaveBridge)!;
     const mw = result.placed.find((p) => /^MW/.test(p.masterCode))!;
     const start = wallRunOffset(range, "top", ROOM);
-    expect(start).toBeCloseTo(57.75, 2);
+    // Rich's bridge rule (Tom, Nov 19 2026): the refrigerator's bridge now carries its 1/2 in board on the open side,
+    // so the opening is 1/2 in wider and the range sits 1/2 in further along (was 57.75).
+    expect(start).toBeCloseTo(58.25, 2);
     expect(wallRunOffset(bridge, "top", ROOM)).toBeCloseTo(start, 2);
     expect(wallRunOffset(mw, "top", ROOM)).toBeCloseTo(start, 2);
-    expect(result.notes.some((note) => /^Minimum filler: RANGE-30 slid 2¼″/.test(note))).toBe(true);
+    expect(result.notes.some((note) => /^Minimum filler: RANGE-30 slid 1¾″/.test(note))).toBe(true);
   });
 
   it("rules 2/3: W-15-30 + 2¼ in wall filler became W1830; no 2¼ in board is left on the wall row", () => {
@@ -93,7 +95,8 @@ describe("144 x 120 L, standard mode", () => {
   it("rule 1: less filler on the 12 ft wall (filler + open 6¾ in -> 3¾ in: base 2¼ strip by the corner, wall 1½)", () => {
     // the ½ inside the fridge panel went with the wall-side panel (refrigerator rule); 2¼ by the corner is the
     // least this run allows (B21 + range + 3DB18 in 71¼ in; the next sizes are 3 in steps)
-    expect(fillerInches(base)).toBeCloseTo(2.25, 2);
+    // Rich's bridge rule: the open-side 1/2 in bridge board takes 1/2 in of this run, so the corner strip is 1¾ (was 2¼).
+    expect(fillerInches(base)).toBeCloseTo(1.75, 2);
     expect(fillerInches(wall)).toBeCloseTo(1.5, 2);
     expect(result.notes.some((note) => /^Minimum filler on Wall 1: filler and open inches went from/.test(note))).toBe(true);
   });

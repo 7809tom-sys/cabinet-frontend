@@ -177,6 +177,7 @@ import { clampRefrigeratorAssemblyToPanels } from "@/lib/refrigeratorPanelClamp"
 import { normalizeRefrigeratorBridgeDepth } from "@/lib/refrigeratorBridgeDepth";
 import { fillGapsUnderOneAndAHalf } from "@/lib/subOneAndHalfFiller";
 import { overApplianceWallMount } from "@/lib/overApplianceMount";
+import { seatRequiredBridgeFillers } from "@/lib/bridgeHalfInchFillers";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
 import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
@@ -9967,7 +9968,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	        }
 	        committedRun = withRequiredFiller;
 		      }
-		      if (!requestedIslandFace && (finalCab.placement === "wall" || finalCab.placement === "base" || finalCab.placement === "tall")) {
+		      // Rich's bridge rule (Tom, Nov 19 2026): a bridge over a refrigerator always gets its two 1/2" fillers, the
+	      // same as a required blind-corner filler: automatic, no prompt, refused with the reason if they cannot seat.
+	      if (!requestedIslandFace && finalCab.placement === "wall") {
+	        const bridgeFillers = seatRequiredBridgeFillers(committedRun, finalCab.uid, room, catalogFillers, makeUid, styleIdRef.current ?? null);
+	        if (!bridgeFillers.ok) {
+	          setPlacementWarning(bridgeFillers.message);
+	          toast.error(bridgeFillers.message);
+	          return;
+	        }
+	        committedRun = bridgeFillers.placed;
+	        finalCab = committedRun.find((item) => item.uid === finalCab.uid) ?? finalCab;
+	      }
+	      if (!requestedIslandFace && (finalCab.placement === "wall" || finalCab.placement === "base" || finalCab.placement === "tall")) {
 		        // A first cabinet at the 45° hold may already have one user-approved
 		        // provisional filler. Once the adjoining cabinet is placed, remove
 		        // that board before adding the shared two-board front-miter pair.

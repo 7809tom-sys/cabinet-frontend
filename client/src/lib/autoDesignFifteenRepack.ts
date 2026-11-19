@@ -1,3 +1,4 @@
+import { isBridgeAreaFiller } from "./bridgeHalfInchFillers";
 import {
   type PlacedCabinet,
   type RoomData,
@@ -616,7 +617,8 @@ function classifyGroups(
 
   for (const p of items) {
     if (assigned.has(p.uid)) continue;
-    const tiedToKept =
+    // Rich's bridge rule: the two 1/2" boards beside a bridge are required, never re-tiled or dropped.
+    const tiedToKept = isBridgeAreaFiller(p) ||
       (p.fillerForCabinetUid && byUid.has(p.fillerForCabinetUid) && assigned.has(p.fillerForCabinetUid)) ||
       (p.autoPlacedForUid && byUid.has(p.autoPlacedForUid) && assigned.has(p.autoPlacedForUid)) ||
       (p.fillerForCabinetUid != null && globalKeepUids.has(p.fillerForCabinetUid)) ||

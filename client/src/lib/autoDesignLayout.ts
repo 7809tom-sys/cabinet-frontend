@@ -1,3 +1,4 @@
+import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers } from "./bridgeHalfInchFillers";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { FRAMELESS_TOP_WALL_HEIGHT_IN } from "./framelessWallTopAlignment";
 import {
@@ -822,6 +823,13 @@ function autoDesignWallFitSuggestion(input: AutoDesignInputs, room: RoomData, ba
     baseCatalog,
   });
 }
+function fmtBridgeOpening(placed: readonly PlacedCabinet[], refrigeratorUid: string): string {
+  const bridge = placed.find((item) => item.refrigeratorAssemblyId === refrigeratorUid && item.refrigeratorAssemblyRole === "bridge");
+  const width = bridge ? Number(bridge.width) || 0 : 0;
+  const total = Math.round((width + 1) * 8) / 8;
+  return String(total);
+}
+
 export function runAutoDesignLayout(rawArgs: {
   input: AutoDesignInputs;
   room: RoomData;
@@ -1169,6 +1177,16 @@ export function runAutoDesignLayout(rawArgs: {
       end: refrigeratorBay.reservation.end + appliedBayShift,
     };
     notes.push(...refrigeratorBay.notes, ...(refrigeratorBay.refrigeratorClampNote ? [refrigeratorBay.refrigeratorClampNote] : []));
+  }
+  if (refrigerator && !budgetFriendly) {
+    // Rich's bridge filler rule (Tom, Nov 19 2026, 12:48-12:50 PM CT): a 1/2" filler on each side of every
+    // bridge cabinet, so a 36" bridge takes a 37" opening. Mandatory in standard (non-budget) flows. Budget mode is exempt (Tom, 12:56 PM CT): it has no panels and keeps its bridge as is.
+    const bridgeFillers = ensureBridgeHalfInchFillers(working, room, args.fillers ?? [], makeUid, args.styleId ?? null);
+    working = bridgeFillers.placed;
+    if (bridgeFillers.added.length > 0) {
+      notes.push(`Bridge fillers: a 1/2″ ${bridgeFillers.added[0]!.masterCode} filler on each side of the cabinet over the refrigerator, so the bridge takes a ${fmtBridgeOpening(working, refrigerator.uid)}″ opening (stops the bridge bowing and lets the refrigerator go in without scratching).`);
+    }
+    for (const failure of bridgeFillers.failures) refrigeratorBayWarnings.push(`Bridge fillers: ${failure.masterCode} — ${failure.reason}.`);
   }
   if (budgetFriendly && refrigerator) {
     const budgetBridge = working.find((item) => item.refrigeratorAssemblyId === refrigerator.uid && item.refrigeratorAssemblyRole === "bridge");
@@ -2580,6 +2598,24 @@ export function runAutoDesignLayout(rawArgs: {
   working = outsidePanelFillers.placed;
   notes.push(...outsidePanelFillers.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...outsidePanelFillers.findings);
+  // Tom, voice, Nov 19 2026, 12:57-12:58 PM CT: no other filler in the bridge area except one 3" filler against a
+  // wall gap. Standard (non-budget) flows only; budget mode keeps its bridge as it is.
+  if (refrigerator && !budgetFriendly) {
+    const bridgeArea = applyBridgeAreaFillerRule(working, room, args.fillers ?? [], makeUid, args.styleId ?? null);
+    working = bridgeArea.placed;
+    if (bridgeArea.removed.length > 0) {
+      notes.push(`Bridge area: ${bridgeArea.removed.map((item) => item.masterCode).join(", ")} dropped. Only the two 1/2″ bridge boards, and one filler against a wall gap, are allowed beside the bridge.`);
+    }
+    if (bridgeArea.duplicatesDropped.length > 0) {
+      notes.push(`Bridge area: the refrigerator's own full-height 1/2″ board already stands at the bridge junction on ${bridgeArea.duplicatesDropped.length === 1 ? "one side" : "both sides"}, so no second 1/2″ board was added there.`);
+    }
+    for (const gap of bridgeArea.closedGaps) {
+      notes.push(`Bridge area: a ${gap.masterCode} filler cut to ${Math.round(gap.gapIn * 8) / 8}″ closes the gap between the bridge and the wall (${gap.side} side).`);
+    }
+    for (const gap of bridgeArea.oversizeGaps) {
+      refrigeratorBayWarnings.push(`Bridge area: the ${gap.side} side of ${gap.masterCode} leaves a ${Math.round(gap.gapIn * 8) / 8}″ gap against the wall, over the 3″ filler. No second filler was added; this needs Tom's answer.`);
+    }
+  }
   // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): claim the 3" filler first, then size the base.
   if (economyCorners.length > 0) {
     const economyFinal = enforceEconomyCornerFillers({

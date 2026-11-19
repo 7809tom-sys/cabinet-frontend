@@ -12,6 +12,7 @@
  * a filler, a tall box or a seated corner that moved earlier in the build is
  * measured as it really is.
  */
+import { isBridgeAreaFiller } from "./bridgeHalfInchFillers";
 import {
   COLLISION_EPSILON_IN,
   STD,
@@ -314,6 +315,8 @@ export function trimWallFillersOutsideRun(input: {
       if (item.placement !== "wall") continue;
       if (cabinetWall(item, input.room) !== wall) continue;
       if (!isFillerItem(item) && !isPanelItem(item)) continue;
+      // The 1/2" bridge boards hang on the bridge over the refrigerator, not over a base run (Rich's bridge rule).
+      if (isBridgeAreaFiller(item)) continue;
       const start = wallRunOffset(item, wall, input.room);
       const end = start + wallRunSpan(item, wall, input.room);
       const inside = coverage.some((span) => Math.min(end, span.end) - Math.max(start, span.start) > EDGE_TOL_IN);

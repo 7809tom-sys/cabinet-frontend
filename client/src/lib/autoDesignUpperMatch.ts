@@ -9,6 +9,7 @@
  * left as it is, with a visible reason, when the line has no matching width,
  * a window's 3" clearance or another wall item sits in the way.
  */
+import { isBridgeAreaFiller } from "./bridgeHalfInchFillers";
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { autoDesignStandardUpperRows } from "./autoDesignWallCabinets";
 import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
@@ -148,6 +149,8 @@ export function matchUppersToBases(input: {
       const above = working.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wall)
         .map(spanOf)
         .filter((entry) => entry.start < chainEnd - COLLISION_EPSILON_IN && entry.end > chainStart + COLLISION_EPSILON_IN);
+      // Rich's bridge rule: the 1/2" boards beside a bridge are required, so a run that holds one is not re-tiled.
+      if (above.some((entry) => isBridgeAreaFiller(entry.item))) continue;
       const uppers = above.filter((entry) => !isFillerItem(entry.item));
       if (!uppers.length) continue; // nothing above (a window, the range bay) is left alone
       const aligned = targets.every((base) => above.some((entry) => !isFillerItem(entry.item)
