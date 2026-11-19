@@ -409,7 +409,7 @@ import type { WallBuilderDraft } from "@/components/design/WallBuilder";
 import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
 import { DesignerErrorBoundary, designerCrashDraftKey, useDesignerCrashFlush, useLastCommitted } from "@/components/design/DesignerErrorBoundary";
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
-import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
+import { designWorkspaceViewParam, hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 import { nearestFreeWallDropStart, targetedLowerCabinetForThreeDDrop, targetedSinkBaseForThreeDDrop, type ThreeDWallDropTarget } from "./designTool3DDropPlacement";
 import { catalogHeightForCabinet, catalogHeightOptions, filterCatalogByHeight, formatCatalogInchValue, formatCatalogPaletteSize, type HeightFilterPaletteType } from "./designToolCatalogHeights";
 import { CatalogPaletteCard } from "@/components/design/CatalogPaletteCard";
@@ -1152,7 +1152,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setSelectedUid(uid);
     setSelectedSinkUid(null);
     setSelectedOpeningUid(null);
-    setViewMode("threeD");
+    // Back to the view the person left (the return link carries `view`); only a link with no
+    // `view` opens 3D, which is the default.
+    setViewMode(initialDesignWorkspaceView(search));
   }, [placed, search]);
   useEffect(() => {
     if (!isMobile) return;
@@ -3509,6 +3511,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     newStyleId: number;
     distributorId: number | null;
     requiresDistributorOverride: boolean;
+    /** Set when ONE cabinet's finish is changing: that cabinet only, with the override to store (null = match design). */
+    cabinet?: { uid: string; styleId: number | null };
   } | null>(null);
   const [finishApplyScopePrompt, setFinishApplyScopePrompt] = useState<{ targetStyleId: number } | null>(null);
   const [planSwitchAlternativeChoices, setPlanSwitchAlternativeChoices] = useState<Record<string, number>>({});
@@ -5941,7 +5945,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   const planSwitchReviewCabinets = useMemo(() => {
     if (!pendingPlanStyleSwitch) return [];
     const formerStyleId = pendingPlanStyleSwitch.slot === "A" ? (styleA ?? styleId) : styleB;
-    return planStyleReviewCandidates(placed, formerStyleId, designStyleId)
+    const oneCabinet = pendingPlanStyleSwitch.cabinet;
+    const reviewed = oneCabinet
+      ? placed.filter((cabinet) => cabinet.uid === oneCabinet.uid)
+      : planStyleReviewCandidates(placed, formerStyleId, designStyleId);
+    return reviewed
       .map((cabinet) => ({
         uid: cabinet.uid,
         cabinetId: pricingCabinetIdFor(cabinet),
@@ -14889,10 +14897,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // clear the override (cabinet falls back to the design's default finish).
   const setCabinetStyle = useCallback((newStyleId: number | null) => {
     if (!selectedUid) return;
+    const cabinet = placed.find((p) => p.uid === selectedUid);
+    // Like setSlotStyle, a finish that really changes a sellable cabinet first goes through the
+    // server price review (same dialog). Closet parts, locked cabinets and a no-op skip it.
+    const target = newStyleId ?? designStyleId;
+    if (cabinet && target != null && effectiveStyleId(cabinet, designStyleId) !== target
+      && planStyleReviewCandidates([cabinet], effectiveStyleId(cabinet, designStyleId), designStyleId).length > 0) {
+      const distributorId = ((doorStyles ?? []) as Array<{ id: number; distributorId?: number }>).find((d) => d.id === target)?.distributorId ?? null;
+      setPlanSwitchAlternativeChoices({});
+      setPendingPlanStyleSwitch({ slot: "A", newStyleId: target, distributorId, requiresDistributorOverride: false, cabinet: { uid: selectedUid, styleId: newStyleId } });
+      return;
+    }
     setPlaced((prev) =>
       prev.map((p) => (p.uid === selectedUid ? { ...p, styleId: newStyleId } : p))
     );
-  }, [selectedUid]);
+  }, [selectedUid, placed, designStyleId, doorStyles]);
 
   // Change the DESIGN DEFAULT finish (the main dropdown). Because every cabinet
   // without its own override inherits the default, switching it recolors the
@@ -15067,6 +15086,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     setMobilePanel("catalog");
   }, [activeSlot, styleId, styleA, styleB, doorStyles, t]);
 
+  // Commits a reviewed switch: one cabinet's own finish, or the Color 1 / Color 2 slot.
+  const commitPendingStyleSwitch = useCallback((pending: NonNullable<typeof pendingPlanStyleSwitch>) => {
+    const oneCabinet = pending.cabinet;
+    if (oneCabinet) {
+      setPlaced((previous) => previous.map((cabinet) => (cabinet.uid === oneCabinet.uid ? { ...cabinet, styleId: oneCabinet.styleId } : cabinet)));
+      return;
+    }
+    commitPlanStyleSwitch(pending.slot, pending.newStyleId, pending.requiresDistributorOverride);
+  }, [commitPlanStyleSwitch]);
+
   const approvePlanSwitch = useCallback(() => {
     if (!pendingPlanStyleSwitch) return;
     // An unused Color 1/Color 2 slot has no placed cabinet price to re-check.
@@ -15076,7 +15105,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const pending = pendingPlanStyleSwitch;
       setPendingPlanStyleSwitch(null);
       setPlanSwitchAlternativeChoices({});
-      commitPlanStyleSwitch(pending.slot, pending.newStyleId, pending.requiresDistributorOverride);
+      commitPendingStyleSwitch(pending);
       return;
     }
     if (!planSwitchPricingReview.data) return;
@@ -15123,8 +15152,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const pending = pendingPlanStyleSwitch;
     setPendingPlanStyleSwitch(null);
     setPlanSwitchAlternativeChoices({});
-    commitPlanStyleSwitch(pending.slot, pending.newStyleId, pending.requiresDistributorOverride);
-  }, [pendingPlanStyleSwitch, planSwitchReviewCabinets, planSwitchPricingReview.data, planSwitchAlternativeChoices, commitPlanStyleSwitch]);
+    commitPendingStyleSwitch(pending);
+  }, [pendingPlanStyleSwitch, planSwitchReviewCabinets, planSwitchPricingReview.data, planSwitchAlternativeChoices, commitPendingStyleSwitch]);
 
   // One status action finishes every cabinet in this review that already has
   // an authorized priced alternative. Cabinets with no alternative stay put.
@@ -15149,12 +15178,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     if (unresolved.length === 0) {
       setPendingPlanStyleSwitch(null);
       setPlanSwitchAlternativeChoices({});
-      commitPlanStyleSwitch(pending.slot, pending.newStyleId, pending.requiresDistributorOverride);
+      commitPendingStyleSwitch(pending);
       toast.success(`Updated ${count} cabinet${count === 1 ? "" : "s"} and changed the door style.`);
       return;
     }
     toast.success(`Updated ${count} cabinet${count === 1 ? "" : "s"}. ${unresolved.length} still ${unresolved.length === 1 ? "has" : "have"} no authorized priced alternative and ${unresolved.length === 1 ? "was" : "were"} left unchanged.`);
-  }, [pendingPlanStyleSwitch, planSwitchPricingReview.data, commitPlanStyleSwitch]);
+  }, [pendingPlanStyleSwitch, planSwitchPricingReview.data, commitPendingStyleSwitch]);
 
   // Assign a door style to a slot (from the picker). Existing cabinet boxes
   // first pass a server-enforced priced-alternative review; a plan never changes
@@ -16885,9 +16914,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // Drop the return marker itself so a round trip does not nest.
     const params = new URLSearchParams(query.replace(/^\?/, ""));
     params.delete("selectCabinet");
+    // Carry the current view so Save comes back to 2D or 3D, whichever the person left.
+    const viewParam = designWorkspaceViewParam(viewMode);
+    if (viewParam) params.set("view", viewParam);
+    else params.delete("view");
     const cleaned = params.toString();
     return cleaned ? `${path}?${cleaned}` : path;
-  }, [search]);
+  }, [search, viewMode]);
 
   const threeDCabinetFinishPreviewOptions = useMemo(() => {
     const ids = Array.from(new Set([
@@ -17558,6 +17591,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           value={styleId}
           disabled={cabinetsLocked}
           onChange={(id) => setSlotStyle(activeSlot, id)}
+          editHref={isAdmin
+            ? doorStyleEditUrl({ styleId, styleName: styleId != null ? styleNameById.get(styleId) ?? null : null, returnTo: designerEditReturnUrl })
+            : null}
         />
         {/* One Edit action, not two approve controls. It opens this design's door
             style in the style editor (color and style) and comes back here. */}
@@ -19774,6 +19810,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 >
                   <X className="mr-1.5 h-4 w-4" /> Close
                 </Button>
+                {/* Same Edit as desktop: this cabinet's door style (admin only), and Save comes back here. */}
+                <DoorStyleEditButton
+                  isAdmin={isAdmin}
+                  styleId={pricingStyleIdFor(selectedCab) ?? designStyleId}
+                  styleName={styleNameById.get(pricingStyleIdFor(selectedCab) ?? designStyleId ?? -1) ?? null}
+                  cabinetUid={selectedCab.uid}
+                  cabinetCode={selectedCab.masterCode}
+                  returnTo={designerEditReturnUrl}
+                  hrefFor={doorStyleEditUrl}
+                  variant="button"
+                  testId="selected-cabinet-edit-door-style-mobile"
+                />
               </div>
             </SheetHeader>
             <div className="overflow-y-auto px-4 pb-6 pt-4">

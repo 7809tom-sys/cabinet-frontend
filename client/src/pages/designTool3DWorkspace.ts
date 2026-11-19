@@ -34,6 +34,18 @@ export function initialDesignWorkspaceView(search: string): DesignWorkspaceView 
   return "threeD";
 }
 
+/**
+ * The `view` URL value that reopens a workspace view: the inverse of `initialDesignWorkspaceView`.
+ * The 3D view is the default, so it has no value. The door editor hand-off carries this so Save
+ * returns the person to the view they left (2D plan or 3D), not always 3D.
+ */
+export function designWorkspaceViewParam(mode: DesignWorkspaceView): string | null {
+  if (mode === "plan") return "plan";
+  if (mode === "elevation") return "front";
+  if (mode === "split" || mode === "hybrid" || mode === "corner" || mode === "island") return mode;
+  return null;
+}
+
 /** Matches the catalog payload accepted by the 3D canvas drop target. */
 export function threeDLeftCatalogDragPayload(category: "Cabinet" | "Accessory" | "Appliance", id: number) {
   return `${category}:${id}`;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
+import { designWorkspaceViewParam, hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
 
 describe("3D-first design workspace", () => {
   it("opens the 3D workspace by default", () => {
@@ -13,6 +13,16 @@ describe("3D-first design workspace", () => {
     expect(initialDesignWorkspaceView("?view=split")).toBe("split");
     expect(initialDesignWorkspaceView("?view=hybrid")).toBe("hybrid");
     expect(initialDesignWorkspaceView("?view=3d-plan")).toBe("hybrid");
+  });
+
+  it("writes the view the person left into the return link, and reading it back gives the same view", () => {
+    for (const mode of ["plan", "threeD", "hybrid", "elevation", "split", "corner", "island"] as const) {
+      const value = designWorkspaceViewParam(mode);
+      expect(initialDesignWorkspaceView(value ? `?view=${value}` : "")).toBe(mode);
+    }
+    // 2D (the floor plan) is carried; 3D is the default and needs no value.
+    expect(designWorkspaceViewParam("plan")).toBe("plan");
+    expect(designWorkspaceViewParam("threeD")).toBeNull();
   });
 
   it("uses catalog payloads accepted by the 3D drop target for left-rail dragging", () => {
