@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import DamageClaimForm from "@/components/DamageClaimForm";
 
 type InvoiceView = {
   invoiceNumber: string;
@@ -52,6 +53,7 @@ export default function InvoicePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<InvoiceView | null>(null);
+  const [claimOpen, setClaimOpen] = useState(false);
 
   const prefilled = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
@@ -249,9 +251,22 @@ export default function InvoicePage() {
               Pick the affected line items, add a photo or two, and tell us what happened. We answer within one
               business day.
             </p>
-            <Button className="mt-3" data-testid="invoice-report-damage">
-              Report damaged items
-            </Button>
+            {!claimOpen ? (
+              <Button className="mt-3" data-testid="invoice-report-damage" onClick={() => setClaimOpen(true)}>
+                Report damaged items
+              </Button>
+            ) : (
+              <DamageClaimForm
+                invoiceNumber={invoice.invoiceNumber}
+                emailOrZip={emailOrZip}
+                lines={invoice.items}
+                onCancel={() => setClaimOpen(false)}
+                onSubmitted={() => {
+                  setClaimOpen(false);
+                  void lookup(invoice.invoiceNumber, emailOrZip);
+                }}
+              />
+            )}
           </section>
 
           <Button
