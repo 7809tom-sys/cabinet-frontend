@@ -157,4 +157,24 @@ describe("door color precedence", () => {
       expect(decision.appliedCategory, style.ourName ?? "").toBe(original.category);
     }
   });
+
+  it("reads Treasure Chest (390009, Solid Birch, Skyline) as a stain, not paint", () => {
+    const treasureChest = styles.find((item) => item.id === 390009)!;
+    expect(treasureChest.woodSpecies).toBe("Solid Birch");
+    const decision = resolveDoorColor(treasureChest);
+    expect(decision.appliedCategory).toBe("stain");
+    expect(decision.usesGrain).toBe(true);
+    // The measured tone from the catalog photo, not the white placeholder it had before.
+    expect(decision.appliedHex).toBe("#bd9360");
+    // A hand-set render hex does not turn it into paint either.
+    expect(resolveDoorColor({ ...treasureChest, renderHex: "#9a6e51" }).appliedCategory).toBe("stain");
+  });
+
+  it("keeps the painted Skyline birch styles on paint: every Skyline door is Solid Birch, so the species cannot decide", () => {
+    for (const id of [360001, 390001, 390003, 390004, 390005, 390007, 390008]) {
+      const style = styles.find((item) => item.id === id)!;
+      expect(style.woodSpecies, style.ourName ?? "").toBe("Solid Birch");
+      expect(resolveDoorColor(style).appliedCategory, style.ourName ?? "").toBe("paint");
+    }
+  });
 });

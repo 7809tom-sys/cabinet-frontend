@@ -50,6 +50,11 @@ export type FourSlot = {
   checked: boolean;
   /** True when the slot has a picture or color to show. */
   filled: boolean;
+  /**
+   * "stain" or "paint" for the slot's finish: the chip's own finish for Sherwin-Williams, the door
+   * style's finish for the photo slots. Null for the hex slot, which is a bare color.
+   */
+  finishKind: "stain" | "paint" | null;
 };
 
 export type FourSlotInput = {
@@ -66,6 +71,8 @@ export type FourSlotInput = {
   stored: DoorColorSourceSelection | null;
   listing?: DoorColorSourcesListing;
   now: string;
+  /** The door style's finish as the color resolver reads it (Treasure Chest, Solid Birch, is a stain). */
+  styleFinish?: "stain" | "paint" | null;
 };
 
 const trimmed = (value: string | null | undefined): string => (value ?? "").trim();
@@ -111,6 +118,7 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
         checkable: true,
         reason: null,
         filled: Boolean(url),
+        finishKind: input.styleFinish ?? null,
       };
     }
 
@@ -135,6 +143,7 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
             : "No Gemini picture is saved for this door yet. Make one with the AI render tool."
           : "This picture is saved but 3D cannot use it yet, so the door keeps its supplier photo.",
         filled: Boolean(url),
+        finishKind: input.styleFinish ?? null,
       };
     }
 
@@ -152,6 +161,7 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
         checkable: Boolean(selection),
         reason: selection ? null : "Pick and confirm a Sherwin-Williams color first, then it can be used.",
         filled: Boolean(color),
+        finishKind: color?.finish ?? null,
       };
     }
 
@@ -168,6 +178,7 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
       checkable: Boolean(selection),
       reason: selection ? null : "Type or pick a hex color and confirm it first, then it can be used.",
       filled: Boolean(hex),
+      finishKind: null,
     };
   });
 }

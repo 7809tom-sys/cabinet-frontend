@@ -218,13 +218,42 @@ export function readStainCodeInput(value: string): PaintCodeResult {
  * Paint is an opaque solid: no wood species and grainDirection "none", which is the same
  * shape the existing doorStyles update accepts.
  */
-export function wizardSavePatch(color: WizardColor, grain: { name: string | null; orientation: GrainOrientation | null } | null): MatchSavePatch | null {
+export function wizardSavePatch(
+  color: WizardColor,
+  grain: { name: string | null; orientation: GrainOrientation | null } | null,
+  /** Used only when a stain has no grain of its own: the door style's species. Never for paint. */
+  fallbackGrain?: { name: string | null; orientation: GrainOrientation | null } | null,
+): MatchSavePatch | null {
   const hex = exactPaintHex(color.hex);
   if (!hex) return null;
   if (color.finish === PAINT_FINISH) {
     return { renderHex: hex, woodSpecies: null, grainDirection: "none" };
   }
-  const name = grain?.name ?? null;
-  if (!name) return null;
-  return { renderHex: hex, woodSpecies: name, grainDirection: grain?.orientation ?? "vertical" };
+  const chosen = grain?.name ? grain : fallbackGrain?.name ? fallbackGrain : null;
+  if (!chosen?.name) return null;
+  return { renderHex: hex, woodSpecies: chosen.name, grainDirection: chosen.orientation ?? "vertical" };
+}
+
+/** Last resort when a stained door style names no wood at all. */
+export const DEFAULT_STAIN_GRAIN_SPECIES = "Birch";
+
+const KNOWN_WOODS = ["birch", "maple", "oak", "hickory", "walnut", "cherry", "ash", "alder", "beech", "pine", "pecan", "mahogany", "poplar"];
+
+/**
+ * The grain a Sherwin-Williams stain saves with when nobody picked one: the door style's own
+ * species ("Solid Birch" saves as "Birch"). A painted species (HDF, MDF, "Painted ...") is not a
+ * wood, so it is skipped. With no usable species the default is Birch, and `fromStyle` is false
+ * so the editor can say so.
+ */
+export function defaultStainGrain(style: { woodSpecies?: string | null } | null | undefined): {
+  name: string;
+  orientation: GrainOrientation;
+  fromStyle: boolean;
+} {
+  const species = (style?.woodSpecies ?? "").trim();
+  if (species && !/\bpaint(?:ed)?\b|\bhdf\b|\bmdf\b/i.test(species)) {
+    const wood = KNOWN_WOODS.find((name) => new RegExp(`\\b${name}\\b`, "i").test(species));
+    if (wood) return { name: wood.charAt(0).toUpperCase() + wood.slice(1), orientation: "vertical", fromStyle: true };
+  }
+  return { name: DEFAULT_STAIN_GRAIN_SPECIES, orientation: "vertical", fromStyle: false };
 }

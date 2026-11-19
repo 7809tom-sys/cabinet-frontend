@@ -52,7 +52,7 @@ export type DoorColorSourceFourPreviewProps = {
   /** An empty Sherwin-Williams tile: open the Sherwin-Williams picker. */
   onRequestSherwin?: () => void;
   /** A Sherwin-Williams chip picked in the wizard and not confirmed yet. */
-  pendingSherwin?: { label: string; hex: string } | null;
+  pendingSherwin?: { label: string; hex: string; finish?: "stain" | "paint" | null } | null;
   /** Confirm the pending Sherwin-Williams chip. The caller fills, checks and saves it. */
   onConfirmSherwin?: () => void;
   /**
@@ -107,6 +107,7 @@ export function DoorColorSourceFourPreview({
             ...slot,
             hex: pendingSherwinHex,
             filled: true,
+            finishKind: pendingSherwin.finish ?? null,
             caption: `${pendingSherwin.label || pendingSherwinHex} · ${pendingSherwinHex} (not confirmed yet)`,
           };
         }
@@ -292,6 +293,11 @@ export function DoorColorSourceFourPreview({
 
               <figcaption className="space-y-0.5">
                 <span className="block truncate text-[11px] font-semibold leading-tight text-[#1a2744]">{slot.label}</span>
+                {slot.finishKind && (
+                  <span data-testid={`four-source-finish-${slot.source}`} className="block text-[10px] font-semibold uppercase leading-tight tracking-wide text-[#1a2744]">
+                    {slot.finishKind === "stain" ? "Stain" : "Paint"}
+                  </span>
+                )}
                 <span data-testid={`four-source-caption-${slot.source}`} className="block text-[10px] leading-tight text-muted-foreground">
                   {slot.caption}
                 </span>

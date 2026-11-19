@@ -284,9 +284,9 @@
   {
     "id": 390009,
     "style": "Aurum Vault (Preston)",
-    "category": "paint",
-    "treatment": "opaque solid",
-    "hex": "#f2f0ea"
+    "category": "stain",
+    "treatment": "wood grain + stain tint",
+    "hex": "#bd9360"
   },
   {
     "id": 390010,

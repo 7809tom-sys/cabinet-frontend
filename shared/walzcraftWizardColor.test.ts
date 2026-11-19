@@ -14,6 +14,8 @@ import {
   wizardColorByStainCode,
   wizardColorPosition,
   wizardSavePatch,
+  defaultStainGrain,
+  DEFAULT_STAIN_GRAIN_SPECIES,
 } from "./walzcraftWizardColor";
 import { SHERWIN_WILLIAMS_PAINT_COLORS } from "./sherwinWilliamsPaint";
 import { SHERWIN_WILLIAMS_STAINS } from "./sherwinWilliamsStain";
@@ -106,6 +108,26 @@ describe("wizard color: Sherwin-Williams stain and paint", () => {
     // A stain cannot be applied without a grain: a stain with no species is refused, not guessed.
     expect(wizardSavePatch(stain, null)).toBeNull();
     expect(wizardSavePatch(stain, { name: null, orientation: null })).toBeNull();
+  });
+
+  it("saves a stain with the door style's own species when no grain was picked", () => {
+    const stain = wizardColorByStainCode("MW230")!;
+    const fallback = defaultStainGrain({ woodSpecies: "Solid Birch" });
+    expect(fallback).toEqual({ name: "Birch", orientation: "vertical", fromStyle: true });
+    expect(wizardSavePatch(stain, null, fallback)).toEqual({ renderHex: "#9a6e51", woodSpecies: "Birch", grainDirection: "vertical" });
+    // A grain the admin picked always wins.
+    expect(wizardSavePatch(stain, { name: "Grey Wood", orientation: "horizontal" }, fallback)?.woodSpecies).toBe("Grey Wood");
+    // Paint never takes a grain, fallback or not.
+    expect(wizardSavePatch(wizardColorByPaintCode("SW 7005")!, null, fallback)).toEqual({ renderHex: "#edece6", woodSpecies: null, grainDirection: "none" });
+  });
+
+  it("reads a species out of the longer catalog text and skips painted species", () => {
+    expect(defaultStainGrain({ woodSpecies: "Solid Birch frame / veneered center panel" }).name).toBe("Birch");
+    expect(defaultStainGrain({ woodSpecies: "Rift White Oak" }).name).toBe("Oak");
+    for (const woodSpecies of ["Painted HDF", "MDF", null, "", undefined]) {
+      expect(defaultStainGrain({ woodSpecies })).toEqual({ name: DEFAULT_STAIN_GRAIN_SPECIES, orientation: "vertical", fromStyle: false });
+    }
+    expect(defaultStainGrain(null).fromStyle).toBe(false);
   });
 
   it("never routes a picked Sherwin-Williams hex through the brand palette", () => {
