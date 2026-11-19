@@ -63,6 +63,8 @@ export function pullRefrigeratorBridgeFlush(input: {
   room: RoomData;
 }): PlacedCabinet {
   if (input.cabinet.refrigeratorAssemblyRole !== "bridge") return input.cabinet;
+  // Budget friendly bay: no panels, the 12-inch box stays against the wall.
+  if (input.cabinet.refrigeratorBudgetBridge === true) return input.cabinet;
   const bay = refrigeratorBayFaceIn(input.placed, input.refrigeratorUid, input.room);
   if (!bay) return input.cabinet;
   const depth = Math.max(0, Number(input.cabinet.depth) || 0);
