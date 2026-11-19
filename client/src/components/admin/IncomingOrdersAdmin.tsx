@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { ChevronDown, ChevronRight, Copy, Package, Trash2, ExternalLink, BookOpen, Download } from "lucide-react";
 import AdminOrderStripeBreakdown, { AdminOrderListIdentity, AdminOrderListTotal } from "@/components/admin/AdminOrderStripeBreakdown";
 import OrderFulfillmentTrail from "@/components/admin/OrderFulfillmentTrail";
+import { OrderClaimsPanel, OrderTrackingEditor } from "@/components/admin/OrderClaimsAndTracking";
 import {
   ADMIN_ORDER_STATUS_COLORS,
   adminOrderShipment,
@@ -467,6 +468,10 @@ export default function IncomingOrdersAdmin() {
                 {isExpanded && (
                   <CardContent className="pt-0 pb-3 px-4 space-y-3">
                     <OrderFulfillmentTrail order={order} />
+                    {/* Customer-facing tracking and damage claims (Tom, Nov 19 2026).
+                        Both render nothing when the order has no shipments or claims. */}
+                    <OrderTrackingEditor orderId={order.id} />
+                    <OrderClaimsPanel orderId={order.id} />
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-xs text-muted-foreground">
                         {order.itemCount} item{order.itemCount !== 1 ? "s" : ""} ·{" "}
