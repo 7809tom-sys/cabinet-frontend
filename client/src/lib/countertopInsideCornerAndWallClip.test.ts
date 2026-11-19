@@ -13,11 +13,28 @@ describe("shared countertop pass: inside 90° corner fill + interior pony-wall c
     const top = [0, 1, 2].map((i) => cab({ uid: `t${i}`, x: 24 + i * 36, y: 0, wallId: "top" }));
     const left = [0, 1].map((i) => cab({ uid: `l${i}`, x: 0, y: 24 + i * 36, width: 24, depth: 36, rotation: 90, wallId: "left" }));
     const s = countertopSurfaces([...top, ...left], room, null);
-    const fill = s.find((x) => x.cabinetRunId?.startsWith("corner-fill"));
-    expect(fill).toBeTruthy();
-    expect(fill!.width).toBeCloseTo(25.5, 1);
-    expect(fill!.x).toBeCloseTo(0, 1);
-    expect(fill!.y).toBeCloseTo(0, 1);
+    // Tom, Nov 19 2026, 1:06 PM CT: both runs reach the corner, so they meet on a 45° miter seam instead of a separate square
+    // fill. Same coverage (the whole 25.5 in square), no overlap, both slabs flagged mitered.
+    expect(s.some((x) => x.cabinetRunId?.startsWith("corner-fill"))).toBe(false);
+    const pair = s.filter((x) => x.insideCornerMiterKey);
+    expect(pair.length).toBe(2);
+    expect(pair.every((x) => x.miteredStart || x.miteredEnd)).toBe(true);
+    const insidePoly = (pt: { x: number; y: number }, poly: { x: number; y: number }[]) => {
+      let hit = false;
+      for (let k = 0, m = poly.length - 1; k < poly.length; m = k++) {
+        const a = poly[k]!, b = poly[m]!;
+        if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+      }
+      return hit;
+    };
+    let holes = 0, overlaps = 0;
+    for (let x = 0.25; x < 25.5; x += 0.5) for (let y = 0.25; y < 25.5; y += 0.5) {
+      const n = s.filter((slab) => insidePoly({ x, y }, countertopSurfacePlanPolygon(slab))).length;
+      if (n === 0) holes += 1;
+      if (n > 1) overlaps += 1;
+    }
+    expect(holes).toBe(0);
+    expect(overlaps).toBe(0);
   });
 
   it("adds no fill when a corner cabinet already covers the corner", () => {
