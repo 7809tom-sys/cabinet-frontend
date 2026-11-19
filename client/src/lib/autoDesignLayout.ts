@@ -61,7 +61,7 @@ import { budgetSlideRefrigeratorToWallEnd, buildMandatoryAutoDesignRefrigeratorB
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
-import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
+import { pickBudgetDefaultSink, pickBudgetSinkBase } from "./autoDesignBudgetSink";
 import { applyDishwasherRunEndRule } from "./autoDesignDishwasherRunEnd";
 import { economyKeepClearShifts, type KeepClearAnchor } from "./autoDesignEconomyKeepClear";
 import { economyCornerClaimSpan, enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
@@ -853,6 +853,11 @@ export function runAutoDesignLayout(rawArgs: {
    */
   sinkCatalog?: readonly AutoDesignSinkProduct[];
   /**
+   * The line's real price per cabinet id (cabinet id -> homeowner price for the active style). Budget friendly
+   * ranks sink bases by it; never invented, and a base with no entry ranks after every priced one.
+   */
+  cabinetPriceById?: ReadonlyMap<number, number> | null;
+  /**
    * The selected line's end/finished panel stock. The build seats the line's own
    * panel on the outside of the base cabinet it puts on each side of the range,
    * as a real placed catalog row so it is drawn and billed.
@@ -924,9 +929,15 @@ export function runAutoDesignLayout(rawArgs: {
     measuredKind: input.sinkBaseKind ?? "regular",
     baseCatalog: pool,
   });
-  const sinkBaseWidth = resolvedSinkBase.widthIn;
+  // Budget friendly (Tom, voice, Nov 19 2026): with no sink picked by hand and no explicit farmhouse request,
+  // the build seats the SMALLEST, lowest-priced regular sink base that takes a double-bowl sink. The measured
+  // sink base size is only the starting point for every other mode.
+  const budgetSinkBase = hasPreference(input.intake, "budget-friendly") && !primaryPickedSink && resolvedSinkBase.kind === "regular"
+    ? pickBudgetSinkBase({ baseCatalog: pool, lineSinkProducts: args.sinkCatalog ?? [], priceByCabinetId: args.cabinetPriceById })
+    : null;
+  const sinkBaseWidth = budgetSinkBase ? budgetSinkBase.widthIn : resolvedSinkBase.widthIn;
   const sinkBaseKind = resolvedSinkBase.kind;
-  const sinkBaseSource = pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
+  const sinkBaseSource = budgetSinkBase ? budgetSinkBase.row : pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
   if (!sinkBaseSource) {
     return fail(sinkBaseKind === "farmhouse"
       ? `No source-priced ${sinkBaseWidth}″ farmhouse sink base is available for the selected line. Choose the regular sink base or another door style, then try again.`
@@ -1202,6 +1213,7 @@ export function runAutoDesignLayout(rawArgs: {
   const sinkBase = anchorsByKind.get("sink");
   let sinks: SinkFixture[] = [];
   if (sinkBase) {
+    if (budgetSinkBase) notes.push(budgetSinkBase.note);
     // A sink picked in the sink pop-up is seated in the sink base the build
     // actually placed, so the pairing decided above is what gets a basin.
     const pickedSink = pickedSinkProducts[0];
