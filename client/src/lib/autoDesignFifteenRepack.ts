@@ -821,6 +821,10 @@ export function repackFifteenRuleLayout(input: {
   const baseStock = baseRows(input.baseCatalog);
   const fillerStock = fillerRows(input.fillerCatalog);
   const panelStock = panelRows(input.panelCatalog);
+  // Budget friendly (Tom, Nov 19 2026, 6:33 AM CT): no spacer of any kind between cabinets. The run
+  // reserves no 3/4 in end panel and no filler strip; the leftover stays open at the run end.
+  const budgetNoSpacers = hasPreference(input.intake, "budget-friendly");
+  const budgetSkipped = { sinkDwPanel: 0, leftovers: [] as string[] };
 
   const keptOrder: PlacedCabinet[] = [];
   const newItems: PlacedCabinet[] = [];
@@ -939,7 +943,10 @@ export function repackFifteenRuleLayout(input: {
       if (sinkBase && dw) {
         const dwH = placedHeight(dw);
         const sbH = placedHeight(sinkBase);
-        if (dwH < sbH - EPS) {
+        if (budgetNoSpacers && dwH < sbH - EPS) {
+          // The dishwasher stays flush against the sink base: no 3/4 in panel, no 3/4 in shift.
+          budgetSkipped.sinkDwPanel += 1;
+        } else if (dwH < sbH - EPS) {
           const dwAlong = alongOf(dw, side, input.room);
           const sbAlong = alongOf(sinkBase, side, input.room);
           const dwAfter = dwAlong >= sbAlong;
@@ -970,7 +977,7 @@ export function repackFifteenRuleLayout(input: {
       ...((input.reservedSpans ?? []).filter((span) => span.wallId === side).map((span) => ({ start: span.start, end: span.end }))),
     ]);
 
-    const panelRowBase = pickPanelRow(panelStock, baseHeight, 24);
+    const panelRowBase = budgetNoSpacers ? null : pickPanelRow(panelStock, baseHeight, 24);
     const panelInBase = panelRowBase ? PANEL_IN : 0;
 
     const baseSpec: RunSpec = {
@@ -979,7 +986,7 @@ export function repackFifteenRuleLayout(input: {
       blocked: baseBlocked,
       blocks: baseBlocks,
       widths: baseStock.widths,
-      fillerMaxIn: FILLER_MAX,
+      fillerMaxIn: budgetNoSpacers ? 0 : FILLER_MAX,
       panelIn: panelInBase,
       landingPairs,
       step: 0.125,
@@ -1153,7 +1160,10 @@ export function repackFifteenRuleLayout(input: {
         });
       }
 
-      if (gap.openIn > 0.01) {
+      if (gap.openIn > 0.01 && budgetNoSpacers) {
+        const lastEnd = gap.pieces.reduce((end, piece) => Math.max(end, piece.start + piece.width), gap.start);
+        budgetSkipped.leftovers.push(`${fmt(gap.openIn)}" on ${side} (base) from ${fmt(lastEnd)}" to ${fmt(gap.end)}"`);
+      } else if (gap.openIn > 0.01) {
         findings.push({
           ruleId: "leftover-real-cabinets-first",
           code: "opening-left-open",
@@ -1233,7 +1243,7 @@ export function repackFifteenRuleLayout(input: {
       }
       if (cursor < frame.runEnd - EPS) noSupport.push({ start: cursor, end: frame.runEnd });
 
-      const panelRowWall = pickPanelRow(panelStock, H, D);
+      const panelRowWall = budgetNoSpacers ? null : pickPanelRow(panelStock, H, D);
       const panelInWall = panelRowWall ? PANEL_IN : 0;
 
       const wallSpec: RunSpec = {
@@ -1242,7 +1252,7 @@ export function repackFifteenRuleLayout(input: {
         blocked: mergeIntervals(Array.from(upperBlocked).concat(noSupport)),
         blocks: upperBlocks,
         widths: wallWidths,
-        fillerMaxIn: FILLER_MAX,
+        fillerMaxIn: budgetNoSpacers ? 0 : FILLER_MAX,
         panelIn: panelInWall,
         landingPairs: [],
         step: 0.125,
@@ -1308,7 +1318,10 @@ export function repackFifteenRuleLayout(input: {
             detail: `No panel stock covers the exposed side on ${side}; 0.75" end panel not placed.`,
           });
         }
-        if (gap.openIn > 0.01) {
+        if (gap.openIn > 0.01 && budgetNoSpacers) {
+          const lastEnd = gap.pieces.reduce((end, piece) => Math.max(end, piece.start + piece.width), gap.start);
+          budgetSkipped.leftovers.push(`${fmt(gap.openIn)}" on ${side} (wall) from ${fmt(lastEnd)}" to ${fmt(gap.end)}"`);
+        } else if (gap.openIn > 0.01) {
           findings.push({
             ruleId: "leftover-real-cabinets-first",
             code: "opening-left-open",
@@ -1319,6 +1332,16 @@ export function repackFifteenRuleLayout(input: {
         }
       }
     }
+  }
+
+  if (budgetNoSpacers) {
+    notes.push(
+      "Budget friendly: spacer skipped. No 3/4 in end panel (WSV/REPV) and no filler strip is placed between cabinets"
+      + `${budgetSkipped.sinkDwPanel ? "; the dishwasher stays flush to the sink base" : ""}; any exposed side shows raw. `
+      + (budgetSkipped.leftovers.length
+        ? `The leftover width stays open as a gap at the run end, not between cabinets: ${budgetSkipped.leftovers.join("; ")}.`
+        : "The cabinet widths were re-picked from stock so every run closes exactly, with no leftover inches."),
+    );
   }
 
   // Assemble final placed list: kept (shifted) in original order, then new items.
