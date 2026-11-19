@@ -45,6 +45,7 @@ import {
 } from "./design";
 import { normalizeOverApplianceWallMounts } from "./overApplianceMount";
 import { normalizeRefrigeratorBridgeDepth } from "./refrigeratorBridgeDepth";
+import { normalizeBridgeBoards } from "./bridgeHalfInchFillers";
 import { fillGapsUnderOneAndAHalf } from "./subOneAndHalfFiller";
 import { planAutoDesignBaseSegment } from "./autoDesignSeamFillers";
 import { removeIllegalFillers } from "./fillerPlacementRule";
@@ -1118,6 +1119,8 @@ export function applyDesignerLayoutRules(input: {
   // cabinet above comes forward so its face is flush with the panel. This is the
   // last depth word, after every pass that can re-seat a wall box on the wall.
   placed = normalizeRefrigeratorBridgeDepth(placed, input.room);
+  // The bridge's 1/2 in boards ride with the bridge: flush front, one taller board per side beside a glass cabinet.
+  placed = normalizeBridgeBoards(placed, input.room);
   const narrowGaps = fillGapsUnderOneAndAHalf({
     placed,
     room: input.room,

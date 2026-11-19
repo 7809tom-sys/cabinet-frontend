@@ -291,7 +291,10 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
     if (!bridge || bridge.depth < 20) issues.push(`fridge cap depth ${bridge?.depth ?? "missing"}`);
   }
   for (const item of placed.filter((entry) => entry.placement === "wall")) {
-    const overFridge = item.refrigeratorAssemblyRole === "bridge";
+    // The bridge's own 1/2" boards are part of the over-refrigerator cap: as deep as the bridge so their fronts
+    // line up with it and the refrigerator panel (Tom, Nov 19 2026, 2:25 PM ET, "flush with the panel").
+    const overFridge = item.refrigeratorAssemblyRole === "bridge"
+      || item.refrigeratorAssemblyRole === "bridge-left-filler" || item.refrigeratorAssemblyRole === "bridge-right-filler";
     // The mandatory over-range bridge is a real short wall box; a line may sell it
     // at 12" deep while its standard uppers are 13½". It is the catalog row, so the
     // frameless 13½-inch depth invariant does not apply to it.

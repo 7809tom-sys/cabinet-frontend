@@ -8815,6 +8815,18 @@ export function commitConfiguredRefrigeratorCandidate(
     )
     : null;
 
+  // The bridge is seated first: its 1/2" boards ride with the bridge (never with the panel), and a glass
+  // cabinet stacked on the bridge rides with it too (Tom, voice, Nov 19 2026, 2:23-2:26 PM ET).
+  const bridgeSpan = bridge ? wallRunSpan(bridge, cabinetWall(bridge, enclosure), enclosure) : 0;
+  const bridgeAlong = bridge ? metrics.refrigeratorStart + (metrics.refrigeratorWidth - bridgeSpan) / 2 : null;
+  const bridgeBefore = bridge ? wallRunOffset(bridge, cabinetWall(bridge, enclosure), enclosure) : 0;
+  const glassAbove = bridge
+    ? placed.filter((item) => item.uid !== bridge.uid && item.stackedOnCabinetUid === bridge.uid && !memberUids.has(item.uid))
+    : [];
+  const glassTop = glassAbove.length
+    ? Math.max(...glassAbove.map((item) => (Number(item.mountBottom) || 0) + placedHeight(item)))
+    : null;
+
   const repositioned = members.map((member) => {
     const role = member.refrigeratorAssemblyRole!;
     const span = wallRunSpan(member, cabinetWall(member, enclosure), enclosure);
@@ -8822,17 +8834,17 @@ export function commitConfiguredRefrigeratorCandidate(
     const along = role === "bridge"
       ? metrics.refrigeratorStart + (metrics.refrigeratorWidth - span) / 2
       : role === "bridge-left-filler"
-        ? metrics.openingStart
+        ? (bridgeAlong ?? metrics.openingStart + span) - span
         : role === "bridge-right-filler"
-          // Ends at the opening edge beside the right panel, whatever the
-          // refrigerator's exact catalog width under the cabinet.
-          ? metrics.openingEnd - span
+          // Starts exactly where the bridge ends: attached to the bridge, so a 36 in bridge keeps its 37 in opening.
+          ? (bridgeAlong ?? metrics.openingEnd - span - bridgeSpan) + bridgeSpan
           : role === "left-panel"
             ? metrics.openingStart - span
             : role === "right-panel"
               ? metrics.openingEnd
               : wallRunOffset(member, cabinetWall(member, enclosure), enclosure);
     const spot = wallPlacementAtUnbounded(along, span, depth, side, enclosure, candidate.peninsulaSide);
+    const boardTop = surround && glassTop != null ? Math.max(surround.top, glassTop) : surround?.top ?? null;
     return {
       ...member,
       ...spot,
@@ -8840,13 +8852,40 @@ export function commitConfiguredRefrigeratorCandidate(
       refrigeratorAssemblyRole: role,
       ...(role === "bridge" && surround ? { mountBottom: surround.mountBottom } : {}),
       ...((role === "bridge-left-filler" || role === "bridge-right-filler") && surround
-        ? { mountBottom: surround.mountBottom, height: bridgeHeight }
+        ? { mountBottom: surround.mountBottom, height: bridgeHeight + (boardTop != null ? Math.max(0, boardTop - surround.top) : 0) }
         : {}),
       ...(role === "left-panel" || role === "right-panel"
         ? { mountBottom: 0, height: surround?.top ?? member.height }
         : {}),
     };
   });
+  // Follow-ups that travel with the group by the same offset: a glass cabinet stacked on the bridge, and a board that
+  // is attached to the refrigerator itself (the frameless lines' full-height 1/2 in board stays attached to the
+  // refrigerator; it just moves with it instead of being left behind).
+  const followers: PlacedCabinet[] = [];
+  const movedBridge = repositioned.find((item) => item.refrigeratorAssemblyRole === "bridge");
+  if (movedBridge && bridgeAlong != null) {
+    const shift = bridgeAlong - bridgeBefore;
+    for (const stacker of glassAbove) {
+      const stackerSide = cabinetWall(stacker, enclosure);
+      const stackerSpan = wallRunSpan(stacker, stackerSide, enclosure);
+      const stackerDepth = Math.max(0, Number(stacker.depth) || 0);
+      const spot = wallPlacementAtUnbounded(wallRunOffset(stacker, stackerSide, enclosure) + shift, stackerSpan, stackerDepth, side, enclosure, candidate.peninsulaSide);
+      const seated = seatCabinetFrontIn({ ...stacker, ...spot } as PlacedCabinet, side, cabinetFrontIn(movedBridge, side, enclosure), enclosure);
+      followers.push({ ...seated, stackedOnCabinetUid: bridge!.uid });
+    }
+  }
+  const fridgeShift = metrics.refrigeratorStart - wallRunOffset(source, cabinetWall(source, enclosure), enclosure);
+  if (Math.abs(fridgeShift) > 1e-6) {
+    for (const board of placed) {
+      if (!isFillerItem(board) || memberUids.has(board.uid) || board.fillerForCabinetUid !== source.uid || board.refrigeratorAssemblyId) continue;
+      const boardSide = cabinetWall(board, enclosure);
+      const boardSpan = wallRunSpan(board, boardSide, enclosure);
+      const boardSpot = wallPlacementAtUnbounded(wallRunOffset(board, boardSide, enclosure) + fridgeShift, boardSpan, Math.max(0, Number(board.depth) || 0), side, enclosure, candidate.peninsulaSide);
+      const seated = seatCabinetFrontIn({ ...board, ...boardSpot } as PlacedCabinet, side, cabinetFrontIn(board, boardSide, enclosure), enclosure);
+      followers.push(seated);
+    }
+  }
 
   const runLength = wallLength(side, enclosure);
   const insideRun = (item: PlacedCabinet) => {
@@ -8857,13 +8896,16 @@ export function commitConfiguredRefrigeratorCandidate(
     return Math.abs(clamped.x - item.x) <= COLLISION_EPSILON_IN
       && Math.abs(clamped.y - item.y) <= COLLISION_EPSILON_IN;
   };
-  const group = [candidate, ...repositioned];
+  const followerUids = new Set(followers.map((item) => item.uid));
+  const group = [candidate, ...repositioned, ...followers];
   if (group.some((item) => !insideRun(item))) return null;
-  if (group.some((item) => cabinetPlacementCollisionDetail(item, peers, enclosure))) return null;
+  const outsidePeers = peers.filter((item) => !followerUids.has(item.uid));
+  if (group.some((item) => cabinetPlacementCollisionDetail(item, outsidePeers, enclosure))) return null;
 
   const replacements = new Map<string, PlacedCabinet>([
     [candidate.uid, candidate],
     ...repositioned.map((item) => [item.uid, item] as const),
+    ...followers.map((item) => [item.uid, item] as const),
   ]);
   return placed.map((item) => replacements.get(item.uid) ?? item);
 }

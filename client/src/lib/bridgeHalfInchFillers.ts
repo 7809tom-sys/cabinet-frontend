@@ -10,16 +10,24 @@
  * - The boards attach (fillerForCabinetUid) to the bridge cabinet only, never to the refrigerator
  *   end panel. The bridge's glass-door version is the same bridge and is covered the same way.
  * - The two 1/2″ boards are the only fillers at the bridge. Nothing else is added by this rule.
+ * - Follow-ups (Tom, voice, Nov 19 2026, 2:23-2:26 PM ET): (1) the bridge, the refrigerator panels and both boards
+ *   move as ONE unit when the refrigerator group is dragged or nudged, and the boards stay attached to the bridge;
+ *   (2) a glass wall cabinet above the bridge makes each board one taller board that flanks the glass cabinet too;
+ *   (3) each board is flush with the refrigerator panel: no gap, no overlap, front face aligned with the bridge
+ *   (and so the panel), so a 36" bridge keeps its true 37" opening. See `normalizeBridgeBoards`.
  * - The SKU and price are the line's existing wall filler stock (the 3″ filler cut to 1/2″); the
  *   catalog has no dedicated 1/2″ filler and none is invented. Two 1/2″ pieces are billed by the
  *   existing cut-group rule as one stock board.
  */
 import {
   appendCollisionFreePlacements,
+  cabinetFrontIn,
   cabinetWall,
   isFillerItem,
+  isGlassDoorCabinet,
   isPanelItem,
   isRefrigerator,
+  placedHeight,
   wallRunFrame,
   refrigeratorBayRunMetrics,
   wallPlacementAtUnbounded,
@@ -59,6 +67,42 @@ export function isRefrigeratorBridge(item: PlacedCabinet): boolean {
   return item.placement === "wall" && item.refrigeratorAssemblyRole === "bridge" && !isFillerItem(item);
 }
 
+/**
+ * Glass wall cabinets that sit on top of a bridge: the stacker linked to it (stackedOnCabinetUid), or any glass
+ * wall cabinet hanging directly above it on the same wall. Pure geometry; nothing is moved.
+ */
+export function glassCabinetsAboveBridge(bridge: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): PlacedCabinet[] {
+  const wallId = cabinetWall(bridge, room);
+  const start = wallRunOffset(bridge, wallId, room);
+  const end = start + wallRunSpan(bridge, wallId, room);
+  const bridgeTop = (Number(bridge.mountBottom) || 0) + placedHeight(bridge);
+  return placed.filter((item) => {
+    if (item.uid === bridge.uid || item.placement !== "wall" || isFillerItem(item) || isPanelItem(item)) return false;
+    if (cabinetWall(item, room) !== wallId) return false;
+    const itemStart = wallRunOffset(item, wallId, room);
+    const overlap = Math.min(end, itemStart + wallRunSpan(item, wallId, room)) - Math.max(start, itemStart);
+    if (overlap <= 0.25) return false;
+    if ((Number(item.mountBottom) || 0) < bridgeTop - 0.5) return false;
+    return item.stackedOnCabinetUid === bridge.uid || isGlassDoorCabinet(item);
+  });
+}
+
+/**
+ * The elevation a bridge's 1/2" board stands in: it starts where the bridge starts, is as deep as the bridge's front
+ * face (so the front lines up with the bridge and the refrigerator panel), and is as tall as the bridge, or as the
+ * bridge plus the glass cabinet above it (one taller board per side).
+ */
+export function bridgeBoardEnvelope(bridge: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): { mountBottom: number; height: number; depth: number; glassAbove: boolean } {
+  const wallId = cabinetWall(bridge, room);
+  const mountBottom = Number(bridge.mountBottom) || 0;
+  const bridgeTop = mountBottom + (placedHeight(bridge) || STD.WALL_HEIGHT);
+  const glass = glassCabinetsAboveBridge(bridge, placed, room);
+  const top = glass.length ? Math.max(bridgeTop, ...glass.map((item) => (Number(item.mountBottom) || 0) + placedHeight(item))) : bridgeTop;
+  const front = cabinetFrontIn(bridge, wallId, room);
+  const depth = front > 0 ? front : Number(bridge.depth) > 0 ? Number(bridge.depth) : STD.WALL_DEPTH;
+  return { mountBottom, height: Math.round((top - mountBottom) * 1000) / 1000, depth: Math.round(depth * 1000) / 1000, glassAbove: glass.length > 0 };
+}
+
 export type BridgeFillerResult =
   | { ok: true; bridge: PlacedCabinet; fillers: PlacedCabinet[] }
   | { ok: false; reason: "not-bridge" | "no-refrigerator" | "missing-catalog-filler" };
@@ -84,6 +128,7 @@ export function buildBridgeHalfInchFillers(
   const bay = refrigeratorBayRunMetrics(fridge, room);
   const span = wallRunSpan(bridge, side, room);
   const depth = Number(bridge.depth) > 0 ? Number(bridge.depth) : STD.WALL_DEPTH;
+  const envelope = bridgeBoardEnvelope(bridge, placed, room);
   // A bridge that fits the opening sits centered on the refrigerator; a wider one stays where it is.
   const bridgeStart = span <= bay.openingWidth + 0.001 ? bay.refrigeratorCenter - span / 2 : wallRunOffset(bridge, side, room);
   const bridgeSpot = wallPlacementAtUnbounded(bridgeStart, span, depth, side, room);
@@ -92,7 +137,7 @@ export function buildBridgeHalfInchFillers(
     : bridge;
   const stock = Number(catalog.width) > 0 ? Number(catalog.width) : 3;
   const make = (which: BridgeSide, along: number): PlacedCabinet => {
-    const spot = wallPlacementAtUnbounded(along, BRIDGE_FILLER_WIDTH_IN, depth, side, room);
+    const spot = wallPlacementAtUnbounded(along, BRIDGE_FILLER_WIDTH_IN, envelope.depth, side, room);
     return {
       uid: makeUid(),
       cabinetId: catalog.id,
@@ -105,10 +150,10 @@ export function buildBridgeHalfInchFillers(
       y: spot.y,
       width: BRIDGE_FILLER_WIDTH_IN,
       nominalWidth: stock,
-      depth,
-      nominalDepth: depth,
-      height: Number(seatedBridge.height) || STD.WALL_HEIGHT,
-      nominalHeight: Number(seatedBridge.height) || STD.WALL_HEIGHT,
+      depth: envelope.depth,
+      nominalDepth: envelope.depth,
+      height: envelope.height,
+      nominalHeight: envelope.height,
       rotation: spot.rotation,
       wallId: spot.wallId,
       wallOffset: spot.wallOffset,
@@ -123,7 +168,7 @@ export function buildBridgeHalfInchFillers(
       fillerPieceGroupId: bridgeFillerGroupId(seatedBridge.uid, which),
       fillerTotalWidth: BRIDGE_FILLER_WIDTH_IN,
       fillerPlacementMode: which,
-      mountBottom: seatedBridge.mountBottom ?? 0,
+      mountBottom: envelope.mountBottom,
       fieldModificationNote: BRIDGE_FILLER_NOTE,
     } as PlacedCabinet;
   };
@@ -209,7 +254,128 @@ export function ensureBridgeHalfInchFillers(
       });
     }
   }
-  return { placed: working, failures, added };
+  const normalized = normalizeBridgeBoards(working, room);
+  return { placed: normalized, failures, added: added.map((item) => normalized.find((entry) => entry.uid === item.uid) ?? item) };
+}
+
+const BOARD_EPS_IN = 0.01;
+
+/** The 1/2" junction boards that belong to one bridge (attached to the bridge, never to a panel). */
+function boardsOfBridge(placed: readonly PlacedCabinet[], bridge: PlacedCabinet): PlacedCabinet[] {
+  return placed.filter((item) => isFillerItem(item) && item.fillerForCabinetUid === bridge.uid
+    && (item.refrigeratorAssemblyRole === "bridge-left-filler" || item.refrigeratorAssemblyRole === "bridge-right-filler"));
+}
+
+/**
+ * Keeps every bridge's 1/2" boards true to the bridge, after ANY edit (drag, 3D arrow nudge, resize, a glass cabinet
+ * added or removed, Auto Design). It is idempotent and returns the same array when nothing needs to change.
+ *  - along the wall: the left board ends exactly where the bridge starts, the right board starts exactly where the
+ *    bridge ends, so the boards ride with the bridge and a 36" bridge keeps its 37" opening;
+ *  - depth: the board's front face is the bridge's front face (the refrigerator panel face), no step;
+ *  - height: the bridge's height, or the bridge plus the glass wall cabinet above it, as ONE board per side.
+ * Budget mode never has these boards, so it is untouched. Pure: no frozen 3D or Wall Builder code is involved.
+ */
+export function normalizeBridgeBoards(placed: readonly PlacedCabinet[], room: RoomData): PlacedCabinet[] {
+  const bridges = placed.filter(isRefrigeratorBridge);
+  if (bridges.length === 0) return placed as PlacedCabinet[];
+  let changed = false;
+  const replacement = new Map<string, PlacedCabinet>();
+  for (const bridge of bridges) {
+    // Budget mode has no bridge boards and keeps its bridge exactly as it is.
+    if (bridge.refrigeratorBudgetBridge === true) continue;
+    const boards = boardsOfBridge(placed, bridge);
+    const wallId = cabinetWall(bridge, room);
+    const bridgeStart = wallRunOffset(bridge, wallId, room);
+    const bridgeEnd = bridgeStart + wallRunSpan(bridge, wallId, room);
+    const envelope = bridgeBoardEnvelope(bridge, placed, room);
+    if (boards.length === 0 && !envelope.glassAbove) continue;
+    for (const board of boards) {
+      // The board's own width: 1/2" from the bridge rule, or the wider reveal the refrigerator Attributes dialog cuts
+      // for a bridge narrower than the opening. Either way the board touches the bridge edge on its own side.
+      const boardWidth = Number(board.width) > 0 ? Number(board.width) : BRIDGE_FILLER_WIDTH_IN;
+      const along = board.refrigeratorAssemblyRole === "bridge-left-filler" ? bridgeStart - boardWidth : bridgeEnd;
+      const sameAlong = Math.abs(wallRunOffset(board, wallId, room) - along) <= BOARD_EPS_IN && cabinetWall(board, room) === wallId;
+      const sameFront = Math.abs(cabinetFrontIn(board, wallId, room) - envelope.depth) <= BOARD_EPS_IN;
+      const sameHeight = Math.abs((Number(board.height) || 0) - envelope.height) <= BOARD_EPS_IN
+        && Math.abs((Number(board.mountBottom) || 0) - envelope.mountBottom) <= BOARD_EPS_IN
+        && Math.abs((Number(board.depth) || 0) - envelope.depth) <= BOARD_EPS_IN;
+      if (sameAlong && sameFront && sameHeight) continue;
+      const spot = wallPlacementAtUnbounded(along, boardWidth, envelope.depth, wallId, room, bridge.peninsulaSide);
+      replacement.set(board.uid, {
+        ...board,
+        x: spot.x,
+        y: spot.y,
+        rotation: spot.rotation,
+        wallId: spot.wallId ?? board.wallId,
+        wallOffset: spot.wallOffset ?? along,
+        depth: envelope.depth,
+        nominalDepth: envelope.depth,
+        height: envelope.height,
+        nominalHeight: envelope.height,
+        mountBottom: envelope.mountBottom,
+        refrigeratorAssemblyId: bridge.refrigeratorAssemblyId ?? board.refrigeratorAssemblyId,
+        fillerForCabinetUid: bridge.uid,
+      } as PlacedCabinet);
+      changed = true;
+    }
+    // The refrigerator's own full-height 1/2" board (frameless lines) already stands at a junction in place of the
+    // wall board. It stays attached to the refrigerator; it only grows taller so the glass cabinet above the bridge is
+    // flanked too (one board per side, floor to the top of the glass).
+    if (envelope.glassAbove) {
+      const glassTop = envelope.mountBottom + envelope.height;
+      for (const item of placed) {
+        if (!isFillerItem(item) || isPanelItem(item) || item.fillerContinuousVertical !== true || isBridgeAreaFiller(item)) continue;
+        if (cabinetWall(item, room) !== wallId || item.fillerForCabinetUid !== bridge.refrigeratorAssemblyId) continue;
+        const start = wallRunOffset(item, wallId, room);
+        const end = start + wallRunSpan(item, wallId, room);
+        const atJunction = Math.abs(end - bridgeStart) <= 0.05 || Math.abs(start - bridgeEnd) <= 0.05;
+        const top = (Number(item.mountBottom) || 0) + (Number(item.height) || 0);
+        if (!atJunction || top >= glassTop - BOARD_EPS_IN) continue;
+        const taller = glassTop - (Number(item.mountBottom) || 0);
+        replacement.set(item.uid, { ...item, height: taller, nominalHeight: Math.max(Number(item.nominalHeight) || 0, taller) } as PlacedCabinet);
+        changed = true;
+      }
+    }
+  }
+  return changed ? placed.map((item) => replacement.get(item.uid) ?? item) : placed as PlacedCabinet[];
+}
+
+export type BridgeBoardFlushFinding = {
+  bridgeUid: string;
+  boardUid: string;
+  side: BridgeSide;
+  /** Positive: an air gap between the board and the refrigerator panel. Negative: they overlap. Null: no panel on that side. */
+  panelGapIn: number | null;
+  /** Positive: the board's front stands proud of the panel's face; negative: set back. Null: no panel on that side. */
+  panelFrontStepIn: number | null;
+};
+
+/**
+ * Measures how each bridge board meets its refrigerator panel (the proof for "flush, no gap, no overlap, fronts
+ * aligned"). The panel face is measured at the board's own edge: the board's outer edge against the panel's inner edge.
+ */
+export function measureBridgeBoardFlush(placed: readonly PlacedCabinet[], room: RoomData): BridgeBoardFlushFinding[] {
+  const out: BridgeBoardFlushFinding[] = [];
+  for (const bridge of placed.filter(isRefrigeratorBridge)) {
+    const wallId = cabinetWall(bridge, room);
+    for (const board of boardsOfBridge(placed, bridge)) {
+      const side: BridgeSide = board.refrigeratorAssemblyRole === "bridge-left-filler" ? "left" : "right";
+      const panel = placed.find((item) => item.refrigeratorAssemblyId === bridge.refrigeratorAssemblyId
+        && item.refrigeratorAssemblyRole === (side === "left" ? "left-panel" : "right-panel"));
+      if (!panel) { out.push({ bridgeUid: bridge.uid, boardUid: board.uid, side, panelGapIn: null, panelFrontStepIn: null }); continue; }
+      const bs = wallRunOffset(board, wallId, room);
+      const ps = wallRunOffset(panel, wallId, room);
+      const gap = side === "left" ? bs - (ps + wallRunSpan(panel, wallId, room)) : ps - (bs + wallRunSpan(board, wallId, room));
+      out.push({
+        bridgeUid: bridge.uid,
+        boardUid: board.uid,
+        side,
+        panelGapIn: Math.round(gap * 1000) / 1000,
+        panelFrontStepIn: Math.round((cabinetFrontIn(board, wallId, room) - cabinetFrontIn(panel, wallId, room)) * 1000) / 1000,
+      });
+    }
+  }
+  return out;
 }
 
 export type BridgeAreaResult = {
