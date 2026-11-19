@@ -30,7 +30,7 @@ export type DoorColorSourceSelectorProps = {
   aiAvailable: boolean;
   /** Supplier photo shown for the Original image tile. */
   supplierPhotoUrl?: string | null;
-  /** Accepted AI render shown for the Approved image tile. */
+  /** Saved approved AI picture shown for the Approved image tile (accepted render or official AI profile image). */
   aiImageUrl?: string | null;
   /** The Sherwin-Williams chip the swatch tile paints: the confirmed pick, or the pending one. */
   sherwinHex?: string | null;
@@ -89,8 +89,10 @@ export function DoorColorSourceSelector({
       return url ? { kind: "image", url } : null;
     }
     if (option === "approved-ai-image") {
+      // Any saved approved image shows here: the accepted run's picture or the official
+      // AI profile picture. Whether the door can USE it is a separate rule (aiAvailable).
       const url = (aiImageUrl ?? "").trim();
-      return aiAvailable && url ? { kind: "image", url } : null;
+      return url ? { kind: "image", url } : null;
     }
     const hex = normalizeHex(option === "hex" ? hexSwatch : sherwinHex);
     return hex ? { kind: "color", hex } : null;
@@ -210,6 +212,8 @@ export function DoorColorSourceSelector({
         <div data-testid="door-color-source-ai" className="space-y-1 text-xs">
           {aiAvailable && aiImageUrl ? (
             <p data-testid="door-color-source-ai-present">The approved AI render above is used for this door.</p>
+          ) : aiImageUrl ? (
+            <p data-testid="door-color-source-ai-saved">The saved AI picture above is not an accepted render yet, so the door keeps its supplier photo until one is accepted.</p>
           ) : (
             <p data-testid="door-color-source-ai-missing">No accepted AI render exists for this door.</p>
           )}

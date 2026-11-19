@@ -35,6 +35,7 @@ import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
+import { initialProfileDescription, shouldPersistColorSource } from "@/components/admin/doorColorSourcePersist";
 import { DoorBestPicturePicker } from "@/components/admin/DoorBestPicturePicker";
 import {
   awaitingConfirm,
@@ -141,6 +142,10 @@ interface AdminStyle {
   doorColorSource?: string | null;
   doorColorSourceValue?: unknown;
   doorColorSourceUpdatedAt?: string | Date | null;
+  /** The official AI profile chosen in the editor (listForAdmin, 0281 columns). */
+  aiProfileModel?: string | null;
+  aiProfileText?: string | null;
+  aiProfileImageUrl?: string | null;
   autoRoomScene?: AutoRoomScene | null;
   isFeatured: boolean;
   featuredRank: number;
@@ -470,7 +475,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   const [grainDirection, setGrainDirection] = useState<NonNullable<AdminStyle["grainDirection"]>>(style.grainDirection ?? "none");
   const [finishSheen, setFinishSheen] = useState<NonNullable<AdminStyle["finishSheen"]>>(style.finishSheen ?? "satin");
   const [profileNotes, setProfileNotes] = useState(style.profileNotes ?? "");
-  const [profileDescription, setProfileDescription] = useState((style as AdminStyle & { profileDescription?: string | null }).profileDescription ?? "");
+  const [profileDescription, setProfileDescription] = useState(initialProfileDescription(style));
   /**
    * Plain-text color description. Browser-draft storage today (like doorSkin and
    * glazing); the SQL file under docs/sql holds the column that will replace it.
@@ -572,7 +577,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setGrainDirection(s.grainDirection ?? "none");
     setFinishSheen(s.finishSheen ?? "satin");
     setProfileNotes(s.profileNotes ?? "");
-    setProfileDescription((s as AdminStyle & { profileDescription?: string | null }).profileDescription ?? "");
+    setProfileDescription(initialProfileDescription(s));
     setColorDescription(readDoorColorDescription(s.id));
     setSourceSpecification(s.sourceSpecification ?? "");
     setCornerSwatchImageUrl(s.cornerSwatchImageUrl ?? "");
@@ -596,12 +601,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   });
 
   /** The wizard's own Apply, unchanged: sets the editor fields and saves them. */
-  const applyWizardPatch = (patch: MatchSavePatch) => {
+  const applyWizardPatch = (patch: MatchSavePatch, extra: Record<string, unknown> = {}) => {
     setRenderHex(patch.renderHex);
     setWoodSpecies(patch.woodSpecies ?? "");
     setGrainDirection(patch.grainDirection);
-    const wizardFields = { id: style.id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection };
-    update.mutate(wizardFields as unknown as Parameters<typeof update.mutate>[0]);
+    const wizardFields = { id: style.id, renderHex: patch.renderHex, woodSpecies: patch.woodSpecies, grainDirection: patch.grainDirection, ...extra };
+    update.mutate(wizardFields as unknown as Parameters<typeof update.mutate>[0], { onSuccess: () => onSaved() });
   };
 
   // Store each explicit choice. A confirmed Hex becomes the render hex (saved with
@@ -610,13 +615,23 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   useEffect(() => {
     const stored = colorSource.stored;
     if (stored === lastStoredColorSource.current) return;
+    // undefined = the first run on open: that is hydration, not a choice, so nothing is sent.
+    const hydrating = lastStoredColorSource.current === undefined;
     lastStoredColorSource.current = stored;
     writeDoorColorSourceSelection(style.id, stored);
     if (stored?.source === "hex") setRenderHex(stored.hex);
+    // Persist at once through the existing adminUpdateDoorStyle input (null clears). A tile
+    // click that is still waiting for Confirm is never sent: it only turns the saved
+    // choice off locally, and Confirm (or Save) is what writes.
+    const persist = !hydrating && shouldPersistColorSource(colorSource);
+    const selectionField = { doorColorSourceSelection: stored };
     if (stored?.source === "sherwin-williams") {
       writeWizardDoorFinish(style.id, stored.color as WizardDoorFinish);
-      if (pendingSherwinPatch.current) applyWizardPatch(pendingSherwinPatch.current);
+      if (pendingSherwinPatch.current) applyWizardPatch(pendingSherwinPatch.current, persist ? selectionField : {});
+      else if (persist) update.mutate({ id: style.id, ...selectionField } as unknown as Parameters<typeof update.mutate>[0], { onSuccess: () => onSaved() });
       pendingSherwinPatch.current = null;
+    } else if (persist) {
+      update.mutate({ id: style.id, ...selectionField } as unknown as Parameters<typeof update.mutate>[0], { onSuccess: () => onSaved() });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [colorSource.stored, style.id]);
@@ -1116,7 +1131,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             // A tile with no picture stays empty (striped placeholder + warning dot):
             // the Hex tile only paints once a hex has been picked or confirmed.
             const hexSwatch = normalizeHex(colorSource.pendingHex)
-              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : null);
+              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : null)
+              ?? normalizeHex(renderHex)
+              ?? normalizeHex(style.renderHex);
             const sherwinHex = colorSource.pendingSherwin?.hex
               ?? (colorSource.stored?.source === "sherwin-williams" ? colorSource.stored.color.hex : null);
             const hexPicker = (
@@ -1150,7 +1167,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   // An accepted render wins. Failing that, the AI profile image the editor already
           // saved (0281) belongs on this tile - otherwise the generated image is
           // stored and never shown anywhere (Tom, Nov 15 2026).
-          aiImageUrl={style.approvedReferenceImageUrl ?? (style as { aiProfileImageUrl?: string | null }).aiProfileImageUrl ?? null}
+          aiImageUrl={style.approvedReferenceImageUrl || style.aiProfileImageUrl || null}
                   sherwinHex={sherwinHex}
                   hexSwatch={hexSwatch}
                   sherwinPicker={null}
@@ -1419,6 +1436,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             }}
             sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || null}
             onChooseOfficial={handleChooseOfficialDescription}
+            onProfileSaved={onSaved}
           />
 
           {/* Plain-text color description: sheen, undertone, and the finish beyond a hex. */}

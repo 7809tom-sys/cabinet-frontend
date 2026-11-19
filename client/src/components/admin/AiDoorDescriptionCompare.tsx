@@ -93,6 +93,8 @@ export type AiDoorDescriptionCompareProps = {
    * saves the winner through its existing profile storage.
    */
   onChooseOfficial?: (record: AiDoorOfficialRecord) => void;
+  /** Called after the official AI profile is saved on the style, so the editor re-reads it. */
+  onProfileSaved?: () => void;
 };
 
 type CopyState = Partial<Record<AiDoorModel, "idle" | "copied" | "failed">>;
@@ -239,7 +241,7 @@ function DoorPreview({ params, colorSeed }: {
  * Mounting this component is the "request" — no parsing, no preview work, and no
  * storage read happens before the operator opens the tool and pastes text.
  */
-export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }: AiDoorDescriptionCompareProps) {
+export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, onProfileSaved }: AiDoorDescriptionCompareProps) {
   const [open, setOpen] = useState(false);
   const [stored, setStored] = useState<StoredAiDoorComparison>({ fields: {}, chosen: null, reference: {} });
   const [fields, setFields] = useState<Partial<Record<AiDoorModel, string>>>({});
@@ -326,7 +328,10 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial }:
   const savedImageRef = useRef<string | null>(null);
 
   const saveAiProfile = trpc.doorStyles.saveAiProfile.useMutation({
-    onSuccess: () => setSavedNote("The official AI profile is saved on this door style."),
+    onSuccess: () => {
+      setSavedNote("The official AI profile is saved on this door style.");
+      onProfileSaved?.();
+    },
     onError: (error) => setSavedNote(error.message),
   });
 
