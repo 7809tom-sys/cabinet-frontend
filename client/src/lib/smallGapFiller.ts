@@ -682,6 +682,12 @@ export function repairMissingAdjoiningFillers(
   fillers: readonly CatalogFillerCandidate[],
   makeUid: () => string,
   styleId: number | null | ((cabinet: PlacedCabinet) => number | null),
+  options?: {
+    /** Group ids of fillers the person deleted; never rebuilt (Tom, Nov 19 2026). */
+    suppressGroupIds?: ReadonlySet<string>;
+    /** Seam-level check (the same seam can be rebuilt from either neighbor under another id). */
+    suppress?: (draft: PlacedCabinet) => boolean;
+  },
 ): { placed: PlacedCabinet[]; added: PlacedCabinet[] } {
   let working = [...placed];
   const added: PlacedCabinet[] = [];
@@ -741,6 +747,7 @@ export function repairMissingAdjoiningFillers(
           fillerForCabinetUid: cabinet.uid,
         };
         const matched = matchInstalledFillerToCabinet(draft, cabinet, room);
+        if (options?.suppressGroupIds?.has(String(matched.fillerPieceGroupId)) || options?.suppress?.(matched)) continue;
         const accepted = appendCollisionFreePlacements(working, [matched], room);
         if (!accepted.placed.some((item) => item.uid === matched.uid)) continue;
         working = accepted.placed;

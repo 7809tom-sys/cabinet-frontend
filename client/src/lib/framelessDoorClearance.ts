@@ -131,6 +131,8 @@ export function applyFramelessDoorClearanceFillers(input: {
   room: RoomData;
   fillers: readonly CatalogFillerCandidate[];
   makeUid: () => string;
+  /** A seam whose clearance filler the person deleted is left alone (no re-shift, no new board). */
+  suppressSeam?: (seam: { wallId: string; layer: "base" | "wall" | "tall"; start: number; end: number }) => boolean;
 }): { placed: PlacedCabinet[]; added: PlacedCabinet[] } {
   let working = input.placed;
   const added: PlacedCabinet[] = [];
@@ -141,6 +143,15 @@ export function applyFramelessDoorClearanceFillers(input: {
     const layer = pair.cabinet.placement === "wall" ? "wall" : pair.cabinet.placement === "tall" ? "tall" : "base";
     const fillerDef = catalogFillerForGap(input.fillers, FRAMELESS_DOOR_CLEARANCE_FILLER_IN, layer);
     if (!fillerDef) break;
+    if (input.suppressSeam) {
+      const seam = pair.cabinetOnRight
+        ? wallRunOffset(pair.neighbor, pair.wall, input.room) + wallRunSpan(pair.neighbor, pair.wall, input.room)
+        : wallRunOffset(pair.cabinet, pair.wall, input.room);
+      if (input.suppressSeam({ wallId: pair.wall, layer, start: seam - FRAMELESS_DOOR_CLEARANCE_FILLER_IN, end: seam + FRAMELESS_DOOR_CLEARANCE_FILLER_IN })) {
+        skipped.add(pair.cabinet.uid);
+        continue;
+      }
+    }
     const shifted = shiftRun(working, pair, input.room);
     if (!shifted) {
       skipped.add(pair.cabinet.uid);

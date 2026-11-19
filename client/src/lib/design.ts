@@ -2050,6 +2050,12 @@ export interface RoomData {
    * asked": the add-only fallback chain decides (`client/src/lib/overRangeFill.ts`).
    */
   overRangeAnswer?: "hood" | "microwave-bridge" | "open" | null;
+  /**
+   * Fillers the person deleted (Tom, Nov 19 2026): the seam-filler, 45° miter and
+   * frameless-clearance repairs never rebuild them. Saved with the room so a reload
+   * keeps them; cleared by an Auto Design run or a new design.
+   */
+  deletedFillerSuppressions?: Array<{ groupId: string | null; wallId: string; layer: "base" | "wall" | "tall"; start: number; end: number; masterCode?: string }>;
 }
 
 export type PeninsulaTurn = 45 | 90;
