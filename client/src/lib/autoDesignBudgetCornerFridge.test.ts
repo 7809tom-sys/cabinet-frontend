@@ -200,3 +200,47 @@ describe("Countertop runs all the way back to the wall at an inside corner", () 
     expect(budget.notes.some((note) => note.includes("the countertop runs all the way back to the wall"))).toBe(true);
   });
 });
+
+describe("Budget friendly: no spacer between cabinets (Tom, Nov 19 2026, 6:33 AM CT)", () => {
+  const pieceRe = /filler|scribe|skin|spacer|end panel/i;
+  const isSpacerPiece = (item: PlacedCabinet) => item.category === "Filler" || item.category === "Panels" || item.subCategory === "End panel" || item.subCategory === "Filler"
+    || /^(WSV|BSV|USV|REP|F\d)/i.test(item.masterCode) || pieceRe.test(`${item.description ?? ""} ${item.subCategory ?? ""}`);
+  const wallRun = (placed: PlacedCabinet[], wallId: string) => placed.filter((item) => item.placement === "wall" && cabinetWall(item, ROOM) === wallId && !/^DCW/.test(item.masterCode))
+    .sort((a, b) => wallRunOffset(a, wallId as never, ROOM) - wallRunOffset(b, wallId as never, ROOM));
+
+  it("the 144x120 L budget build places no spacer, filler or end panel anywhere, and the top-wall uppers touch with no gap", () => {
+    const budget = build({ budget: true });
+    expect(budget.placed.filter(isSpacerPiece).map((item) => item.masterCode)).toEqual([]);
+    expect(budget.placed.some((item) => item.masterCode === "WSV30")).toBe(false);
+    const top = wallRun(budget.placed, "top");
+    expect(top.map((item) => item.masterCode)).toEqual(["W3612", "W2130", "W2130", "W1230", "W3012"]);
+    let edge = 0;
+    for (const item of top) {
+      expect(wallRunOffset(item, "top", ROOM)).toBeCloseTo(edge, 2);
+      edge += wallRunSpan(item, "top", ROOM);
+    }
+    expect(edge).toBeCloseTo(120, 2);
+    // Every SKU is a real row of the line; nothing invented or renamed.
+    for (const item of top) expect(pack.wall.some((row) => row.masterCode === item.masterCode)).toBe(true);
+  });
+
+  it("budget mode reports the spacer was skipped and where the leftover went", () => {
+    const budget = build({ budget: true });
+    const line = budget.notes.find((note) => note.startsWith("Budget friendly: spacer skipped."));
+    expect(line).toBeTruthy();
+    expect(line).toMatch(/leftover/);
+  });
+
+  it("a Budget build keeps the right wall as before (W3612 over the fridge-side run, W3330 at the end)", () => {
+    const right = wallRun(build({ budget: true }).placed, "right");
+    expect(right.map((item) => item.masterCode)).toEqual(["W2730", "W3612", "W3330"]);
+  });
+
+  it("outside budget mode nothing changes: the 3/4 in WSV30 end panel and the W3630 + W1230 uppers are still placed, no spacer report", () => {
+    const normal = build({ budget: false });
+    const top = wallRun(normal.placed, "top");
+    expect(top.map((item) => item.masterCode)).toEqual(["W361224", "W3630", "W1230", "WSV30", "W3012"]);
+    expect(wallRunOffset(top[3]!, "top", ROOM)).toBeCloseTo(89.25, 2);
+    expect(normal.notes.some((note) => note.includes("spacer skipped"))).toBe(false);
+  });
+});
