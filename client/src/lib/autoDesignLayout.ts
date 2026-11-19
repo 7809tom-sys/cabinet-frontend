@@ -61,6 +61,7 @@ import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
 import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
 import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
+import { applyDishwasherRunEndRule } from "./autoDesignDishwasherRunEnd";
 import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
 import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
@@ -2502,6 +2503,15 @@ export function runAutoDesignLayout(rawArgs: {
   working = outsidePanelFillers.placed;
   notes.push(...outsidePanelFillers.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...outsidePanelFillers.findings);
+  // Tom, voice, Nov 19 2026, 8:42 / 8:44 AM CT: a dishwasher at a run end keeps a base filler only
+  // where a wall follows; an opening or an unknown end takes the line's dishwasher panel instead.
+  const dishwasherRunEnd = applyDishwasherRunEndRule({
+    placed: working, room, openings: stageOpenings,
+    panelCatalog: [...(args.panelCatalog ?? []), ...(args.fillers as unknown as DesignCabinet[])],
+    budgetFriendly: hasPreference(input.intake, "budget-friendly"),
+  });
+  working = dishwasherRunEnd.placed;
+  notes.push(...dishwasherRunEnd.notes);
   // The door passed into the build is the one the designer has selected. It wins
   // over a design-question id so the island and the wall runs cannot keep a
   // second finish. With no selected door, the question style is the one finish.
