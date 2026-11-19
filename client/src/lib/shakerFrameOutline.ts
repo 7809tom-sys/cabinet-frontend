@@ -128,6 +128,9 @@ export function shakerOutlineStyle(tier: ShakerOutlineTier): { outer: boolean; o
   return { outer: true, opening: true, opacity: 0.9, darken: 0.45 };
 }
 
+/** Smallest opening (feet, about 1/2 inch) that still has a recessed panel to outline. */
+export const MIN_OPENING_FT = 0.04;
+
 function pushRect(out: number[], halfW: number, halfH: number, z: number) {
   const corners: Array<[number, number]> = [[-halfW, halfH], [halfW, halfH], [halfW, -halfH], [-halfW, -halfH]];
   for (let index = 0; index < 4; index += 1) {
@@ -151,7 +154,9 @@ export function shakerFrameOutlinePositions(input: {
   const openingW = input.faceWidth - input.stile * 2;
   const openingH = input.faceHeight - input.rail * 2;
   if (input.outer !== false) pushRect(positions, input.faceWidth / 2, input.faceHeight / 2, input.z);
-  if (input.opening !== false && openingW > 0.02 && openingH > 0.02) pushRect(positions, openingW / 2, openingH / 2, input.z);
+  // A drawer front is mostly rail, and a 3 inch rail leaves a ~1/4 inch slit. A slit has no recessed
+  // panel to outline, and drawing it doubles the outer edge. The notch ring uses the same 0.04 ft floor.
+  if (input.opening !== false && openingW > MIN_OPENING_FT && openingH > MIN_OPENING_FT) pushRect(positions, openingW / 2, openingH / 2, input.z);
   return positions;
 }
 
