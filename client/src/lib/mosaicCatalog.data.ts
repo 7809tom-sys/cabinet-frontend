@@ -34,6 +34,7 @@ export type MosaicPatternKind =
   | "lantern"
   | "lattice"
   | "linear"
+  | "penny"
   | "picket"
   | "square"
   | "subway"
@@ -134,6 +135,27 @@ export const MOSAIC_CATALOG: readonly MosaicCatalogEntry[] = [
     source: "https://buildpelican.com/products/arctic-vail",
   },
   {
+    sku: "Calacatta Gold Penny Round",
+    slug: "calacatta-gold-penny-round",
+    sizeIn: [11.14, 12.09],
+    pattern: "penny",
+    geometry: "Round penny-sized discs in a close-packed repeat",
+    family: "marble",
+    finish: "polished",
+    texture: "/textures/mosaics/calacatta-gold-penny-round.webp",
+    texturePx: [1024, 945],
+    moduleIn: [10.812, 9.979],
+    groutIn: 0.0625,
+    groutInMeasured: false,
+    scaleSource: "joint-derived",
+    groutColor: "#d1c7be",
+    groutColorSampled: true,
+    palette: ["#efede9", "#f8f8f4", "#e4e0da", "#d7cfc8"],
+    lightest: "#f8f8f4",
+    darkest: "#d7cfc8",
+    source: "https://buildpelican.com/products/calacatta-gold-penny-round",
+  },
+  {
     sku: "Carbon Hex",
     slug: "carbon-hex",
     sizeIn: [12.8, 11.1],
@@ -153,6 +175,27 @@ export const MOSAIC_CATALOG: readonly MosaicCatalogEntry[] = [
     lightest: "#e1e1e1",
     darkest: "#101010",
     source: "https://buildpelican.com/products/carbon-hex",
+  },
+  {
+    sku: "Carrara Penny Round",
+    slug: "carrara-penny-round",
+    sizeIn: [11.14, 12.09],
+    pattern: "penny",
+    geometry: "Round penny-sized discs in a close-packed repeat",
+    family: "marble",
+    finish: "polished",
+    texture: "/textures/mosaics/carrara-penny-round.webp",
+    texturePx: [1024, 948],
+    moduleIn: [9.205, 8.518],
+    groutIn: 0.0625,
+    groutInMeasured: false,
+    scaleSource: "joint-derived",
+    groutColor: "#bbbbb9",
+    groutColorSampled: true,
+    palette: ["#e5e8e8", "#d8dbdc", "#cbcdcd", "#f0f4f5"],
+    lightest: "#f0f4f5",
+    darkest: "#cbcdcd",
+    source: "https://buildpelican.com/products/carrara-penny-round",
   },
   {
     sku: "Carrara Subway",

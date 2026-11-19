@@ -54,7 +54,7 @@ SOURCE_DATE = "2026-11-02"
 
 # Chip pattern and finish per product, read off each product's own sheet.
 PATTERN: dict[str, str] = {
-    "Arctic Vail": "picket", "Carbon Hex": "hex", "Carrara Subway": "subway",
+    "Arctic Vail": "picket", "Calacatta Gold Penny Round": "penny", "Carrara Penny Round": "penny", "Carbon Hex": "hex", "Carrara Subway": "subway",
     "Cloudline Marble": "linear", "Concord Square": "square", "Desert Clay": "square",
     "Earthstone Blend": "square", "Emerald Dust": "linear", "Forest Stone": "square",
     "Frosted Slate": "linear", "Glacier Shift": "chevron", "Golden Trace": "square",
@@ -86,6 +86,7 @@ GEOMETRY = {
     "floral": "Petal tiles in an interlocking floral repeat",
     "lattice": "Diamond chips held in a lattice",
     "clover": "Squares with rounded clover corners",
+    "penny": "Round penny-sized discs in a close-packed repeat",
 }
 
 # Plausible equivalent-square-side of one chip, in inches, per pattern. These bound the
@@ -95,6 +96,7 @@ CHIP_SIDE_IN = {
     "linear": (0.3, 2.0), "picket": (1.0, 2.6), "diamond": (0.7, 2.2), "chevron": (0.8, 2.2),
     "framed-square": (1.2, 2.6), "bloom": (0.8, 2.4), "lantern": (1.2, 3.0),
     "floral": (0.6, 1.6), "lattice": (0.5, 1.6), "clover": (1.2, 2.6),
+    "penny": (0.45, 1.4),
 }
 
 FINISH_OVERRIDE = {
