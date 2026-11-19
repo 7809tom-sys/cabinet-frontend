@@ -14,7 +14,8 @@ describe("catalogFillerForGap", () => {
 	  const blankDepthBase = { id: 8, masterCode: "BFF3", description: '3" x 34.5" Fluted Base Filler', category: "Filler", subCategory: "Filler", width: 3, depth: null, height: 34.5, catalogImageUrl: null };
 	  const wall = { id: 9, masterCode: "WFF342", description: '3" x 42" Wall Filler', category: "Filler", subCategory: "Filler", width: 3, depth: 12, height: 42, catalogImageUrl: null };
 	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "base")?.masterCode).toBe("BFF3");
-	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "wall")?.masterCode).toBe("WFF342");
+	  // Fluted WFF fillers are never auto-picked (Tom, voice, Nov 19 2026, 7:41 AM CT).
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "wall")?.masterCode).not.toBe("WFF342");
 	});
 
 	it("uses one real 3-inch stock filler for every installed cut through 3 inches", () => {

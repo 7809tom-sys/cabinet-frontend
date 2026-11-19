@@ -280,7 +280,14 @@ function audit(spec: CaseSpec, run: AutoDesignLayoutSuccess, room: RoomData): st
   else {
     const panels = placed.filter((item) => item.refrigeratorAssemblyRole === "left-panel" || item.refrigeratorAssemblyRole === "right-panel");
     const bridge = placed.find((item) => item.refrigeratorAssemblyRole === "bridge");
-    if (panels.length < 2) issues.push(`fridge panels ${panels.length}`);
+    // Refrigerator rule (Tom, voice, Nov 19 2026, 7:41 AM CT): a refrigerator against a wall keeps
+    // only its open-side panel; one in the middle of a run keeps both.
+    const fridgeWall = cabinetWall(fridge, room);
+    const fridgeFrame = wallRunFrame(fridgeWall, room);
+    const fridgeStart = wallRunOffset(fridge, fridgeWall, room);
+    const atWall = fridgeFrame != null && (fridgeStart - Math.max(0, fridgeFrame.runStart) <= 0.05
+      || fridgeFrame.runEnd - (fridgeStart + wallRunSpan(fridge, fridgeWall, room)) <= 0.05);
+    if (panels.length < (atWall ? 1 : 2)) issues.push(`fridge panels ${panels.length}`);
     if (!bridge || bridge.depth < 20) issues.push(`fridge cap depth ${bridge?.depth ?? "missing"}`);
   }
   for (const item of placed.filter((entry) => entry.placement === "wall")) {

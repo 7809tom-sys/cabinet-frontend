@@ -80,6 +80,20 @@ export function isCatalogDecorativeLeg(candidate: Pick<CatalogFillerCandidate, "
   return /^(?:FLDL|CLDL|SCDL|SQDL)$/.test(code) || /\bdecorative\s+leg\b/.test(text);
 }
 
+/**
+ * Fluted fillers (WFF...) are decorative (Tom, voice, Nov 19 2026, 7:41 AM CT): never placed
+ * automatically, only when the person adds one on purpose. Every automatic filler, panel and
+ * seam pick skips them.
+ */
+export function isFlutedFiller(candidate: { masterCode?: string | null; description?: string | null }): boolean {
+  const code = String(candidate.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (/^WFF/.test(code)) return true;
+  // BFF base fillers keep their job: on line 330011 BFF3 is described as "Fluted Base Filler" but it
+  // is the line's only 3 in base filler (corner clearance pairs), so only the code decides there.
+  if (/^BFF/.test(code)) return false;
+  return /\bfluted\b/i.test(String(candidate.description ?? ""));
+}
+
 export function isCatalogFiller(candidate: Pick<CatalogFillerCandidate, "masterCode" | "description" | "category" | "subCategory">): boolean {
   if (isCatalogPanel(candidate) || isCatalogDecorativeLeg(candidate)) return false;
   const text = `${candidate.masterCode} ${candidate.description ?? ""} ${candidate.category ?? ""} ${candidate.subCategory ?? ""}`.toLowerCase();
@@ -99,6 +113,13 @@ export function isCatalogFiller(candidate: Pick<CatalogFillerCandidate, "masterC
  * Placement ranking favors a 24-in deep base/tall filler or a 12-in deep wall
  * filler, then the closest cuttable height.
  */
+function wrongLayerRank(masterCode: string, placement: CatalogFillerPlacement): number {
+  const code = String(masterCode ?? "").toUpperCase();
+  if (placement === "wall") return /^BF/.test(code) ? 1 : 0;
+  if (placement === "base") return /^WF/.test(code) ? 1 : 0;
+  return 0;
+}
+
 export function catalogFillerForGap(
   candidates: readonly CatalogFillerCandidate[],
   gapWidth: number,
@@ -111,6 +132,7 @@ export function catalogFillerForGap(
 
   return candidates
     .filter(isCatalogFiller)
+    .filter((candidate) => !isFlutedFiller(candidate))
     // AltaEuro's documented 2-7/8-inch "3-inch" overlay is nominal 3-inch stock, so it
     // also satisfies an exact 3-inch seam such as a blind-corner filler.
     .filter((candidate) => numberValue(candidate.width) + 0.001 >= gapWidth
@@ -122,6 +144,10 @@ export function catalogFillerForGap(
     .sort((left, right) => {
       const widthDelta = numberValue(left.width) - numberValue(right.width);
       if (Math.abs(widthDelta) > 0.001) return widthDelta;
+      // A base filler (BF..) does not go on the wall row when the line sells another board, and
+      // a wall filler (WF..) not on the base row (Natura Maple report, Nov 19 2026: BFF3 on top).
+      const layerDelta = wrongLayerRank(left.masterCode, placement) - wrongLayerRank(right.masterCode, placement);
+      if (layerDelta !== 0) return layerDelta;
       const depthDelta = depthRank(left.depth, desiredDepth) - depthRank(right.depth, desiredDepth);
       if (Math.abs(depthDelta) > 0.001) return depthDelta;
       const leftHeight = recordedDimension(left.height) ?? desiredHeight;

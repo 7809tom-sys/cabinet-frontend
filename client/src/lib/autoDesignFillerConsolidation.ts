@@ -67,7 +67,7 @@ type Stretch = {
   end: number;
 };
 
-function isRunCabinet(item: PlacedCabinet, layer: FillerLayer): boolean {
+export function isRunCabinet(item: PlacedCabinet, layer: FillerLayer): boolean {
   if (isFillerItem(item) || isPanelItem(item)) return false;
   if (item.placement !== layer) return false;
   if (isSinkBaseCabinet(item)) return false;
@@ -98,7 +98,7 @@ function isFixedPiece(item: PlacedCabinet, layer: FillerLayer): boolean {
  * wider cabinet or merge them with a run's ordinary seam filler: the angled
  * miter pair, a provisional corner board, and the filler a corner cabinet owns.
  */
-function isProtectedCornerFiller(item: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): boolean {
+export function isProtectedCornerFiller(item: PlacedCabinet, placed: readonly PlacedCabinet[], room: RoomData): boolean {
   const fillerLike = isFillerItem(item) || item.fillerTransitionKind != null || item.integratedWallBlindFiller === true;
   if (!fillerLike) return false;
   if (
@@ -214,7 +214,7 @@ function rowAtWidth(
   return matches[0] ?? null;
 }
 
-function sellableRunCabinet(candidate: DesignCabinet, layer: FillerLayer): boolean {
+export function sellableRunCabinet(candidate: DesignCabinet, layer: FillerLayer): boolean {
   if (candidate.placement !== layer) return false;
   if (isFillerItem(candidate) || isPanelItem(candidate)) return false;
   if (isCornerCabinet(candidate.masterCode, candidate.description)) return false;

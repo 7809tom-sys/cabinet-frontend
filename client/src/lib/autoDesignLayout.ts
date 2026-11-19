@@ -84,6 +84,9 @@ import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerR
 import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
 import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
+import { applyMinimumFiller } from "./autoDesignMinimumFiller";
+import { isFlutedFiller } from "./catalogFiller";
+import { trimRefrigeratorWallSide } from "./autoDesignRefrigeratorWallSide";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import {
   autoDesignInsideCornerReservations,
@@ -863,7 +866,15 @@ export function runAutoDesignLayout(rawArgs: {
     intake: rawArgs.input.intake, wallCatalog: rawArgs.wallCatalog, room: rawArgs.room,
     wallCabinetHeightIn: rawArgs.input.wallCabinetHeightIn ?? 30,
   });
-  const args = glassOffered ? { ...rawArgs, wallCatalog: withoutNoGlassUppers(rawArgs.wallCatalog) } : rawArgs;
+  const glassArgs = glassOffered ? { ...rawArgs, wallCatalog: withoutNoGlassUppers(rawArgs.wallCatalog) } : rawArgs;
+  // Fluted fillers (WFF) are decorative only (Tom, voice, Nov 19 2026, 7:41 AM CT): Auto Design never
+  // places one on its own, so they leave every catalog the build picks fillers and panels from.
+  const args = {
+    ...glassArgs,
+    fillers: glassArgs.fillers.filter((row) => !isFlutedFiller(row)),
+    ...(glassArgs.panelCatalog ? { panelCatalog: glassArgs.panelCatalog.filter((row) => !isFlutedFiller(row)) } : {}),
+    refrigeratorEndPanels: glassArgs.refrigeratorEndPanels.filter((row) => !isFlutedFiller(row)),
+  };
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
   const fail = (message: string): AutoDesignLayoutResult => {
@@ -1305,7 +1316,9 @@ export function runAutoDesignLayout(rawArgs: {
         wiggleLimitIn: autoDesignShiftLimitIn("cabinet"),
       })
       : null;
-    if (cornerPlan) notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
+    // Only report the blind plan when the blind is the corner being built; a lazy Susan corner
+    // used to get both notes for the same corner (Natura Maple 12x10 L report, Nov 19 2026).
+    if (cornerPlan && typeDecision.order[0] === "blind") notes.push(`${slot.label}: ${describeCornerFirst(cornerPlan)}`);
     const plannedBlind = typeDecision.order[0] === "blind" && cornerPlan && (cornerPlan.kind === "blind" || cornerPlan.kind === "blind-pulled")
       ? cornerOptionsForBuild.find((candidate) => candidate.id === cornerPlan.source.id) ?? null
       : null;
@@ -2412,6 +2425,47 @@ export function runAutoDesignLayout(rawArgs: {
   working = cornerFlank.placed;
   notes.push(...cornerFlank.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...cornerFlank.findings);
+  // Minimum filler (Tom, voice, Nov 19 2026, 7:19 AM CT): every inch of filler is a missed
+  // cabinet. After every re-tile above, spare inches upgrade a stock width or slide the range
+  // inside its wiggle; what is left is one strip against the wall end or the refrigerator,
+  // never between cabinets or beside a bridge, on the base and wall rows alike. Runs before
+  // the outside-panel rule below so that rule keeps the last word.
+  // Refrigerator (Tom, voice, Nov 19 2026, 7:41 AM CT): only the open side keeps an end panel; the
+  // wall side gets no panel and no filler. Runs before the minimum-filler pass so the freed inches
+  // are put to use there.
+  const fridgeWallSide = trimRefrigeratorWallSide({ placed: working, room });
+  if (fridgeWallSide.removedUids.length > 0) {
+    working = fridgeWallSide.placed;
+    for (let i = notes.length - 1; i >= 0; i--) {
+      if (/REPV\S* is held on the wall|panel gap\.|was butted to FRIDGE/.test(notes[i]!)) notes.splice(i, 1);
+    }
+    notes.push(...fridgeWallSide.notes);
+  }
+  if (input.intake) {
+    const intakeForWiggle = input.intake;
+    const minimumFiller = applyMinimumFiller({
+      placed: working, room, openings: stageOpenings, wallIds: runWalls,
+      baseCatalog: args.baseCatalog, wallCatalog: args.wallCatalog, fillerCatalog: catalogFillers,
+      styleId: args.styleId, makeUid,
+      rangeWiggleIn: (range) => {
+        if (lockedAnchorKinds(intakeForWiggle).includes("stove")) return 0;
+        const used = fifteenRepackMoves.filter((move) => move.uid === range.uid).reduce((sum, move) => sum + move.deltaAlongIn, 0);
+        return Math.max(0, 3 - Math.abs(used));
+      },
+      glassUppers: hasPreference(input.intake, "glass-uppers"),
+      wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+    });
+    working = minimumFiller.placed;
+    if (minimumFiller.changes.length > 0) {
+      // Earlier lines that named a board or opening this pass just re-planned are no longer true.
+      const replanned = /filled a .* leftover on|filled the opening on|left beside the corner for the filler|for the filler\.$/;
+      for (let i = notes.length - 1; i >= 0; i--) {
+        if (replanned.test(notes[i]!)) notes.splice(i, 1);
+      }
+    }
+    notes.push(...minimumFiller.notes);
+    fifteenRepackMoves.push(...minimumFiller.moves);
+  }
   // Tom, voice, Nov 18 2026, 4:53 PM CT: no filler outside an exposed panel. Every
   // filler pass above has run, so this is the last word: a board on a panel's outside
   // face is dropped and named on the review list; fillers between cabinets and

@@ -37,6 +37,7 @@ import {
   type GapFill,
   planRun,
 } from "./autoDesignRunPacking";
+import { isFlutedFiller } from "./catalogFiller";
 
 export type FifteenRepackMove = {
   uid: string;
@@ -303,6 +304,8 @@ function fillerRows(catalog: readonly DesignCabinet[]): StockRow[] {
   for (const row of catalog) {
     if (!isFillerItem(row)) continue;
     if (isPanelItem(row)) continue;
+    // Fluted fillers are decorative only; never picked automatically (Tom, Nov 19 2026).
+    if (isFlutedFiller(row)) continue;
     const w = dim(row.width, 0);
     if (w <= 0) continue;
     out.push({ row, width: w });
@@ -1339,7 +1342,7 @@ export function repackFifteenRuleLayout(input: {
       "Budget friendly: spacer skipped. No 3/4 in end panel (WSV/REPV) and no filler strip is placed between cabinets"
       + `${budgetSkipped.sinkDwPanel ? "; the dishwasher stays flush to the sink base" : ""}; any exposed side shows raw. `
       + (budgetSkipped.leftovers.length
-        ? `The leftover width stays open as a gap at the run end, not between cabinets: ${budgetSkipped.leftovers.join("; ")}.`
+        ? `The leftover width goes to the run end as one thin strip against the wall or the refrigerator (minimum filler), never between cabinets: ${budgetSkipped.leftovers.join("; ")}.`
         : "The cabinet widths were re-picked from stock so every run closes exactly, with no leftover inches."),
     );
   }
