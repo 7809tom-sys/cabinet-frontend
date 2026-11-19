@@ -268,7 +268,9 @@ type AnchorRole = "sink" | "refrigerator" | "range";
 function anchorRoleOf(c: PlacedCabinet): AnchorRole | null {
   if (c.placement === "base" && isSinkBaseCabinet(c)) return "sink";
   if (isRefrigerator(c)) return "refrigerator";
-  if (c.placement === "appliance" && isRangeOrOven(c.masterCode, c.description)) return "range";
+  // A microwave / hood hung over the range is not a second range on the counter line
+  // (the "range and range, -30 in of counter" report, Nov 19 2026).
+  if (c.placement === "appliance" && isRangeOrOven(c.masterCode, c.description) && (Number(c.mountBottom) || 0) <= 30 && !/^(MW|HOOD)/i.test(c.masterCode ?? "")) return "range";
   return null;
 }
 
@@ -308,6 +310,8 @@ export function landingGaps(placed: readonly PlacedCabinet[], room: RoomData): L
       const left = list[i];
       const right = list[i + 1];
       const gapIn = right.start - left.end;
+      // Two pieces of one stack (same role, overlapping spans) are one anchor, not a landing gap.
+      if (left.role === right.role && gapIn < -0.5) continue;
       gaps.push({
         wallId,
         from: { uid: left.c.uid, code: left.c.masterCode, role: left.role },

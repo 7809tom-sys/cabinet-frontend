@@ -253,6 +253,23 @@ describe("landingGaps", () => {
   });
 });
 
+describe("landingGaps: a range is not measured against itself (Natura Maple 12x10 L report, Nov 19 2026)", () => {
+  it("an over-range microwave in the range's footprint is not a second range (no -30 in gap)", () => {
+    const range = { ...lower("RANGE-30", 30, 60, "appliance"), description: "30 in Range" };
+    const mw = { ...lower("MW-30", 30, 60, "appliance"), uid: "mw", description: "Over the range microwave (range)", mountBottom: 54 };
+    const placed = [lower("FRIDGE-36", 36, 0, "appliance"), range, mw];
+    const gaps = landingGaps(placed, DEFAULT_ROOM);
+    expect(gaps.every((g) => !(g.from.role === "range" && g.to.role === "range"))).toBe(true);
+    expect(gaps.every((g) => g.gapIn >= 0)).toBe(true);
+  });
+
+  it("two overlapping range pieces of one stack are one anchor", () => {
+    const a = { ...lower("RANGE-30", 30, 60, "appliance"), description: "30 in Range" };
+    const b = { ...lower("RANGE-30", 30, 60, "appliance"), uid: "range-copy", description: "30 in Range" };
+    expect(landingGaps([a, b], DEFAULT_ROOM).filter((g) => g.gapIn < 0)).toEqual([]);
+  });
+});
+
 describe("sinkBaseDownsizeSteps", () => {
   it("returns 33 then 30 in order and never mutates the catalog", () => {
     const before = JSON.stringify(base);
