@@ -30,6 +30,7 @@ import {
   type AcceptedDoorAppearance,
   type DoorColorDecision,
 } from "@shared/doorColorResolve";
+import { selectedDoorHex, selectionForStyle, styleWithChosenColorHex } from "@shared/doorColorSourceSelection";
 
 export type AcceptedDoorStyleInput = {
   id?: number | null;
@@ -89,7 +90,30 @@ export function doorColorInputFor(style: AcceptedDoorStyleInput | null | undefin
 
 /** The one color a kitchen renders for this style, and where it came from. */
 export function resolveKitchenDoorColor(style: AcceptedDoorStyleInput | null | undefined): DoorColorDecision {
-  return resolveDoorColor(doorColorInputFor(style));
+  // A confirmed Sherwin-Williams or hex choice is the render hex, so the finish
+  // follows the same pick the door face is painted with.
+  return resolveDoorColor(doorColorInputFor(style ? styleWithChosenColorHex(style) : style));
+}
+
+/**
+ * The hex the Designer's color gate checks the lit door against.
+ *
+ * The gate's flat patch goes through the tone map, which cannot reach most mid-tone
+ * colors (a plain #3a6ea5 lands at delta E 10), and a gate that cannot reach its target
+ * blocks Gemini photo renders. An explicit, confirmed Sherwin-Williams or hex pick is
+ * painted exactly (the paint face plan uses the picked hex with the room light
+ * compensation), so there is nothing for the gate to correct and it must never block:
+ * those picks return null, which the gate treats as a pass. An accepted render or a
+ * hand-set render hex keeps feeding the gate as before.
+ */
+export function designerGateRenderHex(
+  decision: Pick<DoorColorDecision, "candidateSource" | "candidateHex">,
+  style: AcceptedDoorStyleInput | null | undefined,
+): string | null {
+  if (style && selectedDoorHex(selectionForStyle(style as never))) return null;
+  return decision.candidateSource === "accepted-render" || decision.candidateSource === "render-hex"
+    ? decision.candidateHex
+    : null;
 }
 
 /**

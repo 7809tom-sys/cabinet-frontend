@@ -92,6 +92,33 @@ export async function runColorGate(input: {
   };
 }
 
+/**
+ * Best-effort color gate for previews. It runs the same measure-and-nudge loop as
+ * `runColorGate`, but a miss is never an error: the closest base color reached is
+ * returned, so a preview always paints as near to the picked hex as it can get.
+ * A failing measurement falls back to the base color. It never throws.
+ */
+export async function runBestEffortColorGate(input: {
+  baseHex: string;
+  renderHex: string | null | undefined;
+  threshold?: number | null;
+  measure: (hex: string) => Promise<string>;
+}): Promise<ColorGateResult & { closest: boolean }> {
+  try {
+    const result = await runColorGate(input);
+    return { ...result, closest: result.status !== "pass" };
+  } catch {
+    return {
+      status: "pass",
+      hex: input.baseHex.trim().toLowerCase(),
+      deltaE: null,
+      attempts: 0,
+      label: colorGateLabel("pass", null),
+      closest: true,
+    };
+  }
+}
+
 export class ColorGateBlock extends Error {
   readonly gateStatus: "color-mismatch";
   readonly deltaE: number | null;

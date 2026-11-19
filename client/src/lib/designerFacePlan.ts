@@ -16,6 +16,8 @@ import { PAINT_FINISH } from "@shared/sherwinWilliamsStain";
 export type DesignerFaceStyle = DoorStyleFaceInput & {
   approvedReferenceImageUrl?: string | null;
   approvedVersionId?: number | null;
+  /** The official AI (Gemini) profile picture saved in the editor (0281). */
+  aiProfileImageUrl?: string | null;
   id?: number | null;
   doorColorSource?: string | null;
   doorColorSourceValue?: unknown;
@@ -51,6 +53,28 @@ export function acceptedRenderFacePlan(
     drawerTextureApplied: !wall,
     grainRotation: 0,
     acceptedColorHex: decision.appliedHex,
+  } as CabinetFacePlan;
+}
+
+/**
+ * A saved Gemini picture (the official AI profile picture) as a face plan, for an
+ * Approved AI choice when no run was accepted. It is the door texture only: no
+ * accepted color rides with it, so the style's own color order still applies.
+ */
+export function savedAiPictureFacePlan(
+  style: DesignerFaceStyle | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan | null {
+  const textureUrl = trimmedImageUrl(style?.aiProfileImageUrl);
+  if (!style || !textureUrl) return null;
+  const wall = (placement ?? "").toLowerCase() === "wall";
+  return {
+    sourceKind: "legacy-door",
+    doorUrl: textureUrl,
+    drawerUrl: wall ? null : textureUrl,
+    sections: 1,
+    drawerTextureApplied: !wall,
+    grainRotation: 0,
   } as CabinetFacePlan;
 }
 
@@ -99,7 +123,9 @@ export function selectedDoorColorFacePlan(
   const photoStyle = styleForDoorColorSource(style, { source: "original-image", chosenAt: selection.chosenAt });
   if (effective.source === "original-image") return resolveCabinetFaceImages(photoStyle, placement);
   if (effective.source === "approved-ai-image") {
-    return acceptedRenderFacePlan(style, placement) ?? resolveCabinetFaceImages(photoStyle, placement);
+    return acceptedRenderFacePlan(style, placement)
+      ?? savedAiPictureFacePlan(style, placement)
+      ?? resolveCabinetFaceImages(photoStyle, placement);
   }
   const key = style.id ?? "selected";
   const finish: WizardDoorFinish | null = selection.source === "sherwin-williams"

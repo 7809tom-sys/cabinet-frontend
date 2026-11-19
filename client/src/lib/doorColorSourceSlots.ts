@@ -44,6 +44,8 @@ export type FourSlot = {
   /** What checking this slot stores. Null when the slot cannot be used yet. */
   selection: DoorColorSourceSelection | null;
   checkable: boolean;
+  /** Plain reason this slot cannot be picked yet. Null when it can. */
+  reason: string | null;
   /** This is the slot the 3D renderer uses right now. */
   checked: boolean;
   /** True when the slot has a picture or color to show. */
@@ -54,8 +56,10 @@ export type FourSlotInput = {
   supplierPhotoUrl?: string | null;
   /** Accepted render picture, else the official AI profile picture. */
   aiImageUrl?: string | null;
-  /** True only when an accepted AI render exists: otherwise 3D cannot use the AI slot. */
+  /** True when 3D can use an AI picture: an accepted render or a saved Gemini picture. Otherwise the AI slot cannot be picked. */
   aiAvailable: boolean;
+  /** True when that picture is an accepted render (default: same as aiAvailable). A saved Gemini picture is not. */
+  aiAccepted?: boolean;
   /** The editor's confirmed choice (null: nothing chosen, the supplier photo is used). */
   stored: DoorColorSourceSelection | null;
   listing?: DoorColorSourcesListing;
@@ -103,22 +107,29 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
         // Explicit original is always allowed: the supplier photo is the default and the truth.
         selection: { source: "original-image", chosenAt: now },
         checkable: true,
+        reason: null,
         filled: Boolean(url),
       };
     }
 
     if (source === "approved-ai-image") {
       const url = trimmed(input.aiImageUrl) || trimmed(rowFor(listing, source)?.value?.imageUrl as string | undefined);
+      const usable = Boolean(url && input.aiAvailable);
       const caption = !url
         ? "No approved AI picture yet"
-        : input.aiAvailable
-          ? "Approved AI (Gemini) render"
-          : "Saved, but not an accepted render yet: 3D keeps the supplier photo";
+        : !input.aiAvailable
+          ? "Saved, but 3D cannot use it yet: it keeps the supplier photo"
+          : (input.aiAccepted ?? true)
+            ? "Approved AI (Gemini) render"
+            : "Saved Gemini picture (3D uses it)";
       return {
         source, label, checked,
         imageUrl: url || null, hex: null, caption,
-        selection: url && input.aiAvailable ? { source: "approved-ai-image", chosenAt: now } : null,
-        checkable: Boolean(url && input.aiAvailable),
+        selection: usable ? { source: "approved-ai-image", chosenAt: now } : null,
+        checkable: usable,
+        reason: usable ? null : !url
+          ? "No Gemini picture is saved for this door yet. Make one with the AI render tool."
+          : "This picture is saved but 3D cannot use it yet, so the door keeps its supplier photo.",
         filled: Boolean(url),
       };
     }
@@ -135,6 +146,7 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
         caption: color ? `${color.label || color.code} · ${color.hex}` : "No Sherwin-Williams color confirmed",
         selection: selection ?? null,
         checkable: Boolean(selection),
+        reason: selection ? null : "Pick and confirm a Sherwin-Williams color first, then it can be used.",
         filled: Boolean(color),
       };
     }
@@ -150,6 +162,7 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
       caption: hex ? hex : "No hex color confirmed",
       selection: selection ?? null,
       checkable: Boolean(selection),
+      reason: selection ? null : "Type or pick a hex color and confirm it first, then it can be used.",
       filled: Boolean(hex),
     };
   });

@@ -13,6 +13,7 @@ import {
   type ResolvedDoorProfile,
 } from "@shared/doorStyleAppearance";
 import { resolveDoorColor } from "@shared/doorColorResolve";
+import { styleWithChosenColorHex } from "@shared/doorColorSourceSelection";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { isSolidSlabFace } from "@shared/solidSlabFace";
 import { raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
@@ -69,7 +70,9 @@ export function resolveDoorProfilePanelKind(style: DoorStyleAppearanceInput | nu
 
 /** Elevation / canvas finish, with the resolved hex when the keyword table is not enough. */
 export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | undefined): FinishColors {
-  const identity = identityOf(style);
+  // A confirmed Sherwin-Williams or hex choice is the finish too, so the cabinet
+  // body matches the door face the same choice paints (designerFacePlan).
+  const identity = identityOf(style ? styleWithChosenColorHex(style) : style);
   const base = finishColors(identity.ourName, identity.name, identity.color, identity.finish, identity.woodSpecies);
   const hex = resolveDoorFinishHex(identity);
   if (hex.toLowerCase() === base.face.toLowerCase()) return base;

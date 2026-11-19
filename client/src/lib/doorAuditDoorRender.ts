@@ -26,7 +26,9 @@ import {
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn } from "@/components/design/raisedPanelBevel";
 import { resolveDoorStyleAppearance } from "@/lib/doorStyleAppearance";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN } from "@shared/doorStyleAppearance";
-import { ColorGateBlock, runColorGate } from "@shared/colorGate";
+import { ColorGateBlock, runBestEffortColorGate, runColorGate } from "@shared/colorGate";
+import { DL_SHAKER_GEOMETRY as SHAKER_GENERIC_IMAGE_GEOMETRY } from "@shared/shakerDoorBlueprint";
+import { DLC_FRAME_DETAIL as SHAKER_GENERIC_IMAGE_FRAME } from "@shared/dlcFr26Textures";
 import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
 import { hexFromCanvas } from "@/lib/doorColorProbe";
 import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
@@ -34,6 +36,19 @@ import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
 const INCH = 1 / 12;
 
 export type AuditDoorKind = "flat" | "shaker" | "raised" | "glass";
+
+/** A front other than the 18 x 30 in audit door: a drawer front, a wall door, a base door. */
+export type AuditDoorSize = { widthIn: number; heightIn: number };
+
+export type BuildAuditDoorOptions = {
+  size?: AuditDoorSize;
+  /**
+   * Draw the shaker so it reads at a glance: outline edges on every rail and stile, a
+   * soft inner shadow along the opening, and the shaker generic image's rail depth. The
+   * audit capture leaves this off, so its renders do not change.
+   */
+  outline?: boolean;
+};
 
 export type AuditDoorConstruction = {
   kind: AuditDoorKind;
@@ -73,11 +88,16 @@ export function auditDoorKind(profile: DoorAuditDoorProfile | ThreeDDoorProfile 
 }
 
 /** Rail, stile, and bevel sizes from the same helpers the Designer uses for a physical door. */
-export function auditDoorConstruction(profile: DoorAuditDoorProfile | ThreeDDoorProfile | null | undefined): AuditDoorConstruction {
+export function auditDoorConstruction(
+  profile: DoorAuditDoorProfile | ThreeDDoorProfile | null | undefined,
+  size?: AuditDoorSize,
+): AuditDoorConstruction {
   const door = toProfile(profile);
   const kind = auditDoorKind(door);
-  const widthFt = DOOR_AUDIT_CAPTURE.doorWidthIn * INCH;
-  const heightFt = DOOR_AUDIT_CAPTURE.doorHeightIn * INCH;
+  const doorWidthIn = size?.widthIn ?? DOOR_AUDIT_CAPTURE.doorWidthIn;
+  const doorHeightIn = size?.heightIn ?? DOOR_AUDIT_CAPTURE.doorHeightIn;
+  const widthFt = doorWidthIn * INCH;
+  const heightFt = doorHeightIn * INCH;
   const wantsFrame = kind !== "flat";
   const railFt = wantsFrame ? threeDShakerRailThickness(widthFt, heightFt, door.railWidth) : 0;
   const stileFt = wantsFrame ? threeDShakerRailThickness(widthFt, heightFt, door.stileWidth) : 0;
@@ -105,8 +125,8 @@ export function auditDoorConstruction(profile: DoorAuditDoorProfile | ThreeDDoor
   return {
     kind: framed || kind === "flat" ? kind : "flat",
     framed,
-    widthIn: DOOR_AUDIT_CAPTURE.doorWidthIn,
-    heightIn: DOOR_AUDIT_CAPTURE.doorHeightIn,
+    widthIn: doorWidthIn,
+    heightIn: doorHeightIn,
     thicknessIn: DOOR_AUDIT_CAPTURE.doorThicknessIn,
     railIn: framed ? railFt / INCH : null,
     stileIn: framed ? stileFt / INCH : null,
@@ -227,6 +247,51 @@ function faceMaterial(
   return material;
 }
 
+function lerpHexTowardWhite(color: THREE.Color, amount: number) {
+  return color.clone().lerp(new THREE.Color("#ffffff"), amount);
+}
+
+/** Thin edge lines for one rail or stile: darker than the paint, lighter when the paint is already dark. */
+function outlineEdges(geometry: THREE.BufferGeometry, hex: string): THREE.LineSegments {
+  const paint = new THREE.Color(hex);
+  const luminance = 0.2126 * paint.r + 0.7152 * paint.g + 0.0722 * paint.b;
+  const edge = luminance < 0.12 ? lerpHexTowardWhite(paint, 0.4) : paint.clone().multiplyScalar(0.45);
+  const lines = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry, 30),
+    new THREE.LineBasicMaterial({ color: edge, transparent: true, opacity: 0.85 }),
+  );
+  lines.userData = { shakerOutline: true };
+  return lines;
+}
+
+/**
+ * Soft shadow along the top and left of the opening and a faint highlight along the
+ * bottom and right, from the shaker generic image's own strip strengths. It sits on
+ * the center panel just behind the rails, so the panel reads as recessed.
+ */
+function shakerOpeningShadow(openingW: number, openingH: number, railDepth: number): THREE.Mesh[] {
+  const strips: THREE.Mesh[] = [];
+  const z = -railDepth / 2 + SHAKER_GENERIC_IMAGE_FRAME.stripDepth;
+  const add = (w: number, h: number, x: number, y: number, color: string, opacity: number) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(w, h, SHAKER_GENERIC_IMAGE_FRAME.stripDepth),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
+    );
+    mesh.position.set(x, y, z);
+    mesh.userData = { shakerOpeningShade: true };
+    strips.push(mesh);
+  };
+  for (const [width, opacity] of SHAKER_GENERIC_IMAGE_FRAME.shadow) {
+    const t = Math.min(width * 2, openingW / 3, openingH / 3);
+    add(openingW, t, 0, openingH / 2 - t / 2, "#000000", Math.min(0.45, opacity * 1.6));
+    add(t, openingH, -openingW / 2 + t / 2, 0, "#000000", Math.min(0.45, opacity * 1.6));
+  }
+  const hw = Math.min(SHAKER_GENERIC_IMAGE_FRAME.highlight.width, openingW / 3, openingH / 3);
+  add(openingW, hw, 0, -openingH / 2 + hw / 2, "#ffffff", SHAKER_GENERIC_IMAGE_FRAME.highlight.opacity);
+  add(hw, openingH, openingW / 2 - hw / 2, 0, "#ffffff", SHAKER_GENERIC_IMAGE_FRAME.highlight.opacity);
+  return strips;
+}
+
 export function buildAuditDoor(
   input: (Pick<DoorAuditRenderInput, "color" | "samplePhotoUrl" | "name" | "code" | "distributorName" | "distributorCode" | "finish" | "woodSpecies" | "renderHex"> & {
     doorProfile?: DoorAuditDoorProfile | null;
@@ -235,6 +300,7 @@ export function buildAuditDoor(
     styleId?: number | null;
   }) | null | undefined,
   texture: THREE.Texture | null,
+  options: BuildAuditDoorOptions = {},
 ): THREE.Group {
   if (!input?.doorProfile) {
     const label = input?.name?.trim() || "This door";
@@ -242,7 +308,7 @@ export function buildAuditDoor(
   }
   const appearance = resolveDoorStyleAppearance(input);
   const profile = appearance.profile;
-  const plan = auditDoorConstruction(profile);
+  const plan = auditDoorConstruction(profile, options.size);
   const color = appearance.finishHex;
   const stainedGrain = !texture && appearance.stainedWood ? stainedWoodGrainTexture(color) : null;
   const faceTexture = texture ?? stainedGrain;
@@ -310,7 +376,8 @@ export function buildAuditDoor(
 
   const rail = plan.railIn * INCH;
   const stile = plan.stileIn * INCH;
-  const railDepth = 0.026;
+  // The shaker generic image keeps one rail depth for every shaker door.
+  const railDepth = options.outline ? SHAKER_GENERIC_IMAGE_GEOMETRY.railDepth : 0.026;
   const frame = new THREE.Group();
   frame.position.z = thickness / 2 + railDepth / 2;
   frame.userData = {
@@ -333,7 +400,11 @@ export function buildAuditDoor(
     mesh.castShadow = false;
     mesh.receiveShadow = false;
     mesh.userData = { physicalRail: true, grainPiece: piece };
+    if (options.outline) mesh.add(outlineEdges(mesh.geometry, color));
     frame.add(mesh);
+  }
+  if (options.outline && plan.kind === "shaker") {
+    frame.add(...shakerOpeningShadow(width - stile * 2, height - rail * 2, railDepth));
   }
 
   if (plan.kind === "raised" && plan.bevelWidthIn != null && plan.bevelDepthIn != null) {
@@ -373,11 +444,12 @@ export function buildAuditDoor(
   return applyStyleGrain();
 }
 
-function disposeObject(object: THREE.Object3D) {
+export function disposeObject(object: THREE.Object3D) {
   const textures = new Set<THREE.Texture>();
   object.traverse((child) => {
     const mesh = child as THREE.Mesh;
-    if (!mesh.isMesh) return;
+    // Outline edges are line segments: free their geometry and material too.
+    if (!mesh.isMesh && !(child as unknown as { isLine?: boolean }).isLine) return;
     mesh.geometry?.dispose();
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const material of materials) {
@@ -389,7 +461,7 @@ function disposeObject(object: THREE.Object3D) {
   textures.forEach((texture) => texture.dispose());
 }
 
-function loadSampleTexture(url: string): Promise<THREE.Texture> {
+export function loadSampleTexture(url: string): Promise<THREE.Texture> {
   return new Promise((resolve, reject) => {
     const loader = new THREE.TextureLoader();
     loader.setCrossOrigin("anonymous");
@@ -504,13 +576,15 @@ export function createDoorAuditCapture(): DoorAuditCapture {
         patch.geometry.dispose();
         return measured;
       };
-      const gate = await runColorGate({
+      const gateInput = {
         baseHex: appearance.finishHex,
         renderHex: input.renderHex,
         threshold: input.colorDeltaEMax ?? null,
         measure: measurePatch,
-      });
-      if (gate.status !== "pass") throw new ColorGateBlock(gate);
+      };
+      // Best effort (previews): paint as close to the picked color as the lights allow, never refuse.
+      const gate = input.bestEffortColor ? await runBestEffortColorGate(gateInput) : await runColorGate(gateInput);
+      if (gate.status !== "pass" && !input.bestEffortColor) throw new ColorGateBlock(gate);
       const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl) : null;
       const door = buildAuditDoor({ ...input, renderHex: gate.hex, color: gate.hex }, texture);
       scene.add(door);

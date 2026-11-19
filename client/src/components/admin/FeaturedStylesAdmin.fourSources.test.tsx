@@ -17,14 +17,17 @@ const pendingRef = vi.hoisted(() => ({
 }));
 const listingRef = vi.hoisted(() => ({ data: undefined as unknown, procedurePresent: true }));
 const captured = vi.hoisted(() => ({ inputs: [] as unknown[] }));
-vi.mock("@/lib/doorAuditDoorRender", () => ({
-  createDoorAuditCapture: () => ({
-    capture: async (input: unknown) => {
-      captured.inputs.push(input);
-      return { base64: "QUJD", width: 10, height: 10 };
-    },
-    dispose: () => {},
-  }),
+vi.mock("@/lib/doorColorSourceCabinetSnapshots", () => ({
+  snapshotCabinets: async (
+    jobs: Array<{ key: string; input: unknown }>,
+    _kind: string,
+    onResult: (key: string, result: { url: string }) => void,
+  ) => {
+    for (const job of jobs) {
+      captured.inputs.push(job.input);
+      onResult(job.key, { url: "data:image/png;base64,QUJD" });
+    }
+  },
 }));
 vi.mock("@/lib/trpc", () => {
   const mut = () => ({ mutate: (x: unknown) => pendingRef.mutate(x), mutateAsync: pendingRef.mutateAsync, isPending: false });
@@ -147,11 +150,47 @@ describe("Edit Door: four color sources side by side", () => {
     expect(screen.getByTestId("four-source-empty-hex")).toBeTruthy();
   });
 
-  it("an AI picture that is not an accepted render shows in its slot but cannot be checked", () => {
+  it("a saved Gemini picture (no accepted render) shows in its slot and can be checked; 3D then uses it", () => {
     styles[0] = { ...styles[0], approvedReferenceImageUrl: null, approvedVersionId: null, aiProfileImageUrl: "/uploads/gemini-door.png" };
     openFirst();
     expect(screen.getByTestId("four-source-image-approved-ai-image").getAttribute("src")).toBe("/uploads/gemini-door.png");
+    expect((screen.getByTestId("four-source-check-approved-ai-image") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("four-source-check-approved-ai-image"));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ id: 1, doorColorSourceSelection: { source: "approved-ai-image" } });
+  });
+
+  it("with no Gemini picture at all the AI slot cannot be checked and says why", () => {
+    styles[0] = { ...styles[0], approvedReferenceImageUrl: null, approvedVersionId: null, aiProfileImageUrl: null };
+    openFirst();
     expect((screen.getByTestId("four-source-check-approved-ai-image") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId("four-source-reason-approved-ai-image").textContent).toMatch(/No Gemini picture/);
+  });
+
+  it("an empty Hex tile fills, checks and saves right there, with the render hex saved alongside", () => {
+    openFirst();
+    fireEvent.change(screen.getByTestId("four-source-hex-input"), { target: { value: "#224466" } });
+    expect(calls).toEqual([]);
+    fireEvent.click(screen.getByTestId("four-source-hex-use"));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ id: 1, renderHex: "#224466", doorColorSourceSelection: { source: "hex", confirmed: true, hex: "#224466" } });
+    expect(screen.getByTestId("four-source-check-hex").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("four-source-swatch-hex").getAttribute("aria-label")).toBe("Hex #224466");
+  });
+
+  it("checking a saved Sherwin-Williams chip also saves its hex as the render hex", () => {
+    listingRef.data = { available: true, sources: [{ source: "sherwin-williams", value: SW }] };
+    openFirst();
+    fireEvent.click(screen.getByTestId("four-source-check-sherwin-williams"));
+    expect(calls[0]).toMatchObject({ renderHex: "#d1c7b7", doorColorSourceSelection: { source: "sherwin-williams", color: { hex: "#d1c7b7" } } });
+  });
+
+  it("an empty Sherwin-Williams tile has a button that opens the one picker (the wizard) and starts the pick", () => {
+    openFirst();
+    fireEvent.click(screen.getByTestId("four-source-sherwin-pick"));
+    expect(screen.getByTestId("door-color-source-sherwin-williams").getAttribute("aria-checked")).toBe("true");
+    // Nothing is saved until a chip is confirmed.
+    expect(calls).toEqual([]);
   });
 
   it("sends nothing on open, whatever the sources table holds", () => {

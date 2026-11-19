@@ -42,8 +42,28 @@ describe("buildFourSlots", () => {
     expect(slots["original-image"].checked).toBe(true);
     expect(slots["approved-ai-image"].filled).toBe(true);
     expect(slots["approved-ai-image"].checkable).toBe(false);
-    expect(slots["approved-ai-image"].caption).toMatch(/not an accepted render yet/i);
+    expect(slots["approved-ai-image"].caption).toMatch(/3D cannot use it yet/i);
+    expect(slots["approved-ai-image"].reason).toMatch(/3D cannot use it yet/i);
     expect(activeFourSlotSource({ ...base, aiAvailable: false, stored })).toBe("original-image");
+  });
+
+  it("a saved Gemini picture that 3D can use is checkable and says it is not an accepted render", () => {
+    const slots = bySource(buildFourSlots({ ...base, aiAccepted: false }));
+    expect(slots["approved-ai-image"]).toMatchObject({ checkable: true, reason: null });
+    expect(slots["approved-ai-image"].caption).toMatch(/Saved Gemini picture/);
+    expect(bySource(buildFourSlots(base))["approved-ai-image"].caption).toMatch(/Approved AI \(Gemini\) render/);
+  });
+
+  it("every slot that cannot be picked gives a plain reason, and every pickable slot has none", () => {
+    const empty = bySource(buildFourSlots({ ...base, aiImageUrl: null, aiAvailable: false }));
+    expect(empty["approved-ai-image"].reason).toMatch(/No Gemini picture/);
+    expect(empty["sherwin-williams"].reason).toMatch(/Sherwin-Williams/);
+    expect(empty.hex.reason).toMatch(/hex/i);
+    expect(empty["original-image"].reason).toBeNull();
+    const stored: DoorColorSourceSelection = { source: "hex", confirmed: true, chosenAt: NOW, hex: "#224466" };
+    const filled = bySource(buildFourSlots({ ...base, stored }));
+    expect(filled.hex.reason).toBeNull();
+    expect(filled["approved-ai-image"].reason).toBeNull();
   });
 
   it("a saved, accepted AI picture is shown and checkable", () => {

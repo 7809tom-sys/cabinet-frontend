@@ -232,11 +232,22 @@ export function selectionForStyle(
 export type AcceptedAiAvailability = {
   approvedVersionId?: number | null;
   approvedReferenceImageUrl?: string | null;
+  /** The official AI (Gemini) profile picture saved in the editor (0281). */
+  aiProfileImageUrl?: string | null;
 };
 
-/** True when this style has an accepted AI render to use. */
-export function hasApprovedAiImage(style: AcceptedAiAvailability | null | undefined): boolean {
+/** True when this style has an accepted AI render. */
+export function hasAcceptedAiRender(style: AcceptedAiAvailability | null | undefined): boolean {
   return Boolean(style && style.approvedVersionId != null && (style.approvedReferenceImageUrl ?? "").trim());
+}
+
+/**
+ * True when 3D can use an AI picture for this style: an accepted render, or a saved
+ * Gemini picture (the official AI profile picture). Either one makes the Approved AI
+ * tile pickable.
+ */
+export function hasApprovedAiImage(style: AcceptedAiAvailability | null | undefined): boolean {
+  return hasAcceptedAiRender(style) || Boolean(style && (style.aiProfileImageUrl ?? "").trim());
 }
 
 export type EffectiveDoorColorSource = {
@@ -307,6 +318,21 @@ export function styleForDoorColorSource<T extends { renderHex?: string | null; a
   const hex = selectedDoorHex(selection);
   if (hex) return { ...style, renderHex: hex, approvedVersionId: null };
   return style;
+}
+
+/**
+ * The style as the finish resolver should see it: a confirmed Sherwin-Williams or hex
+ * choice becomes the render hex (and clears an accepted-run flag so it cannot outrank
+ * the pick), so a cabinet's finish color matches the door face the choice paints.
+ * Every other choice (Original, Approved AI, nothing) leaves the style untouched.
+ * Reads the server fields first, then the browser cache, like `selectionForStyle`.
+ */
+export function styleWithChosenColorHex<T extends { renderHex?: string | null; approvedVersionId?: number | null }>(
+  style: T,
+): T {
+  if (!style) return style;
+  const hex = selectedDoorHex(selectionForStyle(style as unknown as DoorColorSourceServerFields & { id?: number | string | null }));
+  return hex ? { ...style, renderHex: hex, approvedVersionId: null } : style;
 }
 
 // ── Selector state (pure, so the door editor and tests share one behavior) ──────
