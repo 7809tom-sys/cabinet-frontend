@@ -6,8 +6,9 @@
  *
  *  1. The line's own sink rows (the Pelican/surfaces sink catalog the build is given). A row is a
  *     candidate when its kind matches the base (apron-front only in an FSB, standard only in an SB)
- *     and it FITS (rule below). Among candidates: a double bowl on a 33″+ base, a single bowl below
- *     that; then the widest sink (best use of the base); then name and id for a stable pick.
+ *     and it FITS (rule below). Among candidates (Tom, 8:45 AM CT): the LOWEST-PRICED double bowl;
+ *     if no double bowl fits, the lowest-priced fitting sink, and the report says why. Real catalog
+ *     prices only; an unpriced row ranks after every priced row.
  *  2. If the line sells no sink that fits, the same choice is made from the source-verified Pelican
  *     kitchen sink profiles (real published dimensions). That default is drawn and reported but has
  *     no catalog row, so nothing is billed and no price is invented, exactly like the default faucet.
@@ -55,14 +56,31 @@ export function budgetSinkFits(candidate: { widthIn: number; minimumCabinetWidth
     && candidate.minimumCabinetWidthIn <= baseWidthIn + 0.001;
 }
 
-function choose(candidates: Candidate[], baseWidthIn: number, farm: boolean): Candidate | null {
-  const wantBowls = baseWidthIn >= 33 - 0.001 ? 2 : 1;
+const priceOf = (c: Candidate): number | null => {
+  const price = Number(c.product?.sellPrice);
+  return Number.isFinite(price) && price > 0 ? price : null;
+};
+
+/**
+ * Tom, voice, Nov 19 2026, 8:45 AM CT: the LOWEST-PRICED DOUBLE-BOWL sink that fits; if no double bowl
+ * fits, the lowest-priced sink that fits. Only real catalog prices rank (an unpriced row sorts after
+ * every priced one); verified defaults have no price, so they rank double bowl, then widest.
+ */
+function choose(candidates: Candidate[], baseWidthIn: number, farm: boolean): { pick: Candidate; doubleFits: boolean } | null {
   const fit = candidates.filter((c) => c.farmhouse === farm && budgetSinkFits(c, baseWidthIn));
-  fit.sort((a, b) => (Number(b.bowls === wantBowls) - Number(a.bowls === wantBowls))
-    || (b.widthIn - a.widthIn)
-    || a.name.localeCompare(b.name)
-    || ((a.product?.id ?? 0) - (b.product?.id ?? 0)));
-  return fit[0] ?? null;
+  const doubleFits = fit.some((c) => c.bowls === 2);
+  const pool = doubleFits ? fit.filter((c) => c.bowls === 2) : fit;
+  pool.sort((a, b) => {
+    const pa = priceOf(a);
+    const pb = priceOf(b);
+    if (pa != null || pb != null) {
+      if (pa == null) return 1;
+      if (pb == null) return -1;
+      if (pa !== pb) return pa - pb;
+    }
+    return (b.widthIn - a.widthIn) || a.name.localeCompare(b.name) || ((a.product?.id ?? 0) - (b.product?.id ?? 0));
+  });
+  return pool[0] ? { pick: pool[0], doubleFits } : null;
 }
 
 function fromProduct(product: AutoDesignSinkProduct): Candidate | null {
@@ -107,19 +125,29 @@ export function pickBudgetDefaultSink(input: {
   const farm = isFarmBase(input.base);
   const rule = `fits ${input.base.masterCode}: sink width ≤ base width − ${BUDGET_SINK_SIDE_CLEARANCE_IN}″ (${inch(baseWidthIn - BUDGET_SINK_SIDE_CLEARANCE_IN)}) and its minimum cabinet width ≤ ${inch(baseWidthIn)}`;
   const kind = (c: Candidate) => (c.farmhouse ? "apron-front" : c.bowls === 2 ? "double-bowl" : "single-bowl");
-  const line = choose(input.lineProducts.map(fromProduct).filter((c): c is Candidate => c != null), baseWidthIn, farm);
-  if (line && line.product) {
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const lineChoice = choose(input.lineProducts.map(fromProduct).filter((c): c is Candidate => c != null), baseWidthIn, farm);
+  if (lineChoice && lineChoice.pick.product) {
+    const line = lineChoice.pick;
+    const price = priceOf(line);
+    const why = farm
+      ? `the lowest-priced apron-front sink in the line's catalog that ${rule}`
+      : lineChoice.doubleFits
+        ? `the lowest-priced double-bowl sink in the line's catalog that ${rule}`
+        : `the lowest-priced sink in the line's catalog that ${rule} — no double-bowl sink in the line fits this base`;
     return {
-      source: "line", product: line.product, profile: line.profile, widthIn: line.widthIn,
-      note: `Budget friendly: the sink was picked for you, no question asked: ${line.name} (${line.code}), a ${inch(line.widthIn)} ${kind(line)} sink from the line's catalog that ${rule}.`,
+      source: "line", product: line.product!, profile: line.profile, widthIn: line.widthIn,
+      note: `Budget friendly: the sink was picked for you, no question asked: ${line.name} (${line.code})${price != null ? `, ${money(price)}` : ", no catalog price"}, a ${inch(line.widthIn)} ${kind(line)} sink, ${why}.`,
     };
   }
-  const fallback = choose(verifiedPelicanKitchenSinkProfiles().map(fromProfile), baseWidthIn, farm);
-  if (fallback && fallback.profile) {
+  const fallbackChoice = choose(verifiedPelicanKitchenSinkProfiles().map(fromProfile), baseWidthIn, farm);
+  if (fallbackChoice && fallbackChoice.pick.profile) {
+    const fallback = fallbackChoice.pick;
     const why = input.lineProducts.length ? "the line sells no sink that fits this base" : "the line sells no sink";
+    const noDouble = !farm && !fallbackChoice.doubleFits ? " (no double-bowl sink fits this base)" : "";
     return {
-      source: "default", product: null, profile: fallback.profile, widthIn: fallback.widthIn,
-      note: `Budget friendly: ${why}, so the default ${fallback.name} (${fallback.code}), a ${inch(fallback.widthIn)} ${kind(fallback)} sink from the verified Pelican catalog that ${rule}, was placed (drawn, not priced: no catalog row).`,
+      source: "default", product: null, profile: fallback.profile!, widthIn: fallback.widthIn,
+      note: `Budget friendly: ${why}, so the default ${fallback.name} (${fallback.code}), a ${inch(fallback.widthIn)} ${kind(fallback)} sink from the verified Pelican catalog that ${rule}${noDouble}, was placed (drawn, not priced: no catalog row).`,
     };
   }
   return {

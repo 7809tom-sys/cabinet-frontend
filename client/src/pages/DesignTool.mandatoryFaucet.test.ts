@@ -24,7 +24,7 @@ function between(source: string, start: string, end: string): string {
 
 describe("a faucet is placed on every build path", () => {
   it("runs inside the auto-design engine build", () => {
-    expect(layoutSource).toContain("ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? [])");
+    expect(layoutSource).toContain("ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? [], { budgetFriendly })");
     // It runs before the build returns, and its notes reach the build's notes.
     const call = layoutSource.indexOf("ensureMandatorySinkFaucets(");
     expect(call).toBeGreaterThan(0);

@@ -2234,7 +2234,7 @@ export function runAutoDesignLayout(rawArgs: {
   // on the sink base, on the countertop, drawn in 3D. Add-only: an existing faucet
   // is never replaced; with no catalog faucet row the built-in default fixture is
   // used and reported.
-  const mandatoryFaucet = ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? []);
+  const mandatoryFaucet = ensureMandatorySinkFaucets(sinks, args.faucetCatalog ?? [], { budgetFriendly });
   if (mandatoryFaucet.attachedUids.length > 0) {
     sinks = mandatoryFaucet.sinks;
     notes.push(...mandatoryFaucet.notes);
