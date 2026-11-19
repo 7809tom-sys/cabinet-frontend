@@ -445,7 +445,53 @@ export function disposeObject(object: THREE.Object3D) {
   textures.forEach((texture) => texture.dispose());
 }
 
-export function loadSampleTexture(url: string): Promise<THREE.Texture> {
+/** Shown on a preview tile whose picture is a flat, near-white image. */
+export const BLANK_PHOTO_MESSAGE = "This approved picture is a blank render; re-approve or make a Gemini picture.";
+
+/**
+ * True when RGBA pixels are one flat, near-white color: every channel averages 225 or more and the
+ * brightness barely varies. A real door picture, even a white one, has shading and grain.
+ */
+export function isBlankPhotoReading(rgba: ArrayLike<number>): boolean {
+  const count = Math.floor(rgba.length / 4);
+  if (count === 0) return false;
+  const sum = [0, 0, 0];
+  let lumSum = 0;
+  let lumSquares = 0;
+  for (let i = 0; i < count; i += 1) {
+    const r = rgba[i * 4]!;
+    const g = rgba[i * 4 + 1]!;
+    const b = rgba[i * 4 + 2]!;
+    sum[0]! += r;
+    sum[1]! += g;
+    sum[2]! += b;
+    const lum = (r + g + b) / 3;
+    lumSum += lum;
+    lumSquares += lum * lum;
+  }
+  const mean = lumSum / count;
+  const deviation = Math.sqrt(Math.max(0, lumSquares / count - mean * mean));
+  return sum.every((channel) => channel / count >= 225) && deviation < 1.5;
+}
+
+function textureLooksBlank(texture: THREE.Texture): boolean {
+  const image = texture.image as CanvasImageSource & { width?: number; height?: number } | undefined;
+  if (!image?.width || !image.height || typeof document === "undefined") return false;
+  const probe = document.createElement("canvas");
+  probe.width = 32;
+  probe.height = 32;
+  const context = probe.getContext("2d");
+  if (!context) return false;
+  context.drawImage(image, 0, 0, 32, 32);
+  return isBlankPhotoReading(context.getImageData(0, 0, 32, 32).data);
+}
+
+export type LoadSampleTextureOptions = {
+  /** Previews only: refuse a flat near-white picture with BLANK_PHOTO_MESSAGE. The Designer never sets this. */
+  rejectBlank?: boolean;
+};
+
+export function loadSampleTexture(url: string, options: LoadSampleTextureOptions = {}): Promise<THREE.Texture> {
   return new Promise((resolve, reject) => {
     const loader = new THREE.TextureLoader();
     loader.setCrossOrigin("anonymous");
@@ -462,7 +508,15 @@ export function loadSampleTexture(url: string): Promise<THREE.Texture> {
     }, 15_000);
     loader.load(
       url,
-      (texture) => finish(undefined, cropAuditSampleToPanelGrain(configureDoorAuditSampleTexture(texture, url))),
+      (texture) => {
+        const cropped = cropAuditSampleToPanelGrain(configureDoorAuditSampleTexture(texture, url));
+        if (options.rejectBlank && textureLooksBlank(cropped)) {
+          cropped.dispose();
+          finish(new Error(BLANK_PHOTO_MESSAGE));
+          return;
+        }
+        finish(undefined, cropped);
+      },
       undefined,
       () => finish(new Error("Could not load the sample photo for this door. The image may be blocking a canvas export.")),
     );

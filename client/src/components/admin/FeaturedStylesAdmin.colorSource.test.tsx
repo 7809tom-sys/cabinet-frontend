@@ -262,10 +262,23 @@ describe("Edit Door: saved values show in their tiles and fields", () => {
     expect(screen.queryByTestId("door-color-source-approved-ai-image-empty")).toBeNull();
   });
 
-  it("the AI tile shows the accepted run picture over the profile picture", () => {
+  it("the AI tile shows the saved Gemini picture over an older approved image (Nov 18 2026)", () => {
     styles[0] = { ...styles[0], approvedVersionId: 7, approvedReferenceImageUrl: "/uploads/accepted.png", aiProfileImageUrl: "/uploads/gemini-door.png" };
     openFirst();
+    expect((screen.getByTestId("door-color-source-approved-photo") as HTMLImageElement).getAttribute("src")).toBe("/uploads/gemini-door.png");
+  });
+
+  it("the AI tile still shows an accepted run picture when there is no Gemini picture", () => {
+    styles[0] = { ...styles[0], approvedVersionId: 7, approvedReferenceImageUrl: "/uploads/accepted.png", aiProfileImageUrl: null };
+    openFirst();
     expect((screen.getByTestId("door-color-source-approved-photo") as HTMLImageElement).getAttribute("src")).toBe("/uploads/accepted.png");
+  });
+
+  it("the AI tile never shows a rendering-audit capture as the picture", () => {
+    styles[0] = { ...styles[0], approvedVersionId: 7, approvedReferenceImageUrl: "/manus-storage/door-rendering-audit/style-1/run-9_ab12.png", aiProfileImageUrl: null };
+    openFirst();
+    expect(screen.queryByTestId("door-color-source-approved-photo")).toBeNull();
+    expect(screen.getByTestId("door-color-source-approved-ai-image-empty")).toBeTruthy();
   });
 
   it("the AI tile stays empty with neither picture", () => {

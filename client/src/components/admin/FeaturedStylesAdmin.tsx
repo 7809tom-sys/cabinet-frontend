@@ -43,6 +43,7 @@ import {
   awaitingConfirm,
   doorColorSourceReducer,
   doorColorSourceSaveMessage,
+  aiTilePicture,
   hasAcceptedAiRender,
   hasApprovedAiImage,
   initialDoorColorSourceDraft,
@@ -524,7 +525,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   );
   const approvedVersionId = (style as AdminStyle & { approvedVersionId?: number | null }).approvedVersionId ?? null;
   // 3D can use an AI picture when a run was accepted OR a Gemini picture was saved (the official AI profile picture).
-  const aiPictureSource = { approvedVersionId, approvedReferenceImageUrl: style.approvedReferenceImageUrl, aiProfileImageUrl: style.aiProfileImageUrl };
+  // The saved Gemini picture wins over an older approved image; a rendering-audit capture is not a picture (Nov 18 2026).
+  const aiTile = aiTilePicture({ approvedReferenceImageUrl: style.approvedReferenceImageUrl, aiProfileImageUrl: style.aiProfileImageUrl });
+  const aiPictureSource = {
+    approvedVersionId,
+    approvedReferenceImageUrl: aiTile.source === "approved-render" ? aiTile.url : null,
+    aiProfileImageUrl: aiTile.source === "gemini" ? aiTile.url : null,
+  };
   const aiAvailable = hasApprovedAiImage(aiPictureSource);
   const aiAccepted = hasAcceptedAiRender(aiPictureSource);
   /** A save that failed only because the 0280 migration is missing; shown inline, not just as a toast. */
@@ -1201,7 +1208,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   // An accepted render wins. Failing that, the AI profile image the editor already
           // saved (0281) belongs on this tile - otherwise the generated image is
           // stored and never shown anywhere (Tom, Nov 15 2026).
-          aiImageUrl={style.approvedReferenceImageUrl || style.aiProfileImageUrl || null}
+          aiImageUrl={aiTile.url}
                   sherwinHex={sherwinHex}
                   hexSwatch={hexSwatch}
                   sherwinPicker={null}
@@ -1215,12 +1222,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                 )}
                 {(() => {
                   const supplierPhoto = doorSampleImageUrl || style.doorSampleImageUrl || style.thumbnailImageUrl || null;
-                  const aiPicture = style.approvedReferenceImageUrl || style.aiProfileImageUrl || null;
+                  const aiPicture = aiTile.url;
                   const slots = buildFourSlots({
                     supplierPhotoUrl: supplierPhoto,
                     aiImageUrl: aiPicture,
                     aiAvailable,
                     aiAccepted,
+                    aiAuditCaptureOnly: aiTile.auditCaptureOnly,
                     stored: colorSource.stored,
                     listing: sourcesListing.listing,
                     now: new Date().toISOString(),

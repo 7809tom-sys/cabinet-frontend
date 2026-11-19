@@ -250,6 +250,32 @@ export function hasApprovedAiImage(style: AcceptedAiAvailability | null | undefi
   return hasAcceptedAiRender(style) || Boolean(style && (style.aiProfileImageUrl ?? "").trim());
 }
 
+/** A capture made by the door-rendering audit, not a picture: `.../door-rendering-audit/style-N/run-V_hash.png`. */
+export function isAuditRunCapture(url: string | null | undefined): boolean {
+  return /\/door-rendering-audit\/[^?#]*\/run-[^/?#]*\.(?:png|jpe?g|webp)(?:[?#]|$)/i.test((url ?? "").trim());
+}
+
+export type AiTilePicture = {
+  url: string | null;
+  /** Where the picture came from: the saved Gemini picture, or an accepted render. */
+  source: "gemini" | "approved-render" | null;
+  /** True when the only approved image is a rendering-audit capture, which is never shown as a Gemini picture. */
+  auditCaptureOnly: boolean;
+};
+
+/**
+ * The picture the Approved AI tile shows. The saved Gemini picture (0281) wins over an older
+ * approved image. A rendering-audit capture is our own renderer's output, so it is not a
+ * Gemini picture and is never used here (Tom, Nov 18 2026: a blank capture drew a white tile).
+ */
+export function aiTilePicture(style: AcceptedAiAvailability | null | undefined): AiTilePicture {
+  const gemini = (style?.aiProfileImageUrl ?? "").trim();
+  if (gemini) return { url: gemini, source: "gemini", auditCaptureOnly: false };
+  const approved = (style?.approvedReferenceImageUrl ?? "").trim();
+  if (approved && !isAuditRunCapture(approved)) return { url: approved, source: "approved-render", auditCaptureOnly: false };
+  return { url: null, source: null, auditCaptureOnly: Boolean(approved) };
+}
+
 export type EffectiveDoorColorSource = {
   /** The source the door actually uses. */
   source: DoorColorSourceOption;

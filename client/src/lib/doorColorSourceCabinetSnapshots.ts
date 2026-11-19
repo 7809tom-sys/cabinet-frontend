@@ -29,6 +29,26 @@ export type SnapshotCabinetKind = "base" | "wall";
 
 const INCH = 1 / 12;
 
+/**
+ * Lights for a tile that paints a picture. A picture already carries its own lighting, and the
+ * studio rig (environment 1, key 1.5) lights it a second time, so pale pictures drift toward white.
+ * This rig drops the environment and cuts the lights so the door lands near the picture's own color.
+ * Color tiles keep the studio rig: their hex is matched against it.
+ */
+export const PHOTO_TILE_LIGHT_SCALE = { environment: 0, hemisphere: 2, key: 1.5, fill: 0.5, exposure: 1 } as const;
+
+export function photoTileLights(rig: DoorLightRig): DoorLightRig {
+  const k = PHOTO_TILE_LIGHT_SCALE;
+  return {
+    ...rig,
+    exposure: k.exposure,
+    environment: k.environment,
+    hemisphere: { ...rig.hemisphere, intensity: rig.hemisphere.intensity * k.hemisphere },
+    key: { ...rig.key, intensity: rig.key.intensity * k.key },
+    fill: { ...rig.fill, intensity: rig.fill.intensity * k.fill },
+  };
+}
+
 export const CABINET_SNAPSHOT = {
   widthPx: 360,
   heightPx: 440,
@@ -198,7 +218,8 @@ export function createCabinetSnapshotSession(): CabinetSnapshotSession {
       }
       frameCamera(kind);
       const appearance = resolveDoorStyleAppearance(input);
-      applyLights(doorLightsForFinish(appearance.finishHex, input.renderExposure ?? null));
+      const studioLights = doorLightsForFinish(appearance.finishHex, input.renderExposure ?? null);
+      applyLights(studioLights);
       const measurePatch = async (hex: string) => {
         const material = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.55, metalness: 0.02 });
         const patch = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 1.4), material);
@@ -220,11 +241,12 @@ export function createCabinetSnapshotSession(): CabinetSnapshotSession {
         threshold: input.colorDeltaEMax ?? null,
         measure: measurePatch,
       });
-      const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl) : null;
+      const texture = input.samplePhotoUrl && !input.needsDoorOnlyPhoto ? await loadSampleTexture(input.samplePhotoUrl, { rejectBlank: true }) : null;
       if (disposed) {
         texture?.dispose();
         throw new Error("The cabinet renderer was closed.");
       }
+      if (texture) applyLights(photoTileLights(studioLights));
       const cabinet = buildCabinet(kind, input, texture, gate.hex);
       scene.add(cabinet);
       current = cabinet;
