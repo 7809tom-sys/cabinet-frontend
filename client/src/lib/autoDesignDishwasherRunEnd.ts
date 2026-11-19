@@ -145,7 +145,8 @@ export function applyDishwasherRunEndRule(input: {
           const s = span(p, wallId, room);
           return edge === "end" ? Math.abs(s.start - far) <= EPS : Math.abs(s.end - far) <= EPS;
         });
-        if (!next || !isFillerItem(next)) break;
+        // The economic-corner 3″ filler belongs to the corner (24″ void beyond it), not to the dishwasher's end: it stays.
+        if (!next || !isFillerItem(next) || next.fillerPieceGroupId?.startsWith("economy-corner:")) break;
         fillers.push(next);
         const s = span(next, wallId, room);
         far = edge === "end" ? s.end : s.start;

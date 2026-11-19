@@ -45,6 +45,20 @@ export function isEconomicCornerFiller(item: Pick<PlacedCabinet, "fillerPieceGro
   return typeof item.fillerPieceGroupId === "string" && item.fillerPieceGroupId.startsWith("economy-corner:");
 }
 
+/**
+ * The 27″ footprint span of one leg of an economic corner, in the wall-run frame (null when the wall has
+ * no run frame). Used to reserve the whole footprint — 24″ void + 3″ filler seat — before the base fill.
+ */
+export function economyCornerClaimSpan(wallId: WallSide, corner: { x: number; y: number }, room: RoomData): { wallId: string; start: number; end: number } | null {
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return null;
+  const atStart = Math.hypot(frame.start.x - corner.x, frame.start.y - corner.y)
+    <= Math.hypot(frame.end.x - corner.x, frame.end.y - corner.y);
+  return atStart
+    ? { wallId, start: frame.runStart, end: Math.min(frame.runEnd, frame.runStart + ECONOMY_CORNER_FOOTPRINT_IN) }
+    : { wallId, start: Math.max(frame.runStart, frame.runEnd - ECONOMY_CORNER_FOOTPRINT_IN), end: frame.runEnd };
+}
+
 export type EconomyCornerResult =
   | { ok: true; placed: PlacedCabinet[]; fillerUids: string[]; note: string } // boards are seated by enforceEconomyCornerFillers
   | { ok: false; note: string };
@@ -114,7 +128,113 @@ export function enforceEconomyCornerFillers(input: {
   const notes: string[] = [];
   const fillerRow = catalogFillerForGap(input.catalogFillers, ECONOMY_CORNER_FILLER_IN, "base");
   if (!fillerRow) return { placed, notes };
+  const fillerDepth = Number(fillerRow.depth) > 6 ? Number(fillerRow.depth) : STD.BASE_DEPTH;
+  const buildBaseFiller = (label: string, wallId: WallSide, fillerStart: number): PlacedCabinet => {
+    const spot = wallPlacementAt(fillerStart, ECONOMY_CORNER_FILLER_IN, fillerDepth, wallId, room, null, false);
+    return {
+      uid: input.makeUid(),
+      cabinetId: Number(fillerRow.id),
+      masterCode: fillerRow.masterCode,
+      description: fillerRow.description ?? `${fillerRow.masterCode} filler`,
+      category: fillerRow.category ?? "Filler",
+      subCategory: fillerRow.subCategory ?? "Filler",
+      placement: "base",
+      x: spot.x,
+      y: spot.y,
+      width: ECONOMY_CORNER_FILLER_IN,
+      depth: fillerDepth,
+      height: STD.BASE_HEIGHT,
+      nominalWidth: Number(fillerRow.width) || ECONOMY_CORNER_FILLER_IN,
+      nominalHeight: STD.BASE_HEIGHT,
+      nominalDepth: fillerDepth,
+      rotation: spot.rotation,
+      wallId: spot.wallId ?? wallId,
+      wallOffset: spot.wallOffset ?? fillerStart,
+      mountBottom: 0,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      fillerPieceGroupId: `economy-corner:${label}:${wallId}`,
+      fillerTotalWidth: ECONOMY_CORNER_FILLER_IN,
+      fieldModificationNote: ECONOMIC_CORNER_BASE_NOTE,
+      ...(input.styleId != null ? { styleId: input.styleId } : {}),
+    } as PlacedCabinet;
+  };
   const familyOf = (code: string) => (code.toUpperCase().replace(/[^A-Z0-9]/g, "").match(/^(\d*[A-Z]+)\d/)?.[1] ?? null);
+  const wallFillerRow = catalogFillerForGap(input.catalogFillers, ECONOMY_CORNER_FILLER_IN, "wall");
+  // Upper row beside the filler seat (keep-clear, Tom, Nov 19 2026, 11:59 AM CT): the base row is clear to 27″, so the upper
+  // row gets a 3″ filler over the seat and a stock upper over the rest of the span up to the next upper (no hole above the run).
+  const seatUppers = (label: string, wallId: WallSide, atStart: boolean, seatStart: number, seatEnd: number): string | null => {
+    if (!wallFillerRow) return null;
+    const uppers = placed.filter((item) => item.placement === "wall" && cabinetWall(item, room) === wallId)
+      .map((item) => { const start = wallRunOffset(item, wallId, room); return { item, start, end: start + wallRunSpan(item, wallId, room) }; });
+    if (uppers.some((seen) => seen.start < seatEnd - 0.06 && seen.end > seatStart + 0.06)) return null;
+    const neighbor = atStart
+      ? uppers.filter((seen) => seen.start >= seatEnd - 0.06).sort((a, b) => a.start - b.start)[0]
+      : uppers.filter((seen) => seen.end <= seatStart + 0.06).sort((a, b) => b.end - a.end)[0];
+    if (!neighbor) return null;
+    const gapStart = atStart ? seatEnd : neighbor.end;
+    const gapEnd = atStart ? neighbor.start : seatStart;
+    const span = gapEnd - gapStart;
+    if (span < -0.06 || span > 60) return null;
+    // Size the new upper from a full-height upper (a short bridge over the sink is not the model).
+    const full = uppers.filter((seen) => (Number(seen.item.height) || 0) >= 29 && /^W\d/i.test(seen.item.masterCode) && !/^DCW|diagonal|corner/i.test(`${seen.item.masterCode} ${seen.item.description ?? ""}`))
+      .sort((a, b) => Math.abs(a.start - gapStart) - Math.abs(b.start - gapStart))[0];
+    const ref = full?.item ?? neighbor.item;
+    const refGlass = Boolean(ref.glassDoor) || /GD$|glass/i.test(`${ref.masterCode} ${ref.description ?? ""}`);
+    const uDepth = Number(ref.depth) || 12;
+    const uHeight = Number(ref.height) || 30;
+    const make = (along: number, width: number, row: { id: number | string; masterCode: string; description?: string | null }, asFiller: boolean, gapFiller = false): PlacedCabinet => {
+      const spot = wallPlacementAt(along, width, uDepth, wallId, room, null, false);
+      return {
+        ...(asFiller ? buildBaseFiller(label, wallId, along) : {}),
+        uid: input.makeUid(), cabinetId: Number(row.id), masterCode: row.masterCode,
+        description: row.description ?? ref.description, category: asFiller ? "Filler" : ref.category, subCategory: asFiller ? "Filler" : ref.subCategory,
+        placement: "wall", x: spot.x, y: spot.y, rotation: spot.rotation, width, nominalWidth: width,
+        depth: uDepth, nominalDepth: uDepth, height: uHeight, nominalHeight: uHeight, mountBottom: ref.mountBottom,
+        wallId: spot.wallId ?? wallId, wallOffset: spot.wallOffset ?? along, styleId: ref.styleId,
+        ...(asFiller && gapFiller
+          ? { numberOfDoors: 0, numberOfDrawers: 0, fillerPieceGroupId: `economy-corner-gap:${label}:${wallId}:wall`, fillerTotalWidth: width }
+          : asFiller
+            ? { numberOfDoors: 0, numberOfDrawers: 0, fillerPieceGroupId: `economy-corner:${label}:${wallId}:wall`, fillerTotalWidth: ECONOMY_CORNER_FILLER_IN, fieldModificationNote: ECONOMIC_CORNER_WALL_NOTE }
+            : { numberOfDoors: ref.numberOfDoors, numberOfDrawers: 0 }),
+      } as PlacedCabinet;
+    };
+    const filler = make(seatStart, ECONOMY_CORNER_FILLER_IN, wallFillerRow, true);
+    const upperFamily = familyOf(ref.masterCode);
+    const row = (input.wallCatalog ?? []).find((r) => Math.abs(Number(r.width) - span) <= 0.01
+      && (upperFamily ? familyOf(r.masterCode) === upperFamily : true)
+      && Math.abs((Number(r.height) || 0) - uHeight) <= 0.6 && Math.abs((Number(r.depth) || 12) - uDepth) <= 0.6
+      && (refGlass || !/GD$|glass/i.test(`${r.masterCode} ${r.description ?? ""}`))
+      && !/corner|blind|diagonal|filler|panel/i.test(`${r.masterCode} ${r.description ?? ""}`))
+      ?? (input.wallCatalog ?? []).find((r) => Math.abs(Number(r.width) - span) <= 0.01
+        && Math.abs((Number(r.height) || 0) - uHeight) <= 0.6 && Math.abs((Number(r.depth) || 12) - uDepth) <= 0.6
+        && (refGlass || !/GD$|glass/i.test(`${r.masterCode} ${r.description ?? ""}`))
+        && !/corner|blind|diagonal|filler|panel/i.test(`${r.masterCode} ${r.description ?? ""}`));
+    placed.push(filler);
+    if (span > 0.06 && !row) {
+      // No stock upper is exactly this wide: the widest one that fits, plus a filler of the (≤3″) remainder, as the base row does.
+      const fits = (input.wallCatalog ?? []).filter((r) => Number(r.width) >= 12 && span - Number(r.width) >= -0.01 && span - Number(r.width) <= ECONOMY_CORNER_FILLER_IN + 0.01
+        && (upperFamily ? familyOf(r.masterCode) === upperFamily : true)
+        && Math.abs((Number(r.height) || 0) - uHeight) <= 0.6 && Math.abs((Number(r.depth) || 12) - uDepth) <= 0.6
+        && (refGlass || !/GD$|glass/i.test(`${r.masterCode} ${r.description ?? ""}`))
+        && !/corner|blind|diagonal|filler|panel/i.test(`${r.masterCode} ${r.description ?? ""}`)).sort((a, b) => Number(b.width) - Number(a.width))[0];
+      const remainder = fits ? span - Number(fits.width) : 0;
+      const remFiller = fits && remainder > 0.06 ? catalogFillerForGap(input.catalogFillers, remainder, "wall") : null;
+      if (fits && (remainder <= 0.06 || remFiller)) {
+        const cabStart = atStart ? gapStart : gapStart + remainder;
+        placed.push(make(cabStart, Number(fits.width), fits, false));
+        if (remFiller) placed.push(make(atStart ? gapStart + Number(fits.width) : gapStart, remainder, remFiller, true, true));
+        return `${label}: economy corner on ${wallId} — upper row: ${wallFillerRow.masterCode} 3″ filler over the corner seat and a ${fits.masterCode} over the rest; the line sells no ${span}″ upper, so a ${remainder.toFixed(2).replace(/\.?0+$/, "")}″ filler closes the span, as in the base row.`;
+      }
+    }
+    if (span > 0.06 && row) {
+      placed.push(make(gapStart, span, row, false));
+      return `${label}: economy corner on ${wallId} — upper row: ${wallFillerRow.masterCode} 3″ filler over the corner seat and a ${row.masterCode} (${span}″) over the rest, so no hole is left above the run.`;
+    }
+    return span > 0.06
+      ? `${label}: economy corner on ${wallId} — upper row: ${wallFillerRow.masterCode} 3″ filler over the corner seat; the line sells no ${span}″ upper for the ${span}″ beside it, so that span stays open.`
+      : `${label}: economy corner on ${wallId} — upper row: ${wallFillerRow.masterCode} 3″ filler over the corner seat.`;
+  };
   for (const corner of input.corners) {
     for (const wallId of corner.wallIds) {
       const frame = wallRunFrame(wallId, room);
@@ -126,7 +246,23 @@ export function enforceEconomyCornerFillers(input: {
         .map((item) => { const start = wallRunOffset(item, wallId, room); return { item, start, end: start + wallRunSpan(item, wallId, room) }; });
       // Already finished: a filler sits right at the square's edge.
       const atEdge = onLeg.find((seen) => atStart ? Math.abs(seen.start - squareEdge) <= 0.06 : Math.abs(seen.end - squareEdge) <= 0.06);
-      if (!atEdge) continue;
+      if (!atEdge) {
+        // Keep-clear (Tom, Nov 19 2026, 11:59 AM CT): the footprint is reserved, so the first box beside it may start past
+        // 27″. When nothing sits in the 3″ filler seat, the filler goes there on its own.
+        const seatStart = atStart ? squareEdge : squareEdge - ECONOMY_CORNER_FILLER_IN;
+        const seatEnd = seatStart + ECONOMY_CORNER_FILLER_IN;
+        if (onLeg.some((seen) => seen.start < seatEnd - 0.06 && seen.end > seatStart + 0.06)) continue;
+        if (onLeg.some((seen) => seen.item.fillerPieceGroupId?.startsWith("economy-corner:") && Math.abs(seen.start - seatStart) <= 0.06)) continue;
+        // Only when the leg is a run with something right after the seat (otherwise the corner is just an empty wall end).
+        const after = onLeg.some((seen) => atStart ? Math.abs(seen.start - seatEnd) <= 0.06 : Math.abs(seen.end - seatStart) <= 0.06);
+        if (!after) continue;
+        placed.push(buildBaseFiller(corner.label, wallId, seatStart));
+        notes.push(`${corner.label}: economy corner on ${wallId} — the 3″ ${fillerRow.masterCode} filler sits in the corner seat beside the 24″ void; nothing else is in the 27″ footprint.`);
+        // The upper row over the seat: a 3″ upper filler, and a real upper over what is left up to the next upper.
+        const upperNote = seatUppers(corner.label, wallId, atStart, seatStart, seatEnd);
+        if (upperNote) notes.push(upperNote);
+        continue;
+      }
       if (/filler/i.test(`${atEdge.item.category ?? ""} ${atEdge.item.subCategory ?? ""} ${atEdge.item.description ?? ""}`)) continue;
       const base = atEdge.item;
       const family = familyOf(base.masterCode);
@@ -159,35 +295,7 @@ export function enforceEconomyCornerFillers(input: {
         y: baseSpot.y,
         wallOffset: baseSpot.wallOffset ?? baseStart,
       };
-      const fillerDepth = Number(fillerRow.depth) > 6 ? Number(fillerRow.depth) : STD.BASE_DEPTH;
-      const spot = wallPlacementAt(fillerStart, ECONOMY_CORNER_FILLER_IN, fillerDepth, wallId, room, null, false);
-      const filler = {
-        uid: input.makeUid(),
-        cabinetId: Number(fillerRow.id),
-        masterCode: fillerRow.masterCode,
-        description: fillerRow.description ?? `${fillerRow.masterCode} filler`,
-        category: fillerRow.category ?? "Filler",
-        subCategory: fillerRow.subCategory ?? "Filler",
-        placement: "base",
-        x: spot.x,
-        y: spot.y,
-        width: ECONOMY_CORNER_FILLER_IN,
-        depth: fillerDepth,
-        height: STD.BASE_HEIGHT,
-        nominalWidth: Number(fillerRow.width) || ECONOMY_CORNER_FILLER_IN,
-        nominalHeight: STD.BASE_HEIGHT,
-        nominalDepth: fillerDepth,
-        rotation: spot.rotation,
-        wallId: spot.wallId ?? wallId,
-        wallOffset: spot.wallOffset ?? fillerStart,
-        mountBottom: 0,
-        numberOfDoors: 0,
-        numberOfDrawers: 0,
-        fillerPieceGroupId: `economy-corner:${corner.label}:${wallId}`,
-        fillerTotalWidth: ECONOMY_CORNER_FILLER_IN,
-        fieldModificationNote: ECONOMIC_CORNER_BASE_NOTE,
-        ...(input.styleId != null ? { styleId: input.styleId } : {}),
-      } as PlacedCabinet;
+      const filler = buildBaseFiller(corner.label, wallId, fillerStart);
       placed = placed.map((item) => (item.uid === base.uid ? swapped : item));
       placed.push(filler);
       // The upper above the old base follows it, so the doors stay lined up over the 3" filler.

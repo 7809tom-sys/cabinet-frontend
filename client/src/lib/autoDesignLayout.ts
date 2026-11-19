@@ -62,7 +62,8 @@ import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSin
 import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
 import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
 import { applyDishwasherRunEndRule } from "./autoDesignDishwasherRunEnd";
-import { enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
+import { economyKeepClearShifts, type KeepClearAnchor } from "./autoDesignEconomyKeepClear";
+import { economyCornerClaimSpan, enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
 import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
 import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
@@ -980,6 +981,44 @@ export function runAutoDesignLayout(rawArgs: {
     if (anchorWall && !selectedWalls.includes(anchorWall)) selectedWalls.push(anchorWall);
     notes.push("The refrigerator already on the plan is a fixed anchor: it keeps its position, and the cabinets are designed around it.");
   }
+  // Economic corner keep-clear (Tom, voice, Nov 19 2026, 11:59 AM CT): in budget mode the dishwasher, sink
+  // base and range never sit inside the 27" economic corner footprint (24" void + 3" mitered filler).
+  // The measured positions are slid out along their own wall before anything is seated.
+  const keepClear = (() => {
+    if (!budgetFriendly || hasPreference(input.intake, "lazy-susan") || hasPreference(input.intake, "blind-corner")) return null;
+    const rows: KeepClearAnchor[] = [];
+    const wallIdsSeen: WallSide[] = [];
+    for (const anchor of plan.plan.anchors) {
+      if (anchor.kind === "refrigerator" && anchoredRefrigerator) continue;
+      const source = anchor.kind === "sink" ? sinkBaseSource : applianceByKind[anchor.kind];
+      if (!source) continue;
+      const width = anchor.kind === "sink" ? sinkBaseWidth : anchor.kind === "refrigerator" ? refrigeratorWidth : dim(source.width, 24);
+      const adjacent = anchor.kind === "dishwasher" && anchor.source === "adjacent-to-sink";
+      const measured = adjacent
+        ? { ...anchor, wallLabel: input.sink.wallLabel, centerOffsetIn: adjacentDishwasherCenterIn(input.sink.centerOffsetIn, sinkBaseWidth, width, input.dishwasherSide === "left" ? "left" : "right") }
+        : anchor;
+      const wall = wallLabelToEngineWallId(measured.wallLabel, room, input.originCorner, input.runDirection);
+      if (!wall) continue;
+      wallIdsSeen.push(wall.engineWallId as WallSide);
+      rows.push({
+        kind: anchor.kind, wallId: wall.engineWallId as WallSide, along: anchorAlongStartIn(measured, width, wall), width, depth: dim(source.depth, 24),
+        group: adjacent || anchor.kind === "sink" ? "sink" : anchor.kind,
+      });
+    }
+    if (anchoredRefrigerator) {
+      const wallId = cabinetWall(anchoredRefrigerator, room);
+      if (wallId) rows.push({ kind: "refrigerator", wallId: wallId as WallSide, along: wallRunOffset(anchoredRefrigerator, wallId, room), width: wallRunSpan(anchoredRefrigerator, wallId, room), depth: anchoredRefrigerator.depth, group: "refrigerator" });
+    }
+    return economyKeepClearShifts({
+      anchors: rows,
+      movableKinds: ["sink", "dishwasher", "stove"],
+      room,
+      openings,
+      frameOf: (wallId) => wallRunFrame(wallId, room),
+      label: (kind) => (kind === "stove" ? "range" : kind === "sink" ? "sink base" : kind),
+    });
+  })();
+  if (keepClear) notes.push(...keepClear.notes);
   for (const anchor of plan.plan.anchors) {
     // Already seated from the plan above.
     if (anchor.kind === "refrigerator" && anchoredRefrigerator) continue;
@@ -1002,7 +1041,7 @@ export function runAutoDesignLayout(rawArgs: {
     }
     const wall = wallLabelToEngineWallId(measuredAnchor.wallLabel, room, input.originCorner, input.runDirection);
     if (!wall) return fail(`${anchor.kind} cannot be placed because ${measuredAnchor.wallLabel} is not available in this room.`);
-    const along = anchorAlongStartIn(measuredAnchor, width, wall);
+    const along = anchorAlongStartIn(measuredAnchor, width, wall) + (keepClear?.shifts.get(anchor.kind) ?? 0);
     if (along < wall.frame.runStart - COLLISION_EPSILON_IN || along + width > wall.frame.runEnd + COLLISION_EPSILON_IN) {
       return fail(`${anchor.kind} does not fit on ${measuredAnchor.wallLabel} at the selected center measurement.`);
     }
@@ -1476,7 +1515,13 @@ export function runAutoDesignLayout(rawArgs: {
     }
   }
 
+  // Economic corner (Tom, Nov 19 2026, 11:59 AM CT): the 27" footprint of every accepted economic corner leg.
+  const economyClaims = economyCorners.flatMap((economy) => economy.wallIds.flatMap((wallId) => {
+    const claim = economyCornerClaimSpan(wallId, economy.corner, room);
+    return claim ? [claim] : [];
+  }));
   const wiggle = applyAutoDesignWiggleRoom({
+    keepClearSpans: economyClaims,
     placed: working,
     room,
     openings: stageOpenings,
@@ -1580,6 +1625,13 @@ export function runAutoDesignLayout(rawArgs: {
   // Reserve every inside-corner square of the cabineted runs before the base
   // fill (and every later leftover / "use every inch" / intake-repack pass).
   const cornerReserved = [...autoDesignInsideCornerReservations(room, runWalls)];
+  const cornerReservedUpper = [...cornerReserved]; // the 24" voids only: the upper row keeps its own corner decision
+  // Economic corner (Tom, Nov 19 2026, 11:59 AM CT): the whole 27" footprint (24" void + the 3" filler seat)
+  // is reserved on every leg whose economic corner was accepted, so no later pass seats or slides a box into it.
+  for (const claim of economyClaims) {
+    const at24 = cornerReserved.findIndex((span) => span.wallId === claim.wallId && (Math.abs(span.start - claim.start) <= 0.01 || Math.abs(span.end - claim.end) <= 0.01));
+    if (at24 >= 0) cornerReserved[at24] = claim;
+  }
   let basePieceCount = 0;
   for (const wallId of runWalls) {
     const rawSegments = freeSegmentsOnWall(wallId, room, working, stageOpenings, 9, 0, "base", false, undefined, footprintDepth(stage.baseSource));
@@ -1831,7 +1883,7 @@ export function runAutoDesignLayout(rawArgs: {
       : kitchenRuleNumber("jog_max_in")),
     wallHeightIn: wallDesignHeight,
     // Only the 45° filler seats: the 90° corner square keeps today's behavior here.
-    reservedSpans: cornerReserved.filter((span) => fortyFiveSeatSpan(room, span, runWalls)),
+    reservedSpans: [...cornerReserved.filter((span) => fortyFiveSeatSpan(room, span, runWalls) && !economyClaims.some((claim) => claim.wallId === span.wallId && Math.abs(claim.start - span.start) <= 0.01 && Math.abs(claim.end - span.end) <= 0.01)), ...economyClaims], // economic corner footprint (Tom, Nov 19 2026, 11:59 AM CT)
   });
   working = realCabinets.placed;
   notes.push(...realCabinets.notes);
@@ -2115,6 +2167,7 @@ export function runAutoDesignLayout(rawArgs: {
       room,
       openings: stageOpenings,
       reservedSpans: cornerReserved,
+      reservedUpperSpans: cornerReservedUpper,
       keepUids: companionKeepUids,
       intake: input.intake,
       baseCatalog: args.baseCatalog,
@@ -2504,6 +2557,7 @@ export function runAutoDesignLayout(rawArgs: {
       },
       glassUppers: hasPreference(input.intake, "glass-uppers"),
       wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+      keepClearSpans: economyClaims,
     });
     working = minimumFiller.placed;
     if (minimumFiller.changes.length > 0) {

@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import aero from "./__fixtures__/aeroSolsticeLive390019.json";
 import { runAutoDesignLayout, mergeAutoDesignRefrigeratorCaps } from "./autoDesignLayout";
 import { emptyAutoDesignIntake } from "./autoDesignFifteenRules";
+import { isEconomicCornerFiller } from "./autoDesignEconomyCorner";
 import { BUDGET_REFRIGERATOR_CAP_DEPTH_IN, pickAutoDesignRefrigeratorCap } from "./autoDesignRefrigeratorBay";
 import {
   appliancesForRoom, applianceAsDesignCabinet, cabinetWall, countertopSurfaces, isRefrigerator, wallPlacementAt, wallRunOffset, wallRunSpan,
@@ -210,10 +211,13 @@ describe("Budget friendly: no spacer between cabinets (Tom, Nov 19 2026, 6:33 AM
 
   it("the 144x120 L budget build places no spacer, filler or end panel anywhere, and the top-wall uppers touch with no gap", () => {
     const budget = build({ budget: true });
-    expect(budget.placed.filter(isSpacerPiece).map((item) => item.masterCode)).toEqual([]);
+    // Economic corner (Tom, Nov 19 2026): the one 3 in mitered filler per leg is the corner itself, not a spacer. The range now
+    // slides clear of the 27 in footprint (keep-clear, 11:59 AM CT), so this build seats the economic corner instead of skipping it.
+    expect(budget.placed.filter((item) => isSpacerPiece(item) && !isEconomicCornerFiller(item)).map((item) => item.masterCode)).toEqual([]);
+    expect(budget.placed.filter((item) => isEconomicCornerFiller(item) && item.placement !== "wall").map((item) => item.width)).toEqual([3, 3]);
     expect(budget.placed.some((item) => item.masterCode === "WSV30")).toBe(false);
     const top = wallRun(budget.placed, "top");
-    expect(top.map((item) => item.masterCode)).toEqual(["W3612", "W2130", "W2130", "W1230", "W3012"]);
+    expect(top.map((item) => item.masterCode)).toEqual(["W3612", "W3630", "W-15-30", "W3012", "F342"]);
     let edge = 0;
     for (const item of top) {
       expect(wallRunOffset(item, "top", ROOM)).toBeCloseTo(edge, 2);
@@ -221,7 +225,7 @@ describe("Budget friendly: no spacer between cabinets (Tom, Nov 19 2026, 6:33 AM
     }
     expect(edge).toBeCloseTo(120, 2);
     // Every SKU is a real row of the line; nothing invented or renamed.
-    for (const item of top) expect(pack.wall.some((row) => row.masterCode === item.masterCode)).toBe(true);
+    for (const item of top) expect([...pack.wall, ...pack.accessory].some((row) => row.masterCode === item.masterCode)).toBe(true);
   });
 
   it("budget mode reports the spacer was skipped and where the leftover went", () => {
@@ -233,7 +237,8 @@ describe("Budget friendly: no spacer between cabinets (Tom, Nov 19 2026, 6:33 AM
 
   it("a Budget build keeps the right wall as before (W3612 over the fridge-side run, W3330 at the end)", () => {
     const right = wallRun(build({ budget: true }).placed, "right");
-    expect(right.map((item) => item.masterCode)).toEqual(["W2730", "W3612", "W3330"]);
+    // Economic corner: the 3 in upper filler over the corner seat + W2430 replace the old W2730 over the corner-side box.
+    expect(right.map((item) => item.masterCode)).toEqual(["F342", "W2430", "W3612", "W3330"]);
   });
 
   it("outside budget mode nothing changes: the 3/4 in WSV30 end panel and the W3630 + W1230 uppers are still placed, no spacer report", () => {

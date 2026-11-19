@@ -301,6 +301,8 @@ function buildRow(input: {
   slideUids: ReadonlySet<string>;
   delta: number;
   glass: boolean;
+  /** Economic corner footprint spans on this wall: a fixed, empty boundary the base row is never grown into. */
+  keepClear?: ReadonlyArray<{ start: number; end: number }>;
 }): RowModel {
   const { room, wallId, layer } = input;
   const frame = wallRunFrame(wallId, room)!;
@@ -367,6 +369,7 @@ function buildRow(input: {
     if (layer === "base" && (Number(opening.sill) || 0) >= openingTop) continue;
     boundaries.push({ start: opening.offset, end: opening.offset + opening.width, kind: "opening", item: null });
   }
+  if (layer === "base") for (const span of input.keepClear ?? []) boundaries.push({ start: span.start, end: span.end, kind: "cabinet", item: null });
   boundaries.sort((a, b) => a.start - b.start);
   // Pieces that only touch (or a slid range that now overlaps a fixed piece) decide feasibility.
   let feasible = true;
@@ -466,6 +469,8 @@ export function applyMinimumFiller(input: {
   rangeWiggleIn: (range: PlacedCabinet) => number;
   glassUppers?: boolean;
   wallLabelOf?: (wallId: string) => string | null | undefined;
+  /** Wall-run spans the range may never be slid into (the 27 in economic corner footprint). */
+  keepClearSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
 }): MinimumFillerResult {
   let working: PlacedCabinet[] = [...input.placed];
   const notes: string[] = [];
@@ -489,9 +494,21 @@ export function applyMinimumFiller(input: {
     const reach = group ? Math.max(0, Math.min(3, input.rangeWiggleIn(group.range))) : 0;
     const deltas: number[] = [0];
     for (let d = STEP_IN; d <= reach + EPS; d += STEP_IN) deltas.push(round3(d), round3(-d));
+    // Economic corner keep-clear: a slide that would put the range (or its bridge) into the footprint is not a candidate.
+    const clear = (input.keepClearSpans ?? []).filter((span) => span.wallId === side);
+    if (group && clear.length > 0) {
+      const intoFootprint = (delta: number) => Array.from(group.uids).some((uid) => {
+        const item = working.find((p) => p.uid === uid);
+        if (!item || item.placement === "wall") return false;
+        const start = wallRunOffset(item, side, input.room) + delta;
+        const end = start + wallRunSpan(item, side, input.room);
+        return clear.some((span) => start < span.end - EPS && end > span.start + EPS);
+      });
+      for (let i = deltas.length - 1; i > 0; i--) if (intoFootprint(deltas[i]!)) deltas.splice(i, 1);
+    }
     const rowsAt = (delta: number) => layers.map((layer) => buildRow({
       placed: working, room: input.room, openings: input.openings, wallId: side, layer,
-      catalog: catalogOf(layer), slideUids, delta, glass: Boolean(input.glassUppers),
+      catalog: catalogOf(layer), slideUids, delta, glass: Boolean(input.glassUppers), keepClear: clear,
     }));
     const currentRows = rowsAt(0);
     const current = currentRows.map(currentRowScore);

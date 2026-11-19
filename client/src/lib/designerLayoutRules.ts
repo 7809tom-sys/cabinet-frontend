@@ -523,8 +523,16 @@ function shiftGroup(placed: PlacedCabinet[], group: WiggleGroup, delta: number, 
   });
 }
 
-function groupStillValid(placed: PlacedCabinet[], group: WiggleGroup, openings: readonly WallOpening[], room: RoomData): boolean {
+function groupStillValid(placed: PlacedCabinet[], group: WiggleGroup, openings: readonly WallOpening[], room: RoomData, keepClear: ReadonlyArray<{ wallId: string; start: number; end: number }> = []): boolean {
   const members = placed.filter((item) => group.uids.has(item.uid));
+  // Economic corner keep-clear: a slide may never put a member inside a reserved corner footprint.
+  for (const member of members) {
+    if (member.placement === "wall") continue;
+    const side = (member.wallId ?? group.wallId) as WallSide;
+    const memberStart = alongStart(member, side, room);
+    const memberEnd = memberStart + wallRunSpan(member, side, room);
+    if (keepClear.some((span) => span.wallId === side && memberStart < span.end - COLLISION_EPSILON_IN && memberEnd > span.start + COLLISION_EPSILON_IN)) return false;
+  }
   const rest = placed.filter((item) => !group.uids.has(item.uid));
   const restNoPanels = rest.filter((item) => !isRefrigeratorEndPanel(item));
   for (const member of members) {
@@ -796,6 +804,8 @@ export function applyAutoDesignWiggleRoom(input: {
    * passed here, so no wiggle jog can slide it out from under its own bay.
    */
   fixedUids?: readonly string[];
+  /** Spans (wall-run frame) no anchor may be slid into, e.g. the 27 in economic corner footprint. */
+  keepClearSpans?: ReadonlyArray<{ wallId: string; start: number; end: number }>;
 }): { placed: PlacedCabinet[]; moves: AutoDesignWiggleMove[] } {
   let placed = [...input.placed];
   const cache = new Map<string, number>();
@@ -834,7 +844,7 @@ export function applyAutoDesignWiggleRoom(input: {
           const target = Math.round((origin.originalStart + deltaFromOriginal) * 8) / 8;
           if (Math.abs(target - origin.originalStart) > shiftLimit + COLLISION_EPSILON_IN) continue;
           const shifted = shiftGroup(placed, group, target - initialStart, input.room);
-          if (!groupStillValid(shifted, group, input.openings, input.room)) continue;
+          if (!groupStillValid(shifted, group, input.openings, input.room, input.keepClearSpans)) continue;
           const score = layoutPenalty(shifted, input.room, input.openings, input.catalog, cache);
           const abs = Math.abs(deltaFromOriginal);
           const bestAbs = Math.abs(bestDeltaFromOriginal);
