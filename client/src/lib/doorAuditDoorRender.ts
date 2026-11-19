@@ -31,6 +31,7 @@ import { DL_SHAKER_GEOMETRY as SHAKER_GENERIC_IMAGE_GEOMETRY } from "@shared/sha
 import { DLC_FRAME_DETAIL as SHAKER_GENERIC_IMAGE_FRAME } from "@shared/dlcFr26Textures";
 import { doorLightsForFinish, type DoorLightRig } from "@shared/doorRenderLights";
 import { hexFromCanvas } from "@/lib/doorColorProbe";
+import { isPaintedFinish } from "@shared/paintedFinish";
 import { applyThreeDCabinetPieceGrain } from "@/lib/woodGrainVariation";
 import { outlineEdges } from "@/lib/shakerFrameOutline";
 
@@ -521,6 +522,25 @@ export function loadSampleTexture(url: string, options: LoadSampleTextureOptions
       () => finish(new Error("Could not load the sample photo for this door. The image may be blocking a canvas export.")),
     );
   });
+}
+
+/**
+ * The four-tile preview paints a shaker's Original and Approved AI tiles as the shaker generic image
+ * in ONE plain color taken from the photo, not as a cropped patch of the photo tiled over every rail
+ * and stile (that tiling printed seams and stripes). Stained wood keeps its grain: Aspen Charcoal,
+ * or any style that names a wood species without naming paint.
+ */
+export function shakerPhotoTileUsesPlainColor(input: Parameters<typeof resolveDoorStyleAppearance>[0] & { woodSpecies?: string | null; finish?: string | null }): boolean {
+  const appearance = resolveDoorStyleAppearance(input);
+  if (auditDoorKind(appearance.profile) !== "shaker" || appearance.stainedWood) return false;
+  return !(input?.woodSpecies ?? "").trim() || isPaintedFinish(input);
+}
+
+/** The photo's own color: the average of the same center-panel patch the grain crop cuts, as #rrggbb. */
+export function plainColorFromPhotoTexture(texture: THREE.Texture): string {
+  const image = texture.image as HTMLCanvasElement | undefined;
+  if (!image || typeof image.getContext !== "function") throw new Error("The sample photo color could not be read.");
+  return hexFromCanvas(image);
 }
 
 export type DoorAuditCapture = {

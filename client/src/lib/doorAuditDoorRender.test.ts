@@ -4,6 +4,7 @@ import {
   auditDoorConstruction,
   buildAuditDoor,
   configureDoorAuditSampleTexture,
+  shakerPhotoTileUsesPlainColor,
 } from "./doorAuditDoorRender";
 import { ASPEN_CHARCOAL_STAIN } from "./doorStyleAppearance";
 import { normalizeDoorAuditStartRun, type DoorAuditRenderInput } from "./doorRenderingAudit";
@@ -261,5 +262,31 @@ describe("audit door construction", () => {
     }, texture);
     const replaySlab = replay.children.find((child) => child.userData.auditDoorSlab) as THREE.Mesh;
     expect(replaySlab.userData.woodGrainTransform).toEqual(slab.userData.woodGrainTransform);
+  });
+});
+
+describe("shaker photo tiles", () => {
+  const base = (over: Partial<DoorAuditRenderInput> = {}) => ({
+    styleId: 330005,
+    name: "Fresh Sage",
+    code: "FS",
+    distributorName: "Ashford",
+    samplePhotoUrl: "/photo.jpg",
+    color: "#8FAF8A",
+    doorProfile: shaker,
+    ...over,
+  });
+
+  it("paints a shaker's photo tile as the shaker generic image in one plain color", () => {
+    expect(shakerPhotoTileUsesPlainColor(base())).toBe(true);
+    expect(shakerPhotoTileUsesPlainColor(base({ woodSpecies: "Paint grade HDF" }))).toBe(true);
+    expect(shakerPhotoTileUsesPlainColor(base({ doorProfile: { ...shaker, doorStyle: "Slim Shaker", stileWidth: "1" } }))).toBe(true);
+  });
+
+  it("leaves slab and raised doors, and stained wood, on their photo path", () => {
+    expect(shakerPhotoTileUsesPlainColor(base({ doorProfile: { ...shaker, doorStyle: "Slab", panelConstruction: "slab" } }))).toBe(false);
+    expect(shakerPhotoTileUsesPlainColor(base({ doorProfile: { ...shaker, doorStyle: "Raised Panel", panelConstruction: "raised" } }))).toBe(false);
+    expect(shakerPhotoTileUsesPlainColor(base({ woodSpecies: "Hickory" }))).toBe(false);
+    expect(shakerPhotoTileUsesPlainColor(base({ name: "Aspen Charcoal", code: "AC" }))).toBe(false);
   });
 });

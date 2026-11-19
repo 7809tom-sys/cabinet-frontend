@@ -39,6 +39,14 @@ describe("shaker generic image outline geometry", () => {
     expect(shakerFrameOutlinePositions({ ...FRAME, faceWidth: 0.3, stile: 0.15, z: 0 })).toHaveLength(4 * 2 * 3);
   });
 
+  it("skips the opening on a short drawer front whose rails leave only a slit", () => {
+    // 11.6 x 5.7 inch drawer face with 3 inch rails clamped to 2.73 inches: a 0.24 inch opening.
+    const drawer = { faceWidth: 11.6 / 12, faceHeight: 5.7 / 12, rail: 2.73 / 12, stile: 2.73 / 12, z: 0 };
+    expect(shakerFrameOutlinePositions(drawer)).toHaveLength(4 * 2 * 3);
+    // A taller drawer with a real opening keeps both rectangles.
+    expect(shakerFrameOutlinePositions({ ...drawer, faceHeight: 8 / 12, rail: 3 / 12, stile: 3 / 12 })).toHaveLength(8 * 2 * 3);
+  });
+
   it("sits in front of the rails' front plane for both rail depths", () => {
     expect(shakerFrameFrontZ(true)).toBeGreaterThan(0.031 / 2 + 0.0026 - 0.0001);
     expect(shakerFrameFrontZ(false)).toBeCloseTo(0.026 / 2 + 0.0006, 6);
