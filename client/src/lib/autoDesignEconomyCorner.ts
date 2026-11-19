@@ -28,6 +28,23 @@ export const ECONOMY_CORNER_SQUARE_IN = STD.BASE_DEPTH;
 export const ECONOMY_CORNER_FILLER_IN = BLIND_CORNER_FILLER_WIDTH_IN;
 export const ECONOMY_CORNER_FOOTPRINT_IN = ECONOMY_CORNER_SQUARE_IN + ECONOMY_CORNER_FILLER_IN;
 
+/**
+ * Material-list label + cut instruction for the economic corner (Tom, voice, Nov 19 2026, 11:53 AM CT).
+ * The 27″ footprint is a 24″ VOID (no corner cabinet, no blind pull pocket, countertop over it) plus a
+ * 3″ filler that is MITERED at 45° on the end that meets the void. The text rides on the filler's
+ * fieldModificationNote, which the material list, build sheet and cart lines already print.
+ */
+export const ECONOMIC_CORNER_LABEL = "Economic corner";
+export const ECONOMIC_CORNER_BASE_NOTE =
+  `${ECONOMIC_CORNER_LABEL}: 3\" filler, MITER 45° on the end at the open 24\" corner void (no corner cabinet, no pull pocket; countertop runs over the void).`;
+export const ECONOMIC_CORNER_WALL_NOTE =
+  `${ECONOMIC_CORNER_LABEL} (upper): 3\" upper filler over the economic-corner base filler, MITER 45° on the end at the open corner void.`;
+
+/** True for the 3″ fillers this module seats at the edge of the 24″ corner void (base or upper). */
+export function isEconomicCornerFiller(item: Pick<PlacedCabinet, "fillerPieceGroupId">): boolean {
+  return typeof item.fillerPieceGroupId === "string" && item.fillerPieceGroupId.startsWith("economy-corner:");
+}
+
 export type EconomyCornerResult =
   | { ok: true; placed: PlacedCabinet[]; fillerUids: string[]; note: string } // boards are seated by enforceEconomyCornerFillers
   | { ok: false; note: string };
@@ -168,7 +185,7 @@ export function enforceEconomyCornerFillers(input: {
         numberOfDrawers: 0,
         fillerPieceGroupId: `economy-corner:${corner.label}:${wallId}`,
         fillerTotalWidth: ECONOMY_CORNER_FILLER_IN,
-        fieldModificationNote: "Economy corner: 3\" door-clearance filler claimed first; the base beside it was sized to what is left.",
+        fieldModificationNote: ECONOMIC_CORNER_BASE_NOTE,
         ...(input.styleId != null ? { styleId: input.styleId } : {}),
       } as PlacedCabinet;
       placed = placed.map((item) => (item.uid === base.uid ? swapped : item));
@@ -200,6 +217,7 @@ export function enforceEconomyCornerFillers(input: {
           depth: uDepth, height: Number(upper.height) || 30, nominalHeight: Number(upper.height) || 30, nominalDepth: uDepth,
           mountBottom: upper.mountBottom, wallOffset: wSpot.wallOffset ?? fillerStart,
           fillerPieceGroupId: `economy-corner:${corner.label}:${wallId}:wall`,
+          fieldModificationNote: ECONOMIC_CORNER_WALL_NOTE,
         } as PlacedCabinet);
         notes.push(`${corner.label}: economy corner on ${wallId} — the upper ${upper.masterCode} above it became ${upperRow.masterCode} with a ${wallFiller.masterCode} 3″ filler, so the doors stay lined up.`);
       }
