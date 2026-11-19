@@ -18,6 +18,7 @@ import { useDesignerCanvasOnly } from "@/hooks/useDesignerCanvasOnly";
 import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
 import FaqPage from "@/pages/FaqPage";
+import InvoicePage from "@/pages/InvoicePage";
 import { lazy, Suspense, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import ErrorBoundary from "@/components/ErrorBoundary";
@@ -391,6 +392,7 @@ export default function App() {
       <Switch>
         {/* Home has its own footer, no AppLayout wrapper needed */}
         <Route path="/faq" element={<FaqPage />} />
+        <Route path="/invoice" element={<InvoicePage />} />
         <Route path="/">
           <AdminEditModeBar />
           <Home />
