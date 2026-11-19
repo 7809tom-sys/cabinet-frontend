@@ -17,7 +17,7 @@ import {
 import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { applyLazySusanCornerUppers } from "./autoDesignLazySusanCornerUppers";
-import { applyGlassUpperPreference } from "./autoDesignFormOptions";
+import { applyGlassUpperPreference, autoDesignGlassOffered } from "./autoDesignFormOptions";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -71,7 +71,7 @@ import {
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { ensureBlindCornerFlankCabinets } from "./autoDesignBlindCornerFlank";
-import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, withoutNoGlassUppers, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { placeSinkBridges } from "./autoDesignSinkBridge";
 import { closeRemainingRunGaps } from "./autoDesignCloseRemainingGaps";
@@ -813,7 +813,7 @@ function autoDesignWallFitSuggestion(input: AutoDesignInputs, room: RoomData, ba
     baseCatalog,
   });
 }
-export function runAutoDesignLayout(args: {
+export function runAutoDesignLayout(rawArgs: {
   input: AutoDesignInputs;
   room: RoomData;
   openings: readonly WallOpening[];
@@ -855,6 +855,13 @@ export function runAutoDesignLayout(args: {
    */
   anchoredRefrigerator?: PlacedCabinet | null;
 }): AutoDesignLayoutResult {
+  // Tom, Nov 18 2026, 5:22 PM CT: no 39 wall cabinet where glass is offered (no 39 in
+  // glass exists), so every upper the build can pick comes from widths with a stacker.
+  const glassOffered = autoDesignGlassOffered({
+    intake: rawArgs.input.intake, wallCatalog: rawArgs.wallCatalog, room: rawArgs.room,
+    wallCabinetHeightIn: rawArgs.input.wallCabinetHeightIn ?? 30,
+  });
+  const args = glassOffered ? { ...rawArgs, wallCatalog: withoutNoGlassUppers(rawArgs.wallCatalog) } : rawArgs;
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
   const fail = (message: string): AutoDesignLayoutResult => {

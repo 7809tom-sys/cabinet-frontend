@@ -12,7 +12,8 @@
 import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { autoDesignStandardUpperRows } from "./autoDesignWallCabinets";
 import { autoDesignFillerMaxIn } from "./autoDesignSeamFillers";
-import { AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN, autoDesignGlassStackerCatalog, glassStackerRowFor } from "./autoDesignFormOptions";
+import { coverCatalogSpan, planWallWidthsOverBase } from "./autoDesignGapSolver";
+import { AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN, autoDesignGlassStackerCatalog, autoDesignLineTakesGlass, glassStackerRowFor } from "./autoDesignFormOptions";
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements, cabinetWall, dim, footprintDepth, formatInches,
   isCornerCabinet, isFillerItem, isPanelItem, isSinkBaseCabinet, wallPlacementAt, wallRunOffset, wallRunSpan,
@@ -111,6 +112,9 @@ export function matchUppersToBases(input: {
   const stackerCatalog = glass ? autoDesignGlassStackerCatalog(input.wallCatalog) : [];
   const hasGlass = (row: DesignCabinet) => !glass
     || AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN.some((heightIn) => glassStackerRowFor({ masterCode: row.masterCode, width: dim(row.width, 0) }, heightIn, stackerCatalog) != null);
+  // Tom, Nov 18 2026, 5:22 PM CT: where glass is offered there is no 39 upper (no 39 in
+  // glass), so a window-clipped slot is covered base-first from widths that have a stacker.
+  const glassOffered = glass && autoDesignLineTakesGlass({ wallCatalog: input.wallCatalog, room: input.room, wallCabinetHeightIn: height });
   const walls = Array.from(new Set(working.filter(isStraightBase).map((item) => cabinetWall(item, room)).filter(Boolean))) as string[];
   for (const wall of walls) {
     const spanOf = (item: PlacedCabinet): Span => {
@@ -265,6 +269,33 @@ export function matchUppersToBases(input: {
             rows.push(null);
           }
           continue;
+        }
+        // A window-clipped slot with glass offered: the widest single stock box that fits
+        // when it is exact; otherwise the glass-capable widths that fill the slot (a 39 slot is
+        // 21 + 18, never a 36 and a 3 in filler), hung on the base's far seam like a single box.
+        if (!exact && !leg && glassOffered) {
+          const slotWidth = slot.end - slot.start;
+          const single = pickWidth(slotWidth, false);
+          if (!single || Math.abs(dim(single.width, 0) - slotWidth) > COLLISION_EPSILON_IN) {
+            const glassWidths = standard.filter(hasGlass).map((candidate) => dim(candidate.width, 0));
+            // The most balanced exact pack first (39 = 21 + 18, two halves of a B42); else the widest cover within the filler cap.
+            const balanced = planWallWidthsOverBase(slotWidth, glassWidths);
+            const pieces = (balanced ?? coverCatalogSpan(slotWidth, glassWidths, autoDesignFillerMaxIn()).widths)
+              .filter((width) => width > 0).sort((a, b) => b - a);
+            if (pieces.length > 1 && pieces.length <= 3) {
+              const total = pieces.reduce((sum, width) => sum + width, 0);
+              let cursor = slot.start > base.start + COLLISION_EPSILON_IN ? base.end - total : base.start;
+              const picked = pieces.map((width) => pickWidth(width, true)!);
+              if (picked.every(Boolean)) {
+                for (const piece of picked) {
+                  rows.push({ row: piece, start: cursor, base, exact });
+                  cursor += dim(piece.width, 0);
+                }
+                clipped.push(`${picked.map((piece) => piece.masterCode).join(" + ")} over ${base.item.masterCode}`);
+                continue;
+              }
+            }
+          }
         }
         // A corner leg takes an exact-width upper or nothing (never a narrowed box).
         const row = leg && !exact ? undefined : pickWidth(slot.end - slot.start, exact);
