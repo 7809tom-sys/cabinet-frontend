@@ -60,6 +60,8 @@ export type FourSlotInput = {
   aiAvailable: boolean;
   /** True when that picture is an accepted render (default: same as aiAvailable). A saved Gemini picture is not. */
   aiAccepted?: boolean;
+  /** The only approved image is a rendering-audit capture (not a Gemini picture), so the tile stays empty. */
+  aiAuditCaptureOnly?: boolean;
   /** The editor's confirmed choice (null: nothing chosen, the supplier photo is used). */
   stored: DoorColorSourceSelection | null;
   listing?: DoorColorSourcesListing;
@@ -128,7 +130,9 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
         selection: usable ? { source: "approved-ai-image", chosenAt: now } : null,
         checkable: usable,
         reason: usable ? null : !url
-          ? "No Gemini picture is saved for this door yet. Make one with the AI render tool."
+          ? input.aiAuditCaptureOnly
+            ? "The only approved image is a rendering-audit capture, not a Gemini picture. Make a Gemini picture with the AI render tool."
+            : "No Gemini picture is saved for this door yet. Make one with the AI render tool."
           : "This picture is saved but 3D cannot use it yet, so the door keeps its supplier photo.",
         filled: Boolean(url),
       };
