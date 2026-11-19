@@ -380,6 +380,9 @@ import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
+import { AutoDesignAccessDialog } from "@/components/design/AutoDesignAccessDialog";
+import { useAutoDesignAccess } from "@/hooks/useAutoDesignAccess";
+import type { AutoDesignRunBlockReason } from "@shared/autoDesignAccess";
 import { applyGlassUpperPreference, autoDesignTrimFromIntake } from "@/lib/autoDesignFormOptions";
 import { AutoDesignReviewList } from "@/components/design/AutoDesignReviewList";
 import { AutoDesignFaucetDialog } from "@/components/design/AutoDesignFaucetDialog";
@@ -5448,6 +5451,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return { ok: true as const };
   }, [announceFaucetWindowNotes, appliancePalette, catalogFillers, autoDesignCornerStage, openings, publishAutoDesignReport, room, setPlaced, setOpenings, sinks, startAutoDesignReportRun]);
   finishAutoDesignLayoutRef.current = completeAutoDesignLayout;
+  // Auto Design subscription + phone gate (Tom, Nov 19, 2026). Browsing and
+  // opening the dialog stay free; only the Build action is gated, and only when
+  // VITE_AUTO_DESIGN_SUBSCRIPTION_GATE is on (default OFF). See
+  // shared/autoDesignAccess.ts and docs/auto-design-subscription-gate.md.
+  const autoDesignAccess = useAutoDesignAccess();
+  const [autoDesignAccessPrompt, setAutoDesignAccessPrompt] = useState<{ reason: AutoDesignRunBlockReason; message: string } | null>(null);
+  const gatedBuildAutoDesignLayout = useCallback((input: AutoDesignInputs): AutoDesignSubmitResult => {
+    const decision = autoDesignAccess.decision;
+    if (!decision.allowed) {
+      setAutoDesignAccessPrompt({ reason: decision.reason, message: decision.message });
+      return { ok: false, message: decision.message };
+    }
+    const result = buildAutoDesignLayout(input);
+    if (result.ok && autoDesignAccess.gateEnabled) void autoDesignAccess.noteRun(roomType).catch(() => undefined);
+    return result;
+  }, [autoDesignAccess, buildAutoDesignLayout, roomType]);
   // A previous automatic microwave workflow could persist WSC30—the real
   // 30×6 spice cabinet—directly above an MW-30. Convert only that centered
   // legacy microwave assembly to the selected source W30 bridge; ordinary spice
@@ -23520,6 +23539,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
           placedCabinets={placed}
         />
       )}
+	      {autoDesignAvailable && autoDesignAccess.gateEnabled && (
+	        <AutoDesignAccessDialog
+	          open={autoDesignAccessPrompt != null}
+	          reason={autoDesignAccessPrompt?.reason ?? null}
+	          message={autoDesignAccessPrompt?.message ?? null}
+	          onOpenChange={(open) => { if (!open) setAutoDesignAccessPrompt(null); }}
+	          onVerified={() => { setAutoDesignAccessPrompt(null); void autoDesignAccess.refetch(); }}
+	        />
+	      )}
 	      {autoDesignAvailable && (
 	        <AutoDesignDialog
 	          open={autoDesignOpen}
@@ -23528,7 +23556,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          onLoadSixWallTrainingRoom={isAdmin ? loadAutoDesignSixWallTrainingRoom : undefined}
 	          dishwasherSide={dishwasherSidePreference}
 	          onDishwasherSideChange={setDishwasherSidePreference}
-	          onBuild={buildAutoDesignLayout}
+	          onBuild={gatedBuildAutoDesignLayout}
 	          catalogLoading={autoFillCabinetsLoading || wallCabPoolLoading}
 	          wallCount={Math.min(6, Math.max(1, room.preserveCardinalWalls ? 4 : (room.customWalls?.length ?? 4)))}
 	          room={room}
