@@ -62,6 +62,7 @@ import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSin
 import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
 import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
 import { applyDishwasherRunEndRule } from "./autoDesignDishwasherRunEnd";
+import { enforceEconomyCornerFillers, seatEconomyCorner } from "./autoDesignEconomyCorner";
 import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
 import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
@@ -1275,6 +1276,7 @@ export function runAutoDesignLayout(rawArgs: {
   const catalogFillers = args.fillers as unknown as CatalogFillerCandidate[];
   const sinkAnchor = anchorsByKind.get("sink") ?? null;
   const companionKeepUids: string[] = [];
+  const economyCorners: Array<{ label: string; wallIds: WallSide[]; corner: { x: number; y: number } }> = [];
   const wantedCornerFamily = hasPreference(input.intake, "lazy-susan") ? "lazy-susan" : hasPreference(input.intake, "blind-corner") ? "blind" : null;
   if (wantedCornerFamily && !stage.cornerOptions.some((option) => autoDesignCornerFamily(option) === wantedCornerFamily)) {
     notes.push(`The customer asked for a ${wantedCornerFamily === "blind" ? "blind corner" : "lazy Susan"}, but this line sells none, so the type is chosen from the appliances and the run math.`);
@@ -1296,6 +1298,27 @@ export function runAutoDesignLayout(rawArgs: {
     if (cornerFridge) {
       notes.push(`${slot.label}: the refrigerator already occupies this corner. A corner cabinet is not seated on top of it.`);
       continue;
+    }
+    // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): a budget build buys no corner
+    // cabinet. Each leg claims 24" + a 3" filler first; the bases are sized to what is left.
+    if (budgetFriendly && !wantedCornerFamily) {
+      const economy = seatEconomyCorner({
+        label: slot.label,
+        wallIds: [firstWall.engineWallId, secondWall.engineWallId] as WallSide[],
+        corner: point,
+        placed: working,
+        room,
+        catalogFillers,
+        makeUid,
+        styleId: args.styleId,
+      });
+      notes.push(economy.note);
+      if (economy.ok) {
+        // The boards themselves are seated by the final economy pass, after every re-tile; here the
+        // corner only skips the corner cabinet (the 24" square stays reserved by the corner stage).
+        economyCorners.push({ label: slot.label, wallIds: [firstWall.engineWallId, secondWall.engineWallId] as WallSide[], corner: point });
+        continue;
+      }
     }
     const typeDecision = decideAutoDesignCornerTypeOrder({
       room,
@@ -2503,6 +2526,17 @@ export function runAutoDesignLayout(rawArgs: {
   working = outsidePanelFillers.placed;
   notes.push(...outsidePanelFillers.notes.filter((note) => !notes.includes(note)));
   reviewFindings.push(...outsidePanelFillers.findings);
+  // Economy corner (Tom, voice, Nov 19 2026, 8:44 + 9:01 AM CT): claim the 3" filler first, then size the base.
+  if (economyCorners.length > 0) {
+    const economyFinal = enforceEconomyCornerFillers({
+      corners: economyCorners, placed: working, room,
+      baseCatalog: [...stage.straightBaseCatalog, ...stage.drawerBaseCatalog, ...args.baseCatalog] as never,
+      wallCatalog: args.wallCatalog as never,
+      catalogFillers, makeUid, styleId: args.styleId,
+    });
+    working = economyFinal.placed;
+    notes.push(...economyFinal.notes);
+  }
   // Tom, voice, Nov 19 2026, 8:42 / 8:44 AM CT: a dishwasher at a run end keeps a base filler only
   // where a wall follows; an opening or an unknown end takes the line's dishwasher panel instead.
   const dishwasherRunEnd = applyDishwasherRunEndRule({

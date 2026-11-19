@@ -9,6 +9,8 @@ import { appliancesForRoom, applianceAsDesignCabinet, countertopSurfaces, isFill
 const ROOM = { width: 120, depth: 120, ceilingHeight: 96 } as RoomData;
 const DOOR = { uid: "d", kind: "door", label: "Door", side: "right", offset: 100, width: 20, height: 80 };
 
+// The customer asks for a lazy Susan so this layout keeps its corner cabinet; the budget economy
+// corner (Tom, Nov 19 2026, 9:01 AM CT) is covered in autoDesignEconomyCorner.test.ts.
 function build(sinkCenter: number, openings: any[], room: RoomData = ROOM) {
   let uid = 0;
   return runAutoDesignLayout({
@@ -19,7 +21,7 @@ function build(sinkCenter: number, openings: any[], room: RoomData = ROOM) {
       sink: { wallLabel: "Wall 2", centerOffsetIn: sinkCenter }, sinkBaseWidthIn: 36, sinkBaseKind: "regular",
       dishwasherSide: "right", skipDishwasher: false, overRangeAnswer: "microwave-bridge",
       kitchenUsage: { uses: [], skipped: true, acceptedSuggestionIds: [] },
-      intake: { ...emptyAutoDesignIntake(), construction: "new", preferences: ["budget-friendly"], islandOrPeninsula: "none",
+      intake: { ...emptyAutoDesignIntake(), construction: "new", preferences: ["budget-friendly", "lazy-susan"], islandOrPeninsula: "none",
         canMove: { electrical: true, plumbing: true, rangeHookup: true, sinkBase: true } },
     } as never,
     room, openings, baseCatalog: (aero as any).base, wallCatalog: (aero as any).wall, fillers: (aero as any).accessory,

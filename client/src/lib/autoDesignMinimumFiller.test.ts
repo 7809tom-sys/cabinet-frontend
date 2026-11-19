@@ -30,6 +30,8 @@ type Pack = { base: DesignCabinet[]; wall: DesignCabinet[]; accessory: DesignCab
 const pack = aero as unknown as Pack;
 const ROOM = { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
 
+// The customer asks for a lazy Susan so this layout keeps its corner cabinet; the budget economy
+// corner (Tom, Nov 19 2026, 9:01 AM CT) is covered in autoDesignEconomyCorner.test.ts.
 function build(budget: boolean) {
   let uid = 0;
   const result = runAutoDesignLayout({
@@ -41,7 +43,7 @@ function build(budget: boolean) {
       dishwasherSide: "right", skipDishwasher: false, overRangeAnswer: "microwave-bridge",
       kitchenUsage: { uses: [], skipped: true, acceptedSuggestionIds: [] },
       intake: {
-        ...emptyAutoDesignIntake(), construction: "new", preferences: budget ? ["budget-friendly"] : [], islandOrPeninsula: "none",
+        ...emptyAutoDesignIntake(), construction: "new", preferences: budget ? ["budget-friendly", "lazy-susan"] : [], islandOrPeninsula: "none",
         canMove: { electrical: true, plumbing: true, rangeHookup: true, sinkBase: true },
       },
     } as never,
