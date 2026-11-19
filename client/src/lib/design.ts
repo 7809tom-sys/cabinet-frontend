@@ -15071,6 +15071,49 @@ function closeInsideCornersAndClipInteriorWalls(
   return result;
 }
 
+/**
+ * Base-layer filler strips that continue a counter-bearing run on the same wall (directly, or through
+ * other such fillers / the dishwasher panel). Tom, voice, Nov 19 2026, 8:44 AM CT: the countertop runs
+ * over them to the end of the run instead of stopping before the filler. A strip beside only a panel,
+ * refrigerator, range or tall piece does not qualify, so no orphan sliver of counter is drawn.
+ */
+export function countertopRunFillerUids(placed: readonly PlacedCabinet[], room: RoomData): Set<string> {
+  const out = new Set<string>();
+  const STANDARD = new Set(["top", "right", "bottom", "left"]);
+  const candidates = placed.filter((p) => p.placement === "base"
+    && isFillerItem(p)
+    && !isPanelItem(p)
+    && p.fillerTransitionKind !== "front-miter-pair"
+    && !bearsCountertop(p)
+    && (!Number.isFinite(Number(p.height)) || Number(p.height) <= 0 || Number(p.height) <= STD.BASE_HEIGHT + 8));
+  if (candidates.length === 0) return out;
+  const spanOf = (p: PlacedCabinet, wallId: string) => {
+    const start = wallRunOffset(p, wallId, room);
+    return { start, end: start + wallRunSpan(p, wallId, room) };
+  };
+  const supports = placed.filter((p) => bearsCountertop(p) && !isRangeOrOven(p.masterCode, p.description));
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const filler of candidates) {
+      if (out.has(filler.uid)) continue;
+      const wallId = cabinetWall(filler, room);
+      if (!wallId || !STANDARD.has(wallId)) continue;
+      const own = spanOf(filler, wallId);
+      const touches = (other: PlacedCabinet) => {
+        if (other.uid === filler.uid || cabinetWall(other, room) !== wallId) return false;
+        const span = spanOf(other, wallId);
+        return Math.abs(span.start - own.end) <= 0.06 || Math.abs(span.end - own.start) <= 0.06;
+      };
+      if (supports.some(touches) || candidates.some((other) => out.has(other.uid) && touches(other))) {
+        out.add(filler.uid);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
 export function countertopSurfaces(
   placed: PlacedCabinet[],
   room: RoomData,
@@ -15078,10 +15121,14 @@ export function countertopSurfaces(
   ponyWalls: readonly PonyWall[] = [],
 ): CountertopSurface[] {
   const out: CountertopSurface[] = [];
+  const runEndFillers = countertopRunFillerUids(placed, room);
   for (const p of placed) {
     // Countertop-bearing bases and confirmed installed filler pieces get a slab.
     // Loose fillers, tall cabinets, appliances, and panels remain excluded.
-    if (!bearsCountertop(p)) continue;
+    // Tom, voice, Nov 19 2026, 8:44 AM CT: the countertop runs continuously over the fillers at the
+    // end of a run (and between cabinets), including base fillers and dishwasher panels; it never
+    // stops short of them. A filler only joins when it continues a counter-bearing run.
+    if (!bearsCountertop(p) && !runEndFillers.has(p.uid)) continue;
     if (island && isOnIsland(p, island)) continue;
     const side = cabinetWall(p, room);
     const D = countertopDepthForRunItem(p, placed, room);
