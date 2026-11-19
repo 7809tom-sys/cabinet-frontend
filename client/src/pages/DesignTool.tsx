@@ -25,7 +25,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { designStyleIds, kitchenAcceptedFaceImage, resolveKitchenDoorColor, withAcceptedAppearance, type AcceptedAppearanceRow } from "@/lib/acceptedDoorAppearance";
+import { designStyleIds, designerGateRenderHex, kitchenAcceptedFaceImage, resolveKitchenDoorColor, withAcceptedAppearance, type AcceptedAppearanceRow } from "@/lib/acceptedDoorAppearance";
 import { useAcceptedDoorAppearance } from "@/lib/acceptedAppearanceQuery";
 import { useStableFaceCrop } from "@/lib/stableFaceCrop";
 import { DoorStyleEditButton } from "@/components/design/DoorStyleEditButton";
@@ -6601,10 +6601,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     const decision = resolveKitchenDoorColor(designStyle as never);
     return brewersTestOn ? brewersTestDecision(decision) : decision;
   }, [activeKitchenDoorColor, activeStyle, brewersTestOn, designStyle]);
-  const designDoorRenderHex = designKitchenDoorColor.candidateSource === "accepted-render"
-    || designKitchenDoorColor.candidateSource === "render-hex"
-    ? designKitchenDoorColor.candidateHex
-    : null;
+  // An explicit Sherwin-Williams or hex pick is painted exactly, so the strict gate never sees it.
+  const designDoorRenderHex = designerGateRenderHex(designKitchenDoorColor, designStyle as never);
   // Small finish swatch shown on each palette tile so the chosen finish is
   // visible while browsing cabinets. Empty until a door style is selected.
   const paletteFinishSwatch = useMemo<string | null>(
