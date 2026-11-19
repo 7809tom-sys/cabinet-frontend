@@ -689,6 +689,16 @@ function normalizedPelicanCode(value: string | null | undefined): string {
 }
 
 /**
+ * Every source-verified KITCHEN sink profile (no vanity basins or tops), in code order. Used as the
+ * catalog-wide default pool when a line sells no sink (Budget friendly, Tom, Nov 19 2026, 8:40 AM CT).
+ */
+export function verifiedPelicanKitchenSinkProfiles(): VerifiedPelicanSinkProfile[] {
+  return Object.values(VERIFIED_PELICAN_SINKS)
+    .filter((profile) => !profile.vanityKind && !profile.vanityMount && !/vanity/i.test(profile.name))
+    .sort((a, b) => a.pelicanCode.localeCompare(b.pelicanCode));
+}
+
+/**
  * Kitchen sinks: the hand-verified stainless steel and fireclay profiles above.
  *
  * A bathroom vanity basin or integrated vanity top is resolved from

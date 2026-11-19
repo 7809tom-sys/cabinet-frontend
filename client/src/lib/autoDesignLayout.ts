@@ -59,7 +59,8 @@ import { autoDesignRangeNeedsVentilation } from "./autoDesignRangeHood";
 import { budgetSlideRefrigeratorToWallEnd, buildMandatoryAutoDesignRefrigeratorBay, holdRefrigeratorPanelsOnWall } from "./autoDesignRefrigeratorBay";
 import { clampRefrigeratorAssemblyToPanels } from "./refrigeratorPanelClamp";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "./autoDesignSinkWindow";
-import { resolveAutoDesignSinkBase } from "./autoDesignSink";
+import { resolveAutoDesignSinkBase, type AutoDesignSinkProduct } from "./autoDesignSink";
+import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
 import { planSinkLandingSlides, sinkFrontSetbackIn, sinkLandingGaps, sinkSeatCheck, sinkTallLandingIn } from "./autoDesignSinkLanding";
 import { trimWallFillersOutsideRun } from "./autoDesignUpperAlignment";
 import { buildPelicanSinkOnCabinet } from "./pelicanAutoPlace";
@@ -836,6 +837,11 @@ export function runAutoDesignLayout(rawArgs: {
    */
   faucetCatalog?: readonly AutoDesignFaucetProduct[];
   /**
+   * The sink rows the build may pick from (Pelican/surfaces sink catalog). Budget friendly picks one
+   * for the customer without asking (Tom, voice, Nov 19 2026, 8:40 AM CT); other modes ask as before.
+   */
+  sinkCatalog?: readonly AutoDesignSinkProduct[];
+  /**
    * The selected line's end/finished panel stock. The build seats the line's own
    * panel on the outside of the base cabinet it puts on each side of the range,
    * as a real placed catalog row so it is drawn and billed.
@@ -1149,10 +1155,30 @@ export function runAutoDesignLayout(rawArgs: {
         size: pickedSink.size ?? null,
       }, sinkBase, room, { frontSetbackIn: setbackIn })
       : null;
+    const budgetSink = !pelicanSink && budgetFriendly ? pickBudgetDefaultSink({ base: sinkBase, lineProducts: args.sinkCatalog ?? [] }) : null;
     if (pelicanSink) {
       sinks = keepSingleAutoDesignSink([pelicanSink], sinkBase.uid);
       if (resolvedSinkBase.note) notes.push(resolvedSinkBase.note);
+    } else if (budgetSink && budgetSink.source !== "none") {
+      const seated = budgetSink.source === "line"
+        ? buildPelicanSinkOnCabinet({
+          id: budgetSink.product.id,
+          pelicanCode: budgetSink.product.pelicanCode ?? null,
+          name: budgetSink.product.name,
+          imageUrl: budgetSink.product.imageUrl ?? null,
+          size: budgetSink.product.size ?? null,
+        }, sinkBase, room, { frontSetbackIn: setbackIn })
+        : (() => {
+          // The verified default has no catalog row: drawn from its published geometry, never billed.
+          const { pelicanProductId: _id, pelicanProductImage: _image, ...drawn } = buildPelicanSinkOnCabinet({
+            id: 0, pelicanCode: budgetSink.profile.pelicanCode, name: budgetSink.profile.name, imageUrl: null, size: null,
+          }, sinkBase, room, { frontSetbackIn: setbackIn });
+          return drawn as SinkFixture;
+        })();
+      sinks = keepSingleAutoDesignSink([seated], sinkBase.uid);
+      notes.push(budgetSink.note);
     } else {
+      if (budgetSink) notes.push(budgetSink.note);
       const defaultSinkType = isFarmSinkBasePaletteItem(sinkBase) ? "farmhouse" : sinkBase.width >= 33 ? "double" : "single";
       // The basin is centered on its own sink base and set back into the approved
       // 2"–2½" band from the finished countertop front. No build path seats it

@@ -4927,6 +4927,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         const picked = autoDesignFaucetProductsRef.current.find((product) => product.id === fixturePickRef.current.faucetId);
         return picked ? [picked] : autoDesignFaucetProductsRef.current;
       })(),
+      // Budget friendly picks the sink from these rows without asking (Tom, voice, Nov 19 2026, 8:40 AM CT).
+      sinkCatalog: autoDesignSinkProductsRef.current,
       // The line's own end/finished panel stock: the build finishes the outside
       // of the base cabinet on each side of the range with a real placed panel.
       panelCatalog: autoPanelCatalog,
@@ -5062,7 +5064,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       } else {
         autoDesignFaucetQueueAfterSinkRef.current = autoDesignFaucetPrompt;
       }
-      if (!prompts.askSink && openingPick.sinkId != null) {
+      const budgetPickedSink = (input.intake?.preferences ?? []).includes("budget-friendly")
+        && run.notes.some((note) => /^Budget friendly: .*(sink was picked for you|so the default .* sink)/.test(note));
+      if (budgetPickedSink && openingPick.sinkId == null) {
+        // Budget friendly: the build already picked and placed the sink; never ask.
+        autoDesignSinkPromptedRef.current.add(builtSinkBase);
+      } else if (!prompts.askSink && openingPick.sinkId != null) {
         const product = productFromOpeningPick(autoDesignSinkProductsRef.current, openingPick.sinkId);
         autoDesignSinkPromptedRef.current.add(builtSinkBase);
         if (product) applyOpeningSinkAfterBuildRef.current(builtSinkBase, product);
