@@ -84,7 +84,7 @@ import { closeRemainingRunGaps } from "./autoDesignCloseRemainingGaps";
 import { tightenRunOpenings } from "./autoDesignTightenOpenings";
 import { removeFillersOutsideExposedPanels } from "./fillerOutsideExposedPanel";
 import { ensureMandatorySinkFaucets, type AutoDesignFaucetProduct } from "./autoDesignFaucet";
-import { boundedWallPlacementAt, cabinetInsideBounds, uShapeRunWallLabels } from "./designerBounds";
+import { boundedWallPlacementAt, cabinetInsideBounds, dropWallCabinetsWithoutWall, noWallCabinetFinding, uShapeRunWallLabels } from "./designerBounds";
 import { ensureSingleDoorBase, pairAdjacentSingleDoorHandles, normalizeUpperHeights } from "./designerFaceRules";
 import { buildDesignerReviewList, type DesignerReviewFinding } from "./designerReviewFindings";
 import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQuestionDoorSpec } from "./designQuestionDoorSpec";
@@ -2715,6 +2715,12 @@ export function runAutoDesignLayout(rawArgs: {
   });
   working = glassUppers.placed;
   reviewFindings.push(...glassUppers.findings);
+  // An upper needs a real wall behind it: nothing hangs over a peninsula or island, or past the wall or room.
+  const noWallUppers = dropWallCabinetsWithoutWall(working, room);
+  if (noWallUppers.dropped.length) {
+    working = noWallUppers.placed;
+    reviewFindings.push(noWallCabinetFinding(noWallUppers.dropped));
+  }
   const singleFinishId = args.styleId ?? stage.input.designQuestionDoorStyleId ?? null;
   working = stampAutoDesignSingleFinish(working, singleFinishId);
   // Last word on the bridge's 1/2 in boards: flush with the bridge face, and one taller board per side when the glass

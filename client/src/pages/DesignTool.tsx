@@ -326,6 +326,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSi
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { autoDesignRunNotice, overRangeDefaultedFinding, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
+import { dropWallCabinetsWithoutWall, noWallCabinetFinding } from "@/lib/designerBounds";
 import { autoBuildCornerCatalog, autoDesignAngledNeighborWallIds, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
@@ -5391,6 +5392,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
     });
     working = upperResult.placed;
+    // An upper needs a real wall behind it, never a peninsula or island (the second pass sees the peninsula bases).
+    const stageNoWall = dropWallCabinetsWithoutWall(working, room);
+    if (stageNoWall.dropped.length) {
+      working = stageNoWall.placed;
+      reviewFindings.push(noWallCabinetFinding(stageNoWall.dropped));
+    }
     const finishedRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
       makeUid, styleId: styleIdRef.current ?? null,
@@ -5404,6 +5411,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);
+    const stageGlassNoWall = dropWallCabinetsWithoutWall(working, room);
+    if (stageGlassNoWall.dropped.length) {
+      working = stageGlassNoWall.placed;
+      reviewFindings.push(noWallCabinetFinding(stageGlassNoWall.dropped));
+    }
     const stageCrownPick = autoDesignTrimFromIntake(stage.input.intake).crown;
     if (stageCrownPick) {
       trimOverride.current.crown = true;

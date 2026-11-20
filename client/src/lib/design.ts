@@ -6168,6 +6168,8 @@ export function glassStackerParentPlacement(
   };
   const candidates = placed.filter((parent) => {
     if (parent.uid === stacker.uid || parent.placement !== "wall" || parent.islandFace || isStacker(parent)) return false;
+    // An upper (and so a glass stacker on it) needs a real wall behind it, never a peninsula or island.
+    if (!cabinetRestsOnRealWall(parent, room)) return false;
     const parentSide = cabinetWall(parent, room);
     if (!isAgainstWall(parent, parentSide, room)) return false;
     if (!anyWall && parentSide !== side) return false;
@@ -11207,6 +11209,18 @@ function frameFromSegment(
   const inward = inwardIsLeftNormal ? leftNormal : { x: -leftNormal.x, y: -leftNormal.y };
   const facingRotation = ((Math.round((angle * 180) / Math.PI + (inwardIsLeftNormal ? 0 : 180)) % 360) + 360) % 360;
   return { id, kind, start, end, angle, length, runStart, runEnd, height, tangent, inward, facingRotation };
+}
+
+/**
+ * True when a cabinet rests on a REAL wall: its run is a standard side or a drawn wall (never a
+ * peninsula run, never an island face) and it is not on a peninsula face. A wall cabinet needs this
+ * because an upper has to be fixed to a wall: a free-standing peninsula or island has none (Tom, Nov 20 2026).
+ */
+export function cabinetRestsOnRealWall(p: PlacedCabinet, room: RoomData): boolean {
+  if (p.islandFace || p.peninsulaSide) return false;
+  if (peninsulaRunById(room, p.wallId)) return false;
+  const frame = wallRunFrame(cabinetWall(p, room), room);
+  return frame != null && frame.kind !== "peninsula";
 }
 
 /** The run frame for any wall id (standard side, drawn wall or peninsula), or null when unknown. */
