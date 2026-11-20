@@ -14,6 +14,8 @@ import { stackerDraft } from "./glassStackerBulkPlacement";
 import { resolveWallHeightClass } from "./autoDesignWallCabinets";
 
 const HEIGHT_MATCH_IN = 0.5;
+/** The finish skin that makes a stacker read as part of the cabinet under it (Tom, Nov 20 2026). */
+export const GLASS_STACKER_SKIN_THICKNESS_IN = 0.25;
 const WIDTH_MATCH_IN = 0.05;
 
 /**
@@ -288,7 +290,7 @@ function stackerPass(input: {
       code: "preference-glass-pantry",
       severity: needsSkin.length > 0 ? "info" : "info",
       title: "Customer pick: Glass cabinets above (pantry)",
-      detail: `${pantryGlass.length} tall cabinet${pantryGlass.length === 1 ? "" : "s"} took a glass stacker on top.${needsSkin.length > 0 ? ` A ${needsSkin.map((entry) => `${inches(entry.skinDepthIn)} skin`).filter((value, index, all) => all.indexOf(value) === index).join(" / ")} is needed to bring the stacker flush with the pantry front (${needsSkin.map((entry) => entry.parent.masterCode).join(", ")}).` : ""}`,
+      detail: `${pantryGlass.length} tall cabinet${pantryGlass.length === 1 ? "" : "s"} took a glass stacker on top.${needsSkin.length > 0 ? ` A ${GLASS_STACKER_SKIN_THICKNESS_IN} in skin runs ${needsSkin.map((entry) => inches(entry.skinDepthIn)).filter((value, index, all) => all.indexOf(value) === index).join(" / ")} deep to bring the stacker flush with the pantry front, so the stacker and the pantry read as one cabinet (${needsSkin.map((entry) => entry.parent.masterCode).join(", ")}).` : ""}`,
     });
   }
   if (parents.length === 0) {
