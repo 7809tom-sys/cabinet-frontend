@@ -2739,6 +2739,14 @@ export function runAutoDesignLayout(rawArgs: {
   // Last word on the bridge's 1/2 in boards: flush with the bridge face, and one taller board per side when the glass
   // pass above put a glass cabinet on the bridge (the glass pass runs after the boards were first seated).
   working = normalizeBridgeBoards(working, room);
+  // The 45° upper close and repairMissingAngledWallFillers above ran before glass,
+  // so those fillers inherit the 30 in upper band (mount 54). Glass stackers sit
+  // at a different elevation (mount 84, height 12). A second repair, after glass
+  // and after the 1/2 in boards, seats a matching 22.5° front-miter pair between
+  // adjacent glass cabinets only. Do not re-run closeAutoDesignAngledUpperCorners
+  // here: that pass widens corner-end SKUs, which must not happen to stackers.
+  // (Tom, owner voice, Nov 20 2026, 12:38 / 1:31 PM CT).
+  working = repairMissingAngledWallFillers(working, room, catalogFillers, makeUid, args.styleId).placed;
   const warnings = [...economyWarnings, ...refrigeratorBayWarnings, ...drawerRuleWarnings, ...cornerFlank.warnings, ...shiftReview.findings.filter((entry) => entry.severity === "attention").map((entry) => `${entry.title}: ${entry.description}`)];
   const bareRange = working.find((item) => item.placement === "appliance" && isRangeOrOven(item.masterCode, item.description) && autoDesignRangeNeedsVentilation(working, item));
   const wallNames = autoDesignWallNameByEngineId(room, input.originCorner, input.runDirection) as Record<string, WallLabel | undefined>;
