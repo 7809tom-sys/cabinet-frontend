@@ -9,7 +9,7 @@ import matrix from "./__fixtures__/autoDesignMatrixCatalog.json";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout } from "./autoDesignLayout";
 import { emptyAutoDesignIntake } from "./autoDesignFifteenRules";
 import {
-  DEFAULT_ROOM, applianceAsDesignCabinet, appliancesForRoom, isStacker, wallPlacementAt,
+  DEFAULT_ROOM, applianceAsDesignCabinet, appliancesForRoom, isFillerItem, isStacker, wallPlacementAt,
   type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening,
 } from "./design";
 import {
@@ -357,7 +357,8 @@ describe.each([108, 96])("170 x 170 L Aero Solstice, %i in ceiling", (ceiling) =
     expect(worse.problems.map((p) => p.code)).toContain("glass-stacker-missing");
   });
   it("flags a 39 in wall cabinet where glass is offered", () => {
-    const upperRow = placed.find((p) => p.placement === "wall" && !isStacker(p) && p.height === 30)!;
+    // A real upper, not the 1/2 in bridge board (glass over the bridge makes that board 30 in tall too).
+    const upperRow = placed.find((p) => p.placement === "wall" && !isStacker(p) && !isFillerItem(p) && p.height === 30)!;
     const with39 = [...placed, { ...upperRow, uid: "x39", masterCode: "W-39-30", width: 39 } as PlacedCabinet];
     const result = runOneCheck({ ...aeroOptions(room, with39), baseline: KNOWN_170L });
     expect(result.problems.map((p) => p.code)).toContain("wall-39-where-glass");

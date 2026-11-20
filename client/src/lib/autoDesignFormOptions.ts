@@ -188,6 +188,19 @@ export function autoDesignUpperRuns(placed: readonly PlacedCabinet[], parents: r
   return runs;
 }
 
+/**
+ * The short cabinet over the microwave or the refrigerator (a "bridge"): flagged as one by the
+ * engine and 12, 15 or 18 in tall - the same heights the glass stackers come in. Ordinary 30 in
+ * uppers are the design-height parents and are handled separately.
+ */
+export function isGlassBridgeParent(item: PlacedCabinet): boolean {
+  if (item.placement !== "wall" || item.islandFace || item.noDoor === true) return false;
+  if (isFillerItem(item) || isPanelItem(item) || isStacker(item)) return false;
+  if (item.overRangeMicrowaveBridge !== true && item.refrigeratorAssemblyRole !== "bridge") return false;
+  const height = Number(item.height) || 0;
+  return AUTO_DESIGN_GLASS_STACKER_HEIGHTS_IN.some((wanted) => Math.abs(height - wanted) <= HEIGHT_MATCH_IN);
+}
+
 function stackerPass(input: {
   placed: readonly PlacedCabinet[];
   wallCatalog: readonly DesignCabinet[];
@@ -198,9 +211,9 @@ function stackerPass(input: {
   const stackerCatalog = autoDesignGlassStackerCatalog(input.wallCatalog);
   const height = input.wallHeightIn;
   const occupied = new Set(placed.flatMap((item) => item.stackedOnCabinetUid ? [item.stackedOnCabinetUid] : []));
-  // Only the ordinary uppers at the design height take a stacker. Bridges over
-  // the range / refrigerator, fillers, panels, open shelves and existing
-  // stackers are left alone.
+  // Only the ordinary uppers at the design height are run parents. Fillers, panels,
+  // open shelves and existing stackers are left alone; the 12/15/18 in bridges over the
+  // microwave / refrigerator take their own stacker below (isGlassBridgeParent).
   const parents = placed.filter((item) => item.placement === "wall"
     && !item.islandFace
     && item.noDoor !== true
@@ -291,6 +304,31 @@ function stackerPass(input: {
       severity: needsSkin.length > 0 ? "info" : "info",
       title: "Customer pick: Glass cabinets above (pantry)",
       detail: `${pantryGlass.length} tall cabinet${pantryGlass.length === 1 ? "" : "s"} took a glass stacker on top.${needsSkin.length > 0 ? ` A ${GLASS_STACKER_SKIN_THICKNESS_IN} in skin runs ${needsSkin.map((entry) => inches(entry.skinDepthIn)).filter((value, index, all) => all.indexOf(value) === index).join(" / ")} deep to bring the stacker flush with the pantry front, so the stacker and the pantry read as one cabinet (${needsSkin.map((entry) => entry.parent.masterCode).join(", ")}).` : ""}`,
+    });
+  }
+  // Glass above a bridge (Tom, Nov 20 2026, sample-drawing review): the short cabinet over the
+  // microwave or the refrigerator is 12, 15 or 18 in tall, so the 30 in design-height filter above
+  // never saw it and the bridge stayed solid even though the line sells W3012GD / W3015GD / W3018GD.
+  // A bridge takes the same-width stacker of its own width, and the same ceiling test applies
+  // (84 in + a 12 in stacker is 96 in, an 18 in stacker needs 108 in). A bridge is a hard break in
+  // an upper run, so it is not added to `parents`; no row or no ceiling room just leaves it plain.
+  const bridges = placed.filter((item) => isGlassBridgeParent(item) && !occupied.has(item.uid));
+  const bridgeGlass: PlacedCabinet[] = [];
+  const bridgePlain: string[] = [];
+  for (const bridge of bridges) {
+    const pick = pickStackerFor(bridge, placed, input.room, stackerCatalog);
+    if (pick.ok) { bridgeGlass.push(pick.stacker); continue; }
+    if (pick.reason === "no-row") bridgePlain.push(`${bridge.masterCode} (this line sells no 12″, 15″ or 18″ glass stacker ${inches(Number(bridge.width))} wide)`);
+    else if (pick.reason === "ceiling") bridgePlain.push(`${bridge.masterCode} (even the shortest stacker would reach ${inches(pick.topIn)}; ceiling ${inches(pick.ceilingIn)})`);
+  }
+  if (bridgeGlass.length > 0) stackers.push(...bridgeGlass);
+  if (bridgeGlass.length > 0 || bridgePlain.length > 0) {
+    findings.push({
+      ruleId: "auto-design-rule-12",
+      code: "preference-glass-bridge",
+      severity: "info",
+      title: "Customer pick: Glass cabinets above (bridge)",
+      detail: `${bridgeGlass.length} bridge cabinet${bridgeGlass.length === 1 ? "" : "s"} over the microwave or refrigerator took a glass stacker on top.${bridgePlain.length > 0 ? ` Left plain: ${Array.from(new Set(bridgePlain)).sort().join("; ")}.` : ""}`,
     });
   }
   if (parents.length === 0) {
