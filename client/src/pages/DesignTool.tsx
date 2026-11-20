@@ -413,7 +413,7 @@ import type { WallBuilderDraft } from "@/components/design/WallBuilder";
 import { cabinetStackFor, fillerInsideOpenedGap, planGroupWallMove, toggleGroupMember, type GroupMoveGap } from "@/lib/cabinetGroupMove";
 import { describeFreeSpaceOnWall, planSwapForAdd } from "@/lib/cabinetSwapForAdd";
 import { deletedFillerRecords, dropResurrectedFillers, isSuppressedFiller, isSuppressedSeam, mergeDeletedFillerRecords, suppressedFillerGroupIds, type DeletedFillerRecord } from "@/lib/deletedFillerMemory";
-import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
+import { InteractiveRoom3D, threeDCrownPerimeterSegments, threeDBacksplashTakeoffSqFt, threeDRenderedBacksplashSegments, threeDWallFitGuideText, DEFAULT_WINDOW_SCENE_KIND, withCatalogDoorStyleIdentity, type InteractiveRoomCatalogItem, type InteractiveRoomOrderLine, type InteractiveRoomOrderSummary, type InteractiveRoomScene, type ThreeDCabinetMoveDirection, type ThreeDCabinetMoveResult, type WindowSceneKind, type WindowFrameStyle } from "@/components/design/InteractiveRoom3D";
 import { DesignerErrorBoundary, designerCrashDraftKey, useDesignerCrashFlush, useLastCommitted } from "@/components/design/DesignerErrorBoundary";
 import { crownTakeoffFromExposedSegments } from "@/lib/crownTakeoff";
 import { designWorkspaceViewParam, hasDesignedRoomGeometry, initialDesignWorkspaceView, threeDLeftCatalogDragPayload } from "./designTool3DWorkspace";
@@ -7541,13 +7541,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // The selected backsplash is priced from the same supported wall segments
     // rendered in 3D—never total room walls or cabinet faces. Full-height and
     // rear-upstand choices therefore increase quantity only where they install.
-    const backsplashSqFt = Math.round((threeDBacksplashSegments(
+    // threeDRenderedBacksplashSegments applies the same filler normalization the 3D view uses
+    // before cutting tile, so the billed area is exactly the tiled area.
+    const backsplashSqFt = threeDBacksplashTakeoffSqFt(threeDRenderedBacksplashSegments(
       placed,
       openings,
       room,
       backsplashHeightMode,
       countertopBacksplashHeightIn,
-    ).reduce((total, segment) => total + ((segment.end - segment.start) * (segment.top - segment.bottom)) / 144, 0)) * 10) / 10;
+    ));
     const flooringSqFt = Math.round(((room.width * room.depth) / 144) * 10) / 10;
     const countertopMeasurement = countertop
 	      ? countertopArea(placed, island, island ? [...islandCountertopVisibleRects(island, placed), ...islandRaisedBarRects(island, placed)] : null, room, sinks)
