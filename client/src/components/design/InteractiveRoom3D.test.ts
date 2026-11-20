@@ -2093,18 +2093,18 @@ describe("interactive 3D room scene helpers", () => {
 		    expect(segments.some((segment) => segment.start < 60 && segment.end > 30 && segment.top > 44)).toBe(false);
 	  });
 
-	  it("extends a supported range backsplash continuously to the matching range-hood underside", () => {
+	  it("runs a supported range backsplash continuously up behind the matching range hood to the wall-cabinet top line", () => {
 	    const room = { width: 120, depth: 96, ceilingHeight: 96 } as RoomData;
 	    const range = { uid: "range-1", masterCode: "RANGE-30", description: "Freestanding range", placement: "appliance", x: 45, y: 0, width: 30, depth: 24, height: 36, rotation: 0, islandFace: null } as PlacedCabinet;
 	    const hood = { uid: "hood-1", masterCode: "HOOD-30", description: "30 inch Range Hood", placement: "appliance", x: 45, y: 0, width: 30, depth: 18, height: 18, rotation: 0, mountBottom: 66, islandFace: null } as PlacedCabinet;
 		    const openSegments = threeDBacksplashSegments([range, hood], [], room);
 		    expect(openSegments).toEqual(expect.arrayContaining([
 		      { side: "top", start: 45, end: 75, bottom: 36, top: 54 },
-		      { side: "top", start: 45, end: 75, bottom: 54, top: 66 },
+		      { side: "top", start: 45, end: 75, bottom: 54, top: 84 },
 	    ]));
 	    const wallCabinet = { uid: "wall-1", masterCode: "W-3030", description: "Wall cabinet", placement: "wall", x: 45, y: 0, width: 30, depth: 12, height: 30, rotation: 0, mountBottom: 54, islandFace: null } as PlacedCabinet;
 	    const blockedSegments = threeDBacksplashSegments([range, hood, wallCabinet], [], room);
-	    expect(blockedSegments).not.toContainEqual({ side: "top", start: 45, end: 75, bottom: 54, top: 66 });
+	    expect(blockedSegments.some((segment) => segment.top > 54 + 0.001)).toBe(false);
 	  });
 
 		  it("maps selected backsplash material as one continuous 12-inch tile field with only cut edge courses", () => {
