@@ -5634,6 +5634,10 @@ export function normalizeStandardWallMounts(
       || cabinet.spiceStackParentUid
       || isWd18CountertopDrawerCabinet(cabinet)
       || isStacker(cabinet)
+      // Glass-row 45° fillers (F642 at mount 84, height 12) are cut to the stacker
+      // band. Re-hanging them as ordinary short uppers drops them to 72 and leaves
+      // the glass row unlevel at every 135° join (Tom, owner voice, Nov 20 2026).
+      || cabinet.fillerTransitionKind === "front-miter-pair"
       // A refrigerator-bay bridge is height-ruled by its own bay: its top lands on
       // the run line from the appliance clearance. Re-hanging it here is what moved
       // it off the frameless 94-1/4" line (issue #354 item 5).
@@ -5692,6 +5696,7 @@ function standardWallMountCandidate(cabinet: PlacedCabinet): boolean {
     || cabinet.refrigeratorAssemblyId
     || isWd18CountertopDrawerCabinet(cabinet)
     || isStacker(cabinet)
+    || cabinet.fillerTransitionKind === "front-miter-pair"
     || isRefrigeratorWallCabinet(cabinet)
   ) return false;
   const haystack = `${cabinet.subCategory ?? ""} ${cabinet.description ?? ""} ${cabinet.masterCode ?? ""}`.toLowerCase();
