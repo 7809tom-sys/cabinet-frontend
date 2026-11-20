@@ -9,8 +9,11 @@
  *  3. A filler between cabinets that, with the inches around it, reaches a
  *     stock size step becomes that size (2-1/4 in beside a B21 -> B24).
  *  4. A half-inch strip on a cabinet side is within tolerance, as a last resort.
- *  5. Whatever is left after the upgrades is ONE thin strip against the wall
- *     end or the refrigerator, never a filler between cabinets.
+ *  5. Whatever is left after the upgrades is ONE thin strip against the
+ *     refrigerator or a free wall end, never a filler between cabinets and
+ *     never at an inside corner (Tom, Nov 20 2026, 4:39 PM CT: leftover slides
+ *     the run toward the corner; cabinets close against the corner cabinet or
+ *     corner, leftover ends at the fridge or the open wall end).
  *  6. No filler between a wall cabinet and a bridge cabinet.
  *  7. The same rule runs on the base row and the wall row.
  *
@@ -27,6 +30,7 @@
 import {
   cabinetWall,
   dim,
+  isCornerCabinet,
   isFillerItem,
   isPanelItem,
   isRangeOrOven,
@@ -35,6 +39,7 @@ import {
   placedFootprint,
   wallPlacementAt,
   wallRunFrame,
+  wallRunJoinAt,
   wallRunOffset,
   wallRunSpan,
   type DesignCabinet,
@@ -44,6 +49,7 @@ import {
   type WallSide,
 } from "./design";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
+import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
 import {
   cabinetFamilyToken,
   formatFillerInches,
@@ -64,7 +70,7 @@ const STEP_IN = 0.25;
 const MAX_COMBOS = 20000;
 const STANDARD_WALLS: WallSide[] = ["top", "right", "bottom", "left"];
 
-type EndKind = "wall-end" | "opening" | "fridge" | "tall" | "cabinet" | "bridge" | "panel";
+type EndKind = "wall-end" | "opening" | "fridge" | "tall" | "cabinet" | "bridge" | "panel" | "inside-corner";
 
 type Boundary = { start: number; end: number; kind: EndKind; item: PlacedCabinet | null };
 
@@ -168,9 +174,23 @@ function spanOn(p: PlacedCabinet, wallId: WallSide, room: RoomData, layer: Fille
   return wallId === "top" || wallId === "bottom" ? { start: x0, end: x0 + fp.w } : { start: y0, end: y0 + fp.d };
 }
 
+/** An inside 90° or 45° corner is not a friendly leftover destination (Tom, Nov 20 2026, 4:39 PM CT). */
+function isInsideCornerEnd(wallId: string, at: "start" | "end", room: RoomData, runWallIds?: readonly string[]): boolean {
+  if (fortyFiveCornerSeat(room, wallId, at, "base") != null || fortyFiveCornerSeat(room, wallId, at, "wall") != null) return true;
+  const frame = wallRunFrame(wallId, room);
+  if (!frame) return false;
+  const join = wallRunJoinAt(frame, at, room);
+  if (!join) return false;
+  const turn = Math.abs(join.turnDeg);
+  if (Math.abs(turn - 90) > 0.5 && Math.abs(turn - 45) > 0.5 && Math.abs(turn - 135) > 0.5) return false;
+  if (runWallIds && runWallIds.length > 0) return runWallIds.includes(join.frame.id);
+  return false;
+}
+
 function kindOf(p: PlacedCabinet): EndKind {
   if (isRefrigeratorPiece(p) && !isPanelItem(p)) return "fridge";
   if (isPanelItem(p)) return "panel";
+  if (isCornerCabinet(p.masterCode, p.description, p.cornerType)) return "inside-corner";
   if (p.placement === "tall") return "tall";
   if (isBridge(p)) return "bridge";
   return "cabinet";
@@ -184,6 +204,16 @@ function friendly(kind: EndKind): boolean {
 function stripScore(width: number, a: EndKind, b: EndKind): { score: number; kind: SegmentPlan["kind"] } {
   if (width < MINIMUM_FILLER_NOISE_IN) return { score: width, kind: "none" };
   const base = width * 10;
+  // Leftover on the inside of a refrigerator panel (fridge | strip | panel) is the
+  // allowed fridge-end destination; a strip on the panel's outside is still forbidden.
+  if ((a === "fridge" && b === "panel") || (a === "panel" && b === "fridge")) {
+    return { score: base, kind: "friendly" };
+  }
+  // Worse than a panel-outside board, so leftover prefers the fridge even when
+  // the only other seat is beside a refrigerator panel.
+  if (a === "inside-corner" || b === "inside-corner") {
+    return { score: base + 5000 + width * 2000, kind: "cabinet" };
+  }
   if (a === "panel" || b === "panel") return { score: base + 1000 + width * 1000, kind: "panel" };
   if (friendly(a) || friendly(b)) return { score: base, kind: "friendly" };
   // Rule 6: never a board between a wall cabinet and a bridge. Rule 5: never between cabinets,
@@ -303,6 +333,7 @@ function buildRow(input: {
   glass: boolean;
   /** Economic corner footprint spans on this wall: a fixed, empty boundary the base row is never grown into. */
   keepClear?: ReadonlyArray<{ start: number; end: number }>;
+  runWallIds?: readonly string[];
 }): RowModel {
   const { room, wallId, layer } = input;
   const frame = wallRunFrame(wallId, room)!;
@@ -393,9 +424,9 @@ function buildRow(input: {
     merged.push(b);
   }
   const ends: Boundary[] = [
-    { start: runStart - 1, end: runStart, kind: "wall-end", item: null },
+    { start: runStart - 1, end: runStart, kind: isInsideCornerEnd(wallId, "start", room, input.runWallIds) ? "inside-corner" : "wall-end", item: null },
     ...merged.filter((b) => b.end > runStart + EPS && b.start < runEnd - EPS),
-    { start: runEnd, end: runEnd + 1, kind: "wall-end", item: null },
+    { start: runEnd, end: runEnd + 1, kind: isInsideCornerEnd(wallId, "end", room, input.runWallIds) ? "inside-corner" : "wall-end", item: null },
   ];
   const segments: Segment[] = [];
   for (let i = 0; i + 1 < ends.length; i += 1) {
@@ -508,7 +539,7 @@ export function applyMinimumFiller(input: {
     }
     const rowsAt = (delta: number) => layers.map((layer) => buildRow({
       placed: working, room: input.room, openings: input.openings, wallId: side, layer,
-      catalog: catalogOf(layer), slideUids, delta, glass: Boolean(input.glassUppers), keepClear: clear,
+      catalog: catalogOf(layer), slideUids, delta, glass: Boolean(input.glassUppers), keepClear: clear, runWallIds: input.wallIds,
     }));
     const currentRows = rowsAt(0);
     const current = currentRows.map(currentRowScore);
@@ -694,7 +725,8 @@ function alignedStackUids(placed: readonly PlacedCabinet[], room: RoomData, wall
 
 function describeStrip(plan: SegmentPlan, seg: Segment): string {
   const boundary = plan.leftoverAt === "start" ? seg.left : seg.right;
-  const what = boundary.kind === "wall-end" ? "against the wall end"
+  const what = boundary.kind === "inside-corner" ? "against the inside corner (last resort)"
+    : boundary.kind === "wall-end" ? "against the wall end"
     : boundary.kind === "fridge" ? `against the refrigerator${boundary.item ? ` (${boundary.item.masterCode})` : ""}`
     : boundary.kind === "tall" ? `against ${boundary.item?.masterCode ?? "the tall cabinet"}`
     : boundary.kind === "opening" ? "beside the opening"

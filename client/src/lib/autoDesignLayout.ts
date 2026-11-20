@@ -91,6 +91,7 @@ import { applyDesignQuestionDoorSpec, verifyDesignQuestionDoorSpec, type DesignQ
 import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRule";
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { applyMinimumFiller } from "./autoDesignMinimumFiller";
+import { slideRunsTowardInsideCorners } from "./autoDesignSlideRunsToCorner";
 import { isFlutedFiller } from "./catalogFiller";
 import { trimRefrigeratorWallSide } from "./autoDesignRefrigeratorWallSide";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
@@ -2623,8 +2624,8 @@ export function runAutoDesignLayout(rawArgs: {
   reviewFindings.push(...cornerFlank.findings);
   // Minimum filler (Tom, voice, Nov 19 2026, 7:19 AM CT): every inch of filler is a missed
   // cabinet. After every re-tile above, spare inches upgrade a stock width or slide the range
-  // inside its wiggle; what is left is one strip against the wall end or the refrigerator,
-  // never between cabinets or beside a bridge, on the base and wall rows alike. Runs before
+  // inside its wiggle; what is left is one strip against the refrigerator or a free wall end,
+  // never between cabinets, never at an inside corner, and never beside a bridge. Runs before
   // the outside-panel rule below so that rule keeps the last word.
   // Refrigerator (Tom, voice, Nov 19 2026, 7:41 AM CT): only the open side keeps an end panel; the
   // wall side gets no panel and no filler. Runs before the minimum-filler pass so the freed inches
@@ -2636,6 +2637,10 @@ export function runAutoDesignLayout(rawArgs: {
       if (/REPV\S* is held on the wall|panel gap\.|was butted to FRIDGE/.test(notes[i]!)) notes.splice(i, 1);
     }
     notes.push(...fridgeWallSide.notes);
+  }
+  const rangeUsedBeforeMinimumFiller = new Map<string, number>();
+  for (const move of fifteenRepackMoves) {
+    rangeUsedBeforeMinimumFiller.set(move.uid, (rangeUsedBeforeMinimumFiller.get(move.uid) ?? 0) + move.deltaAlongIn);
   }
   if (input.intake) {
     const intakeForWiggle = input.intake;
@@ -2663,6 +2668,30 @@ export function runAutoDesignLayout(rawArgs: {
     notes.push(...minimumFiller.notes);
     fifteenRepackMoves.push(...minimumFiller.moves);
   }
+  // Tom, Nov 20 2026, 4:39 PM CT: leftover slides the run toward the inside corner
+  // so cabinets close against the corner cabinet or corner, and leftover ends at
+  // the refrigerator or a free wall end. Runs on every run wall (including custom
+  // Wall Builder ids). Allows the range to use wiggle measured before the
+  // minimum-filler toward-fridge slide, so that slide can be reversed when the
+  // leftover belongs at the fridge instead. Reserved corner spans stay reserved.
+  const slidToCorner = slideRunsTowardInsideCorners({
+    placed: working,
+    room,
+    wallIds: gapWallIds,
+    openings: stageOpenings,
+    reservedSpans: cornerReserved,
+    fillerCatalog: catalogFillers,
+    styleId: args.styleId,
+    makeUid,
+    wallLabelOf: (wallId) => flankWallNames[wallId] ?? null,
+    rangeWiggleIn: (range) => {
+      if (input.intake && lockedAnchorKinds(input.intake).includes("stove")) return 0;
+      return Math.max(0, 3 - Math.abs(rangeUsedBeforeMinimumFiller.get(range.uid) ?? 0));
+    },
+  });
+  working = slidToCorner.placed;
+  notes.push(...slidToCorner.notes.filter((note) => !notes.includes(note)));
+  fifteenRepackMoves.push(...slidToCorner.moves);
   // Tom, voice, Nov 18 2026, 4:53 PM CT: no filler outside an exposed panel. Every
   // filler pass above has run, so this is the last word: a board on a panel's outside
   // face is dropped and named on the review list; fillers between cabinets and
