@@ -30,7 +30,9 @@ import {
   type AcceptedDoorAppearance,
   type DoorColorDecision,
 } from "@shared/doorColorResolve";
-import { selectedDoorHex, selectionForStyle, styleWithChosenColorHex } from "@shared/doorColorSourceSelection";
+import { isDoorImageColorSource } from "@shared/doorColorResolve";
+import { aiTilePicture, selectedDoorHex, selectionForStyle, styleWithCheckedDoorImage, styleWithChosenColorHex, uploadedSampleUrl } from "@shared/doorColorSourceSelection";
+import { cachedDoorImageHex } from "@/lib/doorImageHexCache";
 
 export type AcceptedDoorStyleInput = {
   id?: number | null;
@@ -53,14 +55,70 @@ export type AcceptedDoorStyleInput = {
   /** Non-null only when an admin accepted a door-rendering run. */
   approvedVersionId?: number | null;
   approvedAt?: string | Date | null;
+  /** The official AI (Gemini) profile picture (0281). */
+  aiProfileImageUrl?: string | null;
+  doorColorSource?: string | null;
+  doorColorSourceValue?: unknown;
+  doorColorSourceUpdatedAt?: string | Date | null;
+  doorColorSourceSelection?: unknown;
+  checkedDoorSource?: "uploaded-sample" | "ai-image" | "hex" | "sherwin-williams" | null;
+  uploadedSampleHex?: string | null;
+  aiImageHex?: string | null;
 };
+
+/**
+ * The style with the checkmarked door source and the colors of its door images
+ * (the uploaded sample and the Approved AI picture), read from the browser sample
+ * cache. Every Designer color reader goes through this, so the checkmark reaches
+ * the finish, the face plan, the plan view and 3D the same way.
+ */
+export function withCheckedDoorImage<T extends AcceptedDoorStyleInput>(style: T): T {
+  return styleWithCheckedDoorImage(style, cachedDoorImageHex);
+}
+
+/** The door images whose colors the Designer samples: each style's uploaded sample and Approved AI picture. */
+export function doorImageUrlsForStyles(
+  styles: readonly (AcceptedDoorStyleInput | null | undefined)[],
+  rows: ReadonlyMap<number, AcceptedAppearanceRow> = new Map(),
+): string[] {
+  const urls = new Set<string>();
+  for (const style of styles) {
+    if (!style) continue;
+    const row = style.id != null ? rows.get(style.id) : undefined;
+    const merged = row ? { ...style, approvedVersionId: row.approvedVersionId ?? null, approvedReferenceImageUrl: acceptedRowTextureUrl(row) || null } : style;
+    const sample = uploadedSampleUrl(merged);
+    const ai = aiTilePicture(merged).url;
+    if (sample) urls.add(sample);
+    if (ai) urls.add(ai);
+  }
+  return Array.from(urls);
+}
 
 /**
  * One row of `doorStyles.acceptedAppearance`. `colorHex` is the color derived
  * from the accepted render; `textureUrl` is that render, which the kitchen draws
  * on the door. A row with no `approvedVersionId` means "nothing accepted".
  */
-export type AcceptedAppearanceRow = AcceptedDoorAppearance & { styleId?: number | null };
+export type AcceptedAppearanceRow = AcceptedDoorAppearance & {
+  styleId?: number | null;
+  /**
+   * cabinet-backend answers the accepted color as `renderHex` and the approved image
+   * as `approvedReferenceImageUrl` (live, Nov 20 2026), not `colorHex` / `textureUrl`.
+   * Both spellings are read; reading only the old ones dropped every acceptance.
+   */
+  renderHex?: string | null;
+  approvedReferenceImageUrl?: string | null;
+};
+
+/** The accepted color of a row, whichever spelling the backend used. */
+export function acceptedRowColorHex(row: AcceptedAppearanceRow | null | undefined): string {
+  return ((row?.colorHex ?? "").trim() || (row?.renderHex ?? "").trim());
+}
+
+/** The accepted image of a row, whichever spelling the backend used. */
+export function acceptedRowTextureUrl(row: AcceptedAppearanceRow | null | undefined): string {
+  return ((row?.textureUrl ?? "").trim() || (row?.approvedReferenceImageUrl ?? "").trim());
+}
 
 const HEX = /^#?[0-9a-f]{6}$/i;
 
@@ -92,7 +150,7 @@ export function doorColorInputFor(style: AcceptedDoorStyleInput | null | undefin
 export function resolveKitchenDoorColor(style: AcceptedDoorStyleInput | null | undefined): DoorColorDecision {
   // A confirmed Sherwin-Williams or hex choice is the render hex, so the finish
   // follows the same pick the door face is painted with.
-  return resolveDoorColor(doorColorInputFor(style ? styleWithChosenColorHex(style) : style));
+  return resolveDoorColor(doorColorInputFor(style ? withCheckedDoorImage(styleWithChosenColorHex(style)) : style));
 }
 
 /**
@@ -111,6 +169,9 @@ export function designerGateRenderHex(
   style: AcceptedDoorStyleInput | null | undefined,
 ): string | null {
   if (style && selectedDoorHex(selectionForStyle(style as never))) return null;
+  // A door image's own color (checkmarked, uploaded sample or AI image) is the
+  // door: the gate has nothing to correct and must never adjust or block it.
+  if (isDoorImageColorSource(decision.candidateSource)) return null;
   return decision.candidateSource === "accepted-render" || decision.candidateSource === "render-hex"
     ? decision.candidateHex
     : null;
@@ -181,19 +242,19 @@ export function withAcceptedAppearance(
   row: AcceptedAppearanceRow | null | undefined,
 ): AcceptedDoorStyleInput | null {
   if (!style) return style ?? null;
-  if (!row || !hasAcceptedAppearanceRow(row)) return style;
-  const colorHex = (row.colorHex ?? "").trim();
-  return {
+  if (!row || !hasAcceptedAppearanceRow(row)) return withCheckedDoorImage(style);
+  const colorHex = acceptedRowColorHex(row);
+  return withCheckedDoorImage({
     ...style,
     ...(HEX.test(colorHex) ? { renderHex: colorHex } : {}),
     approvedVersionId: row.approvedVersionId ?? style.approvedVersionId ?? null,
-      approvedReferenceImageUrl: (row.textureUrl ?? "").trim() || (style.approvedReferenceImageUrl ?? null),
-  };
+    approvedReferenceImageUrl: acceptedRowTextureUrl(row) || (style.approvedReferenceImageUrl ?? null),
+  });
 }
 
 /** True when a row carries a real acceptance (a version id and a color). */
 export function hasAcceptedAppearanceRow(row: AcceptedAppearanceRow | null | undefined): boolean {
-  return Boolean(row && row.approvedVersionId != null && HEX.test((row.colorHex ?? "").trim()));
+  return Boolean(row && row.approvedVersionId != null && HEX.test(acceptedRowColorHex(row)));
 }
 
 /**

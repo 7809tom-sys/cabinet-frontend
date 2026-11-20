@@ -14,6 +14,7 @@ import {
 } from "@shared/doorStyleAppearance";
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import { styleWithChosenColorHex } from "@shared/doorColorSourceSelection";
+import { withCheckedDoorImage } from "@/lib/acceptedDoorAppearance";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { isSolidSlabFace } from "@shared/solidSlabFace";
 import { raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
@@ -72,7 +73,9 @@ export function resolveDoorProfilePanelKind(style: DoorStyleAppearanceInput | nu
 export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | undefined): FinishColors {
   // A confirmed Sherwin-Williams or hex choice is the finish too, so the cabinet
   // body matches the door face the same choice paints (designerFacePlan).
-  const identity = identityOf(style ? styleWithChosenColorHex(style) : style);
+  // The checkmarked door image's color (or, with none checked, the uploaded sample's,
+  // then the AI image's) is the finish, so the cabinet body matches the door face.
+  const identity = identityOf(style ? withCheckedDoorImage(styleWithChosenColorHex(style) as never) as DoorStyleAppearanceInput : style);
   const base = finishColors(identity.ourName, identity.name, identity.color, identity.finish, identity.woodSpecies);
   const hex = resolveDoorFinishHex(identity);
   if (hex.toLowerCase() === base.face.toLowerCase()) return base;

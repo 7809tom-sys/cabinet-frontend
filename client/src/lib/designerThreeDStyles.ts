@@ -19,7 +19,7 @@
  * Nothing here snaps a color to a brand palette. A style with no accepted row is
  * passed through untouched.
  */
-import { withAcceptedAppearance, type AcceptedAppearanceRow } from "./acceptedDoorAppearance";
+import { withAcceptedAppearance, withCheckedDoorImage, type AcceptedAppearanceRow } from "./acceptedDoorAppearance";
 import { effectiveStyleId } from "./design";
 import { designerFacePlan, type DesignerFaceStyle } from "./designerFacePlan";
 import { designerCatalogDoorProfile } from "./doorStyleAppearance";
@@ -71,7 +71,7 @@ export function styleWithAccepted(
 ): DesignerAcceptedStyle | null {
   if (!style) return null;
   const row = acceptedById.get(style.id);
-  if (!row) return style as DesignerAcceptedStyle;
+  if (!row) return withCheckedDoorImage(style as never) as DesignerAcceptedStyle;
   return withAcceptedAppearance(style, row) as DesignerAcceptedStyle;
 }
 
