@@ -1,4 +1,4 @@
-import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers, normalizeBridgeBoards } from "./bridgeHalfInchFillers";
+import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers, isBridgeHalfInchFiller, normalizeBridgeBoards } from "./bridgeHalfInchFillers";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { FRAMELESS_TOP_WALL_HEIGHT_IN } from "./framelessWallTopAlignment";
 import {
@@ -830,6 +830,9 @@ function fmtBridgeOpening(placed: readonly PlacedCabinet[], refrigeratorUid: str
   const total = Math.round((width + 1) * 8) / 8;
   return String(total);
 }
+
+/** The refrigerator opening the bridge boards create (Tom, Nov 20 2026: to = 37 inches). */
+export const FRIDGE_OPENING_TARGET_IN = 37;
 
 export function runAutoDesignLayout(rawArgs: {
   input: AutoDesignInputs;
@@ -2420,6 +2423,23 @@ export function runAutoDesignLayout(rawArgs: {
   if (refrigerator && !budgetFriendly) {
     const bridgeReseal = ensureBridgeHalfInchFillers(working, room, args.fillers ?? [], makeUid, args.styleId ?? null);
     working = bridgeReseal.placed;
+    // Restoring the boards is not the same as proving the opening is right: measure it.
+    const fridgeBridge = working.find((item) => item.refrigeratorAssemblyRole === "bridge");
+    if (fridgeBridge) {
+      const bridgeBoards = working.filter((item) => isBridgeHalfInchFiller(item) && item.fillerForCabinetUid === fridgeBridge.uid);
+      const opening = bridgeBoards.reduce((sum, board) => sum + (Number(board.width) || 0), Number(fridgeBridge.width) || 0);
+      if (Math.abs(opening - FRIDGE_OPENING_TARGET_IN) > 0.05) {
+        reviewFindings.push({
+          ruleId: "refrigerator-opening",
+          code: "refrigerator-opening-not-37",
+          severity: "warning",
+          title: "Refrigerator opening is not 37 in",
+          detail: `${fridgeBridge.masterCode} plus ${bridgeBoards.length} bridge board${bridgeBoards.length === 1 ? "" : "s"} opens ${inches(opening)}; the target is ${FRIDGE_OPENING_TARGET_IN} in (36 in bridge + 1/2 in each side).`,
+          cabinetUid: fridgeBridge.uid,
+          cabinetCode: fridgeBridge.masterCode,
+        });
+      }
+    }
     if (bridgeReseal.added.length > 0) {
       notes.push(`Bridge fillers re-sealed after later passes: 1/2 in ${bridgeReseal.added[0]!.masterCode} on each side of the cabinet above the refrigerator, so the opening is 37 in.`);
     }
