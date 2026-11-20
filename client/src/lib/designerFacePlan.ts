@@ -12,6 +12,7 @@ import {
   type DoorColorSourceSelection,
 } from "@shared/doorColorSourceSelection";
 import { PAINT_FINISH } from "@shared/sherwinWilliamsStain";
+import { withCheckedDoorImage } from "@/lib/acceptedDoorAppearance";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & {
   approvedReferenceImageUrl?: string | null;
@@ -23,6 +24,9 @@ export type DesignerFaceStyle = DoorStyleFaceInput & {
   doorColorSourceValue?: unknown;
   doorColorSourceUpdatedAt?: string | Date | null;
   doorColorSourceSelection?: unknown;
+  checkedDoorSource?: "uploaded-sample" | "ai-image" | "hex" | "sherwin-williams" | null;
+  uploadedSampleHex?: string | null;
+  aiImageHex?: string | null;
 };
 
 function trimmedImageUrl(value: string | null | undefined): string {
@@ -57,9 +61,10 @@ export function acceptedRenderFacePlan(
 }
 
 /**
- * A saved Gemini picture (the official AI profile picture) as a face plan, for an
- * Approved AI choice when no run was accepted. It is the door texture only: no
- * accepted color rides with it, so the style's own color order still applies.
+ * A saved Gemini picture (the official AI profile picture) as a face plan. The
+ * picture itself is the door face, and the AI image's own color (sampled from it,
+ * or the render hex PR 475 sampled when it was chosen) rides with it, so no other
+ * layer recolors the cabinet around it.
  */
 export function savedAiPictureFacePlan(
   style: DesignerFaceStyle | null | undefined,
@@ -75,6 +80,32 @@ export function savedAiPictureFacePlan(
     sections: 1,
     drawerTextureApplied: !wall,
     grainRotation: 0,
+    acceptedColorHex: style.aiImageHex ?? null,
+  } as CabinetFacePlan;
+}
+
+/**
+ * The uploaded sample photo itself as the face, for a checkmarked "Original image"
+ * (Tom, Nov 20 2026: the checkmarked image is used as-is). Its sampled color rides
+ * with it. Null when the style has no sample photo.
+ */
+export function uploadedSamplePhotoFacePlan(
+  style: DesignerFaceStyle | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan | null {
+  const door = trimmedImageUrl(style?.doorSampleImageUrl) || trimmedImageUrl(style?.thumbnailImageUrl);
+  if (!style || !door) return null;
+  const drawer = trimmedImageUrl(style.drawerSampleImageUrl);
+  const wall = (placement ?? "").toLowerCase() === "wall";
+  const split = Boolean(drawer && drawer !== door);
+  return {
+    sourceKind: split ? "split" : "legacy-door",
+    doorUrl: door,
+    drawerUrl: wall ? null : split ? drawer : door,
+    sections: wall || !split ? 1 : 2,
+    drawerTextureApplied: !wall,
+    grainRotation: 0,
+    acceptedColorHex: style.uploadedSampleHex ?? null,
   } as CabinetFacePlan;
 }
 
@@ -121,10 +152,22 @@ export function selectedDoorColorFacePlan(
 ): CabinetFacePlan | null {
   const effective = effectiveDoorColorSource(selection, style);
   const photoStyle = styleForDoorColorSource(style, { source: "original-image", chosenAt: selection.chosenAt });
-  if (effective.source === "original-image") return resolveCabinetFaceImages(photoStyle, placement);
+  if (effective.source === "original-image") {
+    const photo = resolveCabinetFaceImages(photoStyle, placement);
+    // A real DL finish keeps its own frame-free grain (tinted to the sample's color by
+    // the resolver). Any other style whose plan came back without an image (a
+    // substitute solid or grain) shows the checkmarked sample photo itself.
+    if (photo.doorUrl && !photo.dlcCrop) return photo;
+    if (findDlcFinishForStyle(style)) return photo;
+    return uploadedSamplePhotoFacePlan(photoStyle, placement) ?? photo;
+  }
   if (effective.source === "approved-ai-image") {
-    return acceptedRenderFacePlan(style, placement)
-      ?? savedAiPictureFacePlan(style, placement)
+    // A checkmarked AI choice whose only picture is the accepted render of the
+    // uploaded sample shows that photo (acceptedRenderFacePlan below).
+    // The checkmarked tile shows the saved Gemini picture first (aiTilePicture), so
+    // that picture is the face; an older accepted render must not replace it.
+    return savedAiPictureFacePlan(style, placement)
+      ?? acceptedRenderFacePlan(style, placement)
       ?? resolveCabinetFaceImages(photoStyle, placement);
   }
   const key = style.id ?? "selected";
@@ -160,6 +203,9 @@ export function designerFacePlan(
   placement: string | null | undefined,
 ): CabinetFacePlan | null {
   if (!style) return null;
+  // The checkmarked source and the door images' own colors ride on the style, so
+  // every color read below (grain tint, paint solid, accepted color) follows them.
+  style = withCheckedDoorImage(style as never) as DesignerFaceStyle;
   // An explicit, confirmed door color source choice wins (one selector, Tom Nov 12 2026).
   // The server value is the source of truth for every shopper; localStorage is a fallback/cache.
   const selection = selectionForStyle(style);

@@ -1,8 +1,19 @@
 /**
  * Door color, without brand snapping.
  *
- * Precedence, highest first (owner rule: the accepted render is the source of
- * truth for a door's color):
+ * Door images come first (Tom, Nov 20 2026, voice): "the CHECKMARK is the decider".
+ * A. The door image the user CHECKMARKED in the four-source picker (the uploaded
+ *    sample photo, or the official AI image). Its color is used as-is: no
+ *    estimator, swatch, saved color or render hex may replace it.
+ * B. With no image checkmarked: the uploaded sample's color, then the official AI
+ *    image's color. A confirmed Hex or Sherwin-Williams checkmark switches A and B
+ *    off (that pick arrives as the render hex instead).
+ * Image colors are sampled from the images themselves by the client
+ * (`styleWithCheckedDoorImage`, doorColorSourceSelection.ts) and passed in as
+ * `uploadedSampleHex` / `aiImageHex`; this module never invents one.
+ *
+ * Then, when no image color is known (owner rule: the accepted render is the
+ * source of truth for a door's color):
  * 0. The latest ACCEPTED door-rendering run for this style — its derived color
  *    and its approved door image/texture. An admin approving a render changes
  *    every kitchen on the next read.
@@ -59,7 +70,17 @@ export const PRE_PAINT_MATCH_ORIGINALS: Readonly<Record<number, { hex: string; c
 };
 
 export type FinishCategory = "paint" | "stain";
-export type DoorColorSource = "accepted-render" | "render-hex" | "catalog-color" | "swatch-table" | "walzcraft" | "estimator" | "pre-209";
+export type DoorColorSource = "checked-image" | "uploaded-sample" | "ai-image" | "accepted-render" | "render-hex" | "catalog-color" | "swatch-table" | "walzcraft" | "estimator" | "pre-209";
+
+/** Which source carries the checkmark in the four-source door color picker. */
+export type CheckedDoorSource = "uploaded-sample" | "ai-image" | "hex" | "sherwin-williams";
+
+/** Door-image sources: the image's own color, never second-guessed. */
+export const DOOR_IMAGE_COLOR_SOURCES: readonly DoorColorSource[] = ["checked-image", "uploaded-sample", "ai-image"];
+
+export function isDoorImageColorSource(source: DoorColorSource | null | undefined): boolean {
+  return source != null && DOOR_IMAGE_COLOR_SOURCES.includes(source);
+}
 export type HueFamily = "neutral" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "brown";
 
 /**
@@ -102,6 +123,16 @@ export type DoorColorInput = {
   approvedReferenceImageUrl?: string | null;
   /** Non-null only when an admin actually accepted a run for this style. */
   approvedVersionId?: number | null;
+  /**
+   * The checkmarked source in the four-source picker. "uploaded-sample" and
+   * "ai-image" make that image's color the door color; "hex" and
+   * "sherwin-williams" switch the image layers off (the pick is the render hex).
+   */
+  checkedDoorSource?: CheckedDoorSource | null;
+  /** Color sampled from the uploaded door sample photo (doorSampleImageUrl). */
+  uploadedSampleHex?: string | null;
+  /** Color of the official AI image (the picture on the Approved AI tile). */
+  aiImageHex?: string | null;
 };
 
 type SwatchRow = {
@@ -115,6 +146,13 @@ type SwatchRow = {
    * would otherwise occupy.
    */
   demoted?: boolean;
+  /**
+   * The value this row held before it was corrected from the door's official
+   * image. A saved catalog color equal to it is that superseded paint-chip value,
+   * not a decision, so it is never trusted (Slate Gray #b8c8d0, Nov 20 2026).
+   */
+  previousHex?: string;
+  source?: string;
 };
 type WalzRow = {
   distributor: string;
@@ -141,7 +179,7 @@ export type DoorColorReview = {
   deltaE: number | null;
   hueChosen: HueFamily | null;
   hueEstimator: HueFamily | null;
-  keptBecause: "agreed" | "accepted-render" | "hand-set-render-hex" | "saved-catalog-color" | "estimator-disagreed" | "no-second-opinion";
+  keptBecause: "agreed" | "door-image" | "accepted-render" | "hand-set-render-hex" | "saved-catalog-color" | "estimator-disagreed" | "no-second-opinion";
 };
 
 export type DoorColorDecision = {
@@ -157,6 +195,8 @@ export type DoorColorDecision = {
   pre209Category: FinishCategory;
   review: DoorColorReview;
   layers: {
+    /** The checkmarked / uploaded-sample / AI image color, when one is known. */
+    doorImage: LayerHit | null;
     /** The accepted run's color, when this style has one. */
     acceptedRender: LayerHit | null;
     renderHex: string | null;
@@ -319,6 +359,26 @@ export function prePaintMatchOriginal(style: DoorColorInput): LayerHit | null {
   };
 }
 
+/** The swatch row for this style (by id, then name), demoted or not. */
+function swatchRowFor(style: DoorColorInput): SwatchRow | undefined {
+  const byId = style.id != null ? swatchById.get(style.id) : undefined;
+  return byId
+    ?? swatchByName.get(normalizeName(style.ourName))
+    ?? swatchByName.get(normalizeName(style.aliasName))
+    ?? swatchByName.get(normalizeName(style.name));
+}
+
+/**
+ * True when the saved catalog color is a swatch value that was later corrected
+ * from the door's official image (`previousHex`). That saved color is the old
+ * paint-chip match copied onto the style, so the resolver never trusts it.
+ */
+export function savedColorIsSupersededChip(style: DoorColorInput): boolean {
+  const saved = exactHex(style.color);
+  const previous = exactHex(swatchRowFor(style)?.previousHex);
+  return Boolean(saved && previous && saved === previous);
+}
+
 /**
  * True when this style's saved catalog color is the paint-match value itself.
  * Its own saved color is then a paint match rather than a decision, so a higher
@@ -327,6 +387,7 @@ export function prePaintMatchOriginal(style: DoorColorInput): LayerHit | null {
 export function savedColorIsPaintMatch(style: DoorColorInput): boolean {
   const original = style.id != null ? PRE_PAINT_MATCH_ORIGINALS[style.id] : undefined;
   const saved = exactHex(style.color);
+  if (saved && savedColorIsSupersededChip(style)) return true;
   const demoted = demotedSwatchRow(style);
   if (!original || !saved) return false;
   const paintMatchValues = new Set([demoted?.hex.toLowerCase()].filter(Boolean));
@@ -386,7 +447,8 @@ export function pre209DoorColor(style: DoorColorInput): LayerHit {
   const photo = dlcPhotoEstimate(style);
   if (photo) return { ...photo, source: "pre-209", via: "dlc-photo" };
   const aspen = isAspenCharcoalIdentity(style);
-  const catalog = exactHex(style.color);
+  // A superseded paint-chip value copied onto the style is not the door's color.
+  const catalog = savedColorIsSupersededChip(style) ? null : exactHex(style.color);
   if (catalog) {
     return { hex: catalog, category: aspen ? "stain" : finishCategoryFromNames(style), source: "pre-209", via: "catalog-hex" };
   }
@@ -397,7 +459,7 @@ export function pre209DoorColor(style: DoorColorInput): LayerHit {
 }
 
 function candidateCategory(style: DoorColorInput, hit: LayerHit): FinishCategory {
-  if (hit.source === "render-hex" || hit.source === "accepted-render") {
+  if (hit.source === "render-hex" || hit.source === "accepted-render" || isDoorImageColorSource(hit.source)) {
     return lookupSwatch(style)?.category ?? lookupWalz(style)?.category ?? finishCategoryFromNames(style);
   }
   if (/\bhickory\b/i.test(textOf(style))) return "stain";
@@ -452,8 +514,36 @@ function acceptedRenderColor(style: DoorColorInput): LayerHit | null {
   return { hex, category: finishCategoryFromNames(style), source: "accepted-render", via: "accepted-run", label: "accepted render" };
 }
 
+/**
+ * The door image's color, highest first: the checkmarked image, then (with no
+ * image checkmarked) the uploaded sample, then the official AI image. A confirmed
+ * Hex or Sherwin-Williams checkmark returns null so that pick decides instead.
+ * A checkmarked image whose color is not known yet falls through to the
+ * unchecked order; its picture is still the door face (designerFacePlan).
+ */
+export function doorImageColor(style: DoorColorInput): LayerHit | null {
+  const checked = style.checkedDoorSource ?? null;
+  if (checked === "hex" || checked === "sherwin-williams") return null;
+  const sample = exactHex(style.uploadedSampleHex);
+  const ai = exactHex(style.aiImageHex);
+  const category = finishCategoryFromNames(style);
+  if (checked === "uploaded-sample" && sample) {
+    return { hex: sample, category, source: "checked-image", via: "uploaded-sample", label: "checkmarked uploaded sample" };
+  }
+  if (checked === "ai-image") {
+    if (ai) return { hex: ai, category, source: "checked-image", via: "ai-image", label: "checkmarked AI image" };
+    // The checkmarked AI picture is an accepted render: its own layer decides, and
+    // the uploaded sample must not jump ahead of it.
+    if (style.approvedVersionId != null && exactHex(style.renderHex)) return null;
+  }
+  if (sample) return { hex: sample, category, source: "uploaded-sample", via: "uploaded-sample", label: "uploaded sample" };
+  if (ai) return { hex: ai, category, source: "ai-image", via: "ai-image", label: "official AI image" };
+  return null;
+}
+
 export function resolveDoorColor(style: DoorColorInput | null | undefined): DoorColorDecision {
   const input = style ?? {};
+  const doorImage = doorImageColor(input);
   // The accepted render is the source of truth for a door's color. Approving a
   // run writes its color and image onto the style, so an accepted render IS the
   // kitchen's color with no further step. A hand-set render hex is the next layer.
@@ -474,7 +564,7 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
   // The measured swatch table is still consulted, but a row marked `demoted` is a
   // nearest paint-chip match rather than a measurement of a door, so `lookupSwatch`
   // never returns it. Shaker Honey's `#c8a040` is exactly that case.
-  const candidate = acceptedRender ?? handSetRender ?? saved ?? original ?? swatch ?? walzcraft ?? estimator ?? pre209;
+  const candidate = doorImage ?? acceptedRender ?? handSetRender ?? saved ?? original ?? swatch ?? walzcraft ?? estimator ?? pre209;
   const chosen: LayerHit = { ...candidate, category: candidateCategory(input, candidate) };
   const opinion = secondOpinion(input, chosen);
   const compared = opinion ? colorsAgree(chosen, opinion) : null;
@@ -489,7 +579,10 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
     // An accepted render, a hand-set render hex, or the style's own saved catalog
     // color is a decision, not a guess: the estimator never overrides it. Only a
     // guessed layer can be replaced by the pre-209 color.
-    if (chosen.source === "accepted-render") {
+    if (isDoorImageColorSource(chosen.source)) {
+      // The door image IS the door. Nothing substitutes for it.
+      keptBecause = "door-image";
+    } else if (chosen.source === "accepted-render") {
       keptBecause = "accepted-render";
     } else if (chosen.source === "render-hex") {
       keptBecause = "hand-set-render-hex";
@@ -526,7 +619,7 @@ export function resolveDoorColor(style: DoorColorInput | null | undefined): Door
       hueEstimator: opinion ? hueFamily(opinion.hex) : null,
       keptBecause,
     },
-    layers: { acceptedRender, renderHex, catalogColor: saved, swatch, walzcraft, estimator, pre209 },
+    layers: { doorImage, acceptedRender, renderHex, catalogColor: saved, swatch, walzcraft, estimator, pre209 },
   };
 }
 
@@ -547,10 +640,10 @@ export type DoorColorCoverage = {
 };
 
 export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColorCoverage {
-  const candidate: Record<DoorColorSource, number> = { "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0 };
+  const candidate: Record<DoorColorSource, number> = { "checked-image": 0, "uploaded-sample": 0, "ai-image": 0, "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0 };
   const applied: Record<DoorColorSource, number> = { ...candidate };
   const layerPresent: Record<DoorColorSource, number> = {
-    "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0,
+    "checked-image": 0, "uploaded-sample": 0, "ai-image": 0, "accepted-render": 0, "render-hex": 0, "catalog-color": 0, "swatch-table": 0, walzcraft: 0, estimator: 0, "pre-209": 0,
   };
   let agreed = 0;
   let flagged = 0;
@@ -562,6 +655,7 @@ export function summarizeDoorColors(styles: readonly DoorColorInput[]): DoorColo
     const decision = resolveDoorColor(style);
     candidate[decision.candidateSource] += 1;
     applied[decision.appliedSource] += 1;
+    if (decision.layers.doorImage) layerPresent[decision.layers.doorImage.source] += 1;
     if (decision.layers.acceptedRender) layerPresent["accepted-render"] += 1;
     if (decision.layers.renderHex) layerPresent["render-hex"] += 1;
     if (decision.layers.catalogColor) layerPresent["catalog-color"] += 1;
