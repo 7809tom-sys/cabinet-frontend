@@ -312,9 +312,20 @@ export function measuredAngledWallTransition(
 	  // and the vertex owns that corner. Without this, the first join in the
 	  // list won even when the cabinet sat at the far end of its run, the bogus
 	  // run-length "gap" found no stock, and the real corner was never measured.
+	  // A dishwasher, range, tall box or refrigerator panel closer to the
+	  // vertex owns this join. Measuring past it to a far cabinet is what
+	  // produced the 23¼″ "stock" ask at a 135° base corner (Tom, Nov 20 2026).
+	  const ownerSameBand = (item: PlacedCabinet) => cabinet.placement === "wall"
+	    ? item.placement === "wall" || item.placement === "tall"
+	    : item.placement === "base" || item.placement === "tall" || item.placement === "appliance";
 	  const ownerBlocked = (at: "start" | "end") => placed.some((item) => {
 	    if (item.uid === cabinet.uid || item.fillerPieceGroupId || item.wallId !== cabinet.wallId) return false;
-	    if (item.placement !== cabinet.placement) return false;
+	    if (!ownerSameBand(item)) return false;
+	    if (cabinet.placement === "wall" && item.placement === "wall") {
+	      const box = elevationBox(item, room);
+	      if (!(box.bottom < currentElevation.bottom + currentElevation.height - JOIN_EPSILON_IN
+	        && box.bottom + box.height > currentElevation.bottom + JOIN_EPSILON_IN)) return false;
+	    }
 	    const itemStart = wallRunOffset(item, cabinet.wallId!, room);
 	    const itemEnd = itemStart + wallRunSpan(item, cabinet.wallId!, room);
 	    return at === "start"
@@ -400,6 +411,9 @@ export function measuredAngledWallTransition(
 	    if (ownerFrontMiterOffsetIn == null || neighborFrontMiterOffsetIn == null || ownerRearMiterOffsetIn == null || neighborRearMiterOffsetIn == null) continue;
 	    const ownerGapIn = roundedEighth(ownerGap);
 	    const neighborGapIn = roundedEighth(neighborGap);
+	    // Each cut is the board from that cabinet's own corner-side face to
+	    // the miter — never a run-length gap past an appliance. The stock
+	    // width is the wider of those two boards (front or rear edge).
 	    const ownerFrontCutIn = roundedEighth(distance(ownerFace.front, miterPoint));
 	    const neighborFrontCutIn = roundedEighth(distance(neighborFace.front, miterPoint));
 	    const ownerRearCutIn = roundedEighth(distance(ownerRearLine, rearMiterPoint));

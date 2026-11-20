@@ -271,6 +271,32 @@ function pair(placement: "wall" | "base" | "tall") {
     expect(appendCollisionFreePlacements([neighbor, owner], resolution.fillers, room).rejected).toEqual([]);
   });
 
+  it("does not ask for 23¼-inch stock by measuring past a dishwasher to a far base", () => {
+    const diagonalLength = wallLength("diagonal" as any, room);
+    const farBase = cabinet("far-base", "diagonal", 10, "base", 24);
+    const dishwasherSpot = wallPlacementAt(diagonalLength - 24 - 8.84, 24, 24, "diagonal" as any, room);
+    const dishwasher: PlacedCabinet = {
+      uid: "dw-24",
+      cabinetId: 0,
+      masterCode: "DW-24",
+      description: "24 in dishwasher",
+      placement: "appliance",
+      x: dishwasherSpot.x,
+      y: dishwasherSpot.y,
+      width: 24,
+      depth: 24,
+      height: 34.5,
+      rotation: dishwasherSpot.rotation,
+      wallId: "diagonal",
+      wallOffset: dishwasherSpot.wallOffset,
+    };
+    const owner = cabinet("range-left-base", "straight", 11.75, "base", 12);
+    const placed = [farBase, dishwasher, owner];
+    expect(measuredAngledWallTransition(farBase, room, placed)).toBeNull();
+    const fromOwner = measuredAngledWallTransition(owner, room, placed);
+    expect(fromOwner).toBeNull();
+  });
+
 	  it("closes a 45-degree peninsula return with two source-stock front fillers and no visible face void", () => {
 	    const parent = { id: "peninsula-parent", parentWall: "right" as const, startOffset: 84, turn: 90 as const, direction: "right" as const, length: 120, height: 34.5, cabinetSide: "left" as const, locked: true };
 	    const child = { id: "peninsula-child", parentRunId: parent.id, startOffset: 0, turn: 45 as const, direction: "right" as const, length: 36, height: 34.5, cabinetSide: "left" as const, locked: true };
