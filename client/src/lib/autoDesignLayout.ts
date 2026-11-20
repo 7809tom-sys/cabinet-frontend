@@ -1025,9 +1025,10 @@ export function runAutoDesignLayout(rawArgs: {
     if (anchorWall && !selectedWalls.includes(anchorWall)) selectedWalls.push(anchorWall);
     notes.push("The refrigerator already on the plan is a fixed anchor: it keeps its position, and the cabinets are designed around it.");
   }
-  // Economic corner keep-clear (Tom, voice, Nov 19 2026, 11:59 AM CT): in budget mode the dishwasher, sink
-  // base and range never sit inside the 27" economic corner footprint (24" void + 3" mitered filler).
-  // The measured positions are slid out along their own wall before anything is seated.
+  // Economic corner keep-clear (Tom, voice, Nov 19 2026, 11:59 AM CT; scoped budget-only Nov 20 2026, 11:03 AM CT):
+  // in budget mode the dishwasher, sink base and range never sit inside the 27" economic corner footprint
+  // (24" void + 3" mitered filler). Outside budget the rule does not reserve that space or move the range
+  // or sink, on any cabinet type or line. The measured positions are slid out along their own wall before anything is seated.
   const keepClear = (() => {
     if (!budgetFriendly || hasPreference(input.intake, "lazy-susan") || hasPreference(input.intake, "blind-corner")) return null;
     const rows: KeepClearAnchor[] = [];
@@ -1061,6 +1062,7 @@ export function runAutoDesignLayout(rawArgs: {
       openings,
       frameOf: (wallId) => wallRunFrame(wallId, room),
       label: (kind) => (kind === "stove" ? "range" : kind === "sink" ? "sink base" : kind),
+      budgetMode: budgetFriendly,
     });
   })();
   if (keepClear) notes.push(...keepClear.notes);
@@ -1574,11 +1576,15 @@ export function runAutoDesignLayout(rawArgs: {
     }
   }
 
-  // Economic corner (Tom, Nov 19 2026, 11:59 AM CT): the 27" footprint of every accepted economic corner leg.
-  const economyClaims = economyCorners.flatMap((economy) => economy.wallIds.flatMap((wallId) => {
-    const claim = economyCornerClaimSpan(wallId, economy.corner, room);
-    return claim ? [claim] : [];
-  }));
+  // Economic corner (Tom, Nov 19 2026, 11:59 AM CT; scoped budget-only Nov 20 2026, 11:03 AM CT):
+  // the 27" footprint of every accepted economic corner leg. Outside budget mode this list stays empty,
+  // so wiggle, base fill, real-cabinets and minimum-filler never reserve or slide around a keep-clear span.
+  const economyClaims = budgetFriendly
+    ? economyCorners.flatMap((economy) => economy.wallIds.flatMap((wallId) => {
+      const claim = economyCornerClaimSpan(wallId, economy.corner, room);
+      return claim ? [claim] : [];
+    }))
+    : [];
   const wiggle = applyAutoDesignWiggleRoom({
     keepClearSpans: economyClaims,
     placed: working,
