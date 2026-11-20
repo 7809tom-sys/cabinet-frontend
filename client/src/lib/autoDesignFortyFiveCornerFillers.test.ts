@@ -208,3 +208,17 @@ describe("Tom's five-wall kitchen (line 330011)", () => {
       && /angTR and right|right and angTR/.test(finding.title))).toBe(true);
   });
 });
+
+// Regression (Nov 20 2026): e612adb called an undefined `inches()` while writing the
+// "refrigerator opening is not 37 in" finding, so standard mode threw a ReferenceError on every
+// angled room whose bridge opening was not 37 in (five tests above failed with
+// "inches is not defined"). The run must finish, and the finding must read as inches.
+describe("refrigerator opening finding on an angled room", () => {
+  it("standard mode finishes and writes the opening as a readable inch value (36.5″ here)", () => {
+    const result = build();
+    const finding = (result.reviewFindings ?? []).find((entry) => entry.code === "refrigerator-opening-not-37");
+    expect(finding).toBeDefined();
+    expect(finding!.detail).toMatch(/opens 36\.5″; the target is 37 in/);
+    expect(result.placed.length).toBeGreaterThan(0);
+  });
+});

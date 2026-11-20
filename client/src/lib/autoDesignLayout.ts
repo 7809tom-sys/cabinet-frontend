@@ -831,6 +831,11 @@ function fmtBridgeOpening(placed: readonly PlacedCabinet[], refrigeratorUid: str
   return String(total);
 }
 
+/** Inch text for a finding detail ("36.5″"). Rounds to 1/8 in like the bridge opening note. */
+function inches(value: number): string {
+  return `${Math.round(value * 8) / 8}″`;
+}
+
 /** The refrigerator opening the bridge boards create (Tom, Nov 20 2026: to = 37 inches). */
 export const FRIDGE_OPENING_TARGET_IN = 37;
 
