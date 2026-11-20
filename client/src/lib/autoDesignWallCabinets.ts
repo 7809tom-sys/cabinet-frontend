@@ -530,27 +530,31 @@ export function buildAutoDesignWallCabinets(input: {
     if (!placed) skipped.push(`${base.masterCode} corner: no compatible ${height}″ upper corner fits the selected vertex.`);
   }
 
-  // Budget friendly (Tom, Nov 19 2026): an inside 90° corner with no corner base and no corner upper gets
-  // a diagonal corner wall cabinet from the line, seated BEFORE the straight uppers tile so they close
-  // against it. Left to the straight tiler, the uppers run into the corner and the diagonal collides.
+  // Standard and budget (Tom, Nov 20 2026, 4:25 / 4:33 PM CT): an inside 90°
+  // corner with no corner upper gets a diagonal corner wall cabinet from the
+  // line, seated BEFORE the straight uppers tile so they close against it, and
+  // not tied to a seated base. Left to the straight tiler, the uppers run into
+  // the corner and the diagonal collides.
   if (input.diagonalCornerUppers) {
     const diagonals = corners.filter((source) => isDiagonalCornerUpperSource(source));
-    const lowerWalls = new Set(input.placed
+    // Run walls, not "a seated corner base": a blocked base corner still
+    // counts when the range or a cabinet stands on that wall.
+    const runWalls = new Set(input.placed
       .filter((item) => item.placement === "base" || item.placement === "tall" || item.placement === "appliance")
       .map((item) => item.wallId ?? cabinetWall(item, room)));
     const seenVertices = new Set<string>();
     for (const frame of roomWallRunFrames(room)) {
-      if (!lowerWalls.has(frame.id)) continue;
+      if (!runWalls.has(frame.id)) continue;
       for (const at of ["start", "end"] as const) {
         const join = wallRunJoinAt(frame, at, room);
-        if (!join || Math.abs(join.turnDeg - 90) > 0.5 || !lowerWalls.has(join.frame.id)) continue;
+        if (!join || Math.abs(join.turnDeg - 90) > 0.5 || !runWalls.has(join.frame.id)) continue;
         const vertex = at === "start" ? frame.start : frame.end;
         const key = `${Math.round(vertex.x * 8)}:${Math.round(vertex.y * 8)}`;
         if (seenVertices.has(key)) continue;
         seenVertices.add(key);
         if (working.some((item) => cornerUpperCoversVertex(item, vertex))) continue;
         if (diagonals.length === 0) {
-          skipped.push(`Budget friendly: the corner of ${frame.id} and ${join.frame.id} is left without a corner wall cabinet because this line sells no diagonal corner wall cabinet at ${formatInches(height)}.`);
+          skipped.push(`The corner of ${frame.id} and ${join.frame.id} is left without a corner wall cabinet because this line sells no diagonal corner wall cabinet at ${formatInches(height)}.`);
           continue;
         }
         let seatedDiagonal = false;
@@ -559,12 +563,12 @@ export function buildAutoDesignWallCabinets(input: {
           const spot = wallRunCornerPlacement(candidate, frame, at, room);
           if (spot && commit({ ...candidate, ...spot })) {
             seatedDiagonal = true;
-            substitutions.push(`Budget friendly: diagonal corner wall cabinet ${source.masterCode} seated at the corner of ${frame.id} and ${join.frame.id}, so the uppers meet at the corner.`);
+            substitutions.push(`Diagonal corner wall cabinet ${source.masterCode} seated at the corner of ${frame.id} and ${join.frame.id}, so the uppers meet at the corner.`);
             break;
           }
         }
         if (!seatedDiagonal) {
-          skipped.push(`Budget friendly: a diagonal corner wall cabinet does not fit at the corner of ${frame.id} and ${join.frame.id}.`);
+          skipped.push(`A diagonal corner wall cabinet does not fit at the corner of ${frame.id} and ${join.frame.id}.`);
         }
       }
     }
