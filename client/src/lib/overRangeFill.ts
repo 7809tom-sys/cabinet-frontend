@@ -23,10 +23,12 @@
  */
 import {
   appendCollisionFreePlacements,
+  cabinetWall,
   isHoodOverRangePair,
   isMicrowaveOverRangePair,
   isOverRangeMicrowave,
   isRangeOrOven,
+  wallRunFrame,
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
@@ -188,10 +190,16 @@ export function overRangeHasBridge(
   return existingOverRangeBridge(placed, range, room) != null;
 }
 
-/** A WallSide for the range's wall, or null when it is not on a room wall. */
-function rangeWall(range: PlacedCabinet): WallSide | null {
-  const wall = range.wallId;
-  return wall === "top" || wall === "bottom" || wall === "left" || wall === "right" ? wall : null;
+/**
+ * The range's room wall, or null when it is not on one. Wall Builder kitchens
+ * name measured walls `cw_*`, not top/bottom/left/right. Use the same run
+ * ownership as `overRangeBridgePlanFor` (`cabinetWall`) so the mandatory
+ * bridge can hang on those walls. A range with no named room run still has
+ * nowhere to hang a bridge.
+ */
+function rangeWall(range: PlacedCabinet, room: RoomData): WallSide | null {
+  if (range.wallId && wallRunFrame(range.wallId, room)) return cabinetWall(range, room);
+  return null;
 }
 
 const BRIDGE_RULE_ID = "bridge-above-range";
@@ -227,7 +235,7 @@ function seatMandatoryBridge(input: {
   if (existingOverRangeBridge(placed, range, room)) {
     return { placed, added: null, finding: null };
   }
-  const wall = rangeWall(range);
+  const wall = rangeWall(range, room);
   if (!wall) {
     return {
       placed,
