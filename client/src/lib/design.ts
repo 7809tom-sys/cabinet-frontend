@@ -6143,10 +6143,11 @@ export function glassStackerParentPlacement(
   if (stacker.placement !== "wall" || !isStacker(stacker)) return { ok: false, reason: "not-stacker" };
   const anyWall = options?.anyWall === true;
   const side = cabinetWall(stacker, room);
-  const horizontal = side === "top" || side === "bottom";
   const stackerFamily = glassStackerFamily(stacker);
   const stackerWidth = Number(stacker.width);
-  const stackerStart = horizontal ? stacker.x : stacker.y;
+  // Along-run positions come from the run frame, so a custom or angled wall orders its parents
+  // the same way a cardinal side does.
+  const stackerStart = wallRunOffset(stacker, side, room);
   const stackerCenter = stackerStart + stackerWidth / 2;
   const stackerFootprint = placedFootprint(stacker);
   const stackerPlanCenter = { x: stacker.x + stackerFootprint.w / 2, y: stacker.y + stackerFootprint.d / 2 };
@@ -6169,7 +6170,12 @@ export function glassStackerParentPlacement(
   const candidates = placed.filter((parent) => {
     if (parent.uid === stacker.uid || parent.placement !== "wall" || parent.islandFace || isStacker(parent)) return false;
     const parentSide = cabinetWall(parent, room);
-    if (!isAgainstWall(parent, parentSide, room)) return false;
+    // Glass placement is purely dimensional (Tom, Nov 20 2026): a parent is any wall cabinet on
+    // this wall run with a matching width. The old isAgainstWall test only knew the room's
+    // bounding box, so it rejected every custom or angled wall. A free-standing peninsula run is
+    // still not a wall (isAgainstWall rejected it too), so no stacker goes on a cabinet there.
+    if (peninsulaRunById(room, parentSide)) return false;
+    // Same run means the same wall id (string equality works for any run id).
     if (!anyWall && parentSide !== side) return false;
     if (Math.abs(Number(parent.width) - stackerWidth) > 0.5) return false;
     const parentFamily = glassStackerFamily(parent);
@@ -6193,8 +6199,8 @@ export function glassStackerParentPlacement(
         };
         return planDistance(left.parent) - planDistance(right.parent);
       }
-      const leftStart = horizontal ? left.parent.x : left.parent.y;
-      const rightStart = horizontal ? right.parent.x : right.parent.y;
+      const leftStart = wallRunOffset(left.parent, side, room);
+      const rightStart = wallRunOffset(right.parent, side, room);
       return Math.abs(leftStart + Number(left.parent.width) / 2 - stackerCenter) - Math.abs(rightStart + Number(right.parent.width) / 2 - stackerCenter);
     })
     .map((entry) => entry.parent);
@@ -6204,13 +6210,13 @@ export function glassStackerParentPlacement(
     // Each parent is measured on ITS wall (a catalog click can pick a parent
     // on a different wall than the placeholder spot).
     const parentSide = cabinetWall(parent, room);
-    const parentHorizontal = parentSide === "top" || parentSide === "bottom";
-    const wallLengthIn = Math.max(1, parentHorizontal ? room.width : room.depth);
+    // The ceiling is read along the PARENT's own run frame (its wall id, its length and its
+    // offset), not the room's bounding box, so custom and angled walls get their real ceiling.
+    const wallLengthIn = Math.max(1, wallLength(parentSide, room));
     const parentBox = elevationBox(parent, room);
     const mountBottom = parentBox.bottom + parentBox.height;
-    const footprint = placedFootprint(parent);
-    const start = parentHorizontal ? parent.x : parent.y;
-    const span = parentHorizontal ? footprint.w : footprint.d;
+    const start = wallRunOffset(parent, parentSide, room);
+    const span = wallRunSpan(parent, parentSide, room);
     const ceiling = Math.min(
       wallCeilingAt(room, parentSide, start / wallLengthIn),
       wallCeilingAt(room, parentSide, (start + span) / wallLengthIn),
