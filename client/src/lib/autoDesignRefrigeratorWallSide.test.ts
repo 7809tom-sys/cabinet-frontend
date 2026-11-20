@@ -55,4 +55,48 @@ describe("refrigerator wall side: no panel, no filler (Tom, voice, Nov 19 2026, 
     expect(out.removedUids).toEqual([]);
     expect(out.placed).toEqual(placed);
   });
+
+  it("in standard mode slides a fridge 4 in off a free wall end, strips the wall-side panel and filler, and keeps the open-side panel only", () => {
+    // Diagnosis: fridge start 4 in, 2.75 in gap, then REPV2496 + BFF3, 4 in > old 3 in box reach.
+    const placed = [
+      item("p1", "REPV2496", 2.75, 0.75, { refrigeratorAssemblyId: "fr", refrigeratorAssemblyRole: "left-panel", category: "Panels" } as never),
+      item("f1", "BFF3", 3.5, 0.5, { category: "Accessory", description: "Filler" }),
+      item("fr", "FRIDGE-36", 4, 36, appliance),
+      item("p2", "REPV2496", 40, 0.75, { refrigeratorAssemblyId: "fr", refrigeratorAssemblyRole: "right-panel", category: "Panels" } as never),
+      item("b", "B21", 40.75, 21),
+    ];
+    const out = trimRefrigeratorWallSide({ placed, room: ROOM });
+    expect(out.removedUids.sort()).toEqual(["f1", "p1"]);
+    const fr = out.placed.find((p) => p.uid === "fr")!;
+    const p2 = out.placed.find((p) => p.uid === "p2")!;
+    expect(wallRunOffset(fr, "top", ROOM)).toBeCloseTo(0, 3);
+    expect(wallRunOffset(p2, "top", ROOM)).toBeCloseTo(36, 3);
+    expect(out.placed.some((p) => p.uid === "p2")).toBe(true);
+    expect(out.notes[0]).toMatch(/wall side needs no end panel and no filler/);
+  });
+
+  it("slides a standard-mode fridge across an empty gap of up to 6.05 in and still keeps only the open-side panel", () => {
+    const placed = [
+      item("fr", "FRIDGE-36", 6, 36, appliance),
+      item("p2", "REPV2496", 42, 0.75, { refrigeratorAssemblyId: "fr", refrigeratorAssemblyRole: "right-panel", category: "Panels" } as never),
+      item("b", "B21", 42.75, 21),
+    ];
+    const out = trimRefrigeratorWallSide({ placed, room: ROOM });
+    const fr = out.placed.find((p) => p.uid === "fr")!;
+    const p2 = out.placed.find((p) => p.uid === "p2")!;
+    expect(wallRunOffset(fr, "top", ROOM)).toBeCloseTo(0, 3);
+    expect(wallRunOffset(p2, "top", ROOM)).toBeCloseTo(36, 3);
+    expect(out.placed.some((p) => p.uid === "p2")).toBe(true);
+  });
+
+  it("does not slide a fridge more than 6.05 in off the wall", () => {
+    const placed = [
+      item("p1", "REPV2496", 6.5, 0.75, { refrigeratorAssemblyId: "fr", refrigeratorAssemblyRole: "left-panel", category: "Panels" } as never),
+      item("fr", "FRIDGE-36", 7.25, 36, appliance),
+      item("p2", "REPV2496", 43.25, 0.75, { refrigeratorAssemblyId: "fr", refrigeratorAssemblyRole: "right-panel", category: "Panels" } as never),
+    ];
+    const out = trimRefrigeratorWallSide({ placed, room: ROOM });
+    expect(out.removedUids).toEqual([]);
+    expect(wallRunOffset(out.placed.find((p) => p.uid === "fr")!, "top", ROOM)).toBeCloseTo(7.25, 3);
+  });
 });
