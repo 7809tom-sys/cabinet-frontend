@@ -25,7 +25,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { designStyleIds, designerGateRenderHex, kitchenAcceptedFaceImage, resolveKitchenDoorColor, withAcceptedAppearance, type AcceptedAppearanceRow } from "@/lib/acceptedDoorAppearance";
+import { useDoorImageHexVersion } from "@/lib/doorImageHexCache";
+import { designStyleIds, designerGateRenderHex, doorImageUrlsForStyles, kitchenAcceptedFaceImage, resolveKitchenDoorColor, withAcceptedAppearance, type AcceptedAppearanceRow } from "@/lib/acceptedDoorAppearance";
 import { useAcceptedDoorAppearance } from "@/lib/acceptedAppearanceQuery";
 import { useStableFaceCrop } from "@/lib/stableFaceCrop";
 import { DoorStyleEditButton } from "@/components/design/DoorStyleEditButton";
@@ -326,6 +327,7 @@ import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSi
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { autoDesignRunNotice, overRangeDefaultedFinding, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
 import { ensureDrawerBase } from "@/lib/autoDesignDrawerRule";
+import { dropWallCabinetsWithoutWall, noWallCabinetFinding } from "@/lib/designerBounds";
 import { autoBuildCornerCatalog, autoDesignAngledNeighborWallIds, autoDesignCornerSlotPoint, autoDesignCornerSlots, autoDesignExcludedEngineWallIds, autoDesignLayoutUsesWall, autoDesignRunWallIds, type AutoBuildCornerCandidate, type AutoDesignCornerChoice, type AutoDesignCornerSlot } from "@/lib/autoDesignCornerStage";
 import { evaluateAutoDesignCornerFit, type AutoDesignCornerFit } from "@/lib/cornerFit";
 import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
@@ -5391,6 +5393,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
     });
     working = upperResult.placed;
+    // An upper needs a real wall behind it, never a peninsula or island (the second pass sees the peninsula bases).
+    const stageNoWall = dropWallCabinetsWithoutWall(working, room);
+    if (stageNoWall.dropped.length) {
+      working = stageNoWall.placed;
+      reviewFindings.push(noWallCabinetFinding(stageNoWall.dropped));
+    }
     const finishedRules = applyDesignerLayoutRules({
       placed: working, room, openings: stageOpenings, fillers: catalogFillers,
       makeUid, styleId: styleIdRef.current ?? null,
@@ -5404,6 +5412,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     });
     working = stageGlass.placed;
     reviewFindings.push(...stageGlass.findings);
+    const stageGlassNoWall = dropWallCabinetsWithoutWall(working, room);
+    if (stageGlassNoWall.dropped.length) {
+      working = stageGlassNoWall.placed;
+      reviewFindings.push(noWallCabinetFinding(stageGlassNoWall.dropped));
+    }
     const stageCrownPick = autoDesignTrimFromIntake(stage.input.intake).crown;
     if (stageCrownPick) {
       trimOverride.current.crown = true;
@@ -6620,13 +6633,25 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     ),
     [acceptedAppearance.rows],
   );
+  // The checkmarked door image is the door color (Tom, Nov 20 2026). Sample the
+  // uploaded sample and the Approved AI picture of every style this plan uses;
+  // the version bumps when a color arrives so the door colors recompute.
+  const doorImageUrls = useMemo(
+    () => doorImageUrlsForStyles(
+      acceptedAppearanceIds.map((id) => (doorStyles ?? []).find((row) => row.id === id) as never),
+      acceptedAppearanceById,
+    ),
+    [acceptedAppearanceById, acceptedAppearanceIds, doorStyles],
+  );
+  const doorImageHexVersion = useDoorImageHexVersion(doorImageUrls);
   /** Merge the accepted render onto a style row, or leave it alone when none exists. */
   const withAccepted = useCallback(
     <T extends { id?: number | null }>(style: T | null | undefined): T | null | undefined => {
       if (!style || style.id == null) return style;
+      void doorImageHexVersion;
       return withAcceptedAppearance(style as never, acceptedAppearanceById.get(style.id)) as T;
     },
-    [acceptedAppearanceById],
+    [acceptedAppearanceById, doorImageHexVersion],
   );
   const activeStyle = useMemo(
     () => withAccepted(catalogActiveStyle) ?? null,
@@ -17221,8 +17246,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       acceptedRows: acceptedAppearance.rows,
     }),
     // stainTextureVersion: a pre-tinted stain texture arrived, so faces recompute.
+    // doorImageHexVersion: a door image's sampled color arrived, so faces recompute.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [acceptedAppearance.rows, doorStyles, placed, room, designStyleId, stainTextureVersion],
+    [acceptedAppearance.rows, doorStyles, placed, room, designStyleId, stainTextureVersion, doorImageHexVersion],
   );
   const threeDCabinetDoorProfiles = useMemo(
     () => Object.fromEntries(threeDStyleAssignments.flatMap((assignment) => {

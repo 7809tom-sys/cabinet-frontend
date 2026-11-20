@@ -85,24 +85,37 @@ describe("Auto Design glass stackers above the uppers", () => {
   });
 });
 
-// Rule 1b (Tom, Nov 18 2026, 11:22 AM CT): "If a run of uppers cannot be filled 100%
-// with glass cabinets, do not put any glass cabinets in that run at all. No partial glass."
-describe("Rule 1b: no partial glass in a run of uppers", () => {
+// Rule 1b (Tom, Nov 18 2026) said no partial glass in a run. Tom superseded it on Nov 20 2026
+// (sample-drawing review): glass is decided PER UPPER. Every upper that has a same-width
+// stacker gets one; the uppers with none keep their solid doors and are named in one info finding.
+describe("Glass is decided per upper (Rule 1b superseded, Tom, Nov 20 2026)", () => {
   it("a run that can be 100% glass gets a glass stacker on every upper", () => {
     const result = applyGlassUpperPreference({ placed: plan(), wallCatalog: WALL, intake: GLASS, room: room(108), wallHeightIn: 30 });
     expect(result.stackers.map((item) => item.stackedOnCabinetUid).sort()).toEqual(["u1", "u2"]);
   });
 
-  it("a run with one upper that has no glass stacker (W-39-30) gets no glass at all, and the finding names the run and the blocker", () => {
+  it("a run with one upper that has no glass stacker (W-39-30): its neighbours still get glass, and one info finding names the blocker", () => {
     const placed = [...plan(), upper("W-39-30", 36, "u3")];
+    const result = applyGlassUpperPreference({ placed, wallCatalog: WALL, intake: GLASS, room: room(108), wallHeightIn: 30 });
+    expect(result.stackers.map((item) => item.stackedOnCabinetUid).sort()).toEqual(["u1", "u2"]);
+    // The 39 in upper keeps its solid door and gets no stacker.
+    expect(result.stackers.some((item) => item.stackedOnCabinetUid === "u3")).toBe(false);
+    expect(result.findings.some((entry) => entry.code === "preference-glass-run-plain")).toBe(false);
+    const finding = result.findings.find((entry) => entry.code === "preference-glass-partial");
+    expect(finding?.severity).toBe("info");
+    expect(finding?.detail).toMatch(/W-39-30 \(this line sells no 12″, 15″ or 18″ glass stacker 39″ wide\)/);
+  });
+
+  it("a run where no upper has a stacker stays plain, and the warning names the run and the blocker", () => {
+    const placed = [upper("W-39-30", 0, "m1")];
     const result = applyGlassUpperPreference({ placed, wallCatalog: WALL, intake: GLASS, room: room(108), wallHeightIn: 30 });
     expect(result.stackers).toEqual([]);
     expect(result.placed.some((item) => isStacker(item))).toBe(false);
     const finding = result.findings.find((entry) => entry.code === "preference-glass-run-plain");
-    expect(finding?.detail).toMatch(/W2430 \+ W1230 \+ W-39-30\) stays plain because of W-39-30 \(this line sells no 12″, 15″ or 18″ glass stacker 39″ wide\)/);
+    expect(finding?.detail).toMatch(/\(W-39-30\) stays plain because of W-39-30 \(this line sells no 12″, 15″ or 18″ glass stacker 39″ wide\)/);
   });
 
-  it("another run on the same wall, past an open break, stays 100% glass", () => {
+  it("another run on the same wall, past an open break, still gets glass", () => {
     // W-39-30 at 0–39 is its own run; a 21 in window gap; W2430 + W1230 at 60–96 is another.
     const placed = [upper("W-39-30", 0, "m1"), upper("W2430", 60, "g1"), upper("W1230", 84, "g2")];
     const result = applyGlassUpperPreference({ placed, wallCatalog: WALL, intake: GLASS, room: room(108), wallHeightIn: 30 });

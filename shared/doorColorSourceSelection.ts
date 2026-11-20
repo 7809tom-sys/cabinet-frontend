@@ -361,6 +361,75 @@ export function styleWithChosenColorHex<T extends { renderHex?: string | null; a
   return hex ? { ...style, renderHex: hex, approvedVersionId: null } : style;
 }
 
+// ── The checkmark decides the door color (Tom, Nov 20 2026, voice) ──────────────
+
+export type CheckedDoorImageInput = DoorColorSourceServerFields & AcceptedAiAvailability & {
+  id?: number | string | null;
+  renderHex?: string | null;
+  doorSampleImageUrl?: string | null;
+  thumbnailImageUrl?: string | null;
+  checkedDoorSource?: "uploaded-sample" | "ai-image" | "hex" | "sherwin-williams" | null;
+  uploadedSampleHex?: string | null;
+  aiImageHex?: string | null;
+};
+
+/** Reads a sampled color for an image URL (the browser cache), or null when not sampled yet. */
+export type DoorImageHexReader = (url: string) => string | null | undefined;
+
+/** The uploaded sample photo: the door sample, else the thumbnail. */
+export function uploadedSampleUrl(style: CheckedDoorImageInput | null | undefined): string | null {
+  return (style?.doorSampleImageUrl ?? "").trim() || (style?.thumbnailImageUrl ?? "").trim() || null;
+}
+
+/**
+ * Which source carries the checkmark. "Approved AI image" with no AI picture falls
+ * back to the uploaded sample, which is what the picker shows in that case.
+ */
+export function checkedDoorSourceFor(
+  style: CheckedDoorImageInput | null | undefined,
+  storage?: ReadStorage,
+): CheckedDoorImageInput["checkedDoorSource"] {
+  if (!style) return null;
+  const selection = storage === undefined ? selectionForStyle(style) : selectionForStyle(style, storage);
+  if (!selection) return null;
+  if (selection.source === "hex" || selection.source === "sherwin-williams") return selection.source;
+  if (selection.source === "approved-ai-image" && hasApprovedAiImage(style)) return "ai-image";
+  return "uploaded-sample";
+}
+
+/**
+ * The style as every door-color reader should see it: which source is checkmarked,
+ * and the colors of the two door images, taken from the images themselves.
+ *
+ * - uploadedSampleHex: the browser sample of the uploaded sample photo.
+ * - aiImageHex: for a saved Gemini picture (the official AI image), the browser
+ *   sample of that picture, else the render hex PR 475 sampled when it was chosen.
+ *   An accepted render keeps its own layer (its derived color) in the resolver.
+ *
+ * Nothing is invented: an image nobody has sampled yet gives null. Fields already
+ * on the style win, so calling this twice changes nothing.
+ */
+export function styleWithCheckedDoorImage<T extends CheckedDoorImageInput>(
+  style: T,
+  sampled?: DoorImageHexReader,
+  storage?: ReadStorage,
+): T {
+  if (!style) return style;
+  const read = (url: string | null | undefined) => {
+    const key = (url ?? "").trim();
+    return key && sampled ? normalizeHex(sampled(key) ?? null) : null;
+  };
+  const tile = aiTilePicture(style);
+  const uploadedSampleHex = normalizeHex(style.uploadedSampleHex) ?? read(uploadedSampleUrl(style));
+  const aiImageHex = normalizeHex(style.aiImageHex)
+    ?? (tile.source === "gemini" ? read(tile.url) ?? normalizeHex(style.renderHex) : null);
+  const checkedDoorSource = style.checkedDoorSource ?? checkedDoorSourceFor(style, storage) ?? null;
+  // Nothing to add: hand the same object back, so memoised readers see no change.
+  if (!checkedDoorSource && !uploadedSampleHex && !aiImageHex
+    && style.checkedDoorSource == null && style.uploadedSampleHex == null && style.aiImageHex == null) return style;
+  return { ...style, checkedDoorSource, uploadedSampleHex, aiImageHex };
+}
+
 // ── Selector state (pure, so the door editor and tests share one behavior) ──────
 
 export type DoorColorSourceDraft = {

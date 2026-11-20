@@ -53,7 +53,9 @@
     "style": "Slate Echo (Ashford)",
     "category": "paint",
     "treatment": "opaque solid",
-    "hex": "#8a9ba8"
+    "hex": "#8f877c",
+    "previousHex": "#8a9ba8",
+    "source": "median of the central panel of the official door sample /manus-storage/media-library/1785773176492_winchester_grey_door_9159daab (sampleDoorImageHex method), Nov 20 2026"
   },
   {
     "id": 330010,
@@ -74,7 +76,9 @@
     "style": "Nimbus Grey (Ashford)",
     "category": "paint",
     "treatment": "opaque solid",
-    "hex": "#9aa8b0"
+    "hex": "#6f6f6f",
+    "previousHex": "#9aa8b0",
+    "source": "median of the central panel of the official door sample /manus-storage/media-library/1785772967276_west_point_grey_door_28d27fa3 (sampleDoorImageHex method), Nov 20 2026"
   },
   {
     "id": 330013,
@@ -195,7 +199,9 @@
     "style": "Slate Gray (Madison)",
     "category": "paint",
     "treatment": "opaque solid",
-    "hex": "#b8c8d0"
+    "hex": "#a4a19e",
+    "previousHex": "#b8c8d0",
+    "source": "median of the central panel of the official door sample /manus-storage/media-library/1785508648171_oxford_mist_door_089b8d4d (sampleDoorImageHex method), Nov 20 2026"
   },
   {
     "id": 330030,
