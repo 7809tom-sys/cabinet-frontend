@@ -14,6 +14,8 @@ import { stackerDraft } from "./glassStackerBulkPlacement";
 import { resolveWallHeightClass } from "./autoDesignWallCabinets";
 
 const HEIGHT_MATCH_IN = 0.5;
+/** The finish skin that makes a stacker read as part of the cabinet under it (Tom, Nov 20 2026). */
+export const GLASS_STACKER_SKIN_THICKNESS_IN = 0.25;
 const WIDTH_MATCH_IN = 0.05;
 
 /**
@@ -212,10 +214,12 @@ function stackerPass(input: {
   const findings: DesignerReviewFinding[] = [];
   const list = (codes: string[]) => Array.from(new Set(codes)).sort().join(", ");
   const plainRuns: string[] = [];
-  // Rule 1b (Tom, Nov 18 2026, 11:22 AM CT): "If a run of uppers cannot be filled
-  // 100% with glass cabinets, do not put any glass cabinets in that run at all. No
-  // partial glass." Every upper in a run must get its own glass stacker, or the
-  // whole run stays plain; other runs that can be 100% glass keep their glass.
+  const partialRuns: string[] = [];
+  // Rule 1b was all-or-nothing (Tom, Nov 18 2026). Superseded on Nov 20 2026 after
+  // the sample-drawing review: the refrigerator bay and the range bridge stayed
+  // plain because one cabinet in the run had no stacker. Glass is now decided per
+  // upper - every upper that has a same-width stacker gets one, and the rest are
+  // named in a single info finding.
   for (const run of autoDesignUpperRuns(placed, parents, input.room)) {
     const picks: PlacedCabinet[] = [];
     const blockers: string[] = [];
@@ -226,8 +230,23 @@ function stackerPass(input: {
       else if (pick.reason === "no-row") blockers.push(`${parent.masterCode} (this line sells no 12″, 15″ or 18″ glass stacker ${inches(Number(parent.width))} wide)`);
       else blockers.push(`${parent.masterCode} (even the shortest stacker would reach ${inches(pick.topIn)}; ceiling ${inches(pick.ceilingIn)})`);
     }
-    if (blockers.length === 0) { stackers.push(...picks); continue; }
-    plainRuns.push(`the ${run.wallId} wall run ${inches(run.start)}–${inches(run.end)} (${run.uppers.map((item) => item.masterCode).join(" + ")}) stays plain because of ${list(blockers)}`);
+    // Glass is decided per upper, not per run (Tom, Nov 20 2026, sample-drawing review):
+    // the refrigerator bay and the range bridge lost their glass because one cabinet in
+    // the run had no stacker. Place every stacker the line sells and name the rest.
+    if (picks.length > 0) stackers.push(...picks);
+    if (blockers.length === 0) continue;
+    const where = `the ${run.wallId} wall run ${inches(run.start)}–${inches(run.end)}`;
+    if (picks.length === 0) plainRuns.push(`${where} (${run.uppers.map((item) => item.masterCode).join(", ")}) stays plain because of ${list(blockers)}`);
+    else partialRuns.push(`${where}: ${list(blockers)}`);
+  }
+  if (partialRuns.length > 0) {
+    findings.push({
+      ruleId: "auto-design-rule-12",
+      code: "preference-glass-partial",
+      severity: "info",
+      title: "Customer pick: Glass cabinets above (partly placed)",
+      detail: `${stackers.length} wall cabinet${stackers.length === 1 ? "" : "s"} took a glass stacker. No stacker exists for ${partialRuns.join("; ")}. Those uppers keep their solid doors.`,
+    });
   }
   if (plainRuns.length > 0) {
     findings.push({
@@ -236,6 +255,42 @@ function stackerPass(input: {
       severity: "warning",
       title: "Customer pick: Glass cabinets above (no partial glass)",
       detail: `${stackers.length > 0 ? `Glass stackers placed above ${stackers.length} wall cabinet${stackers.length === 1 ? "" : "s"} in runs that are 100% glass. ` : ""}A run of uppers that cannot be 100% glass gets no glass at all: ${plainRuns.join("; ")}.`,
+    });
+  }
+  // Glass above a pantry (Tom, Nov 20 2026, sample-drawing review): a tall cabinet
+  // gets the same treatment as an upper - a 12/15/18 in glass stacker of its own width
+  // on top. The stacker is a 12 in deep wall box and the pantry is deeper, so the
+  // difference is reported as a skin the plan still needs rather than silently ignored;
+  // no panel is placed here without the panel rules being settled.
+  const pantryGlass: Array<{ parent: PlacedCabinet; stacker: PlacedCabinet; skinDepthIn: number }> = [];
+  const pantries = placed.filter((item) => String(item.placement) === "tall"
+    && !item.islandFace
+    && item.noDoor !== true
+    && !isFillerItem(item)
+    && !isPanelItem(item)
+    && !isStacker(item)
+    && !occupied.has(item.uid));
+  for (const pantry of pantries) {
+    const top = (Number(pantry.mountBottom) || 0) + (Number(pantry.height) || 0);
+    const pick = pickStackerFor(pantry, placed, input.room, stackerCatalog);
+    if (!pick.ok) continue;
+    if (top + Number(pick.stacker.height) > roomCeiling(input.room) + HEIGHT_MATCH_IN) continue;
+    const stacker = stackerDraft(pantry, pick.stacker, pantry);
+    pantryGlass.push({
+      parent: pantry,
+      stacker,
+      skinDepthIn: Math.max(0, (Number(pantry.depth) || 0) - (Number(stacker.depth) || 0)),
+    });
+  }
+  if (pantryGlass.length > 0) {
+    stackers.push(...pantryGlass.map((entry) => entry.stacker));
+    const needsSkin = pantryGlass.filter((entry) => entry.skinDepthIn > 0.5);
+    findings.push({
+      ruleId: "auto-design-rule-12",
+      code: "preference-glass-pantry",
+      severity: needsSkin.length > 0 ? "info" : "info",
+      title: "Customer pick: Glass cabinets above (pantry)",
+      detail: `${pantryGlass.length} tall cabinet${pantryGlass.length === 1 ? "" : "s"} took a glass stacker on top.${needsSkin.length > 0 ? ` A ${GLASS_STACKER_SKIN_THICKNESS_IN} in skin runs ${needsSkin.map((entry) => inches(entry.skinDepthIn)).filter((value, index, all) => all.indexOf(value) === index).join(" / ")} deep to bring the stacker flush with the pantry front, so the stacker and the pantry read as one cabinet (${needsSkin.map((entry) => entry.parent.masterCode).join(", ")}).` : ""}`,
     });
   }
   if (parents.length === 0) {
@@ -264,10 +319,10 @@ function stackerPass(input: {
  * Glass cabinets above: the regular uppers stay solid and each one gets the
  * line's own same-width glass stacker on top (18, then 15, then 12 in, the
  * tallest that fits under the ceiling). The stackers are real plan items, so
- * the parts list, the price and the 3D view carry them. No partial glass (Tom,
- * Nov 18 2026, 11:22 AM CT): a run with any upper that cannot carry a glass
- * stacker (no same-width row, a blind corner, the ceiling) gets no glass at all,
- * and one visible warning names the run and the cabinet that blocked it.
+ * the parts list, the price and the 3D view carry them. Glass is placed per upper
+ * (Tom, Nov 20 2026): an upper that cannot carry a stacker (no same-width row, a
+ * blind corner, the ceiling) keeps its solid door while its neighbours get glass,
+ * and one info finding names the cabinets that were left plain.
  *
  * One-redraw rule: if the pass throws, it is retried once; a second failure is
  * shown on the review list and the plan keeps its solid uppers.

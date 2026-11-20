@@ -1,4 +1,4 @@
-import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers, normalizeBridgeBoards } from "./bridgeHalfInchFillers";
+import { applyBridgeAreaFillerRule, ensureBridgeHalfInchFillers, isBridgeHalfInchFiller, normalizeBridgeBoards } from "./bridgeHalfInchFillers";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { FRAMELESS_TOP_WALL_HEIGHT_IN } from "./framelessWallTopAlignment";
 import {
@@ -19,6 +19,7 @@ import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { applyLazySusanCornerUppers } from "./autoDesignLazySusanCornerUppers";
 import { applyGlassUpperPreference, autoDesignGlassOffered } from "./autoDesignFormOptions";
+import { autoDesignGlassWidths, onlyGlassCapableUppers, onlyWidthsIn } from "./autoDesignGlassWidths";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -830,6 +831,9 @@ function fmtBridgeOpening(placed: readonly PlacedCabinet[], refrigeratorUid: str
   return String(total);
 }
 
+/** The refrigerator opening the bridge boards create (Tom, Nov 20 2026: to = 37 inches). */
+export const FRIDGE_OPENING_TARGET_IN = 37;
+
 export function runAutoDesignLayout(rawArgs: {
   input: AutoDesignInputs;
   room: RoomData;
@@ -888,7 +892,19 @@ export function runAutoDesignLayout(rawArgs: {
     intake: rawArgs.input.intake, wallCatalog: rawArgs.wallCatalog, room: rawArgs.room,
     wallCabinetHeightIn: rawArgs.input.wallCabinetHeightIn ?? 30,
   });
-  const glassArgs = glassOffered ? { ...rawArgs, wallCatalog: withoutNoGlassUppers(rawArgs.wallCatalog) } : rawArgs;
+  // Glass needs a stacker at the same width (Tom, Nov 20 2026): a width with no
+  // stacker silently costs that upper its glass, and the all-or-nothing rule then
+  // costs the whole run. Filter the uppers the run may pick to glazable widths.
+  // The base run is filtered to the same widths: a base in an unglazable width forces
+  // its upper back out of the glass set, which is how the run lost its glass before.
+  const glassWidths = glassOffered ? autoDesignGlassWidths(rawArgs.wallCatalog) : [];
+  const glassArgs = glassOffered
+    ? {
+        ...rawArgs,
+        wallCatalog: onlyGlassCapableUppers(withoutNoGlassUppers(rawArgs.wallCatalog)),
+        baseCatalog: onlyWidthsIn(rawArgs.baseCatalog, glassWidths),
+      }
+    : rawArgs;
   // Fluted fillers (WFF) are decorative only (Tom, voice, Nov 19 2026, 7:41 AM CT): Auto Design never
   // places one on its own, so they leave every catalog the build picks fillers and panels from.
   const args = {
@@ -2400,6 +2416,34 @@ export function runAutoDesignLayout(rawArgs: {
     allowPlaceholder: Boolean(input.intake),
   });
   working = finalBlindSeal.placed;
+  // Re-assert the bridge boards after every later pass (Tom, Nov 20 2026): the
+  // refrigerator 'wall side needs no panel and no filler' cleanup was stripping one of
+  // the two 1/2 in boards, so a 36 in bridge lost its 37 in opening and the refrigerator
+  // lost the clearance the boards exist to give it. Seal last, like the blind filler.
+  if (refrigerator && !budgetFriendly) {
+    const bridgeReseal = ensureBridgeHalfInchFillers(working, room, args.fillers ?? [], makeUid, args.styleId ?? null);
+    working = bridgeReseal.placed;
+    // Restoring the boards is not the same as proving the opening is right: measure it.
+    const fridgeBridge = working.find((item) => item.refrigeratorAssemblyRole === "bridge");
+    if (fridgeBridge) {
+      const bridgeBoards = working.filter((item) => isBridgeHalfInchFiller(item) && item.fillerForCabinetUid === fridgeBridge.uid);
+      const opening = bridgeBoards.reduce((sum, board) => sum + (Number(board.width) || 0), Number(fridgeBridge.width) || 0);
+      if (Math.abs(opening - FRIDGE_OPENING_TARGET_IN) > 0.05) {
+        reviewFindings.push({
+          ruleId: "refrigerator-opening",
+          code: "refrigerator-opening-not-37",
+          severity: "warning",
+          title: "Refrigerator opening is not 37 in",
+          detail: `${fridgeBridge.masterCode} plus ${bridgeBoards.length} bridge board${bridgeBoards.length === 1 ? "" : "s"} opens ${inches(opening)}; the target is ${FRIDGE_OPENING_TARGET_IN} in (36 in bridge + 1/2 in each side).`,
+          cabinetUid: fridgeBridge.uid,
+          cabinetCode: fridgeBridge.masterCode,
+        });
+      }
+    }
+    if (bridgeReseal.added.length > 0) {
+      notes.push(`Bridge fillers re-sealed after later passes: 1/2 in ${bridgeReseal.added[0]!.masterCode} on each side of the cabinet above the refrigerator, so the opening is 37 in.`);
+    }
+  }
   notes.push(...finalBlindSeal.notes.filter((note) => !notes.includes(note)));
   // 15-rule retile can drop the over-sink bridge; seat it again before leftover
   // gaps and tighten so a full-height upper is never left over the sink.
