@@ -20,7 +20,7 @@ import {
 } from "./autoDesignUpperAlignment";
 import {
   COLLISION_EPSILON_IN, WALL_OPENING_CLEARANCE_IN, appendCollisionFreePlacements,
-  cabinetPlacementCollisionDetail, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall,
+  cabinetPlacementCollisionDetail, cabinetRestsOnRealWall, cabinetWall, dim, footprintDepth, formatEighthInches, formatInches, freeSegmentsOnWall,
   STD, isCornerCabinet, isFillerItem, isPanelItem, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isSinkBaseCabinet, assignBlindCornerDoorSides,
   ordinaryWallMountBottom, placedFootprint, roomWallRunFrames, wallCeilingMin, wallPlacementAt, wallRunCornerPlacement, wallRunFrame, wallRunJoinAt, wallRunOffset,
   wallRunSpan, type DesignCabinet, type PlacedCabinet, type RoomData, type WallOpening, type WallRunFrame,
@@ -572,6 +572,9 @@ export function buildAutoDesignWallCabinets(input: {
 
   for (const lower of input.placed) {
     if (lower.placement !== "base" && lower.placement !== "appliance") continue;
+    // An upper needs a real wall behind it: a base on a peninsula run, an island face or any run that is
+    // not a standard side or drawn wall gets no upper projected over it (Tom, Nov 20 2026).
+    if (!cabinetRestsOnRealWall(lower, room)) continue;
     if (lower.placement === "base" && isSinkBaseCabinet(lower)) {
       // A window over the sink stays clear of uppers. With no window, a short
       // matching-width bridge is seated before this pass, so a full-height
@@ -677,6 +680,8 @@ export function buildAutoDesignWallCabinets(input: {
     };
     const fillers = input.catalogFillers ?? [];
     for (const seam of seams) {
+      // An upper needs a real wall behind it: no seam closing over a peninsula run.
+      if (!isRealWallRun(seam.wall, room)) continue;
       const cover = lowerCoverageOnWall(input.placed, room, seam.wall, input.corners ?? []);
       for (const region of intersectWithCoverage({ start: seam.start, end: seam.end }, cover)) {
         const length = region.end - region.start;
@@ -793,6 +798,12 @@ export function buildAutoDesignWallCabinets(input: {
   return { placed: working, additions: working.filter((item) => uids.has(item.uid)), skipped, substitutions, heightUsedIn };
 }
 
+/** True when `wallId` is a standard side or a drawn wall: a peninsula run has no wall behind it. */
+function isRealWallRun(wallId: string, room: RoomData): boolean {
+  const frame = wallRunFrame(wallId, room);
+  return frame != null && frame.kind !== "peninsula";
+}
+
 /** A Corner Wall diagonal (DCW…): 24 in on each leg, cut on the diagonal. */
 export function isDiagonalCornerUpperSource(source: Pick<DesignCabinet, "masterCode" | "description" | "cornerType">): boolean {
   return source.cornerType === "diagonal"
@@ -840,11 +851,11 @@ function connectUpperRunsWithCornerCabinets(input: {
       .map((item) => item.wallId ?? cabinetWall(item, input.room)),
   );
   for (const frame of roomWallRunFrames(input.room)) {
-    if (!runWalls.has(frame.id)) continue;
+    if (!runWalls.has(frame.id) || frame.kind === "peninsula") continue;
     for (const at of ["start", "end"] as const) {
       const join = wallRunJoinAt(frame, at, input.room);
       if (!join || Math.abs(join.turnDeg - 90) > 0.5) continue;
-      if (!runWalls.has(join.frame.id)) continue;
+      if (!runWalls.has(join.frame.id) || join.frame.kind === "peninsula") continue;
       const vertex = at === "start" ? frame.start : frame.end;
       const key = `${Math.round(vertex.x * 8)}:${Math.round(vertex.y * 8)}`;
       if (seen.has(key)) continue;
@@ -940,10 +951,12 @@ function alignUpperRunsToBases(input: {
     }
     working = trimmed.placed;
   }
+  // Real walls only: a peninsula run has no wall behind it, so no upper closes a gap over it.
   const walls = Array.from(new Set(working
     .filter((item) => item.placement === "wall" || item.placement === "base" || item.placement === "appliance" || item.placement === "tall")
     .map((item) => cabinetWall(item, input.room))
-    .filter(Boolean)));
+    .filter(Boolean)))
+    .filter((wall) => isRealWallRun(wall, input.room));
   for (const wall of walls) {
     if (!input.standard.length) break;
     for (let guard = 0; guard < 8; guard += 1) {

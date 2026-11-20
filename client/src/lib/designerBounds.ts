@@ -12,7 +12,9 @@
  */
 import {
   COLLISION_EPSILON_IN,
+  cabinetRestsOnRealWall,
   cabinetWall,
+  peninsulaRunById,
   placedInsideDrawnRoom,
   wallPlacementAt,
   wallRunFrame,
@@ -21,6 +23,7 @@ import {
   type PlacedCabinet,
   type RoomData,
 } from "./design";
+import type { DesignerReviewFinding } from "./designerReviewFindings";
 
 /** True when the whole body sits inside the room shell (drawn polygon, or the bounding room). */
 export function cabinetInsideRoom(item: PlacedCabinet, room: RoomData): boolean {
@@ -95,4 +98,48 @@ export function boundedWallPlacementAt(
  */
 export function uShapeRunWallLabels(hasWall4: boolean): readonly string[] {
   return hasWall4 ? ["Wall 1", "Wall 2", "Wall 3", "Wall 4"] : ["Wall 1", "Wall 2", "Wall 3"];
+}
+
+/**
+ * Rule: an upper needs a real wall behind it. A wall cabinet is supported only when it sits on a
+ * standard side or a drawn wall (never a peninsula run, an island face or a peninsula face) and is
+ * wholly inside its run and the room. A base or tall cabinet is supported by a real wall OR by a
+ * peninsula run (or an island). Nothing here removes a base: it only names the unsupported ones.
+ */
+export function cabinetHasWallOrPeninsulaSupport(item: PlacedCabinet, room: RoomData): boolean {
+  if (item.placement === "wall") {
+    return cabinetRestsOnRealWall(item, room) && cabinetInsideBounds(item, room);
+  }
+  if (item.islandFace) return true;
+  if (peninsulaRunById(room, item.wallId)) return true;
+  const frame = wallRunFrame(cabinetWall(item, room), room);
+  return frame != null;
+}
+
+/**
+ * Drops every wall cabinet that has no real wall behind it (over a peninsula or island, or past the
+ * wall run or the room) and names each one. Bases, talls and appliances are never removed here.
+ */
+export function dropWallCabinetsWithoutWall(
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+): { placed: PlacedCabinet[]; dropped: PlacedCabinet[] } {
+  const dropped: PlacedCabinet[] = [];
+  const kept = placed.filter((item) => {
+    if (item.placement !== "wall" || cabinetHasWallOrPeninsulaSupport(item, room)) return true;
+    dropped.push(item);
+    return false;
+  });
+  return { placed: dropped.length ? kept : [...placed], dropped };
+}
+
+/** The review finding for wall cabinets removed because no real wall was behind them. */
+export function noWallCabinetFinding(dropped: readonly PlacedCabinet[]): DesignerReviewFinding {
+  return {
+    ruleId: "upper-needs-real-wall",
+    code: "cabinet-without-wall",
+    severity: "warning",
+    title: `${dropped.length} wall cabinet${dropped.length === 1 ? "" : "s"} removed: no wall behind`,
+    detail: `An upper needs a real wall behind it, so these were not kept (over a peninsula or island, or past the wall or room): ${dropped.map((item) => item.masterCode).join(", ")}.`,
+  };
 }
