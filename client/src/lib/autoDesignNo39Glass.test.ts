@@ -71,17 +71,18 @@ describe("no 39 wall cabinet where glass is offered (base-first)", () => {
     expect(result.placed.filter((item) => item.placement === "wall" && !isStacker(item) && is39(item)).map((item) => item.masterCode)).toEqual([]);
   });
 
-  it("uppers line up over the bases: two W2130 over the B42, the B24's upper on its seam, W3630 over B36", () => {
+  // Base widths now follow the glass widths too (PR 474, 76c7857): Aero Solstice sells no 42 in
+  // stacker, so there is no B42 any more and the top wall tiles B36 + B30 with 36 / 27 uppers.
+  it("uppers line up over the bases: W3630 over B36, the B30's upper on its seam, W3630 over B36 and W1230 over B12 on the right wall", () => {
     const { result, room } = run();
     const top = boxes(result.placed, room, "top", isUpper);
     const topBases = boxes(result.placed, room, "top", isStraightBaseBox);
-    const b42 = topBases.find((base) => base.code === "B42")!;
-    const b24 = topBases.find((base) => base.code === "B24")!;
-    const overB42 = top.filter((upper) => upper.start >= b42.start - 0.1 && upper.end <= b42.end + 0.1);
-    expect(overB42.map((upper) => [upper.code, upper.start, upper.end])).toEqual([["W2130", b42.start, b42.start + 21], ["W2130", b42.start + 21, b42.end]]);
-    // the window keeps 3 in clear of the B24's far end; the upper still starts on the B24's seam
-    const overB24 = top.find((upper) => Math.abs(upper.start - b24.start) <= 0.1)!;
-    expect(overB24.code).toBe("W2130");
+    expect(topBases.some((base) => base.code === "B42")).toBe(false);
+    const b36top = topBases.find((base) => base.code === "B36")!;
+    const b30 = topBases.find((base) => base.code === "B30")!;
+    expect(top.find((upper) => Math.abs(upper.start - b36top.start) <= 0.1)).toMatchObject({ code: "W3630", end: b36top.end });
+    // the upper over the B30 starts on its seam
+    expect(top.find((upper) => Math.abs(upper.start - b30.start) <= 0.1)?.code).toBe("W2730");
     // nothing reaches across the seam between two touching straight bases
     const seams = topBases.filter((base, i) => i > 0 && Math.abs(topBases[i - 1]!.end - base.start) <= 0.1).map((base) => base.start);
     expect(seams.length).toBeGreaterThan(0);
@@ -107,14 +108,14 @@ describe("no 39 wall cabinet where glass is offered (base-first)", () => {
     }
   });
 
-  it("a window-clipped 39 in slot over the B42 is W2130 + W1830 with matching stackers, never a 39 or a 36 + filler", () => {
+  it("a window-clipped slot over the first base is a base-width upper with its own stacker, never a 39 or a 36 + filler", () => {
     const { result, room } = run({ sinkCenter: 60 });
     expect(result.placed.filter((item) => item.placement === "wall" && !isStacker(item) && is39(item))).toEqual([]);
-    const b42 = boxes(result.placed, room, "top", isStraightBaseBox).find((base) => base.code === "B42")!;
-    const over = boxes(result.placed, room, "top", isUpper).filter((upper) => upper.start >= b42.start - 0.1 && upper.end <= b42.end + 0.1);
-    expect(over.map((upper) => [upper.code, upper.start, upper.end])).toEqual([["W2130", 0, 21], ["W1830", 21, 39]]);
+    const b30 = boxes(result.placed, room, "top", isStraightBaseBox).find((base) => base.code === "B30")!;
+    const over = boxes(result.placed, room, "top", isUpper).filter((upper) => upper.start >= b30.start - 0.1 && upper.end <= b30.end + 0.1);
+    expect(over.map((upper) => [upper.code, upper.start, upper.end])).toEqual([["W3030", 0, 30]]);
     const stackers = boxes(result.placed, room, "top", (item) => isStacker(item));
-    expect(stackers.map((stk) => [stk.code, stk.start, stk.end])).toEqual(expect.arrayContaining([["W2118GD", 0, 21], ["W1818GD", 21, 39]]));
+    expect(stackers.map((stk) => [stk.code, stk.start, stk.end])).toEqual(expect.arrayContaining([["W3018GD", 0, 30]]));
   });
 
   it("where glass is NOT offered the 39 stays: glass off, or no room for a stacker under the ceiling", () => {
