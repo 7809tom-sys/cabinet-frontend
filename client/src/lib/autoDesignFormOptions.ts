@@ -255,6 +255,42 @@ function stackerPass(input: {
       detail: `${stackers.length > 0 ? `Glass stackers placed above ${stackers.length} wall cabinet${stackers.length === 1 ? "" : "s"} in runs that are 100% glass. ` : ""}A run of uppers that cannot be 100% glass gets no glass at all: ${plainRuns.join("; ")}.`,
     });
   }
+  // Glass above a pantry (Tom, Nov 20 2026, sample-drawing review): a tall cabinet
+  // gets the same treatment as an upper - a 12/15/18 in glass stacker of its own width
+  // on top. The stacker is a 12 in deep wall box and the pantry is deeper, so the
+  // difference is reported as a skin the plan still needs rather than silently ignored;
+  // no panel is placed here without the panel rules being settled.
+  const pantryGlass: Array<{ parent: PlacedCabinet; stacker: PlacedCabinet; skinDepthIn: number }> = [];
+  const pantries = placed.filter((item) => String(item.placement) === "tall"
+    && !item.islandFace
+    && item.noDoor !== true
+    && !isFillerItem(item)
+    && !isPanelItem(item)
+    && !isStacker(item)
+    && !occupied.has(item.uid));
+  for (const pantry of pantries) {
+    const top = (Number(pantry.mountBottom) || 0) + (Number(pantry.height) || 0);
+    const pick = pickStackerFor(pantry, placed, input.room, stackerCatalog);
+    if (!pick.ok) continue;
+    if (top + Number(pick.stacker.height) > roomCeiling(input.room) + HEIGHT_MATCH_IN) continue;
+    const stacker = stackerDraft(pantry, pick.stacker, pantry);
+    pantryGlass.push({
+      parent: pantry,
+      stacker,
+      skinDepthIn: Math.max(0, (Number(pantry.depth) || 0) - (Number(stacker.depth) || 0)),
+    });
+  }
+  if (pantryGlass.length > 0) {
+    stackers.push(...pantryGlass.map((entry) => entry.stacker));
+    const needsSkin = pantryGlass.filter((entry) => entry.skinDepthIn > 0.5);
+    findings.push({
+      ruleId: "auto-design-rule-12",
+      code: "preference-glass-pantry",
+      severity: needsSkin.length > 0 ? "info" : "info",
+      title: "Customer pick: Glass cabinets above (pantry)",
+      detail: `${pantryGlass.length} tall cabinet${pantryGlass.length === 1 ? "" : "s"} took a glass stacker on top.${needsSkin.length > 0 ? ` A ${needsSkin.map((entry) => `${inches(entry.skinDepthIn)} skin`).filter((value, index, all) => all.indexOf(value) === index).join(" / ")} is needed to bring the stacker flush with the pantry front (${needsSkin.map((entry) => entry.parent.masterCode).join(", ")}).` : ""}`,
+    });
+  }
   if (parents.length === 0) {
     findings.push({
       ruleId: "auto-design-rule-12",
