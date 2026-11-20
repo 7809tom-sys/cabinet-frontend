@@ -259,6 +259,10 @@ export function fillerRuleViolation(input: {
   // Rich's bridge rule (Tom, Nov 19 2026): the two 1/2" boards beside a refrigerator bridge are required, so they are
   // never an "open side" or "against a panel" violation, whatever stands beside them when the pass runs.
   if (isBridgeAreaFiller(filler)) return null;
+  // Budget economic corner (Tom, Nov 19 2026): the 3" mitered filler on each leg (base and upper) faces the open 24" corner
+  // void on purpose, so it is never an "open side" violation. Without this the engine placed them and this rule deleted them
+  // again (applyDesignerLayoutRules, 3D render). Matches the `economy-corner:` group id (base and :wall upper).
+  if (typeof filler.fillerPieceGroupId === "string" && filler.fillerPieceGroupId.startsWith("economy-corner:")) return null;
   // A wall blind corner's 3-inch face board is drawn by its owner cabinet and
   // has no independent footprint. It is not a placed seam board.
   if (filler.integratedWallBlindFiller === true) return null;
