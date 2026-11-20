@@ -19,7 +19,7 @@ import { seatAutoDesignCornerFromCatalog } from "./autoDesignCornerPlacement";
 import { matchUppersToBases } from "./autoDesignUpperMatch";
 import { applyLazySusanCornerUppers } from "./autoDesignLazySusanCornerUppers";
 import { applyGlassUpperPreference, autoDesignGlassOffered } from "./autoDesignFormOptions";
-import { onlyGlassCapableUppers } from "./autoDesignGlassWidths";
+import { autoDesignGlassWidths, onlyGlassCapableUppers, onlyWidthsIn } from "./autoDesignGlassWidths";
 import { ensureRequiredBlindCornerBaseFillers, isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { reviewNkbaPlan } from "./nkbaLandingRules";
 import { reviewCountertopPanelClashes } from "./countertopPanelRule";
@@ -892,8 +892,15 @@ export function runAutoDesignLayout(rawArgs: {
   // Glass needs a stacker at the same width (Tom, Nov 20 2026): a width with no
   // stacker silently costs that upper its glass, and the all-or-nothing rule then
   // costs the whole run. Filter the uppers the run may pick to glazable widths.
+  // The base run is filtered to the same widths: a base in an unglazable width forces
+  // its upper back out of the glass set, which is how the run lost its glass before.
+  const glassWidths = glassOffered ? autoDesignGlassWidths(rawArgs.wallCatalog) : [];
   const glassArgs = glassOffered
-    ? { ...rawArgs, wallCatalog: onlyGlassCapableUppers(withoutNoGlassUppers(rawArgs.wallCatalog)) }
+    ? {
+        ...rawArgs,
+        wallCatalog: onlyGlassCapableUppers(withoutNoGlassUppers(rawArgs.wallCatalog)),
+        baseCatalog: onlyWidthsIn(rawArgs.baseCatalog, glassWidths),
+      }
     : rawArgs;
   // Fluted fillers (WFF) are decorative only (Tom, voice, Nov 19 2026, 7:41 AM CT): Auto Design never
   // places one on its own, so they leave every catalog the build picks fillers and panels from.

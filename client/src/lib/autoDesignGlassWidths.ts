@@ -51,6 +51,23 @@ export function autoDesignGlassWidths(wallCatalog: readonly DesignCabinet[]): nu
  * Drop the straight uppers whose width has no stacker. Returns the catalog unchanged
  * when the line sells no stackers at all, so a non-glass line is never affected.
  */
+/**
+ * Keep only rows whose width the line can glaze (bases must mirror their uppers, so a
+ * base in an unglazable width drags its upper back out of the glass set).
+ * Rows with no usable width are kept: a filler or a corner is not a width choice.
+ */
+export function onlyWidthsIn(
+  catalog: readonly DesignCabinet[],
+  widths: readonly number[],
+): DesignCabinet[] {
+  if (widths.length === 0) return [...catalog];
+  return catalog.filter((row) => {
+    const width = widthOf(row);
+    if (width <= 0) return true;
+    return widths.some((wanted) => Math.abs(wanted - width) <= WIDTH_MATCH_IN);
+  });
+}
+
 export function onlyGlassCapableUppers(wallCatalog: readonly DesignCabinet[]): DesignCabinet[] {
   const widths = autoDesignGlassWidths(wallCatalog);
   if (widths.length === 0) return [...wallCatalog];
