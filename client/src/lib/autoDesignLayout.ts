@@ -2413,6 +2413,17 @@ export function runAutoDesignLayout(rawArgs: {
     allowPlaceholder: Boolean(input.intake),
   });
   working = finalBlindSeal.placed;
+  // Re-assert the bridge boards after every later pass (Tom, Nov 20 2026): the
+  // refrigerator 'wall side needs no panel and no filler' cleanup was stripping one of
+  // the two 1/2 in boards, so a 36 in bridge lost its 37 in opening and the refrigerator
+  // lost the clearance the boards exist to give it. Seal last, like the blind filler.
+  if (refrigerator && !budgetFriendly) {
+    const bridgeReseal = ensureBridgeHalfInchFillers(working, room, args.fillers ?? [], makeUid, args.styleId ?? null);
+    working = bridgeReseal.placed;
+    if (bridgeReseal.added.length > 0) {
+      notes.push(`Bridge fillers re-sealed after later passes: 1/2 in ${bridgeReseal.added[0]!.masterCode} on each side of the cabinet above the refrigerator, so the opening is 37 in.`);
+    }
+  }
   notes.push(...finalBlindSeal.notes.filter((note) => !notes.includes(note)));
   // 15-rule retile can drop the over-sink bridge; seat it again before leftover
   // gaps and tighten so a full-height upper is never left over the sink.
