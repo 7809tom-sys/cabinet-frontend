@@ -89,12 +89,21 @@ describe("Budget friendly sink base pick (smallest, lowest-priced double-bowl si
     expect(pickBudgetSinkBase({ baseCatalog: only30, lineSinkProducts: sinkRows, priceByCabinetId: REAL_330014 })).toBeNull();
   });
 
-  it("engine, budget on: a measured SB30 request becomes SB36, with the sink-base note, and the lowest-priced double sink is still picked", () => {
+  it("engine, budget on: a measured SB30 request keeps SB30S (the cheapest base is a different width, so nothing moves) and the note names SB36", () => {
     const r = build(true, 30);
     expect(r.ok).toBe(true);
     const codes = r.placed.map((p: any) => p.masterCode);
-    expect(codes).toContain("SB36");
-    expect(codes).not.toContain("SB30S");
+    expect(codes).toContain("SB30S");
+    expect(codes).not.toContain("SB36");
+    expect(r.notes.some((n: string) => /smallest sink base that takes the lowest-priced double-bowl sink is SB36 \(36″\), but your plan places a 30″ sink base/.test(n))).toBe(true);
+    expect(r.notes.some((n: string) => /sink base was picked for you/.test(n))).toBe(false);
+    expect(r.notes.some((n: string) => /PL-VS5050 18g.*\$119\.97.*double-bowl/.test(n) || /double-bowl/.test(n))).toBe(true);
+  });
+
+  it("engine, budget on: a measured SB36 request takes the picked SB36 with the sink-base note", () => {
+    const r = build(true, 36);
+    expect(r.ok).toBe(true);
+    expect(r.placed.map((p: any) => p.masterCode)).toContain("SB36");
     expect(r.notes.some((n: string) => /^Budget friendly: the sink base was picked for you, no question asked: SB36, 36″, \$327\.41/.test(n))).toBe(true);
     expect(r.notes.some((n: string) => /PL-VS5050 18g.*\$119\.97.*double-bowl/.test(n))).toBe(true);
   });
