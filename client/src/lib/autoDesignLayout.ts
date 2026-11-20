@@ -2057,11 +2057,22 @@ export function runAutoDesignLayout(rawArgs: {
     placed: working, room, openings: stageOpenings, catalog: [...stage.wallPool],
     wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
-    // Budget friendly standing rule: a diagonal corner wall cabinet in any empty inside upper corner.
-    diagonalCornerUppers: hasPreference(stage.input.intake, "budget-friendly"),
+    // Standard and budget (Tom, Nov 20 2026, 4:25 / 4:33 PM CT): a diagonal
+    // corner wall cabinet (DCW) at every empty inside 90° upper corner, seated
+    // before the straight uppers tile, not tied to a seated base.
+    diagonalCornerUppers: true,
   });
   working = upperResult.placed;
   notes.push(...upperResult.substitutions);
+  for (const reason of upperResult.skipped) {
+    reviewFindings.push({
+      ruleId: "corner-first-least-waste",
+      code: "upper-skip",
+      severity: "warning",
+      title: "Upper review",
+      detail: reason,
+    });
+  }
   // The refrigerator end panels are a hard stop for the UPPER layer too. The
   // floor layer is clamped inside `applyDesignerLayoutRules`, but the wall
   // cabinets and their fillers are tiled after that, which is how a 24" upper

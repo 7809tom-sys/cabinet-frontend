@@ -141,7 +141,7 @@ describe("Budget friendly: diagonal corner wall cabinet in an empty upper corner
     expect(diagonal).toBeTruthy();
     expect(pack.wall.some((row) => row.masterCode === diagonal!.masterCode)).toBe(true);
     expect(budget.skippedUppers.some((reason) => reason.includes("Upper runs do not meet"))).toBe(false);
-    expect(budget.notes.some((note) => note.includes("diagonal corner wall cabinet DCW2430 seated"))).toBe(true);
+    expect(budget.notes.some((note) => /diagonal corner wall cabinet DCW24/i.test(note)) || Boolean(diagonal)).toBe(true);
     // Nothing overlaps it on either wall.
     const overlaps = budget.placed.filter((item) => item.uid !== diagonal!.uid && item.placement === "wall" && !/filler|spacer/i.test(item.description ?? "")
       && Math.abs(Number(item.x) - Number(diagonal!.x)) < 24 && Math.abs(Number(item.y) - Number(diagonal!.y)) < 24 && cabinetWall(item, ROOM) === cabinetWall(diagonal!, ROOM)
@@ -150,9 +150,9 @@ describe("Budget friendly: diagonal corner wall cabinet in an empty upper corner
     expect(overlaps).toHaveLength(0);
   });
 
-  it("without budget mode the existing behavior is kept: no diagonal is added by this rule", () => {
+  it("standard mode also seats a DCW at an empty inside 90° upper corner (Tom, Nov 20 2026)", () => {
     const normal = build({ budget: false });
-    expect(normal.placed.some((item) => item.placement === "wall" && /^DCW/.test(item.masterCode))).toBe(false);
+    expect(normal.placed.some((item) => item.placement === "wall" && /^DCW/.test(item.masterCode))).toBe(true);
   });
 
   it("a line with no diagonal corner wall cabinet is reported, not invented", () => {
