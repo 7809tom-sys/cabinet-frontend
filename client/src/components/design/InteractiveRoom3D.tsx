@@ -32,7 +32,7 @@ import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, wallOpenShelfExposedHand, normalizeWallOpenShelfMounts, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, wallOpenShelfExposedHand, normalizeWallOpenShelfMounts, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, wallCabinetTopLine, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import { removeIllegalFillers } from "@/lib/fillerPlacementRule";
@@ -10957,6 +10957,8 @@ export type BacksplashHeightMode = "standard" | "full-height";
 export const THREE_D_BACKSPLASH_TILE_SIZE_IN = 12;
 /** A bare wall strip no wider than this beside a tiled run, a tall unit or an inside corner is tiled so the field reads as one. */
 export const THREE_D_BACKSPLASH_BRIDGE_GAP_IN = 12;
+/** A drawn wall no longer than this that has any counter or upper against it is tiled end to end (short 45-degree returns). */
+export const THREE_D_BACKSPLASH_SHORT_WALL_IN = 36;
 /** Planes sit this far off the wall face. A shared corner insets each run by the same amount so the two tiles meet without overlap. */
 export const THREE_D_BACKSPLASH_FACE_INSET_IN = 0.07;
 
@@ -11120,6 +11122,33 @@ export function threeDBacksplashRenderInterval(
 }
 
 /**
+ * A true corner cabinet (diagonal, L, corner drawer, quarter-octagon end) is seated on one drawn wall
+ * but its body also backs onto the wall that meets it at the shared vertex. That return wall carries
+ * the counter, so it is tiled for the cabinet's leg length from the vertex instead of staying bare.
+ */
+function threeDDrawnCornerWrapSpans(cabinet: PlacedCabinet, side: string, room: RoomData) {
+  const kind = placedCornerGeometryKind(cabinet);
+  if (kind !== "l-shape" && kind !== "diagonal" && kind !== "corner-drawer" && kind !== "base-end") return [];
+  const ownerId = cabinetWall(cabinet, room);
+  if (ownerId === side || threeDBacksplashSideIsCardinal(ownerId)) return [];
+  const owner = wallRunFrame(ownerId, room);
+  const target = wallRunFrame(side, room);
+  if (!owner || !target) return [];
+  const run = threeDWallRunSpan(cabinet, ownerId, room);
+  const leg = Math.max(0, placedFootprint(cabinet).w);
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y) <= 1;
+  const vertices: Array<{ x: number; y: number }> = [];
+  if (run.start <= 1) vertices.push(owner.start);
+  if (run.end >= owner.length - 1) vertices.push(owner.end);
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const vertex of vertices) {
+    if (near(target.start, vertex)) spans.push({ start: 0, end: Math.min(leg, target.length) });
+    else if (near(target.end, vertex)) spans.push({ start: Math.max(0, target.length - leg), end: target.length });
+  }
+  return spans;
+}
+
+/**
  * True folded/diagonal corner cabinets are ground-level countertop supports on
  * both wall-facing legs, so the backsplash must wrap around the corner instead
  * of leaving the adjoining wall blank. A blind corner is rectangular, but the
@@ -11132,7 +11161,8 @@ export function threeDBacksplashSupportSpans(cabinet: PlacedCabinet, side: strin
   // Drawn walls are not the four room sides. Tile the cabinet's own along-wall
   // run on the wall it belongs to, including a corner cabinet's owning leg.
   if (!threeDBacksplashSideIsCardinal(side)) {
-    return cabinetWall(cabinet, room) === side ? [threeDWallRunSpan(cabinet, side, room)] : [];
+    if (cabinetWall(cabinet, room) === side) return [threeDWallRunSpan(cabinet, side, room)];
+    return threeDDrawnCornerWrapSpans(cabinet, side, room);
   }
 	const cornerKind = placedCornerGeometryKind(cabinet);
 	const wrapsCornerLegs = cornerKind === "l-shape" || cornerKind === "diagonal" || cornerKind === "corner-drawer";
@@ -11192,6 +11222,7 @@ export function threeDBacksplashCoverageIntervals(
   placed: readonly PlacedCabinet[],
   room: RoomData,
   side: string,
+  openings: readonly WallOpening[] = [],
 ): Array<{ start: number; end: number }> {
   const wallItems = placed.filter((cabinet) => !cabinet.islandFace && cabinetWall(cabinet, room) === side);
   const supportIntervals = mergeThreeDIntervals(placed.flatMap((cabinet) =>
@@ -11200,12 +11231,25 @@ export function threeDBacksplashCoverageIntervals(
   const wallCabinetIntervals = mergeThreeDIntervals(wallItems
     .filter((cabinet) => cabinet.placement === "wall")
     .map((cabinet) => threeDWallRunSpan(cabinet, side, room)));
-  const merged = mergeThreeDIntervals([...supportIntervals, ...wallCabinetIntervals]);
-  if (!threeDBacksplashSideIsCardinal(side) || merged.length === 0) return merged;
-  // Real tile is one continuous field: a short bare strip beside a refrigerator, tall unit or inside corner,
-  // or between two tiled runs, is tiled too. Larger openings stay open.
+  const counterRuns = mergeThreeDIntervals([...supportIntervals, ...wallCabinetIntervals]);
+  if (counterRuns.length === 0) return counterRuns;
   const bridgeIn = THREE_D_BACKSPLASH_BRIDGE_GAP_IN;
+  // A window over or beside the counter run keeps its strip of tile between counter and sill, across the
+  // whole opening: the window cut later removes only the glass area, never the span below the sill.
+  const windowSpans = openings
+    .filter((opening) => opening.side === side && opening.sill > 0.5)
+    .map((opening) => ({ start: opening.offset, end: opening.offset + opening.width }))
+    .filter((span) => counterRuns.some((run) => span.start <= run.end + bridgeIn && span.end >= run.start - bridgeIn));
+  const merged = mergeThreeDIntervals([...counterRuns, ...windowSpans]);
+  // Real tile is one continuous field: a short bare strip beside a refrigerator, tall unit or inside corner,
+  // or between two tiled runs, is tiled too, on drawn and 45-degree walls the same as on the four sides.
+  // Larger openings stay open.
   const wallLen = wallLength(side, room);
+  if (!threeDBacksplashSideIsCardinal(side) && wallLen > 0 && wallLen <= THREE_D_BACKSPLASH_SHORT_WALL_IN) {
+    // A short drawn return (typically a 45-degree wall beside the range wall) with any counter or upper on it
+    // is tiled end to end; fridges, tall units and openings still cut their own area afterwards.
+    return [{ start: 0, end: wallLen }];
+  }
   const tallStops = wallItems
     .filter((cabinet) => cabinet.placement === "tall" || isRefrigerator(cabinet))
     .map((cabinet) => threeDWallRunSpan(cabinet, side, room));
@@ -11239,7 +11283,7 @@ export function threeDBacksplashSegments(
   const segments: ThreeDBacksplashSegment[] = [];
   for (const side of sides) {
     const wallItems = placed.filter((cabinet) => !cabinet.islandFace && cabinetWall(cabinet, room) === side);
-    const supportIntervals = threeDBacksplashCoverageIntervals(placed, room, side);
+    const supportIntervals = threeDBacksplashCoverageIntervals(placed, room, side, openings);
 		const rangeIntervals = mergeThreeDIntervals(wallItems.flatMap((cabinet) => {
 			if (cabinet.islandFace || cabinetWall(cabinet, room) !== side || cabinet.placement !== "appliance") return [];
 			return isRangeOrOven(cabinet.masterCode, cabinet.description) ? [threeDWallRunSpan(cabinet, side, room)] : [];
@@ -11258,6 +11302,9 @@ export function threeDBacksplashSegments(
       })),
 	      ...placed.flatMap((cabinet) => {
 	        if (cabinet.islandFace || cabinetWall(cabinet, room) !== side) return [];
+	        // The hood hangs in front of the wall. The canopy tapers to a narrow chimney, so tile runs behind it
+	        // instead of leaving a bare patch where the hood's bounding box is.
+	        if (isRangeHoodPlacement(cabinet)) return [];
 	        const box = elevationBox(cabinet, room);
 	        const raisedAppliance = cabinet.placement === "appliance" && box.bottom > countertopTop;
 	        const floorTallAppliance = cabinet.placement === "appliance" && box.bottom <= 0.5 && !threeDSupportsBacksplash(cabinet, room);
@@ -11274,13 +11321,32 @@ export function threeDBacksplashSegments(
       top: heightMode === "full-height" ? ceilingTop : standardTop,
     }));
     if (heightMode === "standard") {
-      for (const range of rangeIntervals) {
-        const matchingHoodBottom = hoodIntervals
-          .filter((hood) => hood.end > range.start + 0.001 && hood.start < range.end - 0.001)
-          .map((hood) => hood.bottom)
-          .sort((a, b) => a - b)[0];
-        if (matchingHoodBottom != null && matchingHoodBottom > standardTop + 0.001) {
-          sourceSegments.push({ ...range, bottom: standardTop, top: Math.min(ceilingTop, matchingHoodBottom) });
+      // Above the counter the tile column behind a range hood runs up to the top line of the adjacent wall
+      // cabinets (the hood's own mounting line when none sit beside it), one even field with no patches.
+      const cabinetTopLine = Math.min(ceilingTop, wallCabinetTopLine(room));
+      const upperBoxes = wallItems
+        .filter((cabinet) => cabinet.placement === "wall" && !isRangeHoodPlacement(cabinet))
+        .map((cabinet) => {
+          const span = threeDWallRunSpan(cabinet, side, room);
+          const box = elevationBox(cabinet, room);
+          return { ...span, top: box.bottom + box.height };
+        });
+      for (const hood of hoodIntervals) {
+        const overCounter = supportIntervals.some((run) => run.end > hood.start + 0.001 && run.start < hood.end - 0.001);
+        if (!overCounter) continue;
+        const neighbourTops = upperBoxes
+          .filter((box) => box.end >= hood.start - THREE_D_BACKSPLASH_BRIDGE_GAP_IN && box.start <= hood.end + THREE_D_BACKSPLASH_BRIDGE_GAP_IN)
+          .map((box) => box.top);
+        const columnTop = Math.min(ceilingTop, neighbourTops.length > 0 ? Math.max(...neighbourTops) : cabinetTopLine);
+        if (columnTop <= standardTop + 0.001) continue;
+        const column = { start: hood.start, end: hood.end, bottom: standardTop, top: columnTop };
+        sourceSegments.push(column);
+        // A range wider than the hood keeps its strip of tile up to the hood's bottom edge on either side.
+        for (const range of rangeIntervals) {
+          if (range.end <= hood.start + 0.001 || range.start >= hood.end - 0.001) continue;
+          const overhangTop = Math.min(columnTop, hood.bottom);
+          if (overhangTop <= standardTop + 0.001) continue;
+          sourceSegments.push(...subtractThreeDBacksplashRect({ ...range, bottom: standardTop, top: overhangTop }, column));
         }
       }
     }
