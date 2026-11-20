@@ -58,6 +58,7 @@ import {
   type AiDoorImageSource,
 } from "@/lib/aiDoorImageSource";
 import { announceChosenDoorProfile } from "@/lib/useChosenDoorProfiles";
+import { sampleDoorImageHex } from "@/lib/sampleDoorImageHex";
 import { trpc } from "@/lib/trpc";
 import {
   AI_DOOR_IMAGE_FAILED_MESSAGE,
@@ -343,8 +344,23 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
     const url = generated[chosen.model]?.image?.url ?? null;
     if (!url || savedImageRef.current === url) return;
     savedImageRef.current = url;
-    saveAiProfile.mutate({ id: style.id, model: chosen.model, text: chosen.text, imageUrl: url });
-  }, [generated, saveAiProfile, style.id]);
+    saveAiProfile.mutate({ id: style.id, model: chosen.model, text: chosen.text, imageUrl: url, renderHex: sampledHex[chosen.model] ?? null });
+  }, [generated, saveAiProfile, style.id, sampledHex]);
+
+  // The Designer paints a hex, so sample the approved image once and keep it: without
+  // this the kitchen falls back to the catalogue colour (Tom, Nov 20 2026).
+  const [sampledHex, setSampledHex] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    for (const model of AI_DOOR_MODELS) {
+      const url = generated[model]?.image?.url ?? null;
+      if (!url || sampledHex[model]) continue;
+      void sampleDoorImageHex(url).then((hex) => {
+        if (!cancelled && hex) setSampledHex((current) => ({ ...current, [model]: hex }));
+      });
+    }
+    return () => { cancelled = true; };
+  }, [generated, sampledHex]);
 
   // Which columns have a provider key on this server. Booleans only - the
   // procedure never returns a key. Tom, Nov 13 2026: the panel said nothing about
@@ -384,6 +400,9 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
         model,
         text: record.description ?? null,
         imageUrl: generated[model]?.image?.url ?? null,
+        // The image's own colour, so the Designer paints the door the admin approved
+        // instead of the catalogue colour.
+        renderHex: sampledHex[model] ?? null,
       });
       chosenRef.current = { model, text: record.description ?? null };
       setSavedNote(`${AI_DOOR_MODEL_LABELS[model]}'s description is now this door's official profile. The other two are kept as reference.`);
