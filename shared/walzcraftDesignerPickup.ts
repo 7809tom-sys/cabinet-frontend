@@ -23,6 +23,7 @@ import type { CabinetFacePlan } from "./doorFaceRecognition";
 import { DLC_FR26_CATALOG } from "./dlcFr26Catalog.generated";
 import { resolveDoorColor } from "./doorColorResolve";
 import { retintGrain } from "./shakerDoorBlueprint";
+import { pickStainGrainTemplate } from "./stainGrain";
 import { PAINT_FINISH, STAIN_FINISH, type WizardFinish } from "./sherwinWilliamsStain";
 
 export const WIZARD_DOOR_FINISH_STORAGE_KEY = "walzcraftWizardDoorFinish.v1";
@@ -56,10 +57,22 @@ function trimmed(value: string | null | undefined): string | null {
   return text.length > 0 ? text : null;
 }
 
-/** The grain the Designer tiles for a stain, from the grain name the wizard saved. */
-export function stainGrainSlug(woodSpecies: string | null | undefined): string {
+/**
+ * The grain the Designer tiles for a stain, from the grain name the wizard saved.
+ *
+ * The wizard's three frameless names map as before. Any other name, including the
+ * species PR 457 saves ("Birch", "Solid Birch", "White Oak"...), is mapped by wood
+ * family to the closest existing wood template (`pickStainGrainTemplate`); with the
+ * stain colour given, the template nearest that colour wins. Only text that names no
+ * wood at all, with no colour, keeps the Versa default.
+ */
+export function stainGrainSlug(woodSpecies: string | null | undefined, stainHex?: string | null): string {
   const key = (woodSpecies ?? "").trim().toLowerCase();
-  return STAIN_GRAIN_SLUGS[key] ?? "versa-shaker";
+  const fixed = STAIN_GRAIN_SLUGS[key];
+  if (fixed) return fixed;
+  // Without a stain colour there is nothing to match, so keep the long-standing default grain.
+  if (!stainHex) return "versa-shaker";
+  return pickStainGrainTemplate({ grainName: woodSpecies, targetHex: stainHex ?? null }).entry.slug;
 }
 
 export function readWizardDoorFinish(styleId: number | string | null | undefined, storage: MemoryStorage | undefined = globalThis.localStorage): WizardDoorFinish | null {
@@ -204,7 +217,7 @@ export function wizardDoorFacePlan(style: DesignerDoorInput | null | undefined, 
     };
   }
   // Stain: the grain stays and is tinted toward the chosen hex.
-  const grain = DLC_FR26_CATALOG.find((entry) => entry.slug === stainGrainSlug(pickup.grainName)) ?? DLC_FR26_CATALOG[0];
+  const grain = DLC_FR26_CATALOG.find((entry) => entry.slug === stainGrainSlug(pickup.grainName, hex)) ?? DLC_FR26_CATALOG[0];
   const grainUrl = grain?.grainFrameFree ? grain.grain : null;
   const tint = grain ? retintGrain(grain.solidColor, hex) : null;
   // Horizontal grain runs across the face, so the tile's two sides swap.
