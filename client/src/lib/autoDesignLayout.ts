@@ -41,6 +41,7 @@ import { evaluateAutoDesignCornerFit } from "./cornerFit";
 import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFillerCandidate } from "./catalogFiller";
 import { repairMissingAngledWallFillers } from "./angledWallFiller";
 import { fortyFiveCornerSeat } from "./autoDesignFortyFiveCornerSeat";
+import { closeAutoDesignAngledBaseCorners } from "./autoDesignAngledBaseCorners";
 import { autoDesignOpenAngledCornerFindings, closeAutoDesignAngledUpperCorners } from "./autoDesignAngledUpperCorners";
 import { activeAutoDesignWiggleMoves, applyAutoDesignWiggleRoom, applyDesignerLayoutRules, autoDesignShiftLimitIn, type AutoDesignAnchorOrigin, type AutoDesignWiggleMove } from "./designerLayoutRules";
 import { applyRealCabinetsBeforeFiller, isFillerLastResort } from "./autoDesignRealCabinets";
@@ -2587,6 +2588,20 @@ export function runAutoDesignLayout(rawArgs: {
     notes.push(...closedAfterMatch.notes.filter((note) => !notes.includes(note)));
     reviewFindings.push(...closedAfterMatch.findings);
   }
+  // 135° base corners (Tom, Nov 20 2026, 4:33 PM CT): do not measure a 23¼″
+  // cut past a dishwasher. Seat each leg at the 45° setback when a stock move
+  // can get there, and grow a range-left B12 to B15/B18 when that fits flush
+  // without a leftover filler. Then the shared miter repair cuts the pair.
+  const angledBases = closeAutoDesignAngledBaseCorners({
+    placed: working, room, baseCatalog: args.baseCatalog,
+    rangeWiggleIn: (range) => {
+      if (!input.intake || lockedAnchorKinds(input.intake).includes("stove")) return 0;
+      const used = fifteenRepackMoves.filter((move) => move.uid === range.uid).reduce((sum, move) => sum + move.deltaAlongIn, 0);
+      return Math.max(0, 3 - Math.abs(used));
+    },
+  });
+  working = angledBases.placed;
+  notes.push(...angledBases.notes);
   // 45° corners (Tom, Nov 16 2026): every angled corner closes with the
   // front-miter filler pair on BOTH layers. The upper run follows the bases, so
   // its 45° miter needs about 6⅜″ per side; when the line sells no wall filler
