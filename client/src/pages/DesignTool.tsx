@@ -67,6 +67,7 @@ import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
 import { ShakerEdgesToggle } from "@/components/design/ShakerEdgesToggle";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
+import { useStainGrainTextureVersion } from "@/lib/stainGrainTexture";
 import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer, resolveAutoDesignOverRangeAnswer } from "@/lib/overRangeFill";
 import {
   affiliateSlugForStoreScope,
@@ -6632,10 +6633,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [catalogActiveStyle, withAccepted],
   );
   const activeFinish = useMemo(() => doorStyleFinishColors(activeStyle as never), [activeStyle]);
+  // Bumps when a pre-tinted stain texture finishes building, so stain faces recompute.
+  const stainTextureVersion = useStainGrainTextureVersion();
   const activeFacePlan = useMemo(() => {
     const s = activeStyle as DesignerFaceStyle | null;
+    void stainTextureVersion;
     return designerFacePlan(s, "base");
-  }, [activeStyle]);
+  }, [activeStyle, stainTextureVersion]);
   const active3DDoorSampleUrl = activeFacePlan?.doorUrl ?? null;
   const active3DDrawerSampleUrl = activeFacePlan?.sourceKind === "split" ? activeFacePlan.drawerUrl : null;
   const activeFaceSourceKind: FaceSourceKind | undefined = activeFacePlan?.sourceKind;
@@ -6654,7 +6658,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   const designFacePlan = useMemo(
     () => (designStyle === activeStyle ? activeFacePlan : designerFacePlan(designStyle as DesignerFaceStyle | null, "base")),
-    [activeFacePlan, activeStyle, designStyle],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeFacePlan, activeStyle, designStyle, stainTextureVersion],
   );
   const design3DDoorSampleUrl = designFacePlan?.doorUrl ?? null;
   const design3DDrawerSampleUrl = designFacePlan?.sourceKind === "split" ? designFacePlan.drawerUrl : null;
@@ -7383,9 +7388,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       const style = withAccepted(
         sid != null ? doorStyles?.find((d) => d.id === sid) as DesignerFaceStyle | undefined : undefined,
       );
+      void stainTextureVersion;
       return designerFacePlan(style as DesignerFaceStyle | null | undefined, cab.placement);
     },
-    [displayStyleIdForCab, doorStyles, withAccepted],
+    [displayStyleIdForCab, doorStyles, withAccepted, stainTextureVersion],
   );
   const doorSampleForCab = useCallback(
     (cab: PlacedCabinet): string | null => {
@@ -17214,7 +17220,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       doorStyles: (doorStyles ?? null) as DesignerStyleRow[] | null,
       acceptedRows: acceptedAppearance.rows,
     }),
-    [acceptedAppearance.rows, doorStyles, placed, room, designStyleId],
+    // stainTextureVersion: a pre-tinted stain texture arrived, so faces recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [acceptedAppearance.rows, doorStyles, placed, room, designStyleId, stainTextureVersion],
   );
   const threeDCabinetDoorProfiles = useMemo(
     () => Object.fromEntries(threeDStyleAssignments.flatMap((assignment) => {

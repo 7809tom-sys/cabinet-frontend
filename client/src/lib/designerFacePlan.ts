@@ -12,6 +12,7 @@ import {
   type DoorColorSourceSelection,
 } from "@shared/doorColorSourceSelection";
 import { PAINT_FINISH } from "@shared/sherwinWilliamsStain";
+import { withPretintedStainGrain } from "@/lib/stainGrainTexture";
 
 export type DesignerFaceStyle = DoorStyleFaceInput & {
   approvedReferenceImageUrl?: string | null;
@@ -156,6 +157,24 @@ export function selectedDoorColorFacePlan(
  * substitutes a generic grain texture.
  */
 export function designerFacePlan(
+  style: DesignerFaceStyle | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan | null {
+  const plan = baseDesignerFacePlan(style, placement);
+  if (!style || !plan?.dlcCrop?.grainSubstituted) return plan;
+  // A stain on a borrowed grain template: swap in the pre-tinted, higher-resolution
+  // texture (luminance-preserving tint, best template for the species) once it is built.
+  const named = style as DesignerFaceStyle & { woodSpecies?: string | null; finish?: string | null; aliasName?: string | null; ourName?: string | null; grainDirection?: string | null };
+  const slug = plan.dlcCrop.slug;
+  return withPretintedStainGrain(plan, {
+    grainName: slug && slug !== "versa-shaker" ? slug : null,
+    species: named.woodSpecies ?? null,
+    finishName: [named.finish, named.aliasName, named.ourName].filter(Boolean).join(" ") || null,
+    grainDirection: named.grainDirection ?? null,
+  });
+}
+
+function baseDesignerFacePlan(
   style: DesignerFaceStyle | null | undefined,
   placement: string | null | undefined,
 ): CabinetFacePlan | null {
