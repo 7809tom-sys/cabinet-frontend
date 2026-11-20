@@ -5638,6 +5638,12 @@ export function normalizeStandardWallMounts(
       // the run line from the appliance clearance. Re-hanging it here is what moved
       // it off the frameless 94-1/4" line (issue #354 item 5).
       || cabinet.refrigeratorAssemblyRole === "bridge"
+      // The 1/2 in boards that flank that bridge (and any glass above it) live
+      // at the bridge envelope, not the ordinary 60 in wall hang. Re-hanging
+      // them here, then putting them back in normalizeBridgeBoards, is the
+      // loop that left Auto Design's 3D view spinning after PR 481.
+      || cabinet.refrigeratorAssemblyRole === "bridge-left-filler"
+      || cabinet.refrigeratorAssemblyRole === "bridge-right-filler"
     ) return cabinet;
 
     if (isRefrigeratorWallCabinet(cabinet)) {
