@@ -11053,11 +11053,13 @@ export function threeDBacksplashPlaneUv(
   moduleHeightIn = moduleIn,
   /** Set when the run's only inside corner is at its end: tiles are then counted from that corner. */
   phase?: { anchor: "start" | "end"; wallLengthIn: number },
+  /** Plane's local +X runs end-to-start (see threeDBacksplashPlaneReversed); defaults to the cardinal rule. */
+  planeReversed?: boolean,
 ) {
   const safeModuleIn = Math.max(0.125, moduleIn);
   const safeModuleHeightIn = Math.max(0.125, moduleHeightIn);
   const span = renderEnd - renderStart;
-  const reversed = segment.side === "left" || segment.side === "bottom";
+  const reversed = planeReversed ?? (segment.side === "left" || segment.side === "bottom");
   const along = reversed ? renderEnd - planeU * span : renderStart + planeU * span;
   const elevation = segment.bottom + planeV * (segment.top - segment.bottom);
   const tileAlong = phase?.anchor === "end" ? phase.wallLengthIn - along : along;
@@ -11292,6 +11294,27 @@ export function threeDBacksplashSegments(
 }
 
 /**
+ * The backsplash segments the 3D view actually tiles for a saved plan: the renderer first
+ * normalizes installed fillers and drops illegal ones (threeDRenderPlacements), then cuts
+ * tile from that placement list. The takeoff must use the same list so every billed
+ * square foot is a rendered one, and every rendered one is billed.
+ */
+export function threeDRenderedBacksplashSegments(
+  placed: PlacedCabinet[],
+  openings: WallOpening[],
+  room: RoomData,
+  heightMode: BacksplashHeightMode = "standard",
+  countertopUpstandIn = 0,
+) {
+  return threeDBacksplashSegments(threeDRenderPlacements(placed, room, openings), openings, room, heightMode, countertopUpstandIn);
+}
+
+/** Installed backsplash square feet, rounded to 0.1, from the rendered segments. */
+export function threeDBacksplashTakeoffSqFt(segments: readonly ThreeDBacksplashSegment[]): number {
+  return Math.round(segments.reduce((total, segment) => total + ((segment.end - segment.start) * (segment.top - segment.bottom)) / 144, 0) * 10) / 10;
+}
+
+/**
  * The countertop rear upstand is a short continuous slab strip below wall tile.
  * It shares the same countertop-supported wall coverage and exact saved opening
  * cuts, but never turns an open wall or island edge into backsplash.
@@ -11323,8 +11346,24 @@ export function threeDBacksplashTransform(segment: ThreeDBacksplashSegment, room
     x: frame.start.x + frame.tangent.x * center + frame.inward.x * inset,
     y: centerY,
     z: frame.start.y + frame.tangent.y * center + frame.inward.y * inset,
-    rotation: (frame.facingRotation * Math.PI) / 180,
+    // Plan angles are mirrored against Three.js +Y rotation, so drawn walls use the same
+    // threeDPlanRotation helper as the toe kick. The exact plan angle is taken from the
+    // unrounded inward normal (not the whole-degree facingRotation) so the tile's front
+    // face points straight into the room on 45-degree and other angled walls.
+    rotation: threeDPlanRotation(Math.atan2(-frame.inward.x, frame.inward.y)),
   };
+}
+
+/**
+ * True when a backsplash plane's local +X runs from the segment's end toward its start.
+ * Cardinal left/bottom planes are reversed; a drawn wall is reversed when its tile faces
+ * the right-hand normal of its start-to-end direction.
+ */
+export function threeDBacksplashPlaneReversed(side: string, room: RoomData): boolean {
+  if (threeDBacksplashSideIsCardinal(side)) return side === "left" || side === "bottom";
+  const frame = wallRunFrame(side, room);
+  if (!frame) return false;
+  return frame.tangent.x * frame.inward.y - frame.tangent.y * frame.inward.x < 0;
 }
 
 /** Face width and projection of the finished-edge strip on a cut backsplash edge (inches). */
@@ -11366,6 +11405,7 @@ function refreshThreeDMosaicFieldUvs(texture: THREE.Texture, moduleIn: number, m
       renderStart: number;
       renderEnd: number;
       phase?: { anchor: "start" | "end"; wallLengthIn: number };
+      planeReversed?: boolean;
     } | undefined;
     const geometry = mesh.geometry;
     if (!info || !(geometry instanceof THREE.PlaneGeometry)) continue;
@@ -11377,7 +11417,7 @@ function refreshThreeDMosaicFieldUvs(texture: THREE.Texture, moduleIn: number, m
     for (let index = 0; index < uv.count; index += 1) {
       const planeU = positions.getX(index) / width + 0.5;
       const planeV = positions.getY(index) / height + 0.5;
-      const mapped = threeDBacksplashPlaneUv(info.segment, planeU, planeV, info.renderStart, info.renderEnd, moduleIn, moduleHeightIn, info.phase);
+      const mapped = threeDBacksplashPlaneUv(info.segment, planeU, planeV, info.renderStart, info.renderEnd, moduleIn, moduleHeightIn, info.phase, info.planeReversed);
       uv.setXY(index, mapped.u, mapped.v);
     }
     uv.needsUpdate = true;
@@ -11428,7 +11468,8 @@ function addThreeDBacksplash(
     const touches = threeDBacksplashCornerTouches(segment, room, segments);
     const anchor = sideLengthIn > 0 ? mosaicPhaseAnchorEdge(touches.start, touches.end) : "start";
     const phase = anchor === "end" ? { anchor, wallLengthIn: sideLengthIn } : undefined;
-    const uvAt = (planeU: number, planeV: number) => threeDBacksplashPlaneUv(segment, planeU, planeV, render.start, render.end, moduleIn, moduleHeightIn, phase);
+    const planeReversed = threeDBacksplashPlaneReversed(segment.side, room);
+    const uvAt = (planeU: number, planeV: number) => threeDBacksplashPlaneUv(segment, planeU, planeV, render.start, render.end, moduleIn, moduleHeightIn, phase, planeReversed);
     const material = new THREE.MeshPhysicalMaterial({
       color: "#ffffff",
       map: texture,
@@ -11453,7 +11494,7 @@ function addThreeDBacksplash(
     mesh.userData = {
       measuredBacksplash: true, ...segment, tileModuleIn: moduleIn, groutJointIn, backsplashPatternKind: patternKind,
       continuousTileField: true, clippedAroundSavedPlan: true, cornerAnchor: anchor,
-      mosaicUv: { segment, renderStart: render.start, renderEnd: render.end, phase },
+      mosaicUv: { segment, renderStart: render.start, renderEnd: render.end, phase, planeReversed },
     };
     const mosaicMeshes = (sourceTexture.userData.mosaicMeshes as THREE.Mesh[] | undefined) ?? [];
     mosaicMeshes.push(mesh);
