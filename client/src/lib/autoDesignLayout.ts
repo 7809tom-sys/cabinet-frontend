@@ -953,9 +953,13 @@ export function runAutoDesignLayout(rawArgs: {
   // Budget friendly (Tom, voice, Nov 19 2026): with no sink picked by hand and no explicit farmhouse request,
   // the build seats the SMALLEST, lowest-priced regular sink base that takes a double-bowl sink. The measured
   // sink base size is only the starting point for every other mode.
-  const budgetSinkBase = hasPreference(input.intake, "budget-friendly") && !primaryPickedSink && resolvedSinkBase.kind === "regular"
+  // Tom, owner voice, Nov 20 2026 ("All"): the range and the sink land where the plan put them. The budget pick may only choose WHICH
+  // base (lowest price) at the width the plan already measured; a different width would re-pack the run and move the sink, the
+  // dishwasher beside it and the range, so the measured base stays and the note names the cheaper-but-different-width base.
+  const budgetSinkBasePick = hasPreference(input.intake, "budget-friendly") && !primaryPickedSink && resolvedSinkBase.kind === "regular"
     ? pickBudgetSinkBase({ baseCatalog: pool, lineSinkProducts: args.sinkCatalog ?? [], priceByCabinetId: args.cabinetPriceById })
     : null;
+  const budgetSinkBase = budgetSinkBasePick && Math.abs(budgetSinkBasePick.widthIn - resolvedSinkBase.widthIn) < 0.01 ? budgetSinkBasePick : null;
   const sinkBaseWidth = budgetSinkBase ? budgetSinkBase.widthIn : resolvedSinkBase.widthIn;
   const sinkBaseKind = resolvedSinkBase.kind;
   const sinkBaseSource = budgetSinkBase ? budgetSinkBase.row : pickAutoDesignSinkBase(pool, sinkBaseWidth, sinkBaseKind);
@@ -1235,6 +1239,9 @@ export function runAutoDesignLayout(rawArgs: {
   let sinks: SinkFixture[] = [];
   if (sinkBase) {
     if (budgetSinkBase) notes.push(budgetSinkBase.note);
+    else if (budgetSinkBasePick) {
+      notes.push(`Budget friendly: the smallest sink base that takes the lowest-priced double-bowl sink is ${budgetSinkBasePick.row.masterCode} (${budgetSinkBasePick.widthIn}″), but your plan places a ${resolvedSinkBase.widthIn}″ sink base, so it stays where you placed it and the range, the dishwasher and the sink do not move. Change the sink base size in the plan to use ${budgetSinkBasePick.row.masterCode}.`);
+    }
     // A sink picked in the sink pop-up is seated in the sink base the build
     // actually placed, so the pairing decided above is what gets a basin.
     const pickedSink = pickedSinkProducts[0];
