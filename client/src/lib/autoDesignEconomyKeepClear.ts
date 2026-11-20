@@ -51,7 +51,10 @@ export function economyKeepClearShifts(input: {
   /** Kinds the customer said cannot move (sink/dishwasher via plumbing or sink base, range via hookup). They never slide. */
   lockedKinds?: readonly string[];
   label?: (kind: string) => string;
+  /** Tom, Nov 20 2026, 11:03 AM CT: the rule runs in budget mode only. False means no reserved space and no range/sink shift, on any cabinet line. Omitted is treated as on, so direct unit tests of the geometry stay unchanged. */
+  budgetMode?: boolean;
 }): KeepClearResult {
+  if (input.budgetMode === false) return { shifts: new Map(), notes: [] };
   const shifts = new Map<string, number>();
   const notes: string[] = [];
   const wallIds = Array.from(new Set(input.anchors.map((anchor) => anchor.wallId)));
