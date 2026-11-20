@@ -2644,8 +2644,14 @@ export function runAutoDesignLayout(rawArgs: {
   // Refrigerator (Tom, voice, Nov 19 2026, 7:41 AM CT): only the open side keeps an end panel; the
   // wall side gets no panel and no filler. Runs before the minimum-filler pass so the freed inches
   // are put to use there.
-  const fridgeWallSide = trimRefrigeratorWallSide({ placed: working, room });
-  if (fridgeWallSide.removedUids.length > 0) {
+  const fridgeWallSide = trimRefrigeratorWallSide({
+    placed: working,
+    room,
+    // Standard mode: only tuck the fridge against a free wall end, same
+    // meaning as the budget slide (no run continues past the join).
+    isFreeWallEnd: (joinedWallId) => joinedWallId == null || !selectedWalls.includes(joinedWallId as WallSide),
+  });
+  if (fridgeWallSide.removedUids.length > 0 || fridgeWallSide.notes.length > 0) {
     working = fridgeWallSide.placed;
     for (let i = notes.length - 1; i >= 0; i--) {
       if (/REPV\S* is held on the wall|panel gap\.|was butted to FRIDGE/.test(notes[i]!)) notes.splice(i, 1);

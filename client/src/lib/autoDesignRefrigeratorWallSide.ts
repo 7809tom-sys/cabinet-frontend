@@ -20,6 +20,7 @@ import {
   isRefrigerator,
   wallPlacementAtUnbounded,
   wallRunFrame,
+  wallRunJoinAt,
   wallRunOffset,
   wallRunSpan,
   type PlacedCabinet,
@@ -29,11 +30,23 @@ import {
 
 /** A panel or filler whose outer edge is this close to the wall end is on the wall side. */
 export const REFRIGERATOR_WALL_SIDE_REACH_IN = 3;
+/**
+ * Standard mode (Tom, Nov 20 2026, 4:14 / 4:33 PM CT): slide the refrigerator
+ * flush to a free wall end. Reach is measured to the wall-side panel or the
+ * empty gap, not only the appliance box, and the cap is at least the budget
+ * 6.05 in slide. The wall-side panel and filler come off; one open-side panel
+ * stays.
+ */
+export const STANDARD_FRIDGE_SLIDE_MAX_IN = 6.05;
 const EPS = 0.01;
 
 export function trimRefrigeratorWallSide(input: {
   placed: readonly PlacedCabinet[];
   room: RoomData;
+  /** True when the wall joined at this end carries no run, so the fridge may sit flush there. */
+  isFreeWallEnd?: (joinedWallId: string | null) => boolean;
+  /** How far the fridge may slide in standard mode. Defaults to STANDARD_FRIDGE_SLIDE_MAX_IN. */
+  maxSlideIn?: number;
 }): { placed: PlacedCabinet[]; notes: string[]; removedUids: string[] } {
   let working = [...input.placed];
   const notes: string[] = [];
@@ -54,10 +67,14 @@ export function trimRefrigeratorWallSide(input: {
     const f = spanOf(fridge);
     const members = working.filter((item) => item.refrigeratorAssemblyId === fridge.uid);
     const panels = members.filter((item) => item.refrigeratorAssemblyRole === "left-panel" || item.refrigeratorAssemblyRole === "right-panel");
+    const maxSlide = input.maxSlideIn ?? STANDARD_FRIDGE_SLIDE_MAX_IN;
+    const isFreeWallEnd = input.isFreeWallEnd ?? (() => true);
     for (const end of ["start", "end"] as const) {
       const wallEdge = end === "start" ? runStart : runEnd;
       const gapToWall = end === "start" ? f.start - wallEdge : wallEdge - f.end;
-      if (gapToWall < -EPS || gapToWall > REFRIGERATOR_WALL_SIDE_REACH_IN + EPS) continue;
+      if (gapToWall < -EPS || gapToWall > maxSlide + EPS) continue;
+      const joined = wallRunJoinAt(frame, end, input.room);
+      if (!isFreeWallEnd(joined?.frame.id ?? null)) continue;
       const role = end === "start" ? "left-panel" : "right-panel";
       // Everything between the wall end and the refrigerator on this wall: the wall-side panel
       // (it may overlap the appliance box) and/or filler boards.
@@ -77,7 +94,17 @@ export function trimRefrigeratorWallSide(input: {
         const s = spanOf(item);
         return end === "start" ? s.start < f.start - EPS && s.end > wallEdge + EPS : s.end > f.end + EPS && s.start < wallEdge - EPS;
       });
-      if (!between.length || blocking) continue;
+      // Reach is measured to the wall-side panel or the empty gap, not only
+      // the fridge box. A 4 in stand-off with a panel in the gap still slides.
+      const reachEdge = between.reduce((edge, item) => {
+        const s = spanOf(item);
+        const itemEdge = end === "start" ? s.start : s.end;
+        return end === "start" ? Math.min(edge, itemEdge) : Math.max(edge, itemEdge);
+      }, end === "start" ? f.start : f.end);
+      const reach = end === "start" ? reachEdge - wallEdge : wallEdge - reachEdge;
+      if (reach > maxSlide + EPS) continue;
+      if (blocking) continue;
+      if (!between.length && gapToWall <= EPS) continue;
       const delta = end === "start" ? wallEdge - f.start : wallEdge - f.end; // toward the wall
       // The open side: the other panel and any filler between it and the refrigerator.
       const openPanel = panels.find((panel) => !between.includes(panel)) ?? null;
