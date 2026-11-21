@@ -8,8 +8,9 @@
  *    style. Five pieces: two full-width rails (top, bottom), two stiles between them,
  *    one flat recessed center slab. Square corners, shared notch. The frame width is
  *    the style's own 2.75 or 3 inches (3 is the Designer default,
- *    `STANDARD_SHAKER_RAIL_IN`), reduced only when the face is too small to keep an
- *    opening, exactly like `threeDShakerRailThickness` in client/src/lib/shakerRail.ts.
+ *    `STANDARD_SHAKER_RAIL_IN`), reduced on a face narrower than 12 inches (never more
+ *    than 25% of the face width) or when the face is too small to keep an opening,
+ *    exactly like `threeDShakerRailThickness` in client/src/lib/shakerRail.ts.
  *    Rail depth is `DLC_FRAME_DETAIL.railDepth` (shared/dlcFr26Textures.ts). A front
  *    under 7 inches tall or wide is a plain slab (Tom, Nov 1 2026).
  *
@@ -103,13 +104,17 @@ function round(value: number): number {
 
 /**
  * Same clamp as `threeDShakerRailThickness` (client/src/lib/shakerRail.ts), in inches:
- * the requested width, otherwise 3 in, never more than half the face less 0.01 ft.
+ * the requested width, otherwise 3 in, never more than 25% of the face width (the
+ * skinny-door rule, so a narrow door keeps a recessed center at least half its width),
+ * and never more than half the face less 0.01 ft.
  */
+export const DL_SHAKER_FRAME_MAX_FACE_WIDTH_SHARE = 0.25;
+
 export function dlShakerFrameIn(widthIn: number, heightIn: number, requestedIn?: number | null): number {
   const requested = Number(requestedIn);
   const thickness = Number.isFinite(requested) && requested > 0 ? requested : STANDARD_SHAKER_RAIL_IN;
   const margin = 0.01 * FT_TO_IN;
-  return Math.max(0, Math.min(thickness, widthIn / 2 - margin, heightIn / 2 - margin));
+  return Math.max(0, Math.min(thickness, widthIn * DL_SHAKER_FRAME_MAX_FACE_WIDTH_SHARE, widthIn / 2 - margin, heightIn / 2 - margin));
 }
 
 /** Plain slab door box: one flat piece the size of the face. */
