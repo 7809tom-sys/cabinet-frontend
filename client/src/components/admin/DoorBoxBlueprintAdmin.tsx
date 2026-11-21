@@ -26,6 +26,7 @@ import {
   slimShakerDoorBox,
   type DoorBoxBlueprint,
 } from "@shared/doorBoxBlueprint";
+import { PLATFORM_APPROVED_DOOR_STYLES, PLATFORM_DEFAULT_DOOR_STYLE } from "@shared/platformDoorDefaults";
 
 const FINISH_HEX = "#e9e5dc";
 
@@ -275,11 +276,27 @@ export function DoorBoxBlueprintView({ widthIn, heightIn, railIn, show3D = true 
   const slim = useMemo(() => slimShakerDoorBox(widthIn, heightIn), [widthIn, heightIn]);
   return (
     <div className="space-y-6">
+      <div data-testid="platform-default-door-style" className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900">
+        <p>
+          <span className="font-semibold">Platform default starter style: {PLATFORM_DEFAULT_DOOR_STYLE.label}.</span>{" "}
+          Every distributor starts here when it has no saved door style. Also approved:
+        </p>
+        <ul className="mt-1 flex flex-wrap gap-2">
+          {PLATFORM_APPROVED_DOOR_STYLES.map((style) => (
+            <li key={style.id}>
+              <a className="underline" href={`#door-box-${style.id}`}>
+                {style.label}{style.id === PLATFORM_DEFAULT_DOOR_STYLE.id ? " (default)" : ""}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+
       <div data-testid="dl-shaker-firm-rule" className="rounded border-2 border-amber-500 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
         {DL_SHAKER_FIRM_RULE} Any shaker door chosen or rendered in the Designer uses the DL shaker blueprint below.
       </div>
 
-      <Card data-testid="door-box-dl-shaker">
+      <Card id="door-box-dl-shaker" data-testid="door-box-dl-shaker">
         <CardHeader><CardTitle>DL shaker door box</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           {shaker.smallFrontSlab && (
@@ -293,7 +310,7 @@ export function DoorBoxBlueprintView({ widthIn, heightIn, railIn, show3D = true 
         </CardContent>
       </Card>
 
-      <Card data-testid="door-box-slab">
+      <Card id="door-box-slab" data-testid="door-box-slab">
         <CardHeader>
           <CardTitle>Slab door — canonical slab reference</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -314,7 +331,7 @@ export function DoorBoxBlueprintView({ widthIn, heightIn, railIn, show3D = true 
         </CardContent>
       </Card>
 
-      <Card data-testid="door-box-raised-panel">
+      <Card id="door-box-raised-panel" data-testid="door-box-raised-panel">
         <CardHeader>
           <CardTitle>DL raised panel door box</CardTitle>
           <p className="text-sm text-muted-foreground">Approved DL Cabinetry style (Glacier White). The 3D Designer's raised panel geometry, with DL's published values and anything still unconfirmed.</p>
@@ -329,7 +346,7 @@ export function DoorBoxBlueprintView({ widthIn, heightIn, railIn, show3D = true 
         </CardContent>
       </Card>
 
-      <Card data-testid="door-box-slim-shaker">
+      <Card id="door-box-slim-shaker" data-testid="door-box-slim-shaker">
         <CardHeader>
           <CardTitle>DL slim shaker door box</CardTitle>
           <p className="text-sm text-muted-foreground">Approved DL Cabinetry style (Slim Shaker Alabaster, Slim Shaker Ebony). Its own 1 inch frame, not the 2.75/3 inch DL shaker template above.</p>
