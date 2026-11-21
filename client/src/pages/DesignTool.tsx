@@ -68,6 +68,7 @@ import { preferredDoorReferenceUrl } from "@/lib/approvedDoorReference";
 import { designerFacePlan, type DesignerFaceStyle } from "@/lib/designerFacePlan";
 import { ShakerEdgesToggle } from "@/components/design/ShakerEdgesToggle";
 import { designerThreeDAssignments, type DesignerStyleRow } from "@/lib/designerThreeDStyles";
+import { cabinetDoorSampleUrlsFromFacePlans, ensureSelectedColorStyleChoice, resolvedCatalogDoorSampleUrl, uniqueColorStylesForPicker } from "@/lib/colorStylePickerChoices";
 import { useStainGrainTextureVersion } from "@/lib/stainGrainTexture";
 import { fillOverRangeAnswer, overRangeAnswerToPersist, overRangeFullyDressed, placeMandatoryOverRangeBridges, rangesInPlan, readOverRangeAnswer, resolveAutoDesignOverRangeAnswer } from "@/lib/overRangeFill";
 import {
@@ -3781,30 +3782,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   // When locked, only offer styles from the locked distributor so changing the
   // finish never silently switches supply lines.
   const uniqueDoorStyles = useMemo(() => {
-    const map = new Map<string, { id: number; ourName: string | null; aliasName?: string | null; thumbnailImageUrl?: string | null; doorSampleImageUrl?: string | null; distributorId?: number; styleCode?: string | null }>();
-    const source = (doorStyles ?? []) as Array<{
-      id: number;
-      ourName: string | null;
-      aliasName?: string | null;
-      thumbnailImageUrl?: string | null;
-      doorSampleImageUrl?: string | null;
-      distributorId?: number;
-      styleCode?: string | null;
-    }>;
-    const scoped =
-      catalogDistributorScopeId != null
-        ? source.filter((s) => s.distributorId === catalogDistributorScopeId)
-        : source;
-    // De-dup by name WITHIN each distributor (key includes distributorId), so two
-    // supply lines that happen to share a style name (e.g. both have "Air White")
-    // each keep their own entry instead of one silently shadowing the other.
-    for (const s of scoped) {
-      if (!isDoorStyleVerified(s) && s.id !== styleId) continue;
-      const key = `${s.distributorId ?? "_"}::${(affiliateStyleName(s) || String(s.id)).toLowerCase()}`;
-      if (!map.has(key)) map.set(key, s);
-    }
-    return Array.from(map.values()).sort((a, b) => affiliateStyleName(a).localeCompare(affiliateStyleName(b)));
-  }, [affiliateStyleName, catalogDistributorScopeId, doorStyles, styleId]);
+    // De-dup by name within each distributor, but always keep the style already
+    // on the plan (and the design default / two-tone slots) even if the catalog
+    // is scoped to another line. Otherwise the 3D picker shows "No color styles".
+    return uniqueColorStylesForPicker({
+      styles: (doorStyles ?? []) as Array<{
+        id: number;
+        ourName: string | null;
+        aliasName?: string | null;
+        thumbnailImageUrl?: string | null;
+        doorSampleImageUrl?: string | null;
+        distributorId?: number;
+        styleCode?: string | null;
+      }>,
+      selectedStyleIds: [styleId, designStyleId, styleA, styleB],
+      scopeDistributorId: catalogDistributorScopeId,
+      nameOf: affiliateStyleName,
+    });
+  }, [affiliateStyleName, catalogDistributorScopeId, designStyleId, doorStyles, styleA, styleB, styleId]);
 
   // Color 2 (slot B) must come from the same distributor as Color 1 (slot A).
   // Build a filtered list scoped to that distributor so the picker only shows
@@ -6686,7 +6681,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeFacePlan, activeStyle, designStyle, stainTextureVersion],
   );
-  const design3DDoorSampleUrl = designFacePlan?.doorUrl ?? null;
+  const designFaceDoorUrl = designFacePlan?.doorUrl ?? null;
   const design3DDrawerSampleUrl = designFacePlan?.sourceKind === "split" ? designFacePlan.drawerUrl : null;
   const designFaceSourceKind: FaceSourceKind | undefined = designFacePlan?.sourceKind;
   const designFaceCrop = useStableFaceCrop(designFacePlan?.dlcCrop);
@@ -6745,6 +6740,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         ?? preferredDoorReferenceUrl(designStyle as { approvedReferenceImageUrl?: string | null; doorSampleImageUrl?: string | null; thumbnailImageUrl?: string | null } | null)),
     [activeStyle, designStyle, paletteFinishSwatch],
   );
+  // 3D must get a door sample whenever the plan already has one. If the face
+  // plan has no doorUrl (a stain with only a swatch, or a missing crop), use
+  // the same finish swatch the 2D plan shows, so ordinary cabinets do not fall
+  // back to a generic catalog photo billboard.
+  const design3DDoorSampleUrl = resolvedCatalogDoorSampleUrl(designFaceDoorUrl, designFinishSwatch);
   const activeStyleDistributorName = useMemo(() => {
     const styleDistributorId = (activeStyle as { distributorId?: number | null } | null)?.distributorId ?? null;
     const distributorId = styleDistributorId ?? catalogDistributorId;
@@ -6978,6 +6978,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     return m;
   }, [affiliateStyleName, doorStyles]);
   const designStyleName = (designStyleId != null ? styleNameById.get(designStyleId) : null) ?? activeStyleName;
+  const colorStyleQuickChoices = useMemo(() => {
+    const fromList = displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }));
+    return ensureSelectedColorStyleChoice(fromList, [
+      { id: styleId, name: (styleId != null ? styleNameById.get(styleId) : null) ?? designStyleName },
+      { id: designStyleId, name: designStyleName },
+    ]);
+  }, [affiliateStyleName, designStyleId, designStyleName, displayUniqueDoorStyles, styleId, styleNameById]);
 
   // Itemized lines for the exported build sheet (cabinets aggregated by code).
   const buildRows = useMemo<BuildSheetRow[]>(() => {
@@ -17265,10 +17272,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     [threeDStyleAssignments],
   );
   const threeDCabinetDoorSamples = useMemo(
-    () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
-      plan.doorUrl ? [[uid, plan.doorUrl]] : []
-    ))),
-    [threeDCabinetFaces],
+    () => cabinetDoorSampleUrlsFromFacePlans(threeDCabinetFaces, design3DDoorSampleUrl),
+    [design3DDoorSampleUrl, threeDCabinetFaces],
   );
   const threeDCabinetDrawerSamples = useMemo(
     () => Object.fromEntries(threeDCabinetFaces.flatMap(([uid, plan]) => (
@@ -17573,7 +17578,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      colorDeltaEMax={doorColorDeltaE}
 	      doorRenderHex={designDoorRenderHex}
 	      cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
-	      doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
+	      doorStyleChoices={colorStyleQuickChoices}
 	      selectedDoorStyleId={styleId}
 	      onDoorStyleChange={(id) => setSlotStyle(activeSlot, id)}
 	      cabinetFinishOverrides={threeDCabinetFinishOverrides}
@@ -17850,7 +17855,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         </div>
 
         <ColorStyleQuickPicker
-          styles={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
+          styles={colorStyleQuickChoices}
           value={styleId}
           disabled={cabinetsLocked}
           onChange={(id) => setSlotStyle(activeSlot, id)}
@@ -26315,7 +26320,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      colorDeltaEMax={doorColorDeltaE}
 	      doorRenderHex={designDoorRenderHex}
 	                cabinetFinishPreviewOptions={threeDCabinetFinishPreviewOptions}
-	                doorStyleChoices={displayUniqueDoorStyles.map((style) => ({ id: style.id, name: affiliateStyleName(style) }))}
+	                doorStyleChoices={colorStyleQuickChoices}
 	                selectedDoorStyleId={styleId}
 	                onDoorStyleChange={(id) => setSlotStyle(activeSlot, id)}
 	                cabinetFinishOverrides={threeDCabinetFinishOverrides}
