@@ -32,7 +32,7 @@ import { ColorStyleQuickPicker } from "./ColorStyleQuickPicker";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, wallOpenShelfExposedHand, curvedOpenShelfExposedHand, normalizeWallOpenShelfMounts, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, wallCabinetTopLine, } from "@/lib/design";
+import { APPLIANCES, BLIND_CORNER_FILLER_WIDTH_IN, COUNTERTOP_DEPTH_IN, FURNITURE_CATALOG, STD, applianceAppearanceImage, bearsCountertop, isBaseHeightAppliance, blindCornerRearCountertopExtensionIn, blindPullRange, cabinetWall, cabinetWallDragPreview, cornerLegRatioForPlaced, cornerRotationForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, crownBlockingCabinets, crownEligibleCabinets, customWallCabinetSide, drywallPonyWallAppearance, DESK_TOP_HEIGHT_IN, elevationBox, formatEighthInches, formatInches, glassDoorShelfCount, isKneeDrawerItem, isAgainstWall, isBaseEndCornerCabinet, isCustomRoomWall, isFillerItem, fillerWidthRange, isGlassDoorCabinet, isMicrowaveOverRangePair, isRangeHoodPlacement, isRangeOrOven, isRefrigerator, isStacker, isWallRunDraggable, isWd18CountertopDrawerCabinet, kitchenCrestGenericOpenEndShelfCount, normalizeInstalledFillersToAdjacentCabinets, peninsulaCountertopPonyWallBackExtensionIn, peninsulaCountertopPonyWallBarOverhang, peninsulaCountertopSeatingOverhang, peninsulaCountertopWaterfallEnd, peninsulaLowerWorktopOppositeSideExtensionIn, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, ponyWallMiteredFootprint, ponyWallPlanFrame, potFillerMountedRange, rangeVisualAppearance, refrigeratorBayVerificationMetrics, resolveCabinetHardwarePosition, resolveSwing, roomWallAppearance, seatedWallRunFrame, wallRunFrame, wallAngleEndHandForPlacement, wallOpenShelfExposedHand, normalizeWallOpenShelfMounts, selectedLowerCabinetWallPlacement, sinkPlanDimensions, usesRaisedFloorWallDoorPull, wallCabinetFitMeasure, wallGapFitPreview, wallGapFreehandPreview, wallGaps, wallPlacementAt, wallRunOffset, wallRunSpan, wallSpanMeasure, wallLength, wd18CountertopFaceLayout, type CabinetWallDragPreview, type CountertopSurface, type IslandZone, type PlacedCabinet, type PlacedCornerGeometryKind, type PlacedFurniture, type PonyWall, type PotFillerFixture, rotatedSize, type RoomData, type SinkFixture, type WallCabinetFitMeasure, type WallGapFitPreview, type WallOpening, type WallSide, type WallSpanMeasure, wallTopLimit, wallCabinetTopLine, } from "@/lib/design";
 import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { roomWallRunFrames } from "@/lib/design";
 import { removeIllegalFillers } from "@/lib/fillerPlacementRule";
@@ -4845,26 +4845,22 @@ export function curvedOpenEndShelfBoardGeometry(
   const halfDepth = Math.max(0.02, depth / 2);
   const radius = Math.max(0.01, Math.min(radiusIn * INCH, width, depth));
   const shape = new THREE.Shape();
-  // Shape Y becomes local -Z after rotateX(-π/2), and local +Z is the
-  // cabinet front (the same side as frontGroup / the room). Put the
-  // quarter-round on that front exposed corner so the shelves sweep into
-  // the room, not back toward the wall.
   if (exposedHand > 0) {
     const cx = halfWidth - radius;
-    const cz = -halfDepth + radius;
-    shape.moveTo(-halfWidth, halfDepth);
-    shape.lineTo(halfWidth, halfDepth);
+    const cz = halfDepth - radius;
+    shape.moveTo(-halfWidth, -halfDepth);
+    shape.lineTo(halfWidth, -halfDepth);
     shape.lineTo(halfWidth, cz);
-    shape.absarc(cx, cz, radius, 0, -Math.PI / 2, true);
-    shape.lineTo(-halfWidth, -halfDepth);
+    shape.absarc(cx, cz, radius, 0, Math.PI / 2, false);
+    shape.lineTo(-halfWidth, halfDepth);
   } else {
     const cx = -halfWidth + radius;
-    const cz = -halfDepth + radius;
-    shape.moveTo(halfWidth, halfDepth);
-    shape.lineTo(-halfWidth, halfDepth);
+    const cz = halfDepth - radius;
+    shape.moveTo(halfWidth, -halfDepth);
+    shape.lineTo(-halfWidth, -halfDepth);
     shape.lineTo(-halfWidth, cz);
-    shape.absarc(cx, cz, radius, Math.PI, -Math.PI / 2, false);
-    shape.lineTo(halfWidth, -halfDepth);
+    shape.absarc(cx, cz, radius, Math.PI, Math.PI / 2, true);
+    shape.lineTo(halfWidth, halfDepth);
   }
   shape.closePath();
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, steps: 1, curveSegments: 24 });
@@ -12789,9 +12785,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
     : undefined;
   const codeDimensions = compactWallCodeDimensions(cabinet);
   const turnedSideways = placementType === "wall" && cabinet.turnedSideways === true && Number(cabinet.width) > 0 && Number(cabinet.height) > 0;
-  const openShelfHand = room
-    ? (wallOpenShelfExposedHand(cabinet, room, peers) ?? curvedOpenShelfExposedHand(cabinet, room, peers))
-    : null;
+  const openShelfHand = room ? wallOpenShelfExposedHand(cabinet, room, peers) : null;
   return {
     placementUid: cabinet.uid,
     distributorSkuId: -(Math.abs(cabinet.cabinetId) || 1),

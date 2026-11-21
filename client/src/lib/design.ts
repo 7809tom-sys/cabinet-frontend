@@ -10823,40 +10823,6 @@ export function wallOpenShelfExposedHand(
 
 
 /**
- * Which end of a base curved-open-shelf (BES12) is the exposed run end, as a
- * viewer hand when facing the cabinet. The finished closed side belongs against
- * the neighbouring cabinet; the quarter-round front opens on the free end,
- * away from that neighbour and the wall behind the run. Returns null when both
- * ends butt a neighbour or both ends are free, so a lone unit keeps the
- * default right-hand drawing.
- *
- * This reuses the same wall-run neighbour measurement as wall open shelves
- * and AW angle ends, rather than inventing a second neighbour rule.
- */
-export function curvedOpenShelfExposedHand(
-  cabinet: PlacedCabinet,
-  room: RoomData,
-  others: readonly PlacedCabinet[] = [],
-): "left" | "right" | null {
-  if (!isCurvedOpenShelfCabinet(cabinet)) return null;
-  const side = cabinetWall(cabinet, room);
-  const rest = others.filter((item) => item.uid !== cabinet.uid);
-  const measure = wallSpanMeasure(cabinet, room, [...rest], side);
-  const startOpen = !measure.beforeIsCabinet;
-  const endOpen = !measure.afterIsCabinet;
-  if (startOpen === endOpen) return null;
-  const openSide = startOpen ? "start" : "end";
-  const frame = wallRunFrame(side, room);
-  if (!frame) return openSide === "start" ? "left" : "right";
-  return wallAngleEndHandFromRun({
-    openSide,
-    tangent: frame.tangent,
-    facingRotation: frame.facingRotation,
-  });
-}
-
-
-/**
  * Plan-load pass: seat every open shelf on the run's finished top line.
  *
  * A user's own vertical move sets `mountBottomAdjusted` and is kept exactly.
