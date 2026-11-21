@@ -72,6 +72,12 @@ describe("Auto Design end-of-flow rules report", () => {
     expect(designTool).toContain("setAutoDesignReviewFindings([])");
   });
 
+  it("keeps the report off the phone layout, where it covered the plan", () => {
+    const panel = between(designTool, "<AutoDesignReviewList", "/>");
+    expect(panel).toContain("hidden={isMobile}");
+    expect(designTool).toContain("const isMobile = useIsMobile(1024);");
+  });
+
   it("can reopen the last report after dismiss", () => {
     expect(designTool).toContain("onDismiss={() => setAutoDesignReportOpen(false)}");
     expect(designTool).toContain("onReopen={() => setAutoDesignReportOpen(true)}");
