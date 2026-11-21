@@ -28,9 +28,9 @@ const shaker: DoorAuditRenderInput["doorProfile"] = {
 };
 
 describe("audit door construction", () => {
-  it("builds a 3-inch shaker frame with the designer rail helper", () => {
+  it("builds the regular 2.75-inch shaker frame with the designer rail helper (a stored 3 means 2.75)", () => {
     const plan = auditDoorConstruction(shaker);
-    expect(plan).toMatchObject({ kind: "shaker", framed: true, widthIn: 18, heightIn: 30, railIn: 3, stileIn: 3 });
+    expect(plan).toMatchObject({ kind: "shaker", framed: true, widthIn: 18, heightIn: 30, railIn: 2.75, stileIn: 2.75 });
     const door = buildAuditDoor(input(shaker), null);
     const rails = door.children.flatMap((child) => child.children ?? []).filter((child) => child.userData.physicalRail);
     expect(rails).toHaveLength(4);

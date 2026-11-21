@@ -68,13 +68,14 @@ describe("door box blueprint (admin screen geometry)", () => {
   it("builds the five-piece DL shaker box with full-width rails and stiles between", () => {
     const box = dlShakerDoorBox(15, 30);
     expect(box.kind).toBe("dl-shaker");
-    expect(box.frameIn).toBe(3);
+    // Regular shaker: fixed 2.75 in frame (Tom, Nov 21 2026, 3:45 PM CT).
+    expect(box.frameIn).toBe(2.75);
     expect(box.pieces.map((p) => p.id)).toEqual(["top-rail", "bottom-rail", "left-stile", "right-stile", "center-panel"]);
     const center = box.pieces.find((p) => p.id === "center-panel")!;
-    expect(center.widthIn).toBe(9);
-    expect(center.heightIn).toBe(24);
+    expect(center.widthIn).toBe(9.5);
+    expect(center.heightIn).toBe(24.5);
     expect(box.pieces.find((p) => p.id === "top-rail")!.widthIn).toBe(15);
-    expect(box.pieces.find((p) => p.id === "left-stile")!.heightIn).toBe(24);
+    expect(box.pieces.find((p) => p.id === "left-stile")!.heightIn).toBe(24.5);
     expect(box.depthIn).toBeCloseTo(0.372, 3);
     expect(dlShakerDoorBox(15, 30, 2.75).frameIn).toBe(2.75);
   });
