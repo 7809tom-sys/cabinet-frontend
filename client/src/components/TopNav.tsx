@@ -41,6 +41,7 @@ const PRIMARY_LINKS: NavLink[] = [
 const MORE_LINKS: NavLink[] = [
   { key: "nav_closet_studio", href: "/closet" },
   { key: "nav_kitchen_planning", href: "/kitchen-planning" },
+  { key: "nav_faq", href: "/faq" },
   { key: "nav_build_an_order", href: "/order/new" },
   { key: "nav_photo_to_cart", href: "/photo-to-cart" },
   { key: "nav_fixture_photo", href: "/fixture-photo" },

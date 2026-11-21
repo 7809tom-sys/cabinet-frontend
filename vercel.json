@@ -25,6 +25,8 @@
   ],
   "rewrites": [
     { "source": "/careers", "destination": "/careers.html" },
+    { "source": "/faq", "destination": "/faq.html" },
+    { "source": "/faq/", "destination": "/faq.html" },
     { "source": "/api/:path*", "destination": "https://cabinet-backend-production-2670.up.railway.app/api/:path*" },
     { "source": "/manus-storage/:path*", "destination": "https://cabinet-backend-production-2670.up.railway.app/manus-storage/:path*" },
     { "source": "/robots.txt", "destination": "https://cabinet-backend-production-2670.up.railway.app/robots.txt" },

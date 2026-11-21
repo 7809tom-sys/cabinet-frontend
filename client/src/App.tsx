@@ -391,7 +391,11 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
       <Switch>
         {/* Home renders TopNav itself and has its own footer, so it is not wrapped in AppLayout */}
-        <Route path="/faq" element={<FaqPage />} />
+        <Route path="/faq">
+          <AppLayout>
+            <FaqPage />
+          </AppLayout>
+        </Route>
         <Route path="/invoice" element={<InvoicePage />} />
         <Route path="/">
           <AdminEditModeBar />
