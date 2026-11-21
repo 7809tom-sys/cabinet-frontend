@@ -336,6 +336,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
     onError: (error) => setSavedNote(error.message),
   });
 
+  const [sampledHex, setSampledHex] = useState<Record<string, string>>({});
   // A picture that lands after the choice is saved again, so the row never ends up
   // with a model and text but no image.
   useEffect(() => {
@@ -349,7 +350,6 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
 
   // The Designer paints a hex, so sample the approved image once and keep it: without
   // this the kitchen falls back to the catalogue colour (Tom, Nov 20 2026).
-  const [sampledHex, setSampledHex] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
     for (const model of AI_DOOR_MODELS) {
