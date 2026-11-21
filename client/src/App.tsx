@@ -689,6 +689,13 @@ export default function App() {
         <Route path="/distributor-preview/designer">
           {() => <Redirect to={`/distributor-preview/design${typeof window !== "undefined" ? window.location.search : ""}`} replace />}
         </Route>
+        <Route path="/distributor-preview/examples/:id">
+          {(params) => (
+            <Suspense fallback={<PageLoader />}>
+              <DistributorPreview section="examples" exampleId={params.id} />
+            </Suspense>
+          )}
+        </Route>
         <Route path="/distributor-preview/:section">
           {(params) => (
             <Suspense fallback={<PageLoader />}>

@@ -24,6 +24,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Router, useSearch } from "wouter";
 import { BackOfficeSection } from "./DistributorBackOffice";
+import { DesignerSaveControls, MyDesignsSection } from "./DistributorMyDesigns";
+import { DesignerExamplesStrip, ExampleKitchensSection, ExampleKitchensStrip, LineCardExamples } from "./DistributorExampleKitchens";
 import { DealerGateDialog, DealersSection, createDealerGatedLocationHook } from "./DistributorDealerGate";
 import { DEALER_GATE_COPY } from "@/lib/demoDealers";
 import { useDemoPublicPricing } from "@/lib/demoPricing";
@@ -88,6 +90,7 @@ export const DISTRIBUTOR_PREVIEW_NAV = [
   { id: "shop", label: "Shop", href: "/distributor-preview/shop" },
   { id: "design", label: DEMO_DESIGNER_LABEL, href: "/distributor-preview/design" },
   { id: "dashboard", label: "Back Office", href: "/distributor-preview/dashboard" },
+  { id: "designs", label: "My designs", href: "/distributor-preview/designs" },
   { id: "features", label: "Everything you get", href: "/distributor-preview/features" },
   { id: "signup", label: "Become a Distributor", href: "/distributor-preview/signup" },
 ] as const;
@@ -277,10 +280,10 @@ export function DistributorGuideStrip({ active, compact = false }: { active: Nav
   );
 }
 
-export default function DistributorPreview({ section }: { section?: string }) {
+export default function DistributorPreview({ section, exampleId }: { section?: string; exampleId?: string }) {
   const id: PageSection = isDistributorPreviewSection(section) ? section : "storefront";
   useDistributorPreviewSeo();
-  const navId: NavId | null = id === "storefront" || id === "shop" || id === "dashboard" || id === "signup" ? id : id === "dealers" ? null : "features";
+  const navId: NavId | null = id === "storefront" || id === "shop" || id === "dashboard" || id === "signup" || id === "designs" ? id : id === "dealers" || id === "examples" ? null : "features";
   useScrollToHash(id);
 
   return (
@@ -298,6 +301,8 @@ export default function DistributorPreview({ section }: { section?: string }) {
         {id === "features" && <FeaturesPage />}
         {isSpotlightSection(id) && <FeatureSpotlightPage id={id} />}
         {id === "dealers" && <DealersSection />}
+        {id === "designs" && <MyDesignsSection />}
+        {id === "examples" && <ExampleKitchensSection exampleId={exampleId} />}
       </main>
 
       <DemoFooter />
@@ -368,6 +373,7 @@ function StorefrontSection() {
       <PitchBanner />
       <LinesHero />
       <EasyUploadSection />
+      <ExampleKitchensStrip />
       <OrderStepsStrip />
       <EverythingYouGetSection />
       <DistributorGuideStrip active="storefront" />
@@ -569,6 +575,7 @@ function LineCard({ line }: { line: DemoLine }) {
           <p className="text-sm text-muted-foreground">{line.copy}</p>
           <p className="mt-1 text-xs text-muted-foreground">{count} cabinets and parts in this line</p>
         </div>
+        <LineCardExamples lineId={line.id} />
         <div className="flex flex-wrap gap-2">
           <Link href={shopHref(line.id)}>
             <Button size="sm" variant="outline">Shop {line.name}</Button>
@@ -738,11 +745,13 @@ export function DistributorDesignerShell({ children }: { children: ReactNode }) 
           <p className="hidden md:block text-[11px] text-muted-foreground max-w-md">
             {DESIGNER_LINES_NOTE}
           </p>
+          <DesignerSaveControls />
           <Button size="sm" className="text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }} onClick={() => setGateOpen(true)} data-testid="designer-get-price">
             {DEALER_GATE_COPY.shellButton}
           </Button>
         </div>
       </div>
+      <DesignerExamplesStrip />
       <div className="min-h-0 flex-1 overflow-hidden">
         <Router hook={gatedLocationHook}>{children}</Router>
       </div>
