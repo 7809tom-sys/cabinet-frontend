@@ -21304,6 +21304,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	            <AutoDesignReviewList
 	              findings={autoDesignReviewFindings}
 	              open={autoDesignReportOpen}
+	              hidden={isMobile}
 	              onDismiss={() => setAutoDesignReportOpen(false)}
 	              onReopen={() => setAutoDesignReportOpen(true)}
 	            />

@@ -99,6 +99,18 @@ describe("AutoDesignReviewList", () => {
     }
   });
 
+  it("renders nothing while hidden, open or dismissed, and comes back when shown again", () => {
+    const { rerender, container } = render(
+      <AutoDesignReviewList findings={FINDINGS} open hidden onDismiss={() => {}} onReopen={() => {}} />,
+    );
+    expect(container.innerHTML).toBe("");
+    rerender(<AutoDesignReviewList findings={FINDINGS} open={false} hidden onDismiss={() => {}} onReopen={() => {}} />);
+    expect(screen.queryByTestId("auto-design-view-last-report")).toBeNull();
+    expect(container.innerHTML).toBe("");
+    rerender(<AutoDesignReviewList findings={FINDINGS} open hidden={false} onDismiss={() => {}} onReopen={() => {}} />);
+    expect(screen.getAllByTestId("designer-review-finding")).toHaveLength(3);
+  });
+
   it("View last report reopens the same findings after dismiss", () => {
     const onDismiss = vi.fn();
     const onReopen = vi.fn();
