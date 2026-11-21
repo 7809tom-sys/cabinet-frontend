@@ -414,7 +414,7 @@ export function summarizeDemoOrders(orders: DemoOrder[], rate: number = DEMO_COM
   return { count: orders.length, designerCents, csvCents, totalCents: designerCents + csvCents, commissionCents };
 }
 
-export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "dashboard", "signup"] as const;
+export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates"] as const;
 export type DistributorPreviewSection = (typeof DISTRIBUTOR_PREVIEW_SECTIONS)[number];
 
 export function isDistributorPreviewSection(value: unknown): value is DistributorPreviewSection {

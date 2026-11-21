@@ -32,9 +32,11 @@ describe("demo distributor preview page", () => {
     expect(libSource).not.toMatch(/=\s*"sales-demo"/);
   });
 
-  it("labels the page as demo data and keeps the four nav entries", () => {
+  it("labels the page as demo data and has the demo nav entries", () => {
     expect(pageSource).toContain("Example site with demo data.");
     expect(pageSource).toContain("StorefrontSection");
+    expect(pageSource).toContain('{ id: "shop", label: "Shop", href: "/distributor-preview/shop" }');
+    expect(pageSource).toContain('{ id: "features", label: "Everything you get", href: "/distributor-preview/features" }');
     expect(pageSource).toContain("DashboardSection");
     expect(pageSource).toContain("SignupSection");
     expect(pageSource).toContain("label: DEMO_DESIGNER_LABEL");

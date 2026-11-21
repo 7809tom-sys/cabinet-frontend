@@ -6,18 +6,24 @@
 // placeholder data from @/lib/demoDistributor: no database reads or writes.
 //
 // Sections:
-//   storefront — pitch banner, three-line hero, full catalog per line
-//                (line → Bases / Walls / Talls / Specialties → sub-type) and
-//                the shared Sinks & Faucets set with sink-base compatibility
+//   storefront — front page: pitch banner, three-line hero, Easy upload
+//                ordering, Design/Price/Order strip, Everything you get
+//   shop       — full catalog per line (?line=<id>; line → Bases / Walls /
+//                Talls / Specialties → sub-type) and the shared Sinks &
+//                Faucets set with sink-base compatibility
 //   dashboard  — sample back office: orders, leads, affiliates, labor, CRM
 //   signup     — terms summary + CTA into the existing vendor application
+//   features   — "Everything you get": one card per real Cabinet Deals
+//                feature (@/lib/demoDistributorFeatures); a compact version
+//                also sits on the storefront front page
+//   auto-design / contractors / affiliates — short spotlight sub-pages
 // The designer lives at /distributor-preview/design (DistributorDesignerShell
 // around the unchanged DesignTool, mounted from App.tsx);
 // /distributor-preview/designer redirects there.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearch } from "wouter";
-import { ArrowRight, Camera, CheckCircle2, ScanLine, ShoppingCart, Droplets, FileSpreadsheet, LayoutDashboard, PenTool, Store, Users, Wrench, Contact } from "lucide-react";
+import { ArrowRight, Lock, Bot, HardHat, Handshake, Sparkles, Camera, CheckCircle2, ScanLine, ShoppingCart, Droplets, FileSpreadsheet, LayoutDashboard, PenTool, Store, Users, Wrench, Contact } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,18 +64,34 @@ import {
   summarizeDemoOrders,
   type DemoLine,
   type DemoLineId,
+  type DistributorPreviewSection,
   type DemoProduct,
 } from "@/lib/demoDistributor";
+import {
+  DEMO_FEATURES,
+  DEMO_FEATURE_GROUPS,
+  DEMO_SPOTLIGHT_FEATURES,
+  FEATURE_SPOTLIGHTS,
+  featuresInGroup,
+  type DemoFeature,
+  type FeatureSpotlightId,
+} from "@/lib/demoDistributorFeatures";
 
 export const DISTRIBUTOR_PREVIEW_NAV = [
   { id: "storefront", label: "Storefront", href: "/distributor-preview/storefront" },
+  { id: "shop", label: "Shop", href: "/distributor-preview/shop" },
   { id: "design", label: DEMO_DESIGNER_LABEL, href: "/distributor-preview/design" },
   { id: "dashboard", label: "Back Office", href: "/distributor-preview/dashboard" },
+  { id: "features", label: "Everything you get", href: "/distributor-preview/features" },
   { id: "signup", label: "Become a Distributor", href: "/distributor-preview/signup" },
 ] as const;
 
 type NavId = (typeof DISTRIBUTOR_PREVIEW_NAV)[number]["id"];
-type PageSection = "storefront" | "dashboard" | "signup";
+type PageSection = DistributorPreviewSection;
+const SPOTLIGHT_SECTIONS = ["auto-design", "contractors", "affiliates"] as const;
+function isSpotlightSection(id: string): id is FeatureSpotlightId {
+  return (SPOTLIGHT_SECTIONS as readonly string[]).includes(id);
+}
 
 
 const COMMISSION_RANGE_LABEL = `${formatPercent(DISTRIBUTOR_COMMISSION_RANGE.min)}–${formatPercent(DISTRIBUTOR_COMMISSION_RANGE.max)}`;
@@ -252,23 +274,41 @@ export function DistributorGuideStrip({ active, compact = false }: { active: Nav
 export default function DistributorPreview({ section }: { section?: string }) {
   const id: PageSection = isDistributorPreviewSection(section) ? section : "storefront";
   useDistributorPreviewSeo();
+  const navId: NavId = id === "storefront" || id === "shop" || id === "dashboard" || id === "signup" ? id : "features";
+  useScrollToHash(id);
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <DistributorPreviewBanner active={id} />
+      <DistributorPreviewBanner active={navId} />
       {id !== "storefront" && <DemoNotice />}
-      {/* The storefront shows the guide after its hero. */}
-      {id !== "storefront" && <DistributorGuideStrip active={id} />}
+      {/* The storefront shows the guide after its hero; feature pages explain themselves. */}
+      {(id === "dashboard" || id === "signup") && <DistributorGuideStrip active={id} />}
 
       <main className="flex-1">
         {id === "storefront" && <StorefrontSection />}
+        {id === "shop" && <ShopSection />}
         {id === "dashboard" && <DashboardSection />}
         {id === "signup" && <SignupSection />}
+        {id === "features" && <FeaturesPage />}
+        {isSpotlightSection(id) && <FeatureSpotlightPage id={id} />}
       </main>
 
       <DemoFooter />
     </div>
   );
+}
+
+/** Client-side route changes don't scroll to #anchors on their own. */
+function useScrollToHash(key: string) {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.slice(1);
+    if (!hash) {
+      window.scrollTo?.({ top: 0 });
+      return;
+    }
+    window.requestAnimationFrame?.(() => document.getElementById(hash)?.scrollIntoView({ block: "start" }));
+  }, [key]);
 }
 
 function DemoFooter() {
@@ -286,28 +326,58 @@ function lineFromSearch(search: string): DemoLineId {
   return isDemoLineId(value) ? value : DEMO_LINES[0].id;
 }
 
-function shopHref(lineId: DemoLineId): string {
-  return `/distributor-preview/storefront?line=${lineId}#catalog`;
+export const SHOP_ROUTE = "/distributor-preview/shop";
+export const SHOP_COPY = {
+  heroLink: "Shop the full catalog",
+} as const;
+
+/** Quiet sign-in hint. Demo only: links to the signup tab, no real auth. */
+export const PRICING_HINT = {
+  front: "Sign in to see your pricing",
+  shop: "Sign in for your price",
+  href: "/distributor-preview/signup",
+} as const;
+
+function PricingHint({ text, tone = "muted" }: { text: string; tone?: "muted" | "onDark" }) {
+  return (
+    <Link
+      href={PRICING_HINT.href}
+      className={`inline-flex items-center gap-1 text-xs hover:underline ${tone === "onDark" ? "text-white/75 hover:text-white" : "text-muted-foreground hover:text-foreground"}`}
+      data-testid="pricing-hint"
+    >
+      <Lock className="h-3 w-3" aria-hidden /> {text}
+    </Link>
+  );
 }
 
-function StorefrontSection() {
-  const search = useSearch();
-  const [lineId, setLineId] = useState<DemoLineId>(() => lineFromSearch(search));
-  useEffect(() => {
-    setLineId(lineFromSearch(search));
-    // "Shop <line>" links land on the catalog for that line.
-    if (typeof window !== "undefined" && window.location.hash === "#catalog") {
-      window.requestAnimationFrame(() => document.getElementById("catalog")?.scrollIntoView({ block: "start" }));
-    }
-  }, [search]);
+function shopHref(lineId: DemoLineId): string {
+  return `${SHOP_ROUTE}?line=${lineId}`;
+}
 
+/** Front page: pitch, hero + line cards, Easy upload, steps, Everything you get. No catalog grid. */
+function StorefrontSection() {
   return (
     <div>
       <PitchBanner />
       <LinesHero />
       <EasyUploadSection />
       <OrderStepsStrip />
+      <EverythingYouGetSection />
       <DistributorGuideStrip active="storefront" />
+    </div>
+  );
+}
+
+/** /distributor-preview/shop?line=<id>: the full catalog per line plus sinks and faucets. */
+function ShopSection() {
+  const search = useSearch();
+  const [lineId, setLineId] = useState<DemoLineId>(() => lineFromSearch(search));
+  useEffect(() => {
+    setLineId(lineFromSearch(search));
+  }, [search]);
+
+  return (
+    <div>
       <CatalogBrowser lineId={lineId} onLineChange={setLineId} />
       <SinksAndFaucetsSection />
     </div>
@@ -346,10 +416,14 @@ function LinesHero() {
               {HERO_COPY.cta} <PenTool className="h-4 w-4" />
             </Button>
           </Link>
+          <Link href={SHOP_ROUTE} className="ml-3 inline-flex items-center gap-1 text-sm font-medium text-white underline underline-offset-4">
+            {SHOP_COPY.heroLink} <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
         <div className="grid gap-5 md:grid-cols-3">
           {DEMO_LINES.map((line) => <LineCard key={line.id} line={line} />)}
         </div>
+        <p className="text-center"><PricingHint text={PRICING_HINT.front} tone="onDark" /></p>
       </div>
     </section>
   );
@@ -518,6 +592,7 @@ function CatalogBrowser({ lineId, onLineChange }: { lineId: DemoLineId; onLineCh
           <p className="text-sm text-muted-foreground">
             {products.length} cabinets and parts in {line.name}, grouped by type. Click any cabinet to design with this line. {hiddenCount} products from other suppliers are hidden on this storefront. Prices are placeholders, not quotes.
           </p>
+          <p className="mt-1"><PricingHint text={PRICING_HINT.shop} /></p>
         </div>
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Cabinet line">
           {DEMO_LINES.map((l) => (
@@ -711,7 +786,12 @@ function DashboardSection() {
         </CardContent>
       </Card>
 
-      <Card>
+      <p className="text-sm text-muted-foreground">
+        This sample shows orders, leads, affiliates, labor and CRM.{" "}
+        <Link href="/distributor-preview/features#backOffice" className="font-medium underline" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>See every back-office tool</Link>
+      </p>
+
+      <Card id="orders" className="scroll-mt-28">
         <CardHeader><SectionTitle icon={FileSpreadsheet}>Orders</SectionTitle></CardHeader>
         <CardContent>
           <Table>
@@ -746,7 +826,7 @@ function DashboardSection() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
+        <Card id="leads" className="scroll-mt-28">
           <CardHeader><SectionTitle icon={Contact}>Leads</SectionTitle></CardHeader>
           <CardContent>
             <Table>
@@ -775,7 +855,7 @@ function DashboardSection() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="affiliates" className="scroll-mt-28">
           <CardHeader><SectionTitle icon={Users}>Affiliates (distributor-owned)</SectionTitle></CardHeader>
           <CardContent>
             <Table>
@@ -803,7 +883,7 @@ function DashboardSection() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="labor" className="scroll-mt-28">
           <CardHeader><SectionTitle icon={Wrench}>Labor analytics</SectionTitle></CardHeader>
           <CardContent>
             <Table>
@@ -831,7 +911,7 @@ function DashboardSection() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card id="crm" className="scroll-mt-28">
           <CardHeader><SectionTitle icon={Contact}>CRM activity</SectionTitle></CardHeader>
           <CardContent>
             <ul className="space-y-3">
@@ -926,5 +1006,213 @@ function SignupSection() {
         </Card>
       </div>
     </section>
+  );
+}
+
+// ─── Everything you get: one card per real feature ───────────────────────────
+
+export const FEATURES_COPY = {
+  headline: "Everything you get",
+  body: "Every feature below already runs on Cabinet Deals today. Your site gets all of it under your brand.",
+  seeAll: "See every feature",
+} as const;
+
+const SPOTLIGHT_ICONS: Record<string, typeof Store> = {
+  storefront: Store,
+  designer: PenTool,
+  "auto-design": Sparkles,
+  "easy-upload": Camera,
+  contractors: HardHat,
+  affiliates: Handshake,
+  "back-office": LayoutDashboard,
+};
+
+function FeatureCard({ feature }: { feature: DemoFeature }) {
+  const body = (
+    <>
+      <span className="block text-sm font-semibold text-foreground">{feature.name}</span>
+      <span className="block text-xs text-muted-foreground">{feature.text}</span>
+      {feature.demoHref && <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>See it in the demo <ArrowRight className="h-3 w-3" /></span>}
+    </>
+  );
+  const cls = "block h-full rounded-lg border bg-white p-3 text-left";
+  return (
+    <li data-feature-id={feature.id}>
+      {feature.demoHref ? (
+        <Link href={feature.demoHref} className={`${cls} transition-colors hover:border-[#0f4c5c]`}>{body}</Link>
+      ) : (
+        <div className={cls}>{body}</div>
+      )}
+    </li>
+  );
+}
+
+function SpotlightCard({ feature }: { feature: DemoFeature }) {
+  const Icon = SPOTLIGHT_ICONS[feature.id] ?? Bot;
+  return (
+    <li>
+      <Link href={feature.demoHref ?? "/distributor-preview/features"} className="flex h-full gap-3 rounded-xl border bg-white p-4 shadow-sm transition-colors hover:border-[#0f4c5c]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }}><Icon className="h-5 w-5" aria-hidden /></span>
+        <span>
+          <span className="block font-semibold">{feature.name}</span>
+          <span className="block text-sm text-muted-foreground">{feature.text}</span>
+        </span>
+      </Link>
+    </li>
+  );
+}
+
+function FeatureGroups({ headingLevel = "h3" }: { headingLevel?: "h2" | "h3" }) {
+  const Heading = headingLevel;
+  return (
+    <div className="space-y-6">
+      {DEMO_FEATURE_GROUPS.map((group) => {
+        const items = featuresInGroup(group.id).filter((f) => !f.spotlight);
+        return (
+          <div key={group.id} id={group.id} className="scroll-mt-28 space-y-2">
+            <div>
+              <Heading className="text-lg font-semibold">{group.title}</Heading>
+              <p className="text-sm text-muted-foreground">{group.text}</p>
+            </div>
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {items.map((f) => <FeatureCard key={f.id} feature={f} />)}
+            </ul>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Front-page grid: the big six (plus storefront) up top, then every other feature. */
+function EverythingYouGetSection() {
+  return (
+    <section className="border-b bg-[#fafafa] py-10 sm:py-14 scroll-mt-28" id="everything-you-get" aria-labelledby="everything-heading">
+      <div className="container space-y-6">
+        <div className="max-w-3xl space-y-2">
+          <h2 id="everything-heading" className="text-2xl sm:text-3xl font-bold">{FEATURES_COPY.headline}</h2>
+          <p className="text-muted-foreground">{FEATURES_COPY.body}</p>
+        </div>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {DEMO_SPOTLIGHT_FEATURES.map((f) => <SpotlightCard key={f.id} feature={f} />)}
+        </ul>
+        <FeatureGroups />
+        <Link href="/distributor-preview/features" className="inline-flex items-center gap-1 text-sm font-medium" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>
+          {FEATURES_COPY.seeAll} ({DEMO_FEATURES.length}) <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function FeaturesPage() {
+  return (
+    <section className="container py-10 space-y-8">
+      <div className="max-w-3xl space-y-2">
+        <h1 className="text-2xl sm:text-3xl font-bold">{FEATURES_COPY.headline}</h1>
+        <p className="text-muted-foreground">{FEATURES_COPY.body}</p>
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold">The big ones</h2>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {DEMO_SPOTLIGHT_FEATURES.map((f) => <SpotlightCard key={f.id} feature={f} />)}
+        </ul>
+      </div>
+      <FeatureGroups headingLevel="h2" />
+      <SignupNudge />
+    </section>
+  );
+}
+
+function SignupNudge() {
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border bg-[#fdf6ec] p-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm">{PITCH_COPY.headline}</p>
+      <Link href="/distributor-preview/signup">
+        <Button className="gap-2 text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }}>{PITCH_COPY.cta} <ArrowRight className="h-4 w-4" /></Button>
+      </Link>
+    </div>
+  );
+}
+
+// ─── Spotlight sub-pages: Auto Design, Contractors, Affiliates ───────────────
+
+function FeatureSpotlightPage({ id }: { id: FeatureSpotlightId }) {
+  const spot = FEATURE_SPOTLIGHTS[id];
+  const Icon = SPOTLIGHT_ICONS[id] ?? Bot;
+  return (
+    <section className="container py-10 space-y-6">
+      <Link href="/distributor-preview/features" className="text-sm text-muted-foreground hover:text-foreground">← {FEATURES_COPY.headline}</Link>
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="space-y-4">
+          <h1 className="flex items-center gap-2 text-2xl sm:text-3xl font-bold"><Icon className="h-7 w-7" aria-hidden /> {spot.title}</h1>
+          <p className="text-muted-foreground">{spot.lead}</p>
+          <ul className="space-y-2">
+            {spot.points.map((point) => (
+              <li key={point} className="flex items-start gap-2 text-sm"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" style={{ color: DEMO_DISTRIBUTOR.primaryColor }} aria-hidden /> {point}</li>
+            ))}
+          </ul>
+          <Link href={spot.cta.href}>
+            <Button className="gap-2 text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }}>{spot.cta.label} <ArrowRight className="h-4 w-4" /></Button>
+          </Link>
+        </div>
+        <SpotlightPreview id={id} />
+      </div>
+      <SignupNudge />
+    </section>
+  );
+}
+
+function SpotlightPreview({ id }: { id: FeatureSpotlightId }) {
+  if (id === "auto-design") {
+    const line = DEMO_LINES[0];
+    return (
+      <figure className="overflow-hidden rounded-xl border bg-white shadow-sm">
+        <img src={demoLineScene(line)} alt={`${line.name} kitchen (example photo)`} className="aspect-[16/10] w-full object-cover" loading="lazy" />
+        <figcaption className="p-3 text-xs text-muted-foreground">Example kitchen in {line.name}. Auto Design runs inside the {DEMO_DESIGNER_LABEL}.</figcaption>
+      </figure>
+    );
+  }
+  if (id === "contractors") {
+    return (
+      <Card>
+        <CardHeader><CardTitle className="text-base">Contractor portal (sample)</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2" aria-label="Portal tabs">
+            {["Customers", "Designs", "Labor estimates", "Orders"].map((tab, i) => (
+              <Badge key={tab} variant={i === 2 ? "default" : "outline"}>{tab}</Badge>
+            ))}
+          </div>
+          <Table>
+            <TableHeader><TableRow><TableHead>Task</TableHead><TableHead className="text-right">Jobs</TableHead><TableHead className="text-right">Avg rate</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {DEMO_LABOR.map((row) => (
+                <TableRow key={row.task}><TableCell>{row.task}</TableCell><TableCell className="text-right">{row.jobs}</TableCell><TableCell className="text-right">{formatUsd(row.avgRateCents)}/hr</TableCell></TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Your affiliates (sample)</CardTitle></CardHeader>
+      <CardContent className="space-y-3">
+        <ol className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          {["Apply", "Brand it", "Set pricing", "Start selling"].map((step, i) => (
+            <li key={step} className="rounded-md border p-2"><span className="font-semibold">{i + 1}.</span> {step}</li>
+          ))}
+        </ol>
+        <Table>
+          <TableHeader><TableRow><TableHead>Partner</TableHead><TableHead>Type</TableHead><TableHead className="text-right">Orders</TableHead></TableRow></TableHeader>
+          <TableBody>
+            {DEMO_AFFILIATES.map((a) => (
+              <TableRow key={a.name}><TableCell>{a.name}</TableCell><TableCell>{a.type}</TableCell><TableCell className="text-right">{a.orders}</TableCell></TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
