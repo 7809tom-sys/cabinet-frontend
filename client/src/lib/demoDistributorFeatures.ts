@@ -77,8 +77,8 @@ export const DEMO_FEATURES: DemoFeature[] = [
 
   // ── For your team (back office) — permission matrix DISTRIBUTOR-ACCESSIBLE rows ──
   { id: "back-office", group: "backOffice", spotlight: true, name: "Back office dashboard", text: "Orders, leads, affiliates, labor and customer notes on one screen.", demoHref: "/distributor-preview/dashboard", mirrors: [`${P}VendorPortal.tsx`, `${P}DistributorPortal.tsx`] },
-  { id: "incoming-orders", group: "backOffice", name: "Incoming orders", text: "See and fulfill orders for your lines, and confirm stock and invoice.", demoHref: "/distributor-preview/dashboard#orders", mirrors: [`${A}IncomingOrdersAdmin.tsx`], matrix: [1] },
-  { id: "order-detail", group: "backOffice", name: "Order detail", text: "The full detail for each order you fulfill.", demoHref: "/distributor-preview/dashboard#orders", mirrors: [`${P}AdminOrderPage.tsx`], matrix: [90] },
+  { id: "incoming-orders", group: "backOffice", name: "Incoming orders", text: "See and fulfill orders for your lines, and confirm stock and invoice.", demoHref: "/distributor-preview/dashboard?tab=orders", mirrors: [`${A}IncomingOrdersAdmin.tsx`], matrix: [1] },
+  { id: "order-detail", group: "backOffice", name: "Order detail", text: "The full detail for each order you fulfill.", demoHref: "/distributor-preview/dashboard?tab=orders", mirrors: [`${P}AdminOrderPage.tsx`], matrix: [90] },
   { id: "sales-forecast", group: "backOffice", name: "Sales forecast", text: "Demand from customers' saved designs, so you can stock ahead.", mirrors: [`${A}SalesForecastAdmin.tsx`], matrix: [3] },
   { id: "sample-orders", group: "backOffice", name: "Sample orders", text: "Send sample doors to customers who ask for them.", mirrors: [`${A}SupplierSamplesAdmin.tsx`], matrix: [4] },
   { id: "inventory", group: "backOffice", name: "Inventory", text: "Keep on-hand stock for your lines up to date.", mirrors: [`${A}VendorInventoryAdmin.tsx`], matrix: [6] },
@@ -121,7 +121,7 @@ export const FEATURE_SPOTLIGHTS = {
       "Labor: their installation and labor estimates.",
       "Orders: everything they ordered through your store.",
     ],
-    cta: { label: "See labor in the back office", href: "/distributor-preview/dashboard#labor" },
+    cta: { label: "See labor in the back office", href: "/distributor-preview/dashboard?tab=contractors" },
   },
   affiliates: {
     title: "Affiliate program",
@@ -132,7 +132,7 @@ export const FEATURE_SPOTLIGHTS = {
       "A marketing hub and installation tools.",
       "They can add their own contractors.",
     ],
-    cta: { label: "See affiliates in the back office", href: "/distributor-preview/dashboard#affiliates" },
+    cta: { label: "See affiliates in the back office", href: "/distributor-preview/dashboard?tab=affiliates" },
   },
 } as const;
 

@@ -23,8 +23,10 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Router, useSearch } from "wouter";
+import { BackOfficeSection } from "./DistributorBackOffice";
 import { DealerGateDialog, DealersSection, createDealerGatedLocationHook } from "./DistributorDealerGate";
 import { DEALER_GATE_COPY } from "@/lib/demoDealers";
+import { useDemoPublicPricing } from "@/lib/demoPricing";
 import { ArrowRight, Lock, Bot, HardHat, Handshake, Sparkles, Camera, CheckCircle2, ScanLine, ShoppingCart, Droplets, FileSpreadsheet, LayoutDashboard, PenTool, Store, Users, Wrench, Contact } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -291,7 +293,7 @@ export default function DistributorPreview({ section }: { section?: string }) {
       <main className="flex-1">
         {id === "storefront" && <StorefrontSection />}
         {id === "shop" && <ShopSection />}
-        {id === "dashboard" && <DashboardSection />}
+        {id === "dashboard" && <BackOfficeSection />}
         {id === "signup" && <SignupSection />}
         {id === "features" && <FeaturesPage />}
         {isSpotlightSection(id) && <FeatureSpotlightPage id={id} />}
@@ -410,6 +412,7 @@ function PitchBanner() {
 }
 
 function LinesHero() {
+  const showPrices = useDemoPublicPricing();
   return (
     <section className="py-10 sm:py-14 text-white" style={{ background: `linear-gradient(135deg, ${DEMO_DISTRIBUTOR.primaryColor}, #163b45)` }}>
       <div className="container space-y-8">
@@ -428,7 +431,7 @@ function LinesHero() {
         <div className="grid gap-5 md:grid-cols-3">
           {DEMO_LINES.map((line) => <LineCard key={line.id} line={line} />)}
         </div>
-        <p className="text-center"><PricingHint text={PRICING_HINT.front} tone="onDark" /></p>
+        {!showPrices && <p className="text-center"><PricingHint text={PRICING_HINT.front} tone="onDark" /></p>}
       </div>
     </section>
   );
@@ -450,6 +453,7 @@ function EasyUploadStep({ n, title, text, children }: { n: number; title: string
 }
 
 function EasyUploadSection() {
+  const showPrices = useDemoPublicPricing();
   const [lineId, setLineId] = useState<DemoLineId>(DEMO_LINES[0].id);
   const line = DEMO_LINES.find((l) => l.id === lineId) ?? DEMO_LINES[0];
   const list = useMemo(() => easyUploadShoppingList(lineId), [lineId]);
@@ -513,9 +517,9 @@ function EasyUploadSection() {
               <div className="rounded-md border bg-white p-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">{list.rows.reduce((n, r) => n + r.qty, 0)} cabinets in {line.name}</span>
-                  <span className="text-lg font-semibold">{formatUsd(list.totalCents)}</span>
+                  {showPrices ? <span className="text-lg font-semibold">{formatUsd(list.totalCents)}</span> : <PricingHint text={PRICING_HINT.shop} />}
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">Placeholder prices for this example.</p>
+                {showPrices && <p className="mt-1 text-xs text-muted-foreground">Placeholder prices for this example.</p>}
               </div>
               <Link href={demoDesignerPath(line.id)}>
                 <Button className="w-full gap-2 text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }}>
@@ -584,6 +588,7 @@ function dims(p: DemoProduct): string {
 }
 
 function CatalogBrowser({ lineId, onLineChange }: { lineId: DemoLineId; onLineChange: (id: DemoLineId) => void }) {
+  const showPrices = useDemoPublicPricing();
   const line = DEMO_LINES.find((l) => l.id === lineId) ?? DEMO_LINES[0];
   const products = useMemo(() => productsForLine(line.id), [line.id]);
   const sections = useMemo(() => groupLineProducts(products), [products]);
@@ -595,9 +600,9 @@ function CatalogBrowser({ lineId, onLineChange }: { lineId: DemoLineId; onLineCh
         <div>
           <h2 className="text-2xl font-semibold">Full catalog by line</h2>
           <p className="text-sm text-muted-foreground">
-            {products.length} cabinets and parts in {line.name}, grouped by type. Click any cabinet to design with this line. {hiddenCount} products from other suppliers are hidden on this storefront. Prices are placeholders, not quotes.
+            {products.length} cabinets and parts in {line.name}, grouped by type. Click any cabinet to design with this line. {hiddenCount} products from other suppliers are hidden on this storefront.{showPrices ? " Prices are placeholders, not quotes." : ""}
           </p>
-          <p className="mt-1"><PricingHint text={PRICING_HINT.shop} /></p>
+          {!showPrices && <p className="mt-1"><PricingHint text={PRICING_HINT.shop} /></p>}
         </div>
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Cabinet line">
           {DEMO_LINES.map((l) => (
@@ -644,7 +649,7 @@ function CatalogBrowser({ lineId, onLineChange }: { lineId: DemoLineId; onLineCh
                           <p className="text-[11px] text-muted-foreground">{dims(p)}</p>
                         </div>
                         <span className="shrink-0 text-right">
-                          <span className="block font-medium">{formatUsd(p.priceCents)}</span>
+                          {showPrices && <span className="block font-medium" data-testid="demo-price">{formatUsd(p.priceCents)}</span>}
                           <span className="block text-[11px] text-[#0f4c5c] opacity-0 transition-opacity group-hover:opacity-100">Design with this line →</span>
                         </span>
                       </Link>
@@ -661,6 +666,7 @@ function CatalogBrowser({ lineId, onLineChange }: { lineId: DemoLineId; onLineCh
 }
 
 function SinksAndFaucetsSection() {
+  const showPrices = useDemoPublicPricing();
   const compatibility = useMemo(() => demoSinkBaseCompatibility(), []);
   const kitchen = compatibility.filter((c) => c.faucets.length > 0 || c.defaultSink);
   return (
@@ -692,8 +698,8 @@ function SinksAndFaucetsSection() {
                 </TableCell>
                 <TableCell className="text-right">{c.sinks.length}</TableCell>
                 <TableCell className="text-right">{c.faucets.length}</TableCell>
-                <TableCell className="text-xs">{c.defaultSink ? `${c.defaultSink.pelicanCode ?? c.defaultSink.name}${c.defaultSink.sellPrice != null ? ` · ${formatUsd(Math.round(c.defaultSink.sellPrice * 100))}` : ""}` : "—"}</TableCell>
-                <TableCell className="text-xs">{c.defaultFaucet ? `${c.defaultFaucet.pelicanCode ?? c.defaultFaucet.name}${c.defaultFaucet.sellPrice != null ? ` · ${formatUsd(Math.round(c.defaultFaucet.sellPrice * 100))}` : ""}` : "—"}</TableCell>
+                <TableCell className="text-xs">{c.defaultSink ? `${c.defaultSink.pelicanCode ?? c.defaultSink.name}${showPrices && c.defaultSink.sellPrice != null ? ` · ${formatUsd(Math.round(c.defaultSink.sellPrice * 100))}` : ""}` : "—"}</TableCell>
+                <TableCell className="text-xs">{c.defaultFaucet ? `${c.defaultFaucet.pelicanCode ?? c.defaultFaucet.name}${showPrices && c.defaultFaucet.sellPrice != null ? ` · ${formatUsd(Math.round(c.defaultFaucet.sellPrice * 100))}` : ""}` : "—"}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -765,190 +771,6 @@ function SectionTitle({ icon: Icon, children }: { icon: typeof Store; children: 
       <Icon className="h-4 w-4" style={{ color: DEMO_DISTRIBUTOR.primaryColor }} aria-hidden />
       {children}
     </CardTitle>
-  );
-}
-
-function DashboardSection() {
-  const summary = summarizeDemoOrders(DEMO_ORDERS);
-  const openLeads = DEMO_LEADS.filter((l) => l.stage !== "Won" && l.stage !== "Lost");
-  const activeAffiliates = DEMO_AFFILIATES.filter((a) => a.status === "Active");
-
-  return (
-    <section className="container py-10 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            <LayoutDashboard className="h-6 w-6" aria-hidden /> {DEMO_DISTRIBUTOR.name} back office
-          </h1>
-          <p className="text-sm text-muted-foreground">A sample of the dashboard your team would use.</p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Orders (30 days)" value={String(summary.count)} hint={formatUsd(summary.totalCents)} />
-        <Stat label="Designer-assisted sales" value={formatUsd(summary.designerCents)} hint={`Platform commission at ${formatPercent(DEMO_COMMISSION_RATE)}: ${formatUsd(summary.commissionCents)}`} />
-        <Stat label="Direct CSV orders" value={formatUsd(summary.csvCents)} hint="No commission" />
-        <Stat label="Open leads" value={String(openLeads.length)} hint={`${activeAffiliates.length} active affiliates`} />
-      </div>
-
-      <Card className="border-[#0f4c5c]/40 bg-[#f3f8f9]">
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <ScanLine className="mt-0.5 h-5 w-5 shrink-0" style={{ color: DEMO_DISTRIBUTOR.primaryColor }} aria-hidden />
-            <div>
-              <p className="font-semibold">{EASY_UPLOAD_COPY.eyebrow}</p>
-              <p className="text-sm text-muted-foreground">{EASY_UPLOAD_COPY.backOffice}</p>
-            </div>
-          </div>
-          <Link href="/distributor-preview#easy-upload">
-            <Button size="sm" variant="outline" className="shrink-0">See how it works</Button>
-          </Link>
-        </CardContent>
-      </Card>
-
-      <p className="text-sm text-muted-foreground">
-        This sample shows orders, leads, affiliates, labor and CRM.{" "}
-        <Link href="/distributor-preview/features#backOffice" className="font-medium underline" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>See every back-office tool</Link>
-      </p>
-
-      <Card id="orders" className="scroll-mt-28">
-        <CardHeader><SectionTitle icon={FileSpreadsheet}>Orders</SectionTitle></CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Order</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Channel</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead className="text-right">Commission</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {DEMO_ORDERS.map((o) => (
-                <TableRow key={o.id}>
-                  <TableCell className="font-medium">{o.id}</TableCell>
-                  <TableCell>{o.date}</TableCell>
-                  <TableCell>{o.customer}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{o.channel === "designer" ? "3D designer" : "Direct CSV"}</Badge>
-                  </TableCell>
-                  <TableCell>{o.status}</TableCell>
-                  <TableCell className="text-right">{formatUsd(o.totalCents)}</TableCell>
-                  <TableCell className="text-right">{formatUsd(demoCommissionCents(o.totalCents, o.channel))}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card id="leads" className="scroll-mt-28">
-          <CardHeader><SectionTitle icon={Contact}>Leads</SectionTitle></CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Lead</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead className="text-right">Estimate</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {DEMO_LEADS.map((l) => (
-                  <TableRow key={l.name}>
-                    <TableCell>
-                      <p className="font-medium">{l.name}</p>
-                      <p className="text-xs text-muted-foreground">{l.project}</p>
-                    </TableCell>
-                    <TableCell>{l.source}</TableCell>
-                    <TableCell><Badge variant="outline">{l.stage}</Badge></TableCell>
-                    <TableCell className="text-right">{formatUsd(l.estimateCents)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card id="affiliates" className="scroll-mt-28">
-          <CardHeader><SectionTitle icon={Users}>Affiliates (distributor-owned)</SectionTitle></CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Partner</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Orders</TableHead>
-                  <TableHead className="text-right">Sales</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {DEMO_AFFILIATES.map((a) => (
-                  <TableRow key={a.name}>
-                    <TableCell className="font-medium">{a.name}</TableCell>
-                    <TableCell>{a.type}</TableCell>
-                    <TableCell><Badge variant="outline">{a.status}</Badge></TableCell>
-                    <TableCell className="text-right">{a.orders}</TableCell>
-                    <TableCell className="text-right">{formatUsd(a.salesCents)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card id="labor" className="scroll-mt-28">
-          <CardHeader><SectionTitle icon={Wrench}>Labor analytics</SectionTitle></CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Task</TableHead>
-                  <TableHead className="text-right">Jobs</TableHead>
-                  <TableHead className="text-right">Avg hours</TableHead>
-                  <TableHead className="text-right">Avg rate / hr</TableHead>
-                  <TableHead className="text-right">Avg per job</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {DEMO_LABOR.map((row) => (
-                  <TableRow key={row.task}>
-                    <TableCell className="font-medium">{row.task}</TableCell>
-                    <TableCell className="text-right">{row.jobs}</TableCell>
-                    <TableCell className="text-right">{row.avgHours.toFixed(1)}</TableCell>
-                    <TableCell className="text-right">{formatUsd(row.avgRateCents)}</TableCell>
-                    <TableCell className="text-right">{formatUsd(Math.round(row.avgHours * row.avgRateCents))}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card id="crm" className="scroll-mt-28">
-          <CardHeader><SectionTitle icon={Contact}>CRM activity</SectionTitle></CardHeader>
-          <CardContent>
-            <ul className="space-y-3">
-              {DEMO_CRM_ACTIVITY.map((item) => (
-                <li key={`${item.when}-${item.who}`} className="flex items-start gap-3 text-sm">
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: DEMO_DISTRIBUTOR.accentColor }} />
-                  <div>
-                    <p><span className="font-medium">{item.who}</span> · {item.what}</p>
-                    <p className="text-xs text-muted-foreground">{item.when}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      </div>
-    </section>
   );
 }
 
@@ -1184,6 +1006,7 @@ function FeatureSpotlightPage({ id }: { id: FeatureSpotlightId }) {
 }
 
 function SpotlightPreview({ id }: { id: FeatureSpotlightId }) {
+  const showPrices = useDemoPublicPricing();
   if (id === "auto-design") {
     const line = DEMO_LINES[0];
     return (
@@ -1207,7 +1030,7 @@ function SpotlightPreview({ id }: { id: FeatureSpotlightId }) {
             <TableHeader><TableRow><TableHead>Task</TableHead><TableHead className="text-right">Jobs</TableHead><TableHead className="text-right">Avg rate</TableHead></TableRow></TableHeader>
             <TableBody>
               {DEMO_LABOR.map((row) => (
-                <TableRow key={row.task}><TableCell>{row.task}</TableCell><TableCell className="text-right">{row.jobs}</TableCell><TableCell className="text-right">{formatUsd(row.avgRateCents)}/hr</TableCell></TableRow>
+                <TableRow key={row.task}><TableCell>{row.task}</TableCell><TableCell className="text-right">{row.jobs}</TableCell><TableCell className="text-right">{showPrices ? `${formatUsd(row.avgRateCents)}/hr` : "—"}</TableCell></TableRow>
               ))}
             </TableBody>
           </Table>

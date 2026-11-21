@@ -37,7 +37,7 @@ describe("demo distributor preview page", () => {
     expect(pageSource).toContain("StorefrontSection");
     expect(pageSource).toContain('{ id: "shop", label: "Shop", href: "/distributor-preview/shop" }');
     expect(pageSource).toContain('{ id: "features", label: "Everything you get", href: "/distributor-preview/features" }');
-    expect(pageSource).toContain("DashboardSection");
+    expect(pageSource).toContain("BackOfficeSection");
     expect(pageSource).toContain("SignupSection");
     expect(pageSource).toContain("label: DEMO_DESIGNER_LABEL");
   });

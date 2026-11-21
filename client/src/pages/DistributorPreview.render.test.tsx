@@ -115,11 +115,35 @@ describe("DistributorPreview render", () => {
     expect(html).toContain(`href="${spot.cta.href}"`);
   });
 
-  it("shows orders, leads, affiliates, labor and CRM on the back office", () => {
-    const html = render("dashboard");
-    for (const label of ["Orders", "Leads", "Affiliates (distributor-owned)", "Labor analytics", "CRM activity", "DEMO-1042"]) {
-      expect(html).toContain(label);
-    }
+  it("shows the distributor admin with the real admin's group order and its sections by tab", () => {
+    const home = render("dashboard");
+    expect(home).toContain("Distributor admin");
+    const order = ["Sales &amp; Orders", "People", "Products &amp; Catalog", "Pricing", "Operations", "Settings"];
+    for (let i = 1; i < order.length; i++) expect(home.indexOf(order[i - 1])).toBeLessThan(home.indexOf(order[i]));
+    expect(render("dashboard", "tab=orders")).toContain("DEMO-1042");
+    expect(render("dashboard", "tab=contractors")).toContain("Labor analytics");
+    expect(render("dashboard", "tab=affiliates")).toContain("Affiliates (distributor-owned)");
+    expect(render("dashboard", "tab=crm")).toContain("Opened the shared 3D design link");
+    expect(render("dashboard", "tab=store")).toContain("Show prices to the public");
+    expect(render("dashboard", "tab=import")).toContain("Download sample spreadsheet");
+    expect(render("dashboard", "tab=door-styles")).toContain("Aspen White");
+  });
+
+  it("hides every public price by default and shows them with ?pricing=on", () => {
+    const off = render("shop");
+    expect(off).not.toContain('data-testid="demo-price"');
+    expect(off).toContain(PRICING_HINT.shop);
+    expect(off).not.toMatch(/Auto Design sink pick[\s\S]*· \$/);
+    const on = render("shop", "pricing=on");
+    expect(on).toContain('data-testid="demo-price"');
+    expect(on).not.toContain(PRICING_HINT.shop);
+    expect(render("storefront")).toContain(PRICING_HINT.front);
+    const homeOn = render("storefront", "pricing=on");
+    expect(homeOn).not.toContain(PRICING_HINT.front);
+    expect(homeOn).toContain("Placeholder prices for this example.");
+    expect(render("storefront")).not.toContain("Placeholder prices for this example.");
+    expect(render("contractors")).not.toContain("/hr");
+    expect(render("contractors", "pricing=on")).toContain("/hr");
   });
 
   it("keeps the signup CTA disabled until terms are agreed", () => {
