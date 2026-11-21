@@ -79,3 +79,7 @@ This overrides two earlier decisions: the Nov 1 rule that soft inner-frame edges
 - The outline is `attachShakerFrameOutline` in `client/src/lib/shakerFrameOutline.ts`, called from one line in `addShakerFrame` (`InteractiveRoom3D.tsx`). It is a single `LineSegments` per frame (one draw call), drawn as its own paint-derived color (darker than the paint, lighter on a very dark paint) with the tone map off. It owns its geometry and material, so the Designer's `disposeObject` frees it on every rebuild; nothing is cached or shared.
 - Phones (`threeDRenderQualityProfile` tier `mobile`) draw the opening edge only and fainter. The Designer has a "Door edges" on/off toggle (remembered in the browser) that hides or shows built outlines without a rebuild.
 - The door audit and the four-source cabinet preview use `outlineEdges` from the same module.
+
+## Skinny doors keep the DL Shaker frame (Tom, Nov 21 2026, 3:35 PM CT)
+
+On a door narrower than 12 inches, the rails and stiles are never wider than 25% of the door face (`SHAKER_FRAME_MAX_FACE_WIDTH_SHARE` in `client/src/lib/shakerRail.ts`, mirrored by `dlShakerFrameIn` in `shared/doorBoxBlueprint.ts`). That keeps the recessed center at least half the door wide. Before this, a 9 inch door kept two full 3 inch stiles around a 2.875 inch sliver and read as flat planks. Doors 12 inches and wider keep the full 3 inch frame. The 25% share is a Designer proportion; DL publishes no rail width (TBD - confirm with Tom).
