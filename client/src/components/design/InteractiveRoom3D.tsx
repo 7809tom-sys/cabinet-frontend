@@ -6483,7 +6483,7 @@ export function addCabinet(
     && !isRefrigeratorEndPanel
     && !isWallOpenShelf
     && !isCurvedOpenShelf
-    && !["diagonal-corner", "triangle-corner", "l-corner", "corner-drawer", "end-return", "base-angle-end", "blind-corner", "range-hood-front", "curved-open-shelf"].includes(specialty.kind);
+    && !["diagonal-corner", "triangle-corner", "l-corner", "corner-drawer", "end-return", "base-angle-end", "wall-angle-end", "blind-corner", "range-hood-front", "curved-open-shelf"].includes(specialty.kind);
   if (usesConstructedFaceFrame) {
     const frameMaterial = new THREE.MeshStandardMaterial({ color: plainStructuralColor, roughness: 0.46, metalness: 0.01 });
     structuralFinishMaterials.push(frameMaterial);

@@ -8893,6 +8893,88 @@ describe("interactive 3D room scene helpers", () => {
     }
   });
 
+  it("does not build a rectangular face frame on AW1230, AW1236, or AW1242, and keeps the door flush on the hypotenuse", () => {
+    const rows = [
+      { masterCode: "AW1230", height: 30, graphicType: "wall-end-angle" },
+      { masterCode: "AW1236", height: 36, graphicType: "wall-end-angle" },
+      { masterCode: "AW1242", height: 42, graphicType: "wall-end-angle" },
+    ] as const;
+    for (const row of rows) {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 9360146,
+        cabinetId: 9360146,
+        masterCode: row.masterCode,
+        description: `12" W x ${row.height}" H x 12" D Wall Angle Cabinet (wall end) — 1 Door`,
+        subCategory: "Wall Angle Cabinet",
+        placementType: "wall",
+        width: 12,
+        height: row.height,
+        depth: 12,
+        numberOfDoors: 1,
+        numberOfDrawers: 0,
+        graphicType: row.graphicType,
+        customProfile: row.graphicType,
+      } as never, null, {}, 144, 120, "#8a9ba8", "#f8f8f6", undefined, { x: 0, z: 0, rotation: 0, bottom: 54 });
+      const frames: THREE.Object3D[] = [];
+      const doors: THREE.Mesh[] = [];
+      root.traverse((node) => {
+        if (node.userData.cabinetFaceFrame) frames.push(node);
+        if (node instanceof THREE.Mesh && node.userData.angledWallDoor) doors.push(node);
+      });
+      expect(frames, row.masterCode).toHaveLength(0);
+      expect(doors, row.masterCode).toHaveLength(1);
+      expect(doors[0]!.parent!.position.z, row.masterCode).toBeCloseTo(0, 6);
+      expect(doors[0]!.userData.flushPhysicalFace, row.masterCode).toBe(true);
+      const plan = wallAngleEndPlan({ widthIn: 12, depthIn: 12, hand: "right" });
+      expect(doors[0]!.rotation.y, row.masterCode).toBeCloseTo(plan.doorFace.rotationY, 6);
+    }
+
+    // A normal rectangular wall cabinet still gets a constructed face frame.
+    const wallRoot = new THREE.Group();
+    addCabinet(wallRoot, {
+      distributorSkuId: 1,
+      cabinetId: 1,
+      masterCode: "W1230",
+      description: '12" Wall Cabinet',
+      placementType: "wall",
+      width: 12,
+      height: 30,
+      depth: 12,
+      numberOfDoors: 1,
+      numberOfDrawers: 0,
+    } as never, "back", {}, 144, 120, "#8a9ba8", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 54 });
+    const wallFrames: THREE.Object3D[] = [];
+    wallRoot.traverse((node) => { if (node.userData.cabinetFaceFrame) wallFrames.push(node); });
+    expect(wallFrames.length).toBeGreaterThan(0);
+
+    // BA-24 / base-angle-end remains excluded.
+    const baseRoot = new THREE.Group();
+    addCabinet(baseRoot, {
+      distributorSkuId: 9390014,
+      cabinetId: 9390014,
+      masterCode: "BA-24",
+      description: '24" W x 34-1/2" H x 24" D Base End Cabinet — Quarter-Octagon Shape, 2 Doors',
+      subCategory: "Base End Cabinet",
+      placementType: "base",
+      width: 24,
+      height: 34.5,
+      depth: 24,
+      numberOfDoors: 2,
+      numberOfDrawers: 0,
+      graphicType: "base-end-quarter-octagon",
+    } as never, null, {}, 144, 120, "#8a9ba8", "#f8f8f6");
+    expect(resolvedThreeDSpecialtyProfile({
+      masterCode: "BA-24",
+      description: '24" Base End Cabinet — Quarter-Octagon Shape, 2 Doors',
+      subCategory: "Base End Cabinet",
+      graphicType: "base-end-quarter-octagon",
+    }).kind).toBe("base-angle-end");
+    const baseFrames: THREE.Object3D[] = [];
+    baseRoot.traverse((node) => { if (node.userData.cabinetFaceFrame) baseFrames.push(node); });
+    expect(baseFrames).toHaveLength(0);
+  });
+
   it("renders a pantry as two two-door sets split by a 54-inch lower door section", () => {
     const root = new THREE.Group();
     addCabinet(root, {
