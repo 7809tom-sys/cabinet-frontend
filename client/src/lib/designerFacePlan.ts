@@ -67,6 +67,10 @@ export function acceptedRenderFacePlan(
  * or the render hex PR 475 sampled when it was chosen) rides with it, so no other
  * layer recolors the cabinet around it.
  */
+/**
+ * Kept for callers that need the picture as an IMAGE (the door editor tile), never as a
+ * door texture. Deliberately absent from designerFacePlan's chain: see the note there.
+ */
 export function savedAiPictureFacePlan(
   style: DesignerFaceStyle | null | undefined,
   placement: string | null | undefined,
@@ -163,12 +167,12 @@ export function selectedDoorColorFacePlan(
     return uploadedSamplePhotoFacePlan(photoStyle, placement) ?? photo;
   }
   if (effective.source === "approved-ai-image") {
-    // A checkmarked AI choice whose only picture is the accepted render of the
-    // uploaded sample shows that photo (acceptedRenderFacePlan below).
-    // The checkmarked tile shows the saved Gemini picture first (aiTilePicture), so
-    // that picture is the face; an older accepted render must not replace it.
-    return savedAiPictureFacePlan(style, placement)
-      ?? acceptedRenderFacePlan(style, placement)
+    // An AI-DESCRIBED PICTURE IS NOT A DOOR (Tom, Nov 21 2026: "thats not what image
+    // should be"). The profile picture is drawn from a text description - often a line
+    // sketch - so texturing a cabinet with it put sketch pages on the doors. The door
+    // paints from the colour instead, sampled from that same picture on approval, so the
+    // kitchen still follows the approved look without wearing the drawing.
+    return acceptedRenderFacePlan(style, placement)
       ?? resolveCabinetFaceImages(photoStyle, placement);
   }
   const key = style.id ?? "selected";
