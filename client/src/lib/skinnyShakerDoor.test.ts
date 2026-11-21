@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { threeDShakerRailThickness } from "./shakerRail";
 import { standardDoorCountForFaceWidth } from "./cabinetGraphics";
 import { dlShakerDoorBox, dlShakerFrameIn } from "@shared/doorBoxBlueprint";
+import { RAISED_PANEL_BLUEPRINT, raisedPanelFrameGeometry } from "@shared/raisedPanelDoorBlueprint";
 import {
+  RAISED_PANEL_FRAME_IN,
   REGULAR_SHAKER_FRAME_IN,
   SKINNY_SHAKER_FACE_BELOW_IN,
   SKINNY_SHAKER_FRAME_MAX_FACE_SHARE,
@@ -95,5 +97,38 @@ describe("regular shaker vs skinny shaker frame", () => {
     expect(box.kind).not.toBe("slab");
     expect(box.pieces.map((piece) => piece.id)).toEqual(["top-rail", "bottom-rail", "left-stile", "right-stile", "center-panel"]);
     expect(box.pieces.find((piece) => piece.id === "center-panel")?.widthIn ?? 0).toBeGreaterThanOrEqual(8.875 / 2 - 0.01);
+  });
+
+  it("gives every regular raised panel door exactly 2.5 in (Tom, 3:51 PM CT)", () => {
+    expect(RAISED_PANEL_FRAME_IN).toBe(2.5);
+    for (const face of [12, 14.875, 17.875, 20.875, 30]) {
+      for (const height of [24, 30, 42]) {
+        for (const stored of [undefined, null, "", 3, "3", 2.75]) {
+          const label = `raised ${face}x${height} stored ${String(stored)}`;
+          expect(threeDShakerRailThickness(face * INCH, height * INCH, stored, "raised") / INCH, label).toBeCloseTo(2.5, 9);
+        }
+      }
+    }
+  });
+
+  it("caps a skinny raised panel door at min(2.5, 25% of the face)", () => {
+    for (const face of [7, 8, 8.875, 9.5, 10.375, 11.875]) {
+      const frame = threeDShakerRailThickness(face * INCH, 30 * INCH, null, "raised") / INCH;
+      expect(frame, String(face)).toBeCloseTo(Math.min(2.5, face * 0.25), 9);
+      expect((face - frame * 2) / face).toBeGreaterThanOrEqual(0.5 - 1e-9);
+    }
+    // A measured raised width that is not the old default is kept.
+    expect(threeDShakerRailThickness(15 * INCH, 30 * INCH, 2, "raised") / INCH).toBeCloseTo(2, 9);
+  });
+
+  it("keeps the admin raised panel blueprint on the same 2.5 in frame as the 3D raised door", () => {
+    expect(RAISED_PANEL_BLUEPRINT.frame.railIn).toBe(2.5);
+    expect(RAISED_PANEL_BLUEPRINT.frame.stileIn).toBe(2.5);
+    for (const [w, h] of [[15, 30], [8.875, 42], [11.875, 30], [24, 42]] as const) {
+      const g = raisedPanelFrameGeometry({ faceWidth: w * INCH, faceHeight: h * INCH });
+      const expected = threeDShakerRailThickness(w * INCH, h * INCH, null, "raised");
+      expect(g.rail, `${w}x${h}`).toBeCloseTo(expected, 9);
+      expect(g.stile, `${w}x${h}`).toBeCloseTo(expected, 9);
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { shakerFrameWidthIn } from "@shared/shakerFrameRule";
+import { shakerFrameWidthIn, type FramedDoorKind } from "@shared/shakerFrameRule";
 
 const INCH = 1 / 12;
 
@@ -9,9 +9,15 @@ const INCH = 1 / 12;
  * - skinny shaker door (face under 12 in wide, confirm with Tom): min(2.75, 25% of
  *   the face width), so the recessed center stays at least half the door wide.
  * Rails equal stiles. A verified non-standard width (Slim Shaker 1 in) is kept.
+ * `kind` "raised": raised panel doors use 2.5 in, with the same skinny cap (3:51 PM CT).
  */
-export function threeDShakerRailThickness(faceWidth: number, faceHeight: number, verifiedInches?: string | number | null) {
-  return shakerFrameWidthIn(faceWidth / INCH, faceHeight / INCH, verifiedInches) * INCH;
+export function threeDShakerRailThickness(
+  faceWidth: number,
+  faceHeight: number,
+  verifiedInches?: string | number | null,
+  kind: FramedDoorKind = "shaker",
+) {
+  return shakerFrameWidthIn(faceWidth / INCH, faceHeight / INCH, verifiedInches, kind) * INCH;
 }
 
 /** The physical Shaker frame must share the exact pose of its door face. */

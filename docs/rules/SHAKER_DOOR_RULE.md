@@ -80,18 +80,22 @@ This overrides two earlier decisions: the Nov 1 rule that soft inner-frame edges
 - Phones (`threeDRenderQualityProfile` tier `mobile`) draw the opening edge only and fainter. The Designer has a "Door edges" on/off toggle (remembered in the browser) that hides or shows built outlines without a rebuild.
 - The door audit and the four-source cabinet preview use `outlineEdges` from the same module.
 
-## Regular shaker vs skinny shaker (Tom, Nov 21 2026, 3:35 PM and 3:45 PM CT)
+## Regular shaker vs raised panel vs skinny doors (Tom, Nov 21 2026, 3:35, 3:45 and 3:51 PM CT)
 
-One rule in `shared/shakerFrameRule.ts` (`shakerFrameWidthIn`) sets the rail and stile width. The 3D Designer uses it through `threeDShakerRailThickness` in `client/src/lib/shakerRail.ts`, and the admin Door Box Blueprint uses it through `dlShakerFrameIn` in `shared/doorBoxBlueprint.ts`.
+One rule in `shared/shakerFrameRule.ts` (`shakerFrameWidthIn`) sets the rail and stile width for every framed door. The 3D Designer uses it through `threeDShakerRailThickness` in `client/src/lib/shakerRail.ts`. In `InteractiveRoom3D.tsx`, `addShakerFrame` passes `"raised"` for a raised panel face, and the top-rail pull does the same. The admin Door Box Blueprint uses it through `dlShakerFrameIn` (shaker) and `raisedPanelFrameGeometry` (raised panel).
 
 | Door | Door face width | Rail/stile frame |
 |---|---|---|
-| Regular shaker | 12 in or wider | Fixed **2-3/4 in (2.75 in)**. A stored 2.75 or 3 in width, or no stored width, all mean 2.75. |
-| Skinny shaker | Under 12 in (`SKINNY_SHAKER_FACE_BELOW_IN`, **confirm with Tom**) | **min(2.75 in, 25% of the face width)**. |
+| Regular shaker | 12 in or wider | Fixed **2.75 in (2-3/4 in)** |
+| Raised panel | 12 in or wider | Fixed **2.5 in** (`RAISED_PANEL_FRAME_IN`) |
+| Skinny shaker | Under 12 in (`SKINNY_SHAKER_FACE_BELOW_IN`, **confirm with Tom**) | **min(2.75 in, 25% of the face width)** |
+| Skinny raised panel | Under 12 in (**confirm with Tom**) | **min(2.5 in, 25% of the face width)** |
 
 - On every door, rails equal stiles.
-- The 25% cap applies only to skinny doors. It keeps the recessed center at least half the door wide. A 9 in door (8.875 in face) gets a 2.22 in frame and a 4.44 in center.
-- Between an 11 and 12 in face, 25% is more than 2.75, so those skinny doors still get 2.75 in.
-- A verified non-standard width, such as Slim Shaker's 1 in, is kept.
-- Faces under 7 in are plain slabs in the admin blueprint.
+- A stored 2.75 or 3 in width, or no stored width, means the door type's fixed frame.
+- A measured non-standard width is kept, for example Slim Shaker's 1 in or a measured 2 in raised frame.
+- The skinny cap keeps the recessed center at least half the door wide. A 9 in door (8.875 in face) gets a 2.22 in frame.
+- The skinny cap only reduces the frame below 11 in (shaker) or 10 in (raised panel).
+- The admin raised panel blueprint (`RAISED_PANEL_BLUEPRINT.frame`) is aligned to 2.5 in so it matches the 3D door. Confirm with Tom.
 - 25% is a Designer proportion, not a published DL number. DL publishes no rail width.
+- Faces under 7 in are plain slabs in the admin blueprint.

@@ -6639,8 +6639,10 @@ export function addCabinet(
 	    }) && isRaisedPanelFrontSurface(faceRole);
 	    const framedProfile = forceGlassFrame || raisedProfile || threeDUsesPhysicalShakerRails(profileKind, Boolean(doorTexture));
 	    if (!framedProfile) return;
-    const rail = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth);
-    const stile = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.stileWidth);
+    // Raised panel doors use the 2.5 in frame, shakers 2.75 in (Tom, Nov 21 2026, 3:51 PM CT).
+    const frameKind = raisedProfile ? "raised" as const : "shaker" as const;
+    const rail = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth, frameKind);
+    const stile = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.stileWidth, frameKind);
     if (!rail || !stile) return;
     const frameGroup = new THREE.Group();
     const pose = threeDShakerFramePose(x, y, z, rotationY);
@@ -6795,7 +6797,7 @@ export function addCabinet(
     // Top-center is a construction position, not the center of the panel. For
     // framed doors it belongs on the physical upper rail. The old 34% offset
     // placed a B18 trashcan pull in the recessed center panel.
-    const topRailWidth = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth);
+    const topRailWidth = threeDShakerRailThickness(faceWidth, faceHeight, doorProfile?.railWidth, profileKind === "raised" || doorProfile?.panelConstruction === "raised" ? "raised" : "shaker");
     const pullLength = Math.min(Math.max(0.12, ((drawer || horizontalTopRailPull) ? faceWidth : faceHeight) * ((drawer || horizontalTopRailPull) ? 0.48 : 0.28)), (drawer || horizontalTopRailPull) ? 0.62 : 0.86);
     const isKnob = piece === "knob";
     const isCupPull = piece === "cup";
