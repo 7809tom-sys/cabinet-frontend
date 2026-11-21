@@ -88,8 +88,8 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     zh: "比較每個門板樣式的樣品照片、已接受的渲染圖與最新的設計工具渲染圖。可執行全部樣式、僅變更的樣式，或您選取的樣式。接受或拒絕標記的渲染圖，還原到上一版，或從該樣式的歷史紀錄恢復任一版本。",
   },
   "door-box-blueprint": {
-    en: "Read-only blueprint of a door's box: the DL shaker door (rails, stiles, center panel, depth) and the canonical slab door the library falls back to. Every shaker door uses the DL shaker style. Change the width, height, and rail to see the dimensions.",
-    zh: "門板盒體藍圖（唯讀）：DL 夏克門（上下橫檔、左右豎框、中心板、厚度）以及型錄預設使用的標準平板門。所有夏克門一律使用 DL 夏克樣式。可調整寬度、高度與橫檔尺寸查看尺寸。",
+    en: "Read-only blueprint of a door's box: the DL shaker door (rails, stiles, center panel, depth), the canonical slab door the library falls back to, and the DL raised panel and DL slim shaker doors. Values not yet confirmed are marked TBD. Every shaker door uses the DL shaker style. Change the width, height, and rail to see the dimensions.",
+    zh: "門板盒體藍圖（唯讀）：DL 夏克門（上下橫檔、左右豎框、中心板、厚度）、型錄預設使用的標準平板門，以及 DL 凸板門與 DL 窄框夏克門。尚未確認的數值標示為 TBD。所有夏克門一律使用 DL 夏克樣式。可調整寬度、高度與橫檔尺寸查看尺寸。",
   },
   distributors: {
     en: "Manage distributor records. Add new distributors, update contact details, and configure their product line settings.",
