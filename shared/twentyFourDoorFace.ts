@@ -74,7 +74,7 @@ export function keepsItsOwnDoorCount(input: DoorFaceCabinet): boolean {
   const corner = (input.cornerType ?? "").toLowerCase();
   if (corner && corner !== "none" && corner !== "straight") return true;
   const code = compact(input.masterCode);
-  if (/^(?:DCW|WDC|KWD|DCB|DCFF|WAC|AW|WFD|BBC|WBC|BER|ERB|LSB|WTC|BTC|BEC|BAC|CDB|FSB|BMW|BMC|WMS|WXR|WWC|RHF|UOC|OC|VDDB|AG\d|CAG|DKD|VKD)/.test(code)) {
+  if (/^(?:DCW|WDC|KWD|DCB|DCFF|WAC|AW|WFD|BBC|WBC|BER|ERB|LSB|WTC|BTC|BEC|BAC|CDB|FSB|BMW|BMC|MB|WMS|WXR|WWC|RHF|UOC|OC|VDDB|AG\d|CAG|DKD|VKD)/.test(code)) {
     return true;
   }
   if (/^(?:RB)?[23]DB/.test(code) || /^DB\d/.test(code) || /^[23]VDB/.test(code)) return true;

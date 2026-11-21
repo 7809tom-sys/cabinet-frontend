@@ -769,7 +769,7 @@ describe("3D fallback appliance run seams", () => {
     expect(constructedFaceFrames).toBe(0);
   });
 
-  it("renders the KitchenCrest OE630 generic form as a square 6-by-30-by-12 open-end shelf with two shelves", () => {
+  it("renders the KitchenCrest OE630 form as a 6-by-30-by-12 open-end shelf with two shelves and rounded front corners", () => {
     const root = new THREE.Group();
     addCabinet(root, {
       distributorSkuId: 630,
@@ -782,6 +782,7 @@ describe("3D fallback appliance run seams", () => {
       depth: 12,
       numberOfDoors: 0,
       numberOfDrawers: 0,
+      graphicType: "curved-open-shelf",
       // The live master had a stale count; the supplied generic line art is the
       // deliberate visual authority for this exact, description-confirmed form.
       fixedShelfCount: 3,
@@ -789,17 +790,171 @@ describe("3D fallback appliance run seams", () => {
 
     const shelfRoot = root.children[0]!;
     const fixedShelves: THREE.Mesh[] = [];
+    const cabinetFronts: THREE.Object3D[] = [];
     shelfRoot.traverse((node) => {
       if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) fixedShelves.push(node);
+      if (node.userData.cabinetFront) cabinetFronts.push(node);
     });
     expect(fixedShelves).toHaveLength(2);
-    expect(fixedShelves.every((shelf) => shelf.geometry.type === "BoxGeometry" && shelf.userData.roundedExposedCorner === null)).toBe(true);
+    expect(fixedShelves.every((shelf) => shelf.geometry.type === "ExtrudeGeometry" && shelf.userData.roundedExposedCorner === "both")).toBe(true);
     expect(fixedShelves.every((shelf) => shelf.userData.kitchenCrestGenericOpenEndShelf === true)).toBe(true);
+    expect(cabinetFronts).toHaveLength(0);
+    expect(shelfRoot.userData.floorStandingCabinet).toBeUndefined();
     root.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(shelfRoot);
     expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(6, 6);
     expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(30, 6);
     expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(12, 6);
+  });
+
+  it("keeps OE636 and OE642 as open-end shelves with rounded front corners even when graphicType is wall_0door", () => {
+    for (const [masterCode, height, shelves] of [
+      ["OE636", 36, 3],
+      ["OE642", 42, 3],
+    ] as const) {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 9360163,
+        cabinetId: 9360163,
+        masterCode,
+        description: `6" x ${height}" Open End Shelf Wall Cabinet`,
+        subCategory: masterCode === "OE642" ? "Standard Wall" : "Open Shelf",
+        placementType: "wall",
+        width: 6,
+        height,
+        depth: 12,
+        numberOfDoors: 0,
+        numberOfDrawers: 0,
+        graphicType: "wall_0door",
+        // Stale live counts (4) must not override the shared 36/42 line art (3).
+        numberOfFixedShelves: 4,
+      } as never, "back", {}, 144, 120, "#b99a6b", "#f8f8f6", undefined, { x: 18, z: 6, rotation: 0, bottom: 96 - height });
+
+      const shelfRoot = root.children[0]!;
+      const fixedShelves: THREE.Mesh[] = [];
+      const cabinetFronts: THREE.Object3D[] = [];
+      shelfRoot.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.userData.wallOpenShelfFixedShelf) fixedShelves.push(node);
+        if (node.userData.cabinetFront) cabinetFronts.push(node);
+      });
+      expect(fixedShelves, masterCode).toHaveLength(shelves);
+      expect(fixedShelves.every((shelf) => shelf.geometry.type === "ExtrudeGeometry"), masterCode).toBe(true);
+      expect(fixedShelves.every((shelf) => shelf.userData.roundedExposedCorner === "both"), masterCode).toBe(true);
+      expect(cabinetFronts, masterCode).toHaveLength(0);
+      expect(shelfRoot.userData.floorStandingCabinet, masterCode).toBeUndefined();
+    }
+  });
+
+  it("renders MB30 and MB33 like BMC-27: an open top microwave shelf over one bottom drawer", () => {
+    expect(resolvedThreeDFaceLayout({
+      masterCode: "MB30",
+      description: '30" Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+      placementType: "base",
+      width: 30,
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+      graphicType: "base_0door",
+    })).toEqual({ hasConfiguredOpening: true, doorCount: 0, drawerCount: 1 });
+    expect(resolvedThreeDFaceLayout({
+      masterCode: "MB33",
+      description: '33" Microwave Base Cabinet',
+      placementType: "base",
+      width: 33,
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+      graphicType: "base_0door",
+    })).toEqual({ hasConfiguredOpening: true, doorCount: 0, drawerCount: 1 });
+    expect(resolvedThreeDFaceLayout({
+      masterCode: "BMC-27",
+      description: '27" Base Microwave Cabinet',
+      placementType: "base",
+      openingType: "top",
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+    })).toEqual({ hasConfiguredOpening: true, doorCount: 0, drawerCount: 1 });
+
+    for (const [masterCode, width] of [["MB30", 30], ["MB33", 33], ["BMW30", 30]] as const) {
+      const root = new THREE.Group();
+      addCabinet(root, {
+        distributorSkuId: 9360050,
+        cabinetId: 9360050,
+        masterCode,
+        description: `${width}" Microwave Base Cabinet`,
+        placementType: "base",
+        width,
+        height: 34.5,
+        depth: 24,
+        numberOfDoors: 0,
+        numberOfDrawers: 1,
+        graphicType: masterCode === "BMW30" ? "base_microwave" : "base_0door",
+      } as never, null, {}, 144, 120, "#8a9ba8", "#f8f8f6");
+      const openings: THREE.Object3D[] = [];
+      const doors: THREE.Object3D[] = [];
+      const drawers: THREE.Object3D[] = [];
+      root.traverse((node) => {
+        if (node.userData.configuredOpening) openings.push(node);
+        if (node.userData.cabinetFront && !node.userData.configuredOpening && !node.userData.cabinetDrawerFront && !node.userData.cabinetHardware) doors.push(node);
+        if (node.userData.cabinetDrawerFront) drawers.push(node);
+      });
+      expect(openings, masterCode).toHaveLength(1);
+      expect(openings[0]!.userData.openingType, masterCode).toBe("top");
+      expect(drawers.length, masterCode).toBeGreaterThan(0);
+      expect(doors.filter((door) => door.userData.cabinetFront && !door.userData.cabinetDrawerFront), masterCode).toHaveLength(0);
+    }
+  });
+
+  it("renders BES12 as an open quarter-round end shelf with three interior shelves, no doors, and a recessed toe kick", () => {
+    expect(resolvedThreeDSpecialtyProfile({
+      masterCode: "BES12",
+      description: '12" Base End Shelf Cabinet - Open curved unit with 5 shelves (configurable left or right)',
+      subCategory: "Base End Cabinet",
+      graphicType: "curved-open-shelf",
+      customProfile: "curved-open-shelf",
+    } as never)).toEqual({ kind: "curved-open-shelf", pattern: null });
+
+    const root = new THREE.Group();
+    addCabinet(root, {
+      distributorSkuId: 9360046,
+      cabinetId: 9360046,
+      masterCode: "BES12",
+      description: '12" Base End Shelf Cabinet - Open curved unit with 5 shelves (configurable left or right)',
+      subCategory: "Base End Cabinet",
+      placementType: "base",
+      width: 12,
+      height: 34.5,
+      depth: 24,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+      graphicType: "curved-open-shelf",
+      customProfile: "curved-open-shelf",
+      numberOfFixedShelves: 3,
+    } as never, null, {}, 144, 120, "#7e8d72", "#f8f8f6");
+
+    const cabinet = root.children[0]!;
+    const parts: string[] = [];
+    const shelves: THREE.Mesh[] = [];
+    const fronts: THREE.Object3D[] = [];
+    const kicks: THREE.Object3D[] = [];
+    cabinet.traverse((node) => {
+      if (node.userData.curvedOpenShelfPart) parts.push(node.userData.curvedOpenShelfPart);
+      if (node instanceof THREE.Mesh && node.userData.curvedOpenShelfFixedShelf) shelves.push(node);
+      if (node.userData.cabinetFront) fronts.push(node);
+      if (node.userData.curvedOpenShelfPart === "toe-kick") kicks.push(node);
+    });
+    expect(parts.sort()).toEqual(["back", "bottom", "closed-side", "fixed-shelf", "fixed-shelf", "fixed-shelf", "toe-kick", "top"]);
+    expect(shelves).toHaveLength(3);
+    expect(shelves.every((shelf) => shelf.geometry.type === "ExtrudeGeometry")).toBe(true);
+    expect(shelves.every((shelf) => shelf.userData.quarterRoundRadiusIn === 12 || shelf.userData.quarterRoundRadiusIn > 0)).toBe(true);
+    expect(fronts).toHaveLength(0);
+    expect(kicks).toHaveLength(1);
+    expect(kicks[0]!.userData.toeKickRecessIn).toBe(3);
+    expect(cabinet.userData.floorStandingCabinet).toBe(true);
+    expect(cabinet.userData.cornerGeometryKind).not.toBe("base-end");
+    root.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(cabinet);
+    expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(12, 5);
+    expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(34.5, 5);
+    expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(24, 5);
   });
 
   it("renders a 45-degree base filler as a narrow cabinet-face board above the toe kick", () => {
@@ -8684,6 +8839,58 @@ describe("interactive 3D room scene helpers", () => {
       expect(bodyBounds.max.z - bodyBounds.min.z).toBeCloseTo(1, 5);
       expect(bodyBounds.max.y - bodyBounds.min.y).toBeCloseTo(Number(masterCode.slice(-2)) / 12, 5);
     });
+  });
+
+  it("renders AW1230, AW1236, and AW1242 on one wall-end-angle path with the door flush on the angled face, including the legacy wall_angle graphic", () => {
+    const rows = [
+      { masterCode: "AW1230", height: 30, graphicType: "wall_angle", subCategory: "Angle wall" },
+      { masterCode: "AW1236", height: 36, graphicType: "wall-end-angle", subCategory: "Wall Angle Cabinet" },
+      { masterCode: "AW1242", height: 42, graphicType: "wall-end-angle", subCategory: "Wall Angle Cabinet" },
+    ] as const;
+    for (const row of rows) {
+      const sku = existingCabinetSku({
+        uid: row.masterCode.toLowerCase(),
+        cabinetId: 9360146,
+        masterCode: row.masterCode,
+        description: `12"x ${row.height}" Angle Wall Cabinet`,
+        category: "Wall",
+        subCategory: row.subCategory,
+        placement: "wall",
+        x: 0,
+        y: 0,
+        width: 12,
+        height: row.height,
+        depth: 12,
+        rotation: 0,
+        customProfile: row.graphicType,
+        numberOfDoors: 1,
+        numberOfDrawers: 0,
+      } as never);
+      expect(sku.customProfile, row.masterCode).toBe("wall-end-angle");
+      expect(sku.graphicType, row.masterCode).toBe("wall-end-angle");
+      expect(resolvedThreeDSpecialtyProfile(sku).kind, row.masterCode).toBe("wall-angle-end");
+
+      const root = new THREE.Group();
+      addCabinet(root, sku, null, {}, 144, 120, "#8a9ba8", "#f8f8f6", undefined, { x: 0, z: 0, rotation: 0, bottom: 54 });
+      const cabinet = root.children[0]!;
+      const wedges: THREE.Mesh[] = [];
+      const doors: THREE.Mesh[] = [];
+      cabinet.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.userData.angledWallWedge) wedges.push(node);
+        if (node instanceof THREE.Mesh && node.userData.angledWallDoor) doors.push(node);
+      });
+      expect(wedges, row.masterCode).toHaveLength(1);
+      expect(doors, row.masterCode).toHaveLength(1);
+      expect(doors[0]!.userData.flushPhysicalFace, row.masterCode).toBe(true);
+      // The door stays in the carcass frame so it is affixed to the hypotenuse,
+      // not pushed forward by the generic rectangular faceDepth.
+      expect(doors[0]!.parent!.position.z, row.masterCode).toBeCloseTo(0, 6);
+      const plan = wallAngleEndPlan({ widthIn: 12, depthIn: 12, hand: "right" });
+      expect(doors[0]!.rotation.y, row.masterCode).toBeCloseTo(plan.doorFace.rotationY, 6);
+      const clearance = doors[0]!.position.x * plan.doorFace.outward.x + doors[0]!.position.z * plan.doorFace.outward.z;
+      expect(clearance, row.masterCode).toBeGreaterThan(0.026);
+      expect(clearance, row.masterCode).toBeLessThan(0.08);
+    }
   });
 
   it("renders a pantry as two two-door sets split by a 54-inch lower door section", () => {

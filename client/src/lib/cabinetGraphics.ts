@@ -6,6 +6,7 @@ import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
 import { isBaseAngleEndCabinet } from "./baseAngleEndLayout";
 import { isPlainBaseCode } from "./plainBaseCode";
 import { isWallAngleEndCabinet } from "./wallAngleEndLayout";
+import { isCurvedOpenShelfCabinet } from "./curvedOpenShelf";
 
 export type CabinetDrawingType =
   | "standard-door" // 1+ door box (base/wall/tall)
@@ -74,6 +75,8 @@ export interface CabinetLike {
   facePattern?: "slats" | "criss-cross" | "lattice" | "open" | null;
   /** Cabinet Config graphic type copied into a placed cabinet as customProfile. */
   graphicType?: string | null;
+  /** Placed copy of Cabinet Config graphicType. */
+  customProfile?: string | null;
 }
 
 export type VanityComboFaceLayout = {
@@ -276,6 +279,33 @@ const WORD_NUM: Record<string, number> = {
  * source". It is optional because a placed cabinet that merely carries the
  * numbers is authoritative on its own.
  */
+/**
+ * Base microwave cabinets (BMC / MB / BMW): an open microwave shelf over one
+ * bottom drawer, never a hinged door face. The MB spelling is the same cabinet
+ * as BMC/BMW; only the width differs.
+ */
+export function isMicrowaveBaseCabinet(cab: Pick<CabinetLike, "masterCode" | "description" | "subCategory" | "graphicType" | "customProfile">): boolean {
+  const desc = lc(cab.description);
+  const sub = lc(cab.subCategory);
+  const code = lc(cab.masterCode);
+  const graphic = lc(cab.graphicType ?? cab.customProfile);
+  return /microwave base|base microwave/.test(`${desc} ${sub}`)
+    || /^(?:bmc|mb|bmw)[-_]?\d/.test(code)
+    || graphic === "base_microwave";
+}
+
+/**
+ * A microwave base's opening sits at the top when Cabinet Config left
+ * openingType blank. Authored top/middle/bottom values stay as written.
+ */
+export function resolvedMicrowaveBaseOpeningType(
+  cab: Pick<CabinetLike, "masterCode" | "description" | "subCategory" | "graphicType" | "customProfile" | "openingType">,
+): "top" | "middle" | "bottom" | null {
+  const opening = (cab.openingType ?? "").trim().toLowerCase();
+  if (opening === "top" || opening === "middle" || opening === "bottom") return opening;
+  return isMicrowaveBaseCabinet(cab) ? "top" : null;
+}
+
 function resolveDoorDrawerCountsUncorrected(cab: CabinetLike & { cabinetConfigAuthored?: boolean | null }): {
   doors: number;
   drawers: number;
@@ -347,7 +377,7 @@ function resolveDoorDrawerCountsUncorrected(cab: CabinetLike & { cabinetConfigAu
   // Microwave bases are an explicit Cabinet Config contract, not a generic
   // door-base inference. In particular BMC30 is configured as 0 doors and 1
   // drawer; never use the width fallback to invent two doors for it.
-  if (/microwave base|base microwave/.test(`${desc} ${sub}`) || /^(?:bmc|mb|bmw)[-_]?\d/.test(code)) {
+  if (isMicrowaveBaseCabinet(cab)) {
     return {
       doors: Math.max(0, cab.numberOfDoors ?? 0),
       drawers: Math.max(0, cab.numberOfDrawers ?? 1),
@@ -485,9 +515,15 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
     return "range-hood-front";
   }
 
+  // A curved open end shelf (BES12, graphicType curved-open-shelf) is not a
+  // BA/BEC angled end, even when its subcategory still says "Base End Cabinet".
+  // Elevation already has a vector profile for `curved-open-shelf`; skip the
+  // end-angle detectors so that profile can own the face.
+  const curvedOpenEndShelf = isCurvedOpenShelfCabinet(cab);
+
   // BA-24 / BEC24 / BAC24 is the quarter-octagon end cabinet. The exact code
   // beats a stale square, diagonal, or two-face return override.
-  if (isBaseAngleEndCabinet(cab)) return "end-angle";
+  if (!curvedOpenEndShelf && isBaseAngleEndCabinet(cab)) return "end-angle";
 
   // WAC1230/WAC1236/WAC1242 and AW aliases. Cabinet Config's wall_angle profile
   // is the same family. This is a wall-run end, not the BA-24 quarter-octagon.
@@ -569,14 +605,16 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
   // mates to a base run and its exposed end is one 45-degree angled panel with
   // a single 17½-inch door—never a room corner or two folded return faces.
   if (
-    /base end corner|base end cabinet|end corner return|base end angle/.test(sub) ||
-    /^(?:bec|ba)[-_]?\d/.test(code) ||
-    /base end corner/.test(hay)
+    !curvedOpenEndShelf && (
+      /base end corner|base end cabinet|end corner return|base end angle/.test(sub) ||
+      /^(?:bec|ba)[-_]?\d/.test(code) ||
+      /base end corner/.test(hay)
+    )
   ) {
     return "end-angle";
   }
   // Other base-angle products remain a one-face end-of-run angled cabinet.
-  if (/base angle.*end of run|base end (?:angle|cabinet)/.test(hay)) {
+  if (!curvedOpenEndShelf && /base angle.*end of run|base end (?:angle|cabinet)/.test(hay)) {
     return "end-angle";
   }
 
@@ -631,7 +669,7 @@ export function cabinetDrawingType(cab: CabinetLike): CabinetDrawingType {
   // Microwave bases are a dedicated front: a microwave opening over the
   // configured drawer(s). They are not normal door bases, even where a supplier
   // description omits the cabinet's zero-door count.
-  if (/microwave base|base microwave/.test(hay) || /^(?:bmc|mb|bmw)[-_]?\d/.test(code)) {
+  if (isMicrowaveBaseCabinet(cab)) {
     return "microwave-base";
   }
 
