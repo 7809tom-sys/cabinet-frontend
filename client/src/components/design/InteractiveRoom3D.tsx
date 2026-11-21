@@ -3256,8 +3256,8 @@ export function isEnclosedWallMicrowaveCabinet(sku: EnclosedWallMicrowaveCandida
 
   const code = (sku.masterCode ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase();
   const description = (sku.description ?? "").toLowerCase();
-  const isEnclosedWallMicrowaveCode = /^MW\d{4}$/.test(code) && !code.startsWith("WMS");
-  const isExplicitWallMicrowaveDescription = /(?:microwave\s+wall\s+cabinet|wall\s+microwave\s+cabinet)/.test(description);
+  const isEnclosedWallMicrowaveCode = /^(?:MW|MO)\d{4}$/.test(code) && !code.startsWith("WMS");
+  const isExplicitWallMicrowaveDescription = /(?:microwave\s+wall\s+cabinet|wall\s+microwave\s+cabinet|microwave\s+oven\s+cabinet)/.test(description);
   return isEnclosedWallMicrowaveCode || isExplicitWallMicrowaveDescription;
 }
 
@@ -6875,7 +6875,10 @@ export function addCabinet(
   // BEC24's source description says "Quarter-Octagon". The generic OC oven
   // code matcher otherwise sees the "-Oc" substring and draws an oven door
   // over this square, two-door end cabinet. Keep all actual oven paths intact.
-  const isOvenCabinet = !isBaseAngleEndCabinet(sku) && !isPlacedAppliance && Boolean(sku.ovenType || /(?:^|[-_])(UOC|OC|OVEN)|oven cabinet/i.test(sku.masterCode + " " + (sku.description ?? "")));
+  const microwaveWallCode = (sku.masterCode ?? "").replace(/[^a-z0-9]/gi, "").toUpperCase();
+  const isMicrowaveWallOvenCabinet = /^MO\d{4}$/.test(microwaveWallCode)
+    || /\bmicrowave\s+oven\s+cabinet\b/i.test(sku.description ?? "");
+  const isOvenCabinet = !isMicrowaveWallOvenCabinet && !isBaseAngleEndCabinet(sku) && !isPlacedAppliance && Boolean(sku.ovenType || /(?:^|[-_])(UOC|OC|OVEN)|oven cabinet/i.test(sku.masterCode + " " + (sku.description ?? "")));
   if (specialty.kind === "range-hood-front") {
     const hoodFront = rangeHoodFrontGeometry(widthIn, heightIn, depthIn);
     frontGroup.userData = {
@@ -12762,7 +12765,7 @@ export function existingCabinetSku(cabinet: PlacedCabinet, room?: RoomData, peer
   const applianceCode = `${cabinet.masterCode ?? ""}`.toLowerCase().replace(/[^a-z0-9]/g, "");
   // A code prefix that names an appliance family. A RANGE BASE (RB…) is a base
   // cabinet, never an appliance, so its "range" substring does not opt it in.
-  const inferredAppliancePlacement = /^(?:fridge|range|hood|dw|wine|mw)/i.test(cabinet.masterCode ?? "")
+  const inferredAppliancePlacement = /^(?:fridge|range|hood|dw|wine|mw-)/i.test(cabinet.masterCode ?? "")
     && !/^RB-?\d*DB/i.test((cabinet.masterCode ?? "").toUpperCase());
   // Tall UOC / oven-pantry cabinets contain an oven but are not appliances.
   // Keep their configured tall enclosure in the oven-cabinet renderer. Sending
