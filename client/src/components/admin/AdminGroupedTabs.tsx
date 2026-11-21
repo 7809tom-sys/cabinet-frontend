@@ -51,6 +51,7 @@ import PaymentsAdmin from "@/components/admin/PaymentsAdmin";
 import DesignLeadsAdmin from "@/components/admin/DesignLeadsAdmin";
 import DoorCorrectionsAdmin from "@/components/admin/DoorCorrectionsAdmin";
 import DoorRenderingAuditAdmin from "@/components/admin/DoorRenderingAuditAdmin";
+import DoorBoxBlueprintAdmin from "@/components/admin/DoorBoxBlueprintAdmin";
 import ConsultationsAdmin from "@/components/admin/ConsultationsAdmin";
 import SalesCommissionsAdmin from "@/components/admin/SalesCommissionsAdmin";
 import SalesRepsAdmin from "@/components/admin/SalesRepsAdmin";
@@ -639,6 +640,7 @@ export default function AdminGroupedTabs() {
             <TabsContent value="featured" className="mt-6"><AdminTabErrorBoundary tabName="Featured Styles"><AdminTabHelp tab="featured" /><SupplierSamplesAdmin /><FeaturedStylesAdmin /></AdminTabErrorBoundary></TabsContent>
             <TabsContent value="door-corrections" className="mt-6"><AdminTabErrorBoundary tabName="Door Corrections"><AdminTabHelp tab="door-corrections" /><DoorCorrectionsAdmin /></AdminTabErrorBoundary></TabsContent>
             <TabsContent value="door-rendering-audit" className="mt-6"><AdminTabErrorBoundary tabName="Door Rendering Audit"><AdminTabHelp tab="door-rendering-audit" /><DoorRenderingAuditAdmin /></AdminTabErrorBoundary></TabsContent>
+            <TabsContent value="door-box-blueprint" className="mt-6"><AdminTabErrorBoundary tabName="Door Box Blueprint"><AdminTabHelp tab="door-box-blueprint" /><DoorBoxBlueprintAdmin /></AdminTabErrorBoundary></TabsContent>
           </CatalogSubTabs>
         </TabsContent>
         <TabsContent value="catalog-images" className="mt-4">

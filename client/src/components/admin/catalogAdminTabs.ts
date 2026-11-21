@@ -63,6 +63,7 @@ export const CATALOG_SECTIONS: readonly CatalogSection[] = [
         { value: "featured", label: "Featured Styles", editors: ["FeaturedStylesAdmin"], help: "featured", boundary: "Featured Styles" },
         { value: "door-corrections", label: "Door Corrections", editors: ["DoorCorrectionsAdmin"], help: "door-corrections", boundary: "Door Corrections" },
         { value: "door-rendering-audit", label: "Door Rendering Audit", editors: ["DoorRenderingAuditAdmin"], help: "door-rendering-audit", boundary: "Door Rendering Audit" },
+        { value: "door-box-blueprint", label: "Door Box Blueprint", editors: ["DoorBoxBlueprintAdmin"], help: "door-box-blueprint", boundary: "Door Box Blueprint" },
       ],
     }],
   },

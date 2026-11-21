@@ -68,7 +68,7 @@ describe("Products & Catalog tab groups", () => {
   it("groups the catalog editors the way the admin row is organized", () => {
     expect(CATALOG_SECTIONS.map((section) => [section.label, catalogLeaves(section).map((leaf) => leaf.value)])).toEqual([
       ["Catalog", ["cabinets"]],
-      ["Door styles", ["featured", "door-corrections", "door-rendering-audit"]],
+      ["Door styles", ["featured", "door-corrections", "door-rendering-audit", "door-box-blueprint"]],
       ["Images", ["images", "media-library", "generated-design-images"]],
       ["Suppliers", ["distributors", "glass-policy", "catalog-importer", "pending-distributor-connections", "vendor-onboarding"]],
       ["Publish", ["publish"]],

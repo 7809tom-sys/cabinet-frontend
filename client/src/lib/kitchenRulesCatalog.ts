@@ -533,6 +533,18 @@ const ownerSeeds: KitchenRuleSeed[] = [
     readsParameters: false,
     notesText: "Enforced by standardShakerDlFacePlan in shared/shakerDoorBlueprint.ts. Geometry stays the DL template. The painted color is the door's own color; the test fails if a brand swatch replaces it.",
   },
+  {
+    ruleCode: "owner-shaker-always-dl",
+    category: "Owner doors",
+    title: "FIRM RULE: every shaker door uses the DL shaker style",
+    ruleDescription: "FIRM RULE (Tom, voice, Nov 21 2026): whenever a shaker door is chosen or rendered, it uses the DL shaker style (the DL Shaker blueprint: square rail and stile frame, flat center slab, shared notch). There is no non-DL shaker fallback, including a plain shaker whose stored rail width is not 2.75 or 3 inches. Kept exceptions set earlier by Tom: a WalzCraft wizard record for the style wins, Slim Shaker and Double Shaker keep their own frames, hickory keeps its own catalog photo, a front under 7 inches renders as a plain slab, and a slab or glass build is never a shaker (a five-piece slab stays a five-piece slab). An AI door description that reads 'shaker' maps to the same DL shaker library entry (dl-shaker-frame).",
+    parameters: {},
+    enforcementKind: "auto",
+    sourceText: "Owner",
+    implementationStatus: "implemented",
+    readsParameters: false,
+    notesText: "Hard rule from the owner. Stated as DL_SHAKER_FIRM_RULE and enforced in matchStandardShakerToDl / standardShakerDlFacePlan (shared/shakerDoorBlueprint.ts). Pinned by shared/dlShakerFirmRule.test.ts. The admin Door Box Blueprint tab (Products & Catalog → Door styles) shows the DL shaker door box.",
+  },
 ];
 
 export const KITCHEN_RULE_SEED: readonly KitchenRuleSeed[] = [...researchSeeds, ...ownerSeeds, ...richQuestionSeeds];
