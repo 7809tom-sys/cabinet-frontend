@@ -139,3 +139,22 @@
   min-height: 2rem;
   height: 2rem;
 }
+
+/* Standalone / notched devices (viewport-fit=cover): keep the sticky header
+   clear of the status bar and rounded left/right edges. max(0px, env(...))
+   leaves non-notch phones and desktop unchanged. The slide-down menu sits
+   under the already-padded bar, so it does not get a second top inset;
+   it honors left/right and the home-indicator inset and can scroll. */
+[data-site-header] {
+  padding-top: max(0px, env(safe-area-inset-top, 0px));
+  padding-left: max(0px, env(safe-area-inset-left, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+
+[data-site-header] .slide-up {
+  max-height: calc(100dvh - max(0px, env(safe-area-inset-top, 0px)) - 3.5rem);
+  overflow-y: auto;
+  padding-left: max(0px, env(safe-area-inset-left, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
+  padding-bottom: max(0px, env(safe-area-inset-bottom, 0px));
+}
