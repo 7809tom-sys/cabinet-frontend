@@ -82,11 +82,25 @@ export function kitchenCrestOpenEndShelfCount(c: WallOpenShelfLike): number | nu
  * True for a full-height, wall-mounted open-shelf cabinet — the WOS/WEOS wall
  * families and the OE6 open-end line. A thin floating shelf (FS) is not this.
  */
+/**
+ * KitchenCrest / catalog OE open-end wall shelves (OE630 / OE636 / OE642),
+ * including rows whose graphicType was left as wall_0door. A positive door
+ * count is never this family.
+ */
+export function isOpenEndShelfWallCabinet(c: WallOpenShelfLike & { numberOfDoors?: number | null; graphicType?: string | null; customProfile?: string | null }): boolean {
+  if (c.numberOfDoors != null && Number(c.numberOfDoors) > 0) return false;
+  const code = wallOpenShelfCode(c.masterCode);
+  const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
+  if (/^OE\d+$/.test(code) && /open(?:\s+end)?\s+shelf/.test(hay)) return true;
+  return /\bopen\s+end\s+shelf\b/.test(hay);
+}
+
 export function isWallOpenShelfCabinet(c: WallOpenShelfLike): boolean {
   const code = wallOpenShelfCode(c.masterCode);
   const hay = `${c.subCategory ?? ""} ${c.description ?? ""}`.toLowerCase();
   return /^W(?:E)?OS\d{4}$/.test(code)
     || kitchenCrestOpenEndShelfCount(c) != null
+    || isOpenEndShelfWallCabinet(c)
     || /\bwall\s+(?:end\s+)?open\s+shelf\b|\bwall\s+end\s+shelf\b|\bopen\s+end\s+shelf\s+wall\b/.test(hay);
 }
 

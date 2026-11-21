@@ -37,6 +37,7 @@ import {
   wallOpenShelfNominalSize,
   wallOpenShelfShelfCount as sharedWallOpenShelfShelfCount,
 } from "./wallOpenShelf";
+import { isCurvedOpenShelfCabinet } from "./curvedOpenShelf";
 export { isGlassPolicyNomenclature } from "./glassPolicy";
 
 export const STD = {
@@ -2944,7 +2945,13 @@ export function resolvedDesignCabinetDimensions(cabinet: DesignCabinet): Cabinet
  * A Base End Corner (BEC) is a 24x24 end return with two 12-inch faces. It is
  * deliberately not a lazy-Susan, diagonal, blind, or room-corner cabinet.
  */
-export function isBaseEndCornerCabinet(c: Pick<DesignCabinet, "masterCode" | "description" | "cornerType"> | Pick<PlacedCabinet, "masterCode" | "description" | "cornerType">): boolean {
+export function isBaseEndCornerCabinet(c: (Pick<DesignCabinet, "masterCode" | "description" | "cornerType"> | Pick<PlacedCabinet, "masterCode" | "description" | "cornerType">) & {
+  graphicType?: string | null;
+  customProfile?: string | null;
+  subCategory?: string | null;
+}): boolean {
+  // BES12 / curved-open-shelf is an open end unit, not the 24x24 BEC return.
+  if (isCurvedOpenShelfCabinet(c)) return false;
   const code = (c.masterCode ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const description = (c.description ?? "").toLowerCase();
   return c.cornerType === "base-end-corner" || /^bec\d/.test(code) || /base end (corner|angle|cabinet)/.test(description);

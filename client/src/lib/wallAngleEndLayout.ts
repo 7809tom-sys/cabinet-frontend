@@ -31,6 +31,23 @@ export function wallAngleEndCode(masterCode: string | null | undefined): string 
   return (masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+/** Canonical Cabinet Config graphic for every WAC/AW wall angle end. */
+export const WALL_ANGLE_END_GRAPHIC = "wall-end-angle";
+
+/**
+ * Map legacy tokens (`wall_angle`, `wall-angle`, `angled-wall`) onto the one
+ * drawing type used by AW1236 / AW1242 so AW1230 cannot diverge in 3D.
+ */
+export function normalizedWallAngleEndGraphic(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (!raw) return value ?? null;
+  const token = raw.toLowerCase().replace(/_/g, "-");
+  if (token === "wall-angle" || token === "wall-angle-end" || token === "angled-wall" || token === "wall-end-angle") {
+    return WALL_ANGLE_END_GRAPHIC;
+  }
+  return raw;
+}
+
 /** True for WAC/AW wall-end angle cabinets, not a diagonal room corner or BA-24. */
 export function isWallAngleEndCabinet(cabinet: WallAngleEndFields): boolean {
   const code = wallAngleEndCode(cabinet.masterCode);

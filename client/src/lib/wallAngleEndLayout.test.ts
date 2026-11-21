@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   isWallAngleEndCabinet,
+  normalizedWallAngleEndGraphic,
+  WALL_ANGLE_END_GRAPHIC,
   wallAngleEndClipPath,
   wallAngleEndHandFromRun,
   wallAngleEndPlan,
@@ -20,6 +22,15 @@ describe("wall angle end cabinet", () => {
     expect(isWallAngleEndCabinet({ masterCode: "WDC2430", description: "Diagonal Wall Corner" })).toBe(false);
     expect(isWallAngleEndCabinet({ masterCode: "DCW-24-30", description: "Diagonal Corner Wall" })).toBe(false);
     expect(isWallAngleEndCabinet({ masterCode: "W3030", description: "Wall Cabinet" })).toBe(false);
+  });
+
+  it("normalizes legacy wall_angle and angled-wall tokens to wall-end-angle", () => {
+    expect(WALL_ANGLE_END_GRAPHIC).toBe("wall-end-angle");
+    expect(normalizedWallAngleEndGraphic("wall_angle")).toBe("wall-end-angle");
+    expect(normalizedWallAngleEndGraphic("wall-angle")).toBe("wall-end-angle");
+    expect(normalizedWallAngleEndGraphic("angled-wall")).toBe("wall-end-angle");
+    expect(normalizedWallAngleEndGraphic("wall-end-angle")).toBe("wall-end-angle");
+    expect(normalizedWallAngleEndGraphic("curved-open-shelf")).toBe("curved-open-shelf");
   });
 
   it("keeps the back flat on the wall and tapers the door toward the open end", () => {
