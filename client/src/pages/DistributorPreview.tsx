@@ -22,7 +22,9 @@
 // /distributor-preview/designer redirects there.
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useSearch } from "wouter";
+import { Link, Router, useSearch } from "wouter";
+import { DealerGateDialog, DealersSection, createDealerGatedLocationHook } from "./DistributorDealerGate";
+import { DEALER_GATE_COPY } from "@/lib/demoDealers";
 import { ArrowRight, Lock, Bot, HardHat, Handshake, Sparkles, Camera, CheckCircle2, ScanLine, ShoppingCart, Droplets, FileSpreadsheet, LayoutDashboard, PenTool, Store, Users, Wrench, Contact } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -141,7 +143,7 @@ function useDistributorPreviewSeo() {
 }
 
 /** One slim sticky bar for every demo page (brand, sections, CTA), including the designer. */
-export function DistributorPreviewBanner({ active }: { active: NavId }) {
+export function DistributorPreviewBanner({ active }: { active: NavId | null }) {
   return (
     <header className="sticky top-0 z-[100] border-b bg-white/95 backdrop-blur shadow-sm" style={{ borderBottomColor: DEMO_DISTRIBUTOR.accentColor, borderBottomWidth: 2 }}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2">
@@ -274,7 +276,7 @@ export function DistributorGuideStrip({ active, compact = false }: { active: Nav
 export default function DistributorPreview({ section }: { section?: string }) {
   const id: PageSection = isDistributorPreviewSection(section) ? section : "storefront";
   useDistributorPreviewSeo();
-  const navId: NavId = id === "storefront" || id === "shop" || id === "dashboard" || id === "signup" ? id : "features";
+  const navId: NavId | null = id === "storefront" || id === "shop" || id === "dashboard" || id === "signup" ? id : id === "dealers" ? null : "features";
   useScrollToHash(id);
 
   return (
@@ -291,6 +293,7 @@ export default function DistributorPreview({ section }: { section?: string }) {
         {id === "signup" && <SignupSection />}
         {id === "features" && <FeaturesPage />}
         {isSpotlightSection(id) && <FeatureSpotlightPage id={id} />}
+        {id === "dealers" && <DealersSection />}
       </main>
 
       <DemoFooter />
@@ -700,11 +703,17 @@ function SinksAndFaucetsSection() {
 
 // ─── Designer shell: wraps the unchanged DesignTool at /distributor-preview/design ──
 
+export const DESIGNER_LINES_NOTE = "Showing only this site's three lines: White Shaker, Gray Shaker and Raised Panel, plus sinks and faucets.";
+
 export function DistributorDesignerShell({ children }: { children: ReactNode }) {
   const search = useSearch();
   const lineParam = new URLSearchParams(search).get("line");
   const line = isDemoLineId(lineParam) ? DEMO_LINES.find((l) => l.id === lineParam) ?? null : null;
   useDistributorPreviewSeo();
+  // Dealer-only purchasing: any cart / checkout / order navigation from inside
+  // the designer opens the dealer gate instead (nested router, no DesignTool change).
+  const [gateOpen, setGateOpen] = useState(false);
+  const gatedLocationHook = useMemo(() => createDealerGatedLocationHook(() => setGateOpen(true)), []);
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
@@ -716,11 +725,19 @@ export function DistributorDesignerShell({ children }: { children: ReactNode }) 
           <h1 className="text-sm sm:text-base font-semibold truncate" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>{DEMO_DESIGNER_LABEL}</h1>
           {line ? <Badge variant="outline" className="hidden sm:inline-flex">Line: {line.name}</Badge> : null}
         </div>
-        <p className="text-[11px] text-muted-foreground max-w-xl">
-          Note: the designer below uses the live Cabinet Deals catalog and door styles, not only the three lines shown on this site.
-        </p>
+        <div className="flex items-center gap-2">
+          <p className="hidden md:block text-[11px] text-muted-foreground max-w-md">
+            {DESIGNER_LINES_NOTE}
+          </p>
+          <Button size="sm" className="text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }} onClick={() => setGateOpen(true)} data-testid="designer-get-price">
+            {DEALER_GATE_COPY.shellButton}
+          </Button>
+        </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <Router hook={gatedLocationHook}>{children}</Router>
+      </div>
+      <DealerGateDialog open={gateOpen} onOpenChange={setGateOpen} />
     </div>
   );
 }

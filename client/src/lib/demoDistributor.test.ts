@@ -121,7 +121,7 @@ describe("demo distributor data", () => {
 
   it("keeps the designer inside the demo distributor context, never the sales demo store", () => {
     expect(demoDesignerPath()).toBe("/distributor-preview/design");
-    expect(demoDesignerPath("gray-shaker")).toBe("/distributor-preview/design?line=gray-shaker");
+    expect(demoDesignerPath("gray-shaker")).toBe("/distributor-preview/design?line=gray-shaker&style=360001");
     expect(demoDesignerPath()).not.toContain("sales-demo");
   });
 

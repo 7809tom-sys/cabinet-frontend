@@ -19,12 +19,14 @@ describe("demo distributor feature list", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("covers all 29 distributor-accessible permission matrix rows", () => {
-    const rows = new Set(DEMO_FEATURES.flatMap((f) => f.matrix ?? []));
-    const expected = [1, 3, 4, 6, 7, 9, 10, 14, 24, 31, 32, 35, 36, 40, 42, 43, 44, 45, 49, 51, 57, 58, 71, 77, 85, 88, 89, 90, 97];
-    expect(expected).toHaveLength(29);
-    for (const n of expected) expect(rows.has(n), `matrix row ${n}`).toBe(true);
-    expect(Array.from(rows).sort((a, b) => a - b)).toEqual(expected);
+  it("lists only the matrix rows a single distributor can use today", () => {
+    const rows = Array.from(new Set(DEMO_FEATURES.flatMap((f) => f.matrix ?? []))).sort((a, b) => a - b);
+    expect(rows).toEqual([1, 3, 4, 6, 24, 32, 36, 40, 43, 44, 45, 51, 85, 90, 97]);
+    // Still need an own-scoped endpoint, or marked for Tom's call: not shown.
+    for (const n of [7, 9, 10, 14, 31, 35, 42, 49, 57, 58, 71, 77, 88, 89]) expect(rows).not.toContain(n);
+    const ids = DEMO_FEATURES.map((f) => f.id);
+    for (const id of ["crm", "consultations", "customers", "legal-pages", "literature", "resources", "design-leads", "line-download", "door-blueprint", "glass-policy", "package-data", "unpriced", "price-flags", "designer-coverage"]) expect(ids).not.toContain(id);
+    expect(DEMO_FEATURES).toHaveLength(42);
   });
 
   it("spotlights Auto Design, Contractors, Affiliates, Easy upload, the designer and the back office", () => {

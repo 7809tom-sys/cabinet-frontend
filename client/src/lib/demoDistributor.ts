@@ -19,6 +19,7 @@ import { cheapestAutoDesignFaucet } from "./autoDesignFaucet";
 import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
 import { faucetRowsForBase, sinkRowsForBase } from "./sinkBaseSelection";
 import { KITCHEN_SCENES, type KitchenSceneKey } from "./doorFamilyPhotos";
+import { DEMO_LINE_DOOR_STYLES } from "./demoDesignerCatalog";
 
 export const DEMO_BRAND_NAME = "Cabinet Deals Demo Distributor";
 export const DEMO_DESIGNER_LABEL = "Demo Distributor Designer";
@@ -51,7 +52,9 @@ export const DEMO_SHARE = {
 export const DEMO_DESIGNER_ROUTE = "/distributor-preview/design";
 
 export function demoDesignerPath(lineId?: DemoLineId): string {
-  return lineId ? `${DEMO_DESIGNER_ROUTE}?line=${encodeURIComponent(lineId)}` : DEMO_DESIGNER_ROUTE;
+  if (!lineId) return DEMO_DESIGNER_ROUTE;
+  // `style` is the designer's existing door-style preselect parameter.
+  return `${DEMO_DESIGNER_ROUTE}?line=${encodeURIComponent(lineId)}&style=${DEMO_LINE_DOOR_STYLES[lineId].doorStyleId}`;
 }
 
 // Commission terms shown on the signup CTA. The final rate inside the range is
@@ -122,6 +125,8 @@ export const DEMO_LINES = [
 
 export type DemoLine = (typeof DEMO_LINES)[number];
 export type DemoLineId = DemoLine["id"];
+
+export { DEMO_LINE_DOOR_STYLES, demoDesignerCatalogFilter } from "./demoDesignerCatalog";
 
 export function isDemoLineId(value: unknown): value is DemoLineId {
   return typeof value === "string" && DEMO_LINES.some((line) => line.id === value);
@@ -414,7 +419,7 @@ export function summarizeDemoOrders(orders: DemoOrder[], rate: number = DEMO_COM
   return { count: orders.length, designerCents, csvCents, totalCents: designerCents + csvCents, commissionCents };
 }
 
-export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates"] as const;
+export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates", "dealers"] as const;
 export type DistributorPreviewSection = (typeof DISTRIBUTOR_PREVIEW_SECTIONS)[number];
 
 export function isDistributorPreviewSection(value: unknown): value is DistributorPreviewSection {

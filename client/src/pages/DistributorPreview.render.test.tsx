@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { Router } from "wouter";
 import { describe, expect, it } from "vitest";
-import DistributorPreviewPage, { DEMO_NOTICE, DistributorDesignerShell, FEATURES_COPY, GUIDE_HEADING, GUIDE_STEPS, HERO_COPY, ORDER_STEPS, PITCH_COPY, PRICING_HINT, SHOP_COPY } from "./DistributorPreview";
+import DistributorPreviewPage, { DEMO_NOTICE, DESIGNER_LINES_NOTE, DistributorDesignerShell, FEATURES_COPY, GUIDE_HEADING, GUIDE_STEPS, HERO_COPY, ORDER_STEPS, PITCH_COPY, PRICING_HINT, SHOP_COPY } from "./DistributorPreview";
 import { DEMO_FEATURES, FEATURE_SPOTLIGHTS } from "@/lib/demoDistributorFeatures";
 import { DEMO_LINES, productsForLine } from "@/lib/demoDistributor";
 
@@ -14,7 +14,7 @@ function render(section?: string, search = "") {
 }
 
 describe("DistributorPreview render", () => {
-  it.each(["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates", undefined, "unknown"])("renders the %s section with one demo notice and the brand", (section) => {
+  it.each(["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates", "dealers", undefined, "unknown"])("renders the %s section with one demo notice and the brand", (section) => {
     const html = render(section);
     expect(html.split(DEMO_NOTICE).length - 1).toBe(1);
     expect(html).not.toContain("Demo price, not a quote");
@@ -137,7 +137,8 @@ describe("DistributorPreview render", () => {
     expect(html).toContain("Demo Distributor Designer");
     expect(html).toContain("Line: Gray Shaker");
     expect(html).toContain('id="designer-slot"');
-    expect(html).toContain("live Cabinet Deals catalog");
+    expect(html).toContain(DESIGNER_LINES_NOTE.replace(/'/g, "&#x27;"));
+    expect(html).toContain("Get my price");
     expect(html).toContain(GUIDE_STEPS[1].text);
   });
 });

@@ -15,14 +15,14 @@ describe("demo distributor preview page", () => {
     expect(appSource.indexOf('<Route path="/store-preview/:template">')).toBeLessThan(appSource.indexOf('<Route path="/distributor-preview/:section">'));
   });
 
-  it("mounts the unchanged DesignTool inside the demo distributor shell at /distributor-preview/design", () => {
+  it("mounts DesignTool (with only the demo catalogFilter) inside the demo distributor shell at /distributor-preview/design", () => {
     const design = appSource.indexOf('<Route path="/distributor-preview/design">');
     const section = appSource.indexOf('<Route path="/distributor-preview/:section">');
     expect(design).toBeGreaterThan(-1);
     expect(design).toBeLessThan(section);
     const block = appSource.slice(design, section);
     expect(block).toContain("<DistributorDesignerShell>");
-    expect(block).toContain("<DesignTool />");
+    expect(block).toContain("<DesignTool catalogFilter={demoDesignerCatalogFilter} />");
     expect(block).not.toContain("affiliateSlug");
     expect(appSource).toContain('<Route path="/distributor-preview/designer">');
   });

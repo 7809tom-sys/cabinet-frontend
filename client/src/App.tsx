@@ -69,6 +69,7 @@ const AdminHelperRequestJoin = lazy(() => import("@/pages/AdminHelperRequestJoin
 const Storefront = lazy(() => import("@/pages/Storefront"));
 const StorefrontPreview = lazy(() => import("@/pages/StorefrontPreview"));
 const DistributorPreview = lazy(() => import("@/pages/DistributorPreview"));
+import { demoDesignerCatalogFilter } from "@/lib/demoDesignerCatalog";
 const DistributorDesignerShell = lazy(() => import("@/pages/DistributorPreview").then((m) => ({ default: m.DistributorDesignerShell })));
 const AffiliateDashboard = lazy(() => import("@/pages/AffiliateDashboard"));
 const ContractorDashboard = lazy(() => import("@/pages/ContractorDashboard"));
@@ -678,7 +679,8 @@ export default function App() {
             <Suspense fallback={<PageLoader />}>
               <DistributorDesignerShell>
                 <DesignerErrorBoundary surface="designer">
-                  <DesignTool />
+                  {/* Only this route passes catalogFilter: the three demo lines (sinks/faucets unaffected). */}
+                  <DesignTool catalogFilter={demoDesignerCatalogFilter} />
                 </DesignerErrorBoundary>
               </DistributorDesignerShell>
             </Suspense>
