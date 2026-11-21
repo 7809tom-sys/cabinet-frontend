@@ -58,4 +58,14 @@ describe("Door Box Blueprint admin screen", () => {
     expect(html).not.toContain('data-testid="door-box-dl-shaker-tbd"');
     expect(html).not.toContain('data-testid="door-box-slab-tbd"');
   });
+
+  it("leads with the platform default starter style, DL Shaker, and links the other approved styles", () => {
+    const html = renderToStaticMarkup(<DoorBoxBlueprintView widthIn={15} heightIn={30} railIn={3} show3D={false} />);
+    expect(html).toContain("Platform default starter style: DL Shaker.");
+    for (const id of ["dl-shaker", "raised-panel", "slim-shaker", "slab"]) {
+      expect(html).toContain(`href="#door-box-${id}"`);
+      expect(html).toContain(`id="door-box-${id}"`);
+    }
+    expect(html.indexOf('data-testid="platform-default-door-style"')).toBeLessThan(html.indexOf('data-testid="door-box-dl-shaker"'));
+  });
 });

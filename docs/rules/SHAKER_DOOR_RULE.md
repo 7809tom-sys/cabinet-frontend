@@ -1,5 +1,13 @@
 # Shaker door rule
 
+## Platform default starter style (Tom, voice, Nov 21 2026, 1:54 PM CT)
+
+DL Shaker is the default starter door style and blueprint for every distributor. It is one constant, `PLATFORM_DEFAULT_DOOR_STYLE` in `shared/platformDoorDefaults.ts` (door style type `Shaker`, drawn by `dlShakerDoorBox`). The approved styles offered alongside it are listed in `PLATFORM_APPROVED_DOOR_STYLES`: DL Raised Panel, DL Slim Shaker, and Slab.
+
+- New records start on DL Shaker. The admin New Door Style dialog opens with type `Shaker`, and the vendor sample-measurement sheet starts on `Shaker`. The Door Box Blueprint screen leads with DL Shaker and links the other approved styles.
+- Existing records are not rewritten. A saved door style always wins (`starterDoorStyleFor`). A style saved blank stays blank until someone picks one. The door editors show the default as a hint and give one-click choices.
+- No database default and no SQL. Distributor signup creates no door-style or blueprint rows, so the UI falls back to this constant.
+
 ## FIRM RULE (Tom, voice, Nov 21 2026, 11:59 AM CT): every shaker door uses the DL shaker style
 
 Whenever a shaker door is chosen or rendered, it uses the DL shaker style: the DL Shaker blueprint below (square rail and stile frame, flat center slab, shared notch, the door's own color). This cannot be skipped.

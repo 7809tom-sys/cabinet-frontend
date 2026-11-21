@@ -1,4 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useReducer } from "react";
+import { ApprovedDoorStyleChips } from "@/components/doorStyles/ApprovedDoorStyleChips";
+import { PLATFORM_DEFAULT_DOOR_STYLE } from "@shared/platformDoorDefaults";
 import {
   Star, Search, GripVertical, ArrowUp, ArrowDown, X,
   AlertTriangle, CheckCircle2, Pencil, RotateCcw, Upload, Loader2, ImageIcon, EyeOff, Eye,
@@ -1105,6 +1107,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                 onChange={(e) => setDoorStyle(e.target.value)}
                 placeholder="e.g. Shaker"
               />
+              <ApprovedDoorStyleChips value={doorStyle} onPick={setDoorStyle} testId="ed-approved-door-styles" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ed-color">Color</Label>
@@ -1767,7 +1770,8 @@ function CreateDialog({ open, onClose, onCreated, distributorOptions }: CreateDi
   const [styleCode, setStyleCode] = useState("");
   const [ourName, setOurName] = useState("");
   const [distributorName, setDistributorName] = useState("");
-  const [doorStyle, setDoorStyle] = useState("");
+  // A new style starts on the platform default door style (DL Shaker).
+  const [doorStyle, setDoorStyle] = useState<string>(PLATFORM_DEFAULT_DOOR_STYLE.doorStyle);
   const [color, setColor] = useState("");
   const [finish, setFinish] = useState("");
   const [woodSpecies, setWoodSpecies] = useState("");
@@ -1782,7 +1786,7 @@ function CreateDialog({ open, onClose, onCreated, distributorOptions }: CreateDi
       setStyleCode("");
       setOurName("");
       setDistributorName("");
-      setDoorStyle("");
+      setDoorStyle(PLATFORM_DEFAULT_DOOR_STYLE.doorStyle);
       setColor("");
       setFinish("");
       setWoodSpecies("");
@@ -1882,6 +1886,7 @@ function CreateDialog({ open, onClose, onCreated, distributorOptions }: CreateDi
                 onChange={(e) => setDoorStyle(e.target.value)}
                 placeholder="e.g. Shaker"
               />
+              <ApprovedDoorStyleChips value={doorStyle} onPick={setDoorStyle} testId="cr-approved-door-styles" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cr-color">Color</Label>
