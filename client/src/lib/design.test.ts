@@ -23,7 +23,7 @@ import {
 	  blindCornerSpecViolations, blindCornerViolations, blindPullRange, blindCornerPullPlacement, resolveBaseBlindCornerFillerSnap,
 	  blindCornerAutoFiller, blindCornerRearCountertopExtensionIn,
 			  isStacker, glassStackerParentPlacement, glassStackerFrontFlushSpot, glassStackerFrontSnapTarget, normalizeGlassStackersToParentFronts, isWd18CountertopDrawerCabinet, wd18CountertopFaceLayout, normalizeWd18CountertopMounts, normalizeStandardWallMounts,
-  isDiagonalCorner, footprintDepth, wallAngleEndHandForPlacement, wallAngleEndOpenSide,
+  isDiagonalCorner, footprintDepth, wallAngleEndHandForPlacement, wallAngleEndOpenSide, curvedOpenShelfExposedHand,
   isLCornerCabinet, cornerLegRatioForPlaced, placedCornerGeometryKind, placedFootprint, normalizeLCornerDepths,
 	  baseOpeningOverlaps, blocksFloorRun, missingCornerBaseViolations, isWindowBelowCountertop, windowVerticallyOverlapsCabinet,
   snapPosition, snapCabinetSeamOverlap, CABINET_CONFLICT_LOCK_IN, orientToWall, hasCollision, collisionReason, cabinetPlacementCollisionDetail, wallCabinetPlacementReason, removeOverlappingPlacements, shouldBlockPlacementCollision, isHoodOverRangePair,
@@ -5532,5 +5532,66 @@ describe("window sill-to-top clearance", () => {
 
     expect(isWindowBelowCountertop(lowWindow)).toBe(true);
     expect(baseOpeningOverlaps([base], [lowWindow], room)).toEqual(new Set([base.uid]));
+  });
+});
+
+describe("curvedOpenShelfExposedHand (BES12 run end)", () => {
+  const room: RoomData = { width: 144, depth: 120 };
+  const bes = (uid: string, x: number): PlacedCabinet => ({
+    uid,
+    cabinetId: 9360046,
+    masterCode: "BES12",
+    description: '12" Base End Shelf Cabinet - Open curved unit with 5 shelves (configurable left or right)',
+    category: "Base",
+    subCategory: "Base End Cabinet",
+    graphicType: "curved-open-shelf",
+    customProfile: "curved-open-shelf",
+    placement: "base",
+    x,
+    y: 0,
+    width: 12,
+    height: 34.5,
+    depth: 24,
+    rotation: 0,
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+  } as PlacedCabinet);
+  const pedestal = (uid: string, x: number): PlacedCabinet => ({
+    uid,
+    cabinetId: 9360050,
+    masterCode: "MB30",
+    description: '30" W x 34-1/2" H x 24" D Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+    category: "Base",
+    subCategory: "Microwave Base Cabinet",
+    placement: "base",
+    x,
+    y: 0,
+    width: 30,
+    height: 34.5,
+    depth: 24,
+    rotation: 0,
+    numberOfDoors: 0,
+    numberOfDrawers: 1,
+  } as PlacedCabinet);
+
+  it("puts the exposed quarter-round on the free end, away from a neighbour on the right", () => {
+    const shelf = bes("bes-left", 0);
+    const neighbor = pedestal("mb-right", 12);
+    expect(curvedOpenShelfExposedHand(shelf, room, [shelf, neighbor])).toBe("left");
+  });
+
+  it("puts the exposed quarter-round on the free end, away from a neighbour on the left", () => {
+    const neighbor = pedestal("mb-left", 0);
+    const shelf = bes("bes-right", 30);
+    expect(curvedOpenShelfExposedHand(shelf, room, [neighbor, shelf])).toBe("right");
+  });
+
+  it("returns null when both ends are free or both ends butt a neighbour", () => {
+    const alone = bes("bes-alone", 36);
+    expect(curvedOpenShelfExposedHand(alone, room, [alone])).toBeNull();
+    const left = pedestal("mb-left", 0);
+    const mid = bes("bes-mid", 30);
+    const right = pedestal("mb-right", 42);
+    expect(curvedOpenShelfExposedHand(mid, room, [left, mid, right])).toBeNull();
   });
 });
