@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowRight, Grid3X3, Palette, Ruler, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Sparkles, Star, CircleCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TopNav } from "@/components/TopNav";
 
 import { KITCHEN_SCENES } from "@/lib/doorFamilyPhotos";
 import { DoorStyleSwatch } from "@/components/DoorStyleSwatch";
@@ -1072,6 +1073,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      <TopNav />
       <StorefrontBanner />
       <AuthenticatedWelcomeBanner />
       <Hero />

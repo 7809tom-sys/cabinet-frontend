@@ -390,7 +390,7 @@ export default function App() {
       <PreferredProductsProvider>
       <ThemeProvider defaultTheme="light">
       <Switch>
-        {/* Home has its own footer, no AppLayout wrapper needed */}
+        {/* Home renders TopNav itself and has its own footer, so it is not wrapped in AppLayout */}
         <Route path="/faq" element={<FaqPage />} />
         <Route path="/invoice" element={<InvoicePage />} />
         <Route path="/">
