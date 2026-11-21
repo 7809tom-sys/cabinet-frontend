@@ -328,6 +328,16 @@ export function buildAutoDesignWallCabinets(input: {
    * has no corner upper, ahead of the straight uppers. Off for every other build.
    */
   diagonalCornerUppers?: boolean;
+  /**
+   * Standard-mode rule (Tom, Nov 20 2026, 9:08-9:10 PM CT): when a base corner
+   * (BBC / lazy Susan) is already seated at an inside 90°, the upper is a
+   * diagonal corner wall cabinet (DCW), never a wall blind plus its 3 in filler.
+   * The remaining span (including the run over the dishwasher) is a regular
+   * wall cabinet, least-filler, leftover at the fridge or wall end. Budget mode
+   * leaves this off and keeps the wall-blind path. Empty-corner DCW seating is
+   * a separate flag (`diagonalCornerUppers`, PR 490) and is not implied here.
+   */
+  dcwOverSeatedBlindBase?: boolean;
 }): {
   placed: PlacedCabinet[];
   additions: PlacedCabinet[];
@@ -421,12 +431,19 @@ export function buildAutoDesignWallCabinets(input: {
     if (frame) {
       const at = Math.hypot(frame.start.x - point.x, frame.start.y - point.y) <= 0.01 ? "start" : "end";
       if (isTrueBlindCornerCode(base.masterCode)) {
-        // Only a true BBC/BLIND *code* gets a wall blind above it. A normal
+        // Only a true BBC/BLIND *code* is treated as a blind base. A normal
         // Corner Base (lazy Susan, easy reach, diagonal) is not treated as blind
         // just because a stored cornerType says "blind-corner".
-        // A base blind corner gets a wall blind corner at the same vertex, the
-        // widest one that does not overhang its base, with its integrated 3″ filler.
-        for (const source of placed ? [] : wallBlinds.filter((row) => dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN)) {
+        // Standard mode (Tom, Nov 20 2026, 9:08-9:10 PM CT): that seated base
+        // corner gets a DCW, never a wall blind plus its 3 in filler. Budget
+        // mode keeps the wall-blind path.
+        const useDcw = input.dcwOverSeatedBlindBase === true;
+        const dcwSources = corners.filter((row) => isDiagonalCornerUpperSource(row) && dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN);
+        const otherCornerSources = corners.filter((row) => !isDiagonalCornerUpperSource(row) && dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN);
+        const sources = useDcw
+          ? [...dcwSources, ...otherCornerSources]
+          : wallBlinds.filter((row) => dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN);
+        for (const source of placed ? [] : sources) {
           const candidate = makeCandidate(source);
           const spot = wallRunCornerPlacement(candidate, frame, at, room);
           if (!spot) continue;
@@ -434,7 +451,7 @@ export function buildAutoDesignWallCabinets(input: {
           const snapshot = working;
           const addedBefore = additions.length;
           if (!commit(seated)) continue;
-          if (requiresConfiguredBlindCornerFiller(seated)) {
+          if (!useDcw && requiresConfiguredBlindCornerFiller(seated)) {
             const required = buildRequiredBlindCornerFiller(seated, room, input.catalogFillers ?? [], input.makeUid, input.styleId);
             if (!required.ok) {
               working = snapshot; additions.splice(addedBefore);
@@ -443,6 +460,9 @@ export function buildAutoDesignWallCabinets(input: {
             }
             working = [...working, required.filler];
             additions.push(required.filler);
+          }
+          if (useDcw) {
+            substitutions.push(`${base.masterCode} at the corner gets ${source.masterCode} (diagonal corner wall cabinet), not a wall blind and filler.`);
           }
           const baseWall = cabinetWall(base, room);
           const baseStart = wallRunOffset(base, baseWall, room);
@@ -468,8 +488,29 @@ export function buildAutoDesignWallCabinets(input: {
               along += next.width;
             }
           }
+          if (useDcw) {
+            // Remaining span on each leg — including the run over the
+            // dishwasher — is a regular wall cabinet, least-filler.
+            const packed = packStandardUppersBesideCorner({
+              placed: working,
+              room,
+              openings,
+              catalog: input.catalog,
+              wallCabinetHeightIn: height,
+              styleId: input.styleId,
+              makeUid: input.makeUid,
+              cornerCabinets: [seated],
+            });
+            if (packed.added.length) {
+              working = packed.placed;
+              additions.push(...packed.added);
+            }
+          }
           placed = true;
           break;
+        }
+        if (useDcw && !placed) {
+          skipped.push(`${base.masterCode} corner: this line sells no diagonal corner wall cabinet at ${formatInches(height)} that fits, so a wall blind was not used.`);
         }
       } else {
         for (const source of corners.filter((row) => dim(row.width, 0) <= base.width + COLLISION_EPSILON_IN)) {
@@ -783,6 +824,9 @@ export function buildAutoDesignWallCabinets(input: {
   } else {
     working = dropUppersOutsideRun({ placed: working, additions, room, skipped });
   }
+  const seatedBlindBasePoints = (input.corners ?? [])
+    .filter((entry) => isTrueBlindCornerCode(entry.base.masterCode))
+    .map((entry) => entry.point);
   const connected = connectUpperRunsWithCornerCabinets({
     placed: working,
     room,
@@ -790,6 +834,8 @@ export function buildAutoDesignWallCabinets(input: {
     wallBlinds,
     makeCandidate,
     commit,
+    dcwOverSeatedBlindBase: input.dcwOverSeatedBlindBase === true,
+    seatedBlindBasePoints,
   });
   skipped.push(...connected.reasons);
   // A wall blind corner exposes the door away from its blind side.
@@ -841,6 +887,8 @@ function connectUpperRunsWithCornerCabinets(input: {
   wallBlinds: DesignCabinet[];
   makeCandidate: (source: DesignCabinet) => PlacedCabinet;
   commit: (candidate: PlacedCabinet) => boolean;
+  dcwOverSeatedBlindBase?: boolean;
+  seatedBlindBasePoints?: readonly { x: number; y: number }[];
 }): { reasons: string[] } {
   const reasons: string[] = [];
   const seen = new Set<string>();
@@ -862,10 +910,15 @@ function connectUpperRunsWithCornerCabinets(input: {
       seen.add(key);
       if (covered.some((item) => cornerUpperCoversVertex(item, vertex))) continue;
       // Prefer Corner Wall diagonals / L / triangle uppers; wall blinds are the fallback.
-      const stock = [...input.corners, ...input.wallBlinds];
+      // Over a seated BBC in standard mode, never fall back to a wall blind (Tom, Nov 20 2026).
+      const atSeatedBlindBase = input.dcwOverSeatedBlindBase === true
+        && (input.seatedBlindBasePoints ?? []).some((point) => Math.hypot(point.x - vertex.x, point.y - vertex.y) <= 1);
+      const stock = atSeatedBlindBase ? [...input.corners] : [...input.corners, ...input.wallBlinds];
       let seated = false;
       if (stock.length === 0) {
-        reasons.push(`Upper runs do not meet at the corner of ${frame.id} and ${join.frame.id}. This line sells no corner wall cabinet.`);
+        reasons.push(atSeatedBlindBase
+          ? `Upper runs do not meet at the corner of ${frame.id} and ${join.frame.id}. This line sells no diagonal corner wall cabinet, so a wall blind was not used over the seated base corner.`
+          : `Upper runs do not meet at the corner of ${frame.id} and ${join.frame.id}. This line sells no corner wall cabinet.`);
         continue;
       }
       for (const source of stock) {
@@ -1046,4 +1099,91 @@ function fillUpperGap(input: {
     if (!placedOne) break;
   }
   return seated > 0 ? working : null;
+}
+
+/**
+ * Pack regular (straight) wall cabinets into the open spans beside a seated
+ * diagonal corner upper. Used when a base corner gets a DCW so the run over
+ * the dishwasher is a stock wall cabinet, not a leftover gap or a wall blind.
+ */
+export function packStandardUppersBesideCorner(input: {
+  placed: PlacedCabinet[];
+  room: RoomData;
+  openings?: readonly WallOpening[];
+  catalog: readonly DesignCabinet[];
+  wallCabinetHeightIn: number;
+  styleId: number | null;
+  makeUid: () => string;
+  cornerCabinets: readonly PlacedCabinet[];
+}): { placed: PlacedCabinet[]; added: PlacedCabinet[] } {
+  const { room } = input;
+  const height = resolveWallHeightClass(input.catalog, input.wallCabinetHeightIn) ?? input.wallCabinetHeightIn;
+  const standard = input.catalog.filter((source) => source.id > 0
+    && source.placement === "wall"
+    && Math.abs(dim(source.height, 0) - height) <= SAME_HEIGHT_IN
+    && dim(source.width, 0) > 0
+    && dim(source.depth, 0) > 0
+    && isStraightStandardUpper(source)
+    && !rejectsSingleDoorTwentyFour(source));
+  const upperFits = (candidate: PlacedCabinet, against: readonly PlacedCabinet[]): boolean => {
+    const bottom = candidate.mountBottom ?? 54;
+    const wall = cabinetWall(candidate, room);
+    if (bottom + (Number(candidate.height) || height) > wallCeilingMin(room, wall) + COLLISION_EPSILON_IN) return false;
+    const start = wallRunOffset(candidate, wall, room);
+    const span = wallRunSpan(candidate, wall, room);
+    const fits = freeSegmentsOnWall(wall, room, [...against], input.openings ?? [], span, WALL_OPENING_CLEARANCE_IN,
+      "wall", true, candidate, candidate.depth).some((segment) => start >= segment.start - COLLISION_EPSILON_IN
+        && start + span <= segment.start + segment.length + COLLISION_EPSILON_IN);
+    return fits && !cabinetPlacementCollisionDetail(candidate, [...against], room);
+  };
+  let working = [...input.placed];
+  const added: PlacedCabinet[] = [];
+  const walls = new Set<string>();
+  for (const corner of input.cornerCabinets) {
+    walls.add(cabinetWall(corner, room));
+    for (const frame of roomWallRunFrames(room)) {
+      if (cornerLegSpanOnWall(corner, frame.id, room)) walls.add(frame.id);
+    }
+  }
+  for (const wallId of walls) {
+    if (!wallId) continue;
+    const legEnds = input.cornerCabinets
+      .map((corner) => cornerLegSpanOnWall(corner, wallId, room))
+      .filter((leg): leg is { start: number; end: number } => Boolean(leg));
+    const gaps = upperCoverageGaps({ placed: working, room, wallId, openings: input.openings ?? [] });
+    for (const raw of gaps) {
+      let gap = raw;
+      // Stretch a gap that stops short of the DCW so a stock width (W27/W24) can land.
+      for (const leg of legEnds) {
+        if (gap.end <= leg.start + COLLISION_EPSILON_IN && leg.start - gap.end <= 6 + COLLISION_EPSILON_IN) {
+          gap = { start: gap.start, end: leg.start };
+        }
+        if (gap.start >= leg.end - COLLISION_EPSILON_IN && gap.start - leg.end <= 6 + COLLISION_EPSILON_IN) {
+          gap = { start: leg.end, end: gap.end };
+        }
+      }
+      let filled: PlacedCabinet[] | null = null;
+      const starts: number[] = [gap.start];
+      for (let cursor = gap.start + 1; cursor <= gap.end - MIN_UPPER_WIDTH_IN + COLLISION_EPSILON_IN; cursor += 1) {
+        starts.push(cursor);
+      }
+      for (const start of starts) {
+        filled = fillUpperGap({
+          placed: working,
+          additions: added,
+          room,
+          wallId,
+          gap: { start, end: gap.end },
+          standard,
+          height,
+          styleId: input.styleId,
+          makeUid: input.makeUid,
+          upperFits,
+        });
+        if (filled) break;
+      }
+      if (filled) working = filled;
+    }
+  }
+  return { placed: working, added };
 }

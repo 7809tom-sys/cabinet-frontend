@@ -77,7 +77,7 @@ import {
 } from "./autoDesignTallCabinets";
 import { raiseWindowsForDeckFaucet } from "./faucetPlacement";
 import { ensureBlindCornerFlankCabinets } from "./autoDesignBlindCornerFlank";
-import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, resolveWallHeightClass, withoutNoGlassUppers, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, catalogMatchingWallDesignHeight, enforceFortyTwoWallCabinets, isDiagonalCornerUpperSource, packStandardUppersBesideCorner, resolveWallHeightClass, withoutNoGlassUppers, type AutoDesignUpperCorner } from "./autoDesignWallCabinets";
 import { fillOverRangeAnswer, placeMandatoryOverRangeBridges } from "./overRangeFill";
 import { placeSinkBridges } from "./autoDesignSinkBridge";
 import { closeRemainingRunGaps } from "./autoDesignCloseRemainingGaps";
@@ -2058,7 +2058,12 @@ export function runAutoDesignLayout(rawArgs: {
     wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
     styleId: args.styleId, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
     // Budget friendly standing rule: a diagonal corner wall cabinet in any empty inside upper corner.
+    // Independent of the standard-mode rule below (empty-corner seating is PR 490).
     diagonalCornerUppers: hasPreference(stage.input.intake, "budget-friendly"),
+    // Standard mode (Tom, Nov 20 2026, 9:08-9:10 PM CT): a seated base corner
+    // gets a DCW upper, never a wall blind plus filler. Budget keeps the existing
+    // wall-blind path unless it already used the empty-corner DCW path.
+    dcwOverSeatedBlindBase: !hasPreference(stage.input.intake, "budget-friendly"),
   });
   working = upperResult.placed;
   notes.push(...upperResult.substitutions);
@@ -2719,6 +2724,28 @@ export function runAutoDesignLayout(rawArgs: {
   // Rule 12: "Glass cabinets above" keeps the uppers solid and puts the line's
   // own 12/15/18 in glass stacker on top of each one (tallest that fits under
   // the ceiling), never an invented SKU (Tom, Nov 17 2026).
+  // Standard mode (Tom, Nov 20 2026, 9:08-9:10 PM CT): after later filler /
+  // fifteen-rule passes, pack any leftover span beside a DCW over a seated
+  // base corner with a regular wall cabinet (the run over the dishwasher).
+  if (!hasPreference(input.intake, "budget-friendly")) {
+    const seatedDiagonals = working.filter((item) => item.placement === "wall" && isDiagonalCornerUpperSource(item));
+    if (seatedDiagonals.length) {
+      const packed = packStandardUppersBesideCorner({
+        placed: working,
+        room,
+        openings: stageOpenings,
+        catalog: [...stage.wallPool],
+        wallCabinetHeightIn: upperResult.heightUsedIn ?? stage.input.wallCabinetHeightIn ?? 30,
+        styleId: args.styleId,
+        makeUid,
+        cornerCabinets: seatedDiagonals,
+      });
+      if (packed.added.length) {
+        working = packed.placed;
+        notes.push(...packed.added.map((item) => `${item.masterCode} was seated beside the diagonal corner wall cabinet, so the span over the dishwasher is a regular wall cabinet.`));
+      }
+    }
+  }
   const glassUppers = applyGlassUpperPreference({
     placed: working,
     wallCatalog: args.wallCatalog,

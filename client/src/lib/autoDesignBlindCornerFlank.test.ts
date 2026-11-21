@@ -18,10 +18,11 @@ import {
 /**
  * Corner flank rule (Tom, Nov 17 2026, voice 11:14 AM CT): a blind corner
  * cabinet always gets a real cabinet right beside it on both sides. The Nov 17
- * demo kitchen (144 × 120 L, Aero Solstice, 108 in ceiling) left the upper in
- * front of the WBC2730's blind side blank: W2730 stopped at 120 on the sink
- * wall while the WBC face sits at 132, because the 24 in corner-square
- * reservation kept every gap pass out of 120–132.
+ * demo kitchen (144 × 120 L, Aero Solstice, 108 in ceiling) originally left
+ * the upper in front of a WBC2730's blind side blank. As of Tom's Nov 20 2026
+ * rule, that seated BBC gets a DCW upper (with matching glass when the line
+ * sells it) and a regular wall cabinet over the dishwasher, never a WBC plus
+ * a 3 in filler.
  */
 const LIVE = live as unknown as {
   base: DesignCabinet[];
@@ -91,47 +92,43 @@ const span = (item: PlacedCabinet, wallId: string) => {
 describe("blind corner flank rule — Nov 17 2026 demo kitchen", () => {
   const result = runDemo();
   const placed = result.placed;
-  const wbc = placed.find((item) => item.masterCode === "WBC2730")!;
+  const dcw = placed.find((item) => item.masterCode === "DCW2430")!;
   const bbc = placed.find((item) => item.masterCode === "BBC36")!;
 
-  it("still seats the WBC2730 and BBC36 at the sink-wall / range-wall corner", () => {
-    expect(wbc).toBeTruthy();
+  it("seats a DCW2430 and BBC36 at the sink-wall / range-wall corner, never a wall blind plus filler", () => {
     expect(bbc).toBeTruthy();
-    expect(wbc.wallId ?? "right").toBe("right");
+    expect(dcw).toBeTruthy();
+    expect(dcw.wallId ?? "right").toBe("right");
+    expect(placed.some((item) => /^WBC/i.test(item.masterCode))).toBe(false);
+    // Glass is on and this line sells a matching diagonal stacker.
+    expect(placed.some((item) => item.masterCode === "DCW2418GD")).toBe(true);
   });
 
-  it("fills the upper in front of the WBC2730's blind side (sink wall 120–132) with a real wall cabinet", () => {
-    const flank = placed.filter((item) => item.placement === "wall" && !isFillerItem(item))
-      .filter((item) => (item.wallId ?? "top") === "top" && item.y < 1)
-      .find((item) => Math.abs(span(item, "top").end - 132) <= 0.3);
-    expect(flank, "an upper must butt the WBC2730 face at 132").toBeTruthy();
-    expect(span(flank!, "top").start).toBeCloseTo(120, 1);
-    expect(flank!.masterCode).toBe("W1230");
-    expect(flank!.cabinetId).toBeGreaterThan(0);
-    // Same elevation band as the WBC it flanks.
-    expect(Number(flank!.mountBottom)).toBeCloseTo(Number(wbc.mountBottom ?? 54), 1);
-    // Nothing else hangs in 120–132 on the sink wall in the flank's own
-    // elevation band. A glass stacker (glass-uppers pick) may sit on top of it.
-    const flankBottom = Number(flank!.mountBottom ?? 54);
-    const flankTop = flankBottom + Number(flank!.height);
-    const inSpan = placed.filter((item) => item.uid !== flank!.uid && item.placement === "wall" && item.y < 1 && item.rotation === 0)
-      .filter((item) => { const s = span(item, "top"); return s.start < 131.7 && s.end > 120.3; });
-    const overlap = inSpan.filter((item) => {
-      const bottom = Number(item.mountBottom ?? 54);
-      return bottom < flankTop - 0.3 && bottom + Number(item.height) > flankBottom + 0.3;
-    });
-    expect(overlap.map((item) => item.masterCode)).toEqual([]);
-    // Glass is picked in this demo, so the flank carries its own glass stacker
-    // on top (Tom, Nov 17 2026: every upper gets a stacker).
-    const stackers = inSpan.filter((item) => !overlap.includes(item));
-    expect(stackers.map((item) => item.masterCode)).toEqual(["W1218GD"]);
-    expect(Number(stackers[0]!.mountBottom)).toBeCloseTo(flankTop, 1);
+  it("fills the span over the dishwasher with a regular wall cabinet beside the DCW", () => {
+    const overDw = placed.filter((item) => item.placement === "wall" && !isFillerItem(item))
+      .filter((item) => (item.wallId ?? "top") === "top" && item.y < 1 && (item.mountBottom ?? 54) < 70)
+      .find((item) => {
+        const s = span(item, "top");
+        return s.start < 114 && s.end > 90 && /^W\d/.test(item.masterCode) && !/^DCW/i.test(item.masterCode);
+      });
+    expect(overDw, "a regular wall cabinet must cover the dishwasher span").toBeTruthy();
+    expect(overDw!.masterCode).toBe("W2730");
+    expect(span(overDw!, "top").start).toBeCloseTo(93, 1);
+    expect(span(overDw!, "top").end).toBeCloseTo(120, 1);
+    expect(overDw!.cabinetId).toBeGreaterThan(0);
+    // Glass is picked in this demo, so the regular cabinet carries its own stacker.
+    const overTop = Number(overDw!.mountBottom ?? 54) + Number(overDw!.height);
+    const stacker = placed.find((item) => item.placement === "wall" && item.masterCode === "W2718GD"
+      && Math.abs((item.mountBottom ?? 0) - overTop) <= 1);
+    expect(stacker).toBeTruthy();
   });
 
-  it("keeps the WBC2730's open-side flank (W1230 on the range wall at 27–39)", () => {
-    const open = placed.find((item) => item.placement === "wall" && item.masterCode === "W1230" && item.rotation === 90);
+  it("keeps a regular wall cabinet on the open side of the DCW (range wall at 24–39)", () => {
+    const open = placed.find((item) => item.placement === "wall" && item.masterCode === "W-15-30" && item.rotation === 90
+      && (item.mountBottom ?? 54) < 70);
     expect(open).toBeTruthy();
-    expect(span(open!, "right").start).toBeCloseTo(27, 1);
+    expect(span(open!, "right").start).toBeCloseTo(24, 1);
+    expect(span(open!, "right").end).toBeCloseTo(39, 1);
   });
 
   it("names the BBC36 corner when no base cabinet fits beside it, instead of leaving it silent", () => {
@@ -142,8 +139,7 @@ describe("blind corner flank rule — Nov 17 2026 demo kitchen", () => {
     ]);
     expect(flank.every((finding) => finding.severity === "warning" && finding.cabinetCode === "BBC36")).toBe(true);
     expect(result.warnings.some((warning) => warning.startsWith("BBC36 at the Wall 2 / Wall 1 corner has no cabinet on its blind side"))).toBe(true);
-    // No upper blind corner is reported missing: both WBC flanks are real cabinets now.
-    expect(flank.some((finding) => finding.cabinetCode === "WBC2730")).toBe(false);
+    expect(flank.some((finding) => /^WBC/i.test(finding.cabinetCode ?? ""))).toBe(false);
   });
 });
 

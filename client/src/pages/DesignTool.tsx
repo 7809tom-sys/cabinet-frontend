@@ -334,7 +334,8 @@ import { useKitchenRuleParameterSync } from "@/lib/kitchenRulesApi";
 import { reviewAfterShift, separateRangeAndRefrigerator } from "@/lib/kitchenAdjacency";
 import { bakesALot, cooksALot, normalizeKitchenUsage } from "@/lib/kitchenUsage";
 import { acceptMeasuredCornerRefrigeratorBay } from "@/lib/autoDesignRefrigeratorBay";
-import { buildAutoDesignWallCabinets, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
+import { buildAutoDesignWallCabinets, isDiagonalCornerUpperSource, packStandardUppersBesideCorner, resolveWallHeightClass, type AutoDesignUpperCorner } from "@/lib/autoDesignWallCabinets";
+import { hasPreference } from "@/lib/autoDesignFifteenRules";
 import { designerWallWineRackSections, isWallWineRackCabinet, withWallWineRacks } from "@shared/wallWineRack";
 import { seatAutoDesignCornerFromCatalog } from "@/lib/autoDesignCornerPlacement";
 import { type AutoDesignApplianceMove } from "@/lib/autoDesignCornerSeating";
@@ -5391,6 +5392,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       placed: working, room, openings: stageOpenings, catalog: stage.wallPool,
       wallCabinetHeightIn: stage.input.wallCabinetHeightIn ?? 30,
       styleId: styleIdRef.current ?? null, makeUid, corners: upperCorners, catalogFillers, closeSeams: true,
+      dcwOverSeatedBlindBase: !hasPreference(stage.input.intake, "budget-friendly"),
     });
     working = upperResult.placed;
     // An upper needs a real wall behind it, never a peninsula or island (the second pass sees the peninsula bases).
@@ -5407,6 +5409,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     // Rule 12 on the corner-stage (continue) build as well: glass means the
     // line's own 12/15/18 in glass stackers on top of the uppers, and the crown
     // pick turns on crown trim.
+    if (!hasPreference(stage.input.intake, "budget-friendly")) {
+      const seatedDiagonals = working.filter((item) => item.placement === "wall" && isDiagonalCornerUpperSource(item));
+      if (seatedDiagonals.length) {
+        const packed = packStandardUppersBesideCorner({
+          placed: working,
+          room,
+          openings: stageOpenings,
+          catalog: stage.wallPool,
+          wallCabinetHeightIn: upperResult.heightUsedIn ?? stage.input.wallCabinetHeightIn ?? 30,
+          styleId: styleIdRef.current ?? null,
+          makeUid,
+          cornerCabinets: seatedDiagonals,
+        });
+        if (packed.added.length) working = packed.placed;
+      }
+    }
     const stageGlass = applyGlassUpperPreference({
       placed: working, wallCatalog: stage.wallPool, intake: stage.input.intake, room, wallHeightIn: upperResult.heightUsedIn,
     });
