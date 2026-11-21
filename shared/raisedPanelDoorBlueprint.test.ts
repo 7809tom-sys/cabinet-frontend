@@ -62,11 +62,11 @@ describe("raised-panel library entry", () => {
     expect(isRaisedPanelFrontSurface(null)).toBe(false);
   });
 
-  it("copies today's rendered geometry: 3 in frame, 0.75 in bevel lifted to 0.45 in, raised center", () => {
+  it("copies today's rendered geometry: 2.5 in frame (Tom, Nov 21 2026, 3:51 PM CT), 0.75 in bevel lifted to 0.45 in, raised center", () => {
     // The renderer's own defaults, restated by the entry. If these drift, the
     // kitchen on screen changes, which Tom approved as-is.
-    expect(RAISED_PANEL_BLUEPRINT.frame.railIn).toBe(3);
-    expect(RAISED_PANEL_BLUEPRINT.frame.stileIn).toBe(3);
+    expect(RAISED_PANEL_BLUEPRINT.frame.railIn).toBe(2.5);
+    expect(RAISED_PANEL_BLUEPRINT.frame.stileIn).toBe(2.5);
     expect(RAISED_PANEL_BLUEPRINT.frame.corner).toBe("square-butt");
     expect(RAISED_PANEL_BLUEPRINT.bevel.widthIn).toBe(0.75);
     expect(RAISED_PANEL_BLUEPRINT.bevel.depthIn).toBe(0.28);
@@ -81,10 +81,10 @@ describe("raised-panel library entry", () => {
   it("derives the same face arithmetic for a base door and a drawer front", () => {
     // 18 in door: 1.5 ft wide by 2.2 ft tall.
     const door = raisedPanelFrameGeometry({ faceWidth: 1.5, faceHeight: 2.2 });
-    expect(door.rail).toBeCloseTo(0.25, 6);
-    expect(door.stile).toBeCloseTo(0.25, 6);
-    expect(door.openingWidth).toBeCloseTo(1.0, 6);
-    expect(door.openingHeight).toBeCloseTo(1.7, 6);
+    expect(door.rail).toBeCloseTo(2.5 / 12, 6);
+    expect(door.stile).toBeCloseTo(2.5 / 12, 6);
+    expect(door.openingWidth).toBeCloseTo(1.5 - 5 / 12, 6);
+    expect(door.openingHeight).toBeCloseTo(2.2 - 5 / 12, 6);
     // 0.28 in would read as a slab from the front, so the readable 0.45 in is used.
     expect(door.bevelDepth).toBeCloseTo(0.45 / 12, 6);
     // The center panel sits proud of the bevel, and the bevel proud of the bed.
@@ -95,12 +95,12 @@ describe("raised-panel library entry", () => {
     expect(door.panelHeight).toBeLessThan(door.slopeOuterHeight);
     expect(door.insideEdgeProfile).toBe("bevel");
 
-    // A 6 in drawer front: the 3 in frame clamps to half the height minus the
-    // renderer's 0.01 ft clearance, leaving only the minimum opening. The 0.025 ft
-    // bevel minimum wins over the quarter-opening clamp, exactly as it does today.
+    // A 6 in drawer front: the 2.5 in frame fits (half the height less 0.01 ft is
+    // 2.88 in), leaving a 1 in opening. The 0.025 ft bevel minimum wins over the
+    // quarter-opening clamp.
     const drawer = raisedPanelFrameGeometry({ faceWidth: 1.5, faceHeight: 0.5 });
-    expect(drawer.rail).toBeCloseTo(0.25 - 0.01, 6);
-    expect(drawer.openingHeight).toBeCloseTo(0.06, 6);
+    expect(drawer.rail).toBeCloseTo(2.5 / 12, 6);
+    expect(drawer.openingHeight).toBeCloseTo(1 / 12, 6);
     expect(drawer.bevelWidth).toBeCloseTo(0.025, 6);
     expect(drawer.panelHeight).toBeGreaterThan(0);
   });
@@ -125,8 +125,8 @@ describe("selecting the raised-panel entry", () => {
       if (!selection.adopted) continue;
       expect(selection.entryId).toBe(RAISED_PANEL_BLUEPRINT_ID);
       expect(selection.role).toBe(faceRole);
-      expect(selection.railIn).toBe(3);
-      expect(selection.stileIn).toBe(3);
+      expect(selection.railIn).toBe(2.5);
+      expect(selection.stileIn).toBe(2.5);
       expect(selection.bevelWidthIn).toBe(0.75);
       expect(selection.bevelDepthIn).toBe(0.28);
       expect(selection.insideEdgeProfile).toBe("bevel");
@@ -244,8 +244,8 @@ describe("painted-solid behavior on the raised entry", () => {
       expect(selection.painted, faceRole).toBe(true);
       expect(selection.paintedSolidHex, faceRole).toBe("#eeeadf");
       expect(selection.grainUrl, faceRole).toBeNull();
-      // Unknown frame dimensions fall back to the renderer's 3 in default and stay TODO.
-      expect(selection.railIn).toBe(3);
+      // Unknown frame dimensions fall back to the renderer's 2.5 in default and stay TODO.
+      expect(selection.railIn).toBe(2.5);
       expect(selection.insideEdgeProfile).toBe("bevel");
     }
 
@@ -307,8 +307,9 @@ describe("the raised entry matches the geometry the renderer already draws", () 
     for (const face of cases) {
       const faceWidth = face.width * INCH;
       const faceHeight = face.height * INCH;
-      const stile = Math.max(0, Math.min(3 * INCH, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
-      const rail = Math.max(0, Math.min(3 * INCH, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
+      // Raised panel frame: 2.5 in; every case here is 12 in or wider, so no skinny cap.
+      const stile = Math.max(0, Math.min(2.5 * INCH, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
+      const rail = Math.max(0, Math.min(2.5 * INCH, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
       const expectedOpeningWidth = Math.max(0.06, faceWidth - stile * 2);
       const expectedOpeningHeight = Math.max(0.06, faceHeight - rail * 2);
       const expectedBevelWidth = Math.max(0.025, Math.min(0.75 * INCH, expectedOpeningWidth / 4, expectedOpeningHeight / 4));

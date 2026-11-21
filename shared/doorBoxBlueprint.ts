@@ -7,10 +7,9 @@
  * 1. DL shaker door box. DL_SHAKER_FIRM_RULE: every shaker door uses the DL shaker
  *    style. Five pieces: two full-width rails (top, bottom), two stiles between them,
  *    one flat recessed center slab. Square corners, shared notch. The frame width is
- *    the style's own 2.75 or 3 inches (3 is the Designer default,
- *    `STANDARD_SHAKER_RAIL_IN`), reduced on a face narrower than 12 inches (never more
- *    than 25% of the face width) or when the face is too small to keep an opening,
- *    exactly like `threeDShakerRailThickness` in client/src/lib/shakerRail.ts.
+ *    a fixed 2.75 inches on a regular shaker door, and min(2.75, 25% of the face width)
+ *    on a skinny door (face under 12 in wide), from shared/shakerFrameRule.ts, exactly
+ *    like `threeDShakerRailThickness` in client/src/lib/shakerRail.ts.
  *    Rail depth is `DLC_FRAME_DETAIL.railDepth` (shared/dlcFr26Textures.ts). A front
  *    under 7 inches tall or wide is a plain slab (Tom, Nov 1 2026).
  *
@@ -29,7 +28,8 @@
  * Pure numbers, no three.js, so the admin screen and tests can share it.
  */
 import { DLC_FRAME_DETAIL } from "./dlcFr26Textures";
-import { DL_SHAKER_FIRM_RULE, DL_SHAKER_GEOMETRY, STANDARD_SHAKER_RAIL_IN } from "./shakerDoorBlueprint";
+import { DL_SHAKER_FIRM_RULE, DL_SHAKER_GEOMETRY } from "./shakerDoorBlueprint";
+import { shakerFrameWidthIn } from "./shakerFrameRule";
 import { RAISED_PANEL_BLUEPRINT, raisedPanelFrameGeometry } from "./raisedPanelDoorBlueprint";
 
 export { DL_SHAKER_FIRM_RULE };
@@ -103,18 +103,12 @@ function round(value: number): number {
 }
 
 /**
- * Same clamp as `threeDShakerRailThickness` (client/src/lib/shakerRail.ts), in inches:
- * the requested width, otherwise 3 in, never more than 25% of the face width (the
- * skinny-door rule, so a narrow door keeps a recessed center at least half its width),
- * and never more than half the face less 0.01 ft.
+ * Same rule as `threeDShakerRailThickness` (client/src/lib/shakerRail.ts), in inches,
+ * from shared/shakerFrameRule.ts: a regular shaker door is a fixed 2.75 in frame; a
+ * skinny door (face under 12 in wide, confirm with Tom) is min(2.75, 25% of the face).
  */
-export const DL_SHAKER_FRAME_MAX_FACE_WIDTH_SHARE = 0.25;
-
 export function dlShakerFrameIn(widthIn: number, heightIn: number, requestedIn?: number | null): number {
-  const requested = Number(requestedIn);
-  const thickness = Number.isFinite(requested) && requested > 0 ? requested : STANDARD_SHAKER_RAIL_IN;
-  const margin = 0.01 * FT_TO_IN;
-  return Math.max(0, Math.min(thickness, widthIn * DL_SHAKER_FRAME_MAX_FACE_WIDTH_SHARE, widthIn / 2 - margin, heightIn / 2 - margin));
+  return shakerFrameWidthIn(widthIn, heightIn, requestedIn);
 }
 
 /** Plain slab door box: one flat piece the size of the face. */

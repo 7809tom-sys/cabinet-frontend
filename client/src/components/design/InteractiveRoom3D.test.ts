@@ -2820,7 +2820,7 @@ describe("interactive 3D room scene helpers", () => {
 
   it("uses a verified selected Door Style frame width for the 3D physical-frame fallback", () => {
     expect(threeDShakerRailThickness(24 / 12, 30 / 12, 1)).toBeCloseTo(1 / 12, 12);
-    expect(threeDShakerRailThickness(24 / 12, 30 / 12, null)).toBeCloseTo(3 / 12, 12);
+    expect(threeDShakerRailThickness(24 / 12, 30 / 12, null)).toBeCloseTo(2.75 / 12, 12);
   });
 
   it("keeps a white Shaker cabinet's physical rails and drawer reveals without exposing a perimeter shadow beyond each face", () => {
@@ -5405,7 +5405,7 @@ describe("interactive 3D room scene helpers", () => {
     expect(pulls).toHaveLength(1);
     expect(pulls[0]!.userData).toMatchObject({ hardwarePosition: "top-center", pullEdge: "top-center", verticalPull: false });
     const doorHeight = (doors[0]!.geometry as THREE.BoxGeometry).parameters.height;
-    expect(pulls[0]!.position.y).toBeCloseTo(doors[0]!.position.y + doorHeight / 2 - 3 / 24, 6);
+    expect(pulls[0]!.position.y).toBeCloseTo(doors[0]!.position.y + doorHeight / 2 - 2.75 / 24, 6);
   });
 
   it("places standard and paired 3D door pulls exactly 1.5 inches from their physical door edges", () => {
@@ -8280,8 +8280,8 @@ describe("interactive 3D room scene helpers", () => {
   });
 
   it("uses a physical three-inch rail and stile for twelve- and twenty-one-inch 3D Shaker faces", () => {
-    expect(threeDShakerRailThickness(12 / 12, 24 / 12)).toBe(3 / 12);
-    expect(threeDShakerRailThickness(21 / 12, 30 / 12)).toBe(3 / 12);
+    expect(threeDShakerRailThickness(12 / 12, 24 / 12)).toBeCloseTo(2.75 / 12, 12);
+    expect(threeDShakerRailThickness(21 / 12, 30 / 12)).toBeCloseTo(2.75 / 12, 12);
   });
 
   it("keeps diagonal and end-return Shaker frames in the same angled pose as their specialty door faces", () => {

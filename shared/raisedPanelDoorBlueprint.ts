@@ -28,6 +28,7 @@
  * a photo, not dimensions.
  */
 import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
+import { shakerFrameWidthIn } from "./shakerFrameRule";
 import {
   doorProfileConstructionText,
   doorProfileIsSlabOrGlass,
@@ -80,10 +81,15 @@ export const RAISED_PANEL_BLUEPRINT = {
   id: RAISED_PANEL_BLUEPRINT_ID,
   label: "Raised panel — five-piece frame, pillowed bevel, raised center",
   appliesTo: RAISED_PANEL_FRONT_ROLES,
-  /** Frame members. Widths are the style's own rail/stile; 3 in is the renderer default. */
+  /**
+   * Frame members. Widths are the style's own measured rail/stile; 2.5 in is the
+   * renderer default (Tom, Nov 21 2026, 3:51 PM CT; blueprint alignment: confirm
+   * with Tom). A face under 12 in wide is capped at 25% of its width
+   * (shared/shakerFrameRule.ts).
+   */
   frame: {
-    railIn: 3,
-    stileIn: 3,
+    railIn: 2.5,
+    stileIn: 2.5,
     corner: "square-butt",
     /** `DLC_FRAME_DETAIL.standardRailDepth` / `.railDepth` (scene feet). */
     railDepthFt: 0.026,
@@ -197,12 +203,11 @@ export type RaisedPanelFrameGeometryInput = {
 export function raisedPanelFrameGeometry(input: RaisedPanelFrameGeometryInput) {
   const { faceWidth, faceHeight } = input;
   const blueprint = RAISED_PANEL_BLUEPRINT;
-  const railIn = parsedInches(input.railIn) ?? blueprint.frame.railIn;
-  const stileIn = parsedInches(input.stileIn) ?? blueprint.frame.stileIn;
   const railDepth = input.dlcFrame ? blueprint.frame.dlcRailDepthFt : blueprint.frame.railDepthFt;
-  // Same clamps the renderer uses: a frame never takes more than half the face.
-  const rail = Math.max(0, Math.min(railIn * INCH, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
-  const stile = Math.max(0, Math.min(stileIn * INCH, faceWidth / 2 - 0.01, faceHeight / 2 - 0.01));
+  // Same rule the renderer uses (shared/shakerFrameRule.ts, kind "raised"): 2.5 in by
+  // default, the skinny cap under 12 in, never more than half the face.
+  const rail = shakerFrameWidthIn(faceWidth / INCH, faceHeight / INCH, parsedInches(input.railIn), "raised") * INCH;
+  const stile = shakerFrameWidthIn(faceWidth / INCH, faceHeight / INCH, parsedInches(input.stileIn), "raised") * INCH;
 
   const openingWidth = Math.max(0.06, faceWidth - stile * 2);
   const openingHeight = Math.max(0.06, faceHeight - rail * 2);
