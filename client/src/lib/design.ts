@@ -8453,6 +8453,10 @@ export function isRangeOrOven(masterCode?: string | null, description?: string |
   const normalized = code.replace(/[^A-Z0-9]/g, "");
   if (/^RB[23]DB\d+$/.test(normalized) || /^RB-?\d*DB/i.test(code)) return false;
   if (/\brange\s*top\b|\brange\s*base\b|\bcooktop\s*base\b/.test(desc)) return false;
+  // MO3042 is cataloged as a "Microwave Oven Cabinet" but it is a 30x42 wall
+  // microwave cabinet (two doors over a bottom bay), not a freestanding oven.
+  // The word "oven" must not send it through the appliance path.
+  if (/^MO\d{4}$/.test(normalized) || /\bmicrowave\s+(?:wall|oven)\s+cabinet\b/.test(desc)) return false;
   if (/^(RANGE|OVEN|RNG|OV|STOVE|STV|COOKTOP|CT)[\s_-]*\d/.test(code) || /^(RANGE|OVEN|RNG|OV|STOVE|STV|COOKTOP|CT)$/.test(code)) return true;
   return /\brange\b|\boven\b|\bstove\b|\bcooktop\b/.test(desc);
 }
