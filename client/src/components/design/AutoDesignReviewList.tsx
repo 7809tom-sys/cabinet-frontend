@@ -16,11 +16,14 @@ import {
 export function AutoDesignReviewList({
   findings,
   open = true,
+  hidden = false,
   onDismiss,
   onReopen,
 }: {
   findings: readonly DesignerReviewFinding[];
   open?: boolean;
+  /** The phone/tablet layout has no room for the report over the plan; it shows neither the report nor "View last report". */
+  hidden?: boolean;
   onDismiss: () => void;
   onReopen?: () => void;
 }) {
@@ -30,7 +33,7 @@ export function AutoDesignReviewList({
   useEffect(() => {
     setExpanded(true);
   }, [signature]);
-  if (autoDesignRulesReportIsEmpty(report)) return null;
+  if (hidden || autoDesignRulesReportIsEmpty(report)) return null;
   if (!open) {
     return (
       <div className="absolute bottom-3 right-28 z-40" data-testid="designer-review-list">
