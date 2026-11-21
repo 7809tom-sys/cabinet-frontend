@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { Router } from "wouter";
 import { describe, expect, it } from "vitest";
-import DistributorPreviewPage, { DistributorDesignerShell, HERO_COPY, PITCH_COPY } from "./DistributorPreview";
+import DistributorPreviewPage, { DEMO_NOTICE, DistributorDesignerShell, GUIDE_HEADING, GUIDE_STEPS, HERO_COPY, ORDER_STEPS, PITCH_COPY } from "./DistributorPreview";
 import { DEMO_LINES, productsForLine } from "@/lib/demoDistributor";
 
 function render(section?: string, search = "") {
@@ -13,9 +13,10 @@ function render(section?: string, search = "") {
 }
 
 describe("DistributorPreview render", () => {
-  it.each(["storefront", "dashboard", "signup", undefined, "unknown"])("renders the %s section with the demo banner and brand", (section) => {
+  it.each(["storefront", "dashboard", "signup", undefined, "unknown"])("renders the %s section with one demo notice and the brand", (section) => {
     const html = render(section);
-    expect(html).toContain("Demo Data");
+    expect(html.split(DEMO_NOTICE).length - 1).toBe(1);
+    expect(html).not.toContain("Demo price, not a quote");
     expect(html).toContain("Cabinet Deals Demo Distributor");
     expect(html).toContain("Demo Distributor Designer");
   });
@@ -34,13 +35,37 @@ describe("DistributorPreview render", () => {
     }
   });
 
+  it("explains every section in the 'How this demo works' guide", () => {
+    for (const section of ["storefront", "dashboard", "signup"]) {
+      const html = render(section);
+      expect(html).toContain(GUIDE_HEADING);
+      for (const step of GUIDE_STEPS) expect(html).toContain(step.text);
+    }
+    const home = render("storefront");
+    expect(home.indexOf(PITCH_COPY.headline)).toBeLessThan(home.indexOf(HERO_COPY.headline));
+    expect(home.indexOf(HERO_COPY.headline)).toBeLessThan(home.indexOf(GUIDE_HEADING));
+  });
+
   it("shows the selected line's full catalog grouped into Bases, Walls, Talls and Specialties", () => {
     const html = render("storefront", "line=raised-panel");
-    for (const group of ["Bases", "Walls", "Talls", "Specialties"]) expect(html).toContain(`Demo Raised Panel · ${group}`);
-    expect(html).toContain(`${productsForLine("raised-panel").length} cabinets and parts in Demo Raised Panel`);
+    for (const group of ["Bases", "Walls", "Talls", "Specialties"]) expect(html).toContain(`Raised Panel · ${group}`);
+    expect(html).toContain(`${productsForLine("raised-panel").length} cabinets and parts in Raised Panel`);
+    // Product cards are links into the designer with their line.
+    expect(html).toContain('aria-label="SB36: design with Raised Panel"');
+    expect(html).toContain("Design with this line");
     expect(html).toContain("SB36");
     expect(html).toContain("W3630");
     expect(html).not.toContain("OL-B24");
+  });
+
+  it("shows the Design, Price, Order strip and clickable line photos", () => {
+    const html = render("storefront");
+    for (const step of ORDER_STEPS) {
+      expect(html).toContain(step.title);
+      expect(html).toContain(step.text);
+    }
+    for (const line of DEMO_LINES) expect(html).toContain(`aria-label="Shop ${line.name}"`);
+    expect(html).not.toContain("lucide-box");
   });
 
   it("shows sinks and faucets with sink-base compatibility", () => {
@@ -70,8 +95,9 @@ describe("DistributorPreview render", () => {
       </Router>,
     );
     expect(html).toContain("Demo Distributor Designer");
-    expect(html).toContain("Line: Demo Gray Shaker");
+    expect(html).toContain("Line: Gray Shaker");
     expect(html).toContain('id="designer-slot"');
     expect(html).toContain("live Cabinet Deals catalog");
+    expect(html).toContain(GUIDE_STEPS[1].text);
   });
 });
