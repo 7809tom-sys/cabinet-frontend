@@ -48,6 +48,27 @@ describe("site FAQ content", () => {
     expect(FAQ_SEO.canonical).toBe("https://www.cabinetdealz.com/faq");
   });
 
+
+  it("states phone-order, price-match, sample-door, no-modification, and warehouse-pickup policies in the current wording", () => {
+    const byQuestion = Object.fromEntries(FAQ_ENTRIES.map((entry) => [entry.question, entry.answer]));
+    expect(byQuestion["Can I place an order by phone?"]).toBe(
+      "No. Orders cannot be placed by phone. All orders must go through the website.",
+    );
+    expect(byQuestion["Do you match prices from other sellers?"]).toBe(
+      "Send us an invoice and we'll give you an opportunity to match it.",
+    );
+    expect(byQuestion["Can I order a sample door?"]).toBe(
+      "Yes. Sample doors are available now for $30 and can be ordered right away through the website.",
+    );
+    expect(byQuestion["Can cabinets be modified, or can I buy doors only?"]).toBe(
+      "No. CabinetDealz does not modify anything. We do not offer door modifications or custom modifications. The catalog is sold as complete cabinets and related kitchen products, in the options and finishes each line already offers.",
+    );
+    expect(byQuestion["Is warehouse pickup available?"]).toBe(
+      "Yes. Warehouse pickup is available. Contact us if you would like to arrange pickup for an order.",
+    );
+    expect(FAQ_ENTRIES.some((entry) => /financ|credit terms|payment plan|affirm|klarna/i.test(entry.question + " " + entry.answer))).toBe(false);
+  });
+
   it("builds FAQPage JSON-LD from the same answers", () => {
     const jsonLd = buildFaqPageJsonLd();
     expect(jsonLd["@type"]).toBe("FAQPage");

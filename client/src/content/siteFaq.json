@@ -1,9 +1,9 @@
 {
-  "title": "Kitchen Cabinet FAQ — Designer, Ordering, Pricing & Shipping | CabinetDealz",
+  "title": "Kitchen Cabinet FAQ \u2014 Designer, Ordering, Pricing & Shipping | CabinetDealz",
   "description": "Answers about the CabinetDealz Designer, ordering, member and trade pricing, the affiliate and pro network, shipping, customization, assembly, returns, and warranty. Contact us in Osprey, FL for a quote or project help.",
   "canonical": "https://www.cabinetdealz.com/faq",
   "h1": "Kitchen Cabinet FAQ",
-  "intro": "Common questions about designing, pricing, and ordering cabinets on CabinetDealz. If your question is not listed, call or email us before you place the order — it is easier to sort out details first than after a shipment is on the way.",
+  "intro": "Common questions about designing, pricing, and ordering cabinets on CabinetDealz. If your question is not listed, call or email us before you place the order \u2014 it is easier to sort out details first than after a shipment is on the way.",
   "sections": [
     {
       "id": "designer",
@@ -11,19 +11,34 @@
       "entries": [
         {
           "question": "How do I start designing my kitchen?",
-          "answer": "Begin with how you use the room — where you prep, cook, clean up, and store things — and with the measurements you have. You can start from a kitchen look or a ready-to-customize Kitchen Package, then open the Designer and place those work areas on your walls. Style and finish are easier to settle once the layout works. Room measurements help you organize the plan; a local CabinetDealz store can confirm exact numbers before anything is ordered.",
+          "answer": "Begin with how you use the room \u2014 where you prep, cook, clean up, and store things \u2014 and with the measurements you have. You can start from a kitchen look or a ready-to-customize Kitchen Package, then open the Designer and place those work areas on your walls. Style and finish are easier to settle once the layout works. Room measurements help you organize the plan; a local CabinetDealz store can confirm exact numbers before anything is ordered.",
           "links": [
-            { "label": "Open the Designer", "href": "/design" },
-            { "label": "Kitchen Packages", "href": "/kitchens" },
-            { "label": "Kitchen Planning Guide", "href": "/kitchen-planning" }
+            {
+              "label": "Open the Designer",
+              "href": "/design"
+            },
+            {
+              "label": "Kitchen Packages",
+              "href": "/kitchens"
+            },
+            {
+              "label": "Kitchen Planning Guide",
+              "href": "/kitchen-planning"
+            }
           ]
         },
         {
           "question": "How does the CabinetDealz Designer work?",
-          "answer": "The Designer is a browser-based kitchen planning tool on CabinetDealz. You set the room size, build wall runs, place cabinets and appliances, and review a live materials list and quote as you go. You can inspect the layout in 3D, save your work, and come back later — there is no software to download. A separate Designer Guide walks through the same order a kitchen comes together: room first, cabinet plan next, then finishes, review, and a saved design.",
+          "answer": "The Designer is a browser-based kitchen planning tool on CabinetDealz. You set the room size, build wall runs, place cabinets and appliances, and review a live materials list and quote as you go. You can inspect the layout in 3D, save your work, and come back later \u2014 there is no software to download. A separate Designer Guide walks through the same order a kitchen comes together: room first, cabinet plan next, then finishes, review, and a saved design.",
           "links": [
-            { "label": "Open the Designer", "href": "/design" },
-            { "label": "Designer Guide", "href": "/designer-guide" }
+            {
+              "label": "Open the Designer",
+              "href": "/design"
+            },
+            {
+              "label": "Designer Guide",
+              "href": "/designer-guide"
+            }
           ]
         },
         {
@@ -33,7 +48,12 @@
         {
           "question": "What do I need to measure before I start?",
           "answer": "Measure each wall corner to corner, the ceiling height, and every window, door, and opening from the nearest corner. Note where the sink, range, refrigerator, outlets, and water lines sit today. Rough numbers are enough for a first layout; exact measurements should be confirmed before an order is placed.",
-          "links": [{ "label": "Kitchen Planning Guide", "href": "/kitchen-planning" }]
+          "links": [
+            {
+              "label": "Kitchen Planning Guide",
+              "href": "/kitchen-planning"
+            }
+          ]
         },
         {
           "question": "How long does it take to make a first layout?",
@@ -43,8 +63,14 @@
           "question": "Can I start with a kitchen package instead of a blank room?",
           "answer": "Yes. Kitchen Packages are a ready-to-customize starting point. You can use a package to get a complete kitchen direction, then move into the Designer to fit the plan to your room and request a quote when you are ready to talk through the project.",
           "links": [
-            { "label": "Plan a complete kitchen", "href": "/kitchens" },
-            { "label": "Browse packages", "href": "/bundles" }
+            {
+              "label": "Plan a complete kitchen",
+              "href": "/kitchens"
+            },
+            {
+              "label": "Browse packages",
+              "href": "/bundles"
+            }
           ]
         },
         {
@@ -53,7 +79,7 @@
         },
         {
           "question": "How much space do I need between counters or around an island?",
-          "answer": "Plan on at least 42 inches of walkway for one cook and 48 inches if two people work at once. Measure from the front edge of the countertop, not only the cabinet box — a standard 1.5 inch overhang on each side uses 3 inches of the aisle. Also check that dishwasher, oven, and refrigerator doors can open without blocking the walkway."
+          "answer": "Plan on at least 42 inches of walkway for one cook and 48 inches if two people work at once. Measure from the front edge of the countertop, not only the cabinet box \u2014 a standard 1.5 inch overhang on each side uses 3 inches of the aisle. Also check that dishwasher, oven, and refrigerator doors can open without blocking the walkway."
         },
         {
           "question": "How should I handle corners, and why is a filler on my quote?",
@@ -81,37 +107,71 @@
           "question": "How does ordering work on CabinetDealz?",
           "answer": "CabinetDealz brings the catalog, design tools, and a path to a quote and order together in one place. You can browse cabinets and styles, build a layout in the Designer, start from a Kitchen Package, or use Build an Order to assemble a list. When you are ready, request a quote or check out. CabinetDealz is the seller of record for transactions processed on the platform. Orders are not confirmed until payment is successfully processed, and we may cancel an order because of a pricing error, stock availability, or suspected fraud.",
           "links": [
-            { "label": "Browse the catalog", "href": "/catalog" },
-            { "label": "Build an Order", "href": "/order/new" },
-            { "label": "Terms & Conditions", "href": "/terms" }
+            {
+              "label": "Browse the catalog",
+              "href": "/catalog"
+            },
+            {
+              "label": "Build an Order",
+              "href": "/order/new"
+            },
+            {
+              "label": "Terms & Conditions",
+              "href": "/terms"
+            }
+          ]
+        },
+        {
+          "question": "Can I place an order by phone?",
+          "answer": "No. Orders cannot be placed by phone. All orders must go through the website.",
+          "links": [
+            {
+              "label": "Build an Order",
+              "href": "/order/new"
+            },
+            {
+              "label": "Browse the catalog",
+              "href": "/catalog"
+            }
           ]
         },
         {
           "question": "How do I pay for an order?",
           "answer": "Prices are in US dollars and may change without notice. Payment is processed securely through Stripe at checkout, and you authorize the charge when you place the order. Full payment is required before an order is processed, including backorders and approved written add-ons. If you have a question about a payment method, contact us before you check out.",
           "links": [
-            { "label": "Terms & Conditions", "href": "/terms" },
-            { "label": "Shipping Policy", "href": "/shipping-policy" }
+            {
+              "label": "Terms & Conditions",
+              "href": "/terms"
+            },
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
           ]
         },
         {
           "question": "How can I check the status of an order?",
           "answer": "After an order ships, a tracking number is emailed the next day. You can also sign in to your account, or email sales@cabinetdealz.com or call (941) 899-3288 with your order number and we will help you look it up.",
-          "links": [{ "label": "Sign in", "href": "/signin" }]
-        },
-        {
-          "question": "Do you offer financing or credit terms?",
-          "answer": "We do not publish financing plans or net credit terms on this site. Orders are confirmed only after payment is processed, and full payment is required before an order is processed. Contact us if you have a question about payment options for your project.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "links": [
+            {
+              "label": "Sign in",
+              "href": "/signin"
+            }
+          ]
         },
         {
           "question": "Do you charge sales tax?",
           "answer": "Sales tax is collected based on the delivery address, in accordance with applicable state law. When tax applies, it is calculated as part of the order. If you have a tax question, contact us or your local tax authority.",
-          "links": [{ "label": "Terms & Conditions", "href": "/terms" }]
+          "links": [
+            {
+              "label": "Terms & Conditions",
+              "href": "/terms"
+            }
+          ]
         },
         {
           "question": "Can I change a color, finish, or cabinet after I order?",
-          "answer": "Not once the order has been released. That is why the last step before ordering is confirming the door style, the color or finish, and every cabinet on the list. If you need to ask about a change, contact us immediately and we will tell you whether anything can still be adjusted."
+          "answer": "Not once the order has been released. That is why the last step before ordering is confirming the door style, the color or finish, and every cabinet on the list."
         }
       ]
     },
@@ -122,17 +182,32 @@
         {
           "question": "What is member or trade pricing?",
           "answer": "CabinetDealz is a trade platform for distributors, dealers, affiliates, and homeowners. Member and trade pricing are built into the platform, so qualified buyers see those prices as they browse and design rather than negotiating each line by hand. Contact us if you need help understanding the pricing that applies to your account.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "links": [
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            }
+          ]
         },
         {
           "question": "When will I know what my kitchen costs?",
           "answer": "The Designer updates the quote and materials list as soon as you start placing cabinets, including fillers and crown molding where they apply. You can also request a quote once you have a kitchen direction, package, or layout you want to discuss as a complete project.",
-          "links": [{ "label": "Request a quote", "href": "/order/new" }]
+          "links": [
+            {
+              "label": "Request a quote",
+              "href": "/order/new"
+            }
+          ]
         },
         {
           "question": "Do you match prices from other sellers?",
-          "answer": "We do not publish a price-match policy on this site. If you have another quote you would like us to review, send it to sales@cabinetdealz.com or call (941) 899-3288 and we will help you compare it with the CabinetDealz offering.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "answer": "Send us an invoice and we'll give you an opportunity to match it.",
+          "links": [
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            }
+          ]
         }
       ]
     },
@@ -144,21 +219,38 @@
           "question": "How does the Affiliate Program work?",
           "answer": "Affiliates can launch a branded kitchen and bath storefront on the CabinetDealz catalog, with trade pricing and fulfillment included. Membership is annual or monthly, and you do not need to stock inventory. Affiliates get a custom-branded storefront, access to cabinets and related products, the 3D Designer on their storefront, and fulfillment from the supply network. Orders placed through the storefront can earn a commission. Affiliates are independent contractors. The full program terms are in the Affiliate Agreement.",
           "links": [
-            { "label": "Affiliate Program", "href": "/affiliate" },
-            { "label": "Affiliate Agreement", "href": "/affiliate-agreement" }
+            {
+              "label": "Affiliate Program",
+              "href": "/affiliate"
+            },
+            {
+              "label": "Affiliate Agreement",
+              "href": "/affiliate-agreement"
+            }
           ]
         },
         {
           "question": "What is the Pro Network?",
           "answer": "The Pro Network is how licensed trade professionals can apply to work with CabinetDealz. If you are a contractor or other trade professional, you can review the Pro Network page and submit an application. Dealers and other members also use the platform to move a project from planning toward an order.",
-          "links": [{ "label": "Pro Network", "href": "/pro-network" }]
+          "links": [
+            {
+              "label": "Pro Network",
+              "href": "/pro-network"
+            }
+          ]
         },
         {
           "question": "Who is CabinetDealz for, and where are you located?",
-          "answer": "CabinetDealz brings a cabinet catalog, kitchen design tools, and an affiliate and dealer network together so homeowners and trade professionals can take a project from selection to a supported next step. We are based at 470 N Tamiami Trail, Osprey, FL 34229, and we serve customers nationwide through affiliate partners and distributor relationships. Hours are Monday through Friday, 9:00 AM–5:00 PM ET, Saturday by appointment, and Sunday closed.",
+          "answer": "CabinetDealz brings a cabinet catalog, kitchen design tools, and an affiliate and dealer network together so homeowners and trade professionals can take a project from selection to a supported next step. We are based at 470 N Tamiami Trail, Osprey, FL 34229, and we serve customers nationwide through affiliate partners and distributor relationships. Hours are Monday through Friday, 9:00 AM\u20135:00 PM ET, Saturday by appointment, and Sunday closed.",
           "links": [
-            { "label": "About CabinetDealz", "href": "/about" },
-            { "label": "Contact us", "href": "/contact" }
+            {
+              "label": "About CabinetDealz",
+              "href": "/about"
+            },
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            }
           ]
         }
       ]
@@ -170,29 +262,69 @@
         {
           "question": "Where do you ship?",
           "answer": "We ship to the 48 contiguous United States only. We do not ship to Alaska, Hawaii, Puerto Rico, or international destinations. If you have a delivery question about a specific address, contact us and we will check it with you.",
-          "links": [{ "label": "Shipping Policy", "href": "/shipping-policy" }]
+          "links": [
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
+          ]
         },
         {
           "question": "How are cabinets shipped, and how long will they take?",
-          "answer": "Orders are fulfilled by our authorized vendor network, so timing depends on the product, whether the order ships flat-pack or assembled, and the delivery address. Shipping charges for typical freight orders are calculated at checkout. Many cabinet orders ship on a pallet with a less-than-truckload (LTL) carrier. For framed cabinetry from our primary vendor, the published processing times are: flat-pack orders ship within 3 full business days under Express Advantage shipping, and assembled orders are processed and shipped within 15 full business days. “Day One” is the next full business day after the order is placed. Standard LTL transit is 2–5 business days; allow at least one extra day for residential deliveries and deliveries that need a scheduled appointment. Other vendors may have different terms. The full details, including rush options, limited-access fees, and delivery rules, are on the Shipping Policy page.",
-          "links": [{ "label": "Shipping Policy", "href": "/shipping-policy" }]
+          "answer": "Orders are fulfilled by our authorized vendor network, so timing depends on the product, whether the order ships flat-pack or assembled, and the delivery address. Shipping charges for typical freight orders are calculated at checkout. Many cabinet orders ship on a pallet with a less-than-truckload (LTL) carrier. For framed cabinetry from our primary vendor, the published processing times are: flat-pack orders ship within 3 full business days under Express Advantage shipping, and assembled orders are processed and shipped within 15 full business days. \u201cDay One\u201d is the next full business day after the order is placed. Standard LTL transit is 2\u20135 business days; allow at least one extra day for residential deliveries and deliveries that need a scheduled appointment. Other vendors may have different terms. The full details, including rush options, limited-access fees, and delivery rules, are on the Shipping Policy page.",
+          "links": [
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
+          ]
         },
         {
           "question": "How much does shipping cost? Is there free shipping?",
-          "answer": "Shipping costs are calculated from order size, weight, delivery ZIP code, and the fulfilling distributor’s warehouse location. LTL freight charges are calculated at checkout. We do not publish a free-shipping threshold on this page. If an order is fulfilled by more than one distributor, shipments may arrive at different times. For a shipping question or a quote, email sales@cabinetdealz.com or call (941) 899-3288.",
-          "links": [{ "label": "Shipping Policy", "href": "/shipping-policy" }]
+          "answer": "Shipping costs are calculated from order size, weight, delivery ZIP code, and the fulfilling distributor\u2019s warehouse location. LTL freight charges are calculated at checkout. We do not publish a free-shipping threshold on this page. If an order is fulfilled by more than one distributor, shipments may arrive at different times. For a shipping question or a quote, email sales@cabinetdealz.com or call (941) 899-3288.",
+          "links": [
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
+          ]
         },
         {
-          "question": "Can I pick up an order or choose my delivery date?",
-          "answer": "Some orders may be eligible for warehouse pickup, and some freight deliveries are scheduled with the carrier. For residential deliveries and deliveries that need an appointment, the freight company contacts you about 24 hours in advance to set a delivery window, usually 3–4 hours. A responsible party must be present to inspect, inventory, and sign for the delivery. Lift-gate service, when selected at checkout, means the driver places the pallet on the ground; you should plan for help moving cartons from there. Pickup windows, storage fees, and related rules are described in the Shipping Policy. Contact us if you want to ask whether pickup or a scheduled delivery applies to your order.",
-          "links": [{ "label": "Shipping Policy", "href": "/shipping-policy" }]
+          "question": "Is warehouse pickup available?",
+          "answer": "Yes. Warehouse pickup is available. Contact us if you would like to arrange pickup for an order.",
+          "links": [
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            },
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
+          ]
+        },
+        {
+          "question": "Can I choose my delivery date?",
+          "answer": "For residential deliveries and deliveries that need an appointment, the freight company contacts you about 24 hours in advance to set a delivery window, usually 3\u20134 hours. A responsible party must be present to inspect, inventory, and sign for the delivery. Lift-gate service, when selected at checkout, means the driver places the pallet on the ground; you should plan for help moving cartons from there. Contact us if you have a question about scheduling a delivery.",
+          "links": [
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
+          ]
         },
         {
           "question": "What if my delivery is damaged or missing pieces?",
-          "answer": "Accept the delivery — do not reject damaged items. A responsible party must be present to inspect the shipment. Note visible damage or a short pallet count on the delivery paperwork when you sign, and take photos. For our primary vendor’s framed cabinetry, visible damage, shortages, and concealed damage must be reported within 5 business days of delivery with photos (include the original packaging for concealed damage). Then email sales@cabinetdealz.com with your order number, a description of the issue, photos, and your signed delivery receipt. We will contact the vendor and, if needed, provide a return authorization. Other vendors may have different claim windows, which are listed on the Return Policy page. Failure to document the delivery can delay or prevent a claim.",
+          "answer": "Accept the delivery \u2014 do not reject damaged items. A responsible party must be present to inspect the shipment. Note visible damage or a short pallet count on the delivery paperwork when you sign, and take photos. For our primary vendor\u2019s framed cabinetry, visible damage, shortages, and concealed damage must be reported within 5 business days of delivery with photos (include the original packaging for concealed damage). Then email sales@cabinetdealz.com with your order number, a description of the issue, photos, and your signed delivery receipt. We will contact the vendor and, if needed, provide a return authorization. Other vendors may have different claim windows, which are listed on the Return Policy page. Failure to document the delivery can delay or prevent a claim.",
           "links": [
-            { "label": "Shipping Policy", "href": "/shipping-policy" },
-            { "label": "Return Policy", "href": "/return-policy" }
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            },
+            {
+              "label": "Return Policy",
+              "href": "/return-policy"
+            }
           ]
         }
       ]
@@ -205,20 +337,61 @@
           "question": "Can I choose door styles, finishes, and related products?",
           "answer": "Yes. Browse door styles by finish in the catalog and Shop by Style, and try styles and finishes in the Designer while you build the layout. CabinetDealz also carries related kitchen and bath products such as surfaces, countertops, and fixtures. Construction details and available options are listed on the style and product pages, because they vary by line.",
           "links": [
-            { "label": "Shop by Style", "href": "/styles" },
-            { "label": "All Cabinets", "href": "/catalog" },
-            { "label": "Surfaces & Fixtures", "href": "/surfaces" }
+            {
+              "label": "Shop by Style",
+              "href": "/styles"
+            },
+            {
+              "label": "All Cabinets",
+              "href": "/catalog"
+            },
+            {
+              "label": "Surfaces & Fixtures",
+              "href": "/surfaces"
+            }
           ]
         },
         {
           "question": "Can cabinets be modified, or can I buy doors only?",
-          "answer": "The catalog is organized around complete cabinets and related kitchen products, with options and finishes that vary by line. We do not publish a single, site-wide list of field modifications, standalone doors, or refacing kits. If you need a depth change, a special opening, a matching panel, or another adjustment, contact us with the door style and the change you have in mind and we will check what the fulfilling vendor can do.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "answer": "No. CabinetDealz does not modify anything. We do not offer door modifications or custom modifications. The catalog is sold as complete cabinets and related kitchen products, in the options and finishes each line already offers.",
+          "links": [
+            {
+              "label": "Shop by Style",
+              "href": "/styles"
+            },
+            {
+              "label": "All Cabinets",
+              "href": "/catalog"
+            }
+          ]
+        },
+        {
+          "question": "Can I order a sample door?",
+          "answer": "Yes. Sample doors are available now for $30 and can be ordered right away through the website.",
+          "links": [
+            {
+              "label": "Shop by Style",
+              "href": "/styles"
+            },
+            {
+              "label": "All Cabinets",
+              "href": "/catalog"
+            }
+          ]
         },
         {
           "question": "How do I pick a door color when the screen looks different in my kitchen?",
-          "answer": "Order a physical sample door and look at it in your own light. Screens are backlit and color-managed; a supplier’s own door photo is closer to the real finish, and that is the kind of image the Designer draws from. Contact us if you need help requesting a sample.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "answer": "Order a physical sample door and look at it in your own light. Screens are backlit and color-managed; a supplier\u2019s own door photo is closer to the real finish, and that is the kind of image the Designer draws from. Sample doors are available now for $30 and can be ordered right away through the website.",
+          "links": [
+            {
+              "label": "Shop by Style",
+              "href": "/styles"
+            },
+            {
+              "label": "All Cabinets",
+              "href": "/catalog"
+            }
+          ]
         },
         {
           "question": "Why do some door styles take longer than others?",
@@ -233,12 +406,22 @@
         {
           "question": "Do the cabinets arrive assembled or as flat-pack?",
           "answer": "Both options exist, depending on the product and the choices made on the order. The Shipping Policy describes separate processing times for flat-pack and assembled orders from our primary vendor, and other vendors may offer different packing options. The checkout and product information for your order will reflect how that shipment is being fulfilled. Contact us if you need to confirm how a specific order will arrive.",
-          "links": [{ "label": "Shipping Policy", "href": "/shipping-policy" }]
+          "links": [
+            {
+              "label": "Shipping Policy",
+              "href": "/shipping-policy"
+            }
+          ]
         },
         {
           "question": "Do you install the cabinets, include installation hardware, or recommend an installer?",
           "answer": "CabinetDealz provides the catalog, design tools, and order support. We do not publish an installer referral list or a standard hardware kit that ships with every cabinet, because installation needs vary by structure and local code. Plan to work with a qualified local installer and to follow the building requirements that apply to your project. If you have an installation question about a specific cabinet, contact us.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "links": [
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            }
+          ]
         }
       ]
     },
@@ -248,20 +431,36 @@
       "entries": [
         {
           "question": "What is your return policy?",
-          "answer": "CabinetDealz is an authorized dealer for the cabinet manufacturers that fulfill orders on the platform. Returns, exchanges, and warranty claims follow the policy of the manufacturer that fulfilled your order. We facilitate the claim and work with you and the vendor. Do not ship anything back until you have written authorization — unauthorized returns may be refused. Refunds or replacements are processed under the applicable vendor policy. The complete terms, which differ by manufacturer, are on the Return Policy page.",
-          "links": [{ "label": "Return Policy", "href": "/return-policy" }]
+          "answer": "CabinetDealz is an authorized dealer for the cabinet manufacturers that fulfill orders on the platform. Returns, exchanges, and warranty claims follow the policy of the manufacturer that fulfilled your order. We facilitate the claim and work with you and the vendor. Do not ship anything back until you have written authorization \u2014 unauthorized returns may be refused. Refunds or replacements are processed under the applicable vendor policy. The complete terms, which differ by manufacturer, are on the Return Policy page.",
+          "links": [
+            {
+              "label": "Return Policy",
+              "href": "/return-policy"
+            }
+          ]
         },
         {
           "question": "What warranty comes with the cabinets?",
-          "answer": "Warranty coverage depends on the manufacturer that fulfilled your order and is limited to the terms published for that line. Coverage, time periods, and exclusions differ by vendor — for example, some lines publish a five-year limited residential warranty, and others publish their own limited warranty language. Warranties typically address manufacturing defects in materials and workmanship under normal residential use, require proof of purchase, and may be limited to the original purchaser at the original installation site. The Warranty page reproduces the manufacturer wording in full.",
-          "links": [{ "label": "Warranty", "href": "/warranty" }]
+          "answer": "Warranty coverage depends on the manufacturer that fulfilled your order and is limited to the terms published for that line. Coverage, time periods, and exclusions differ by vendor \u2014 for example, some lines publish a five-year limited residential warranty, and others publish their own limited warranty language. Warranties typically address manufacturing defects in materials and workmanship under normal residential use, require proof of purchase, and may be limited to the original purchaser at the original installation site. The Warranty page reproduces the manufacturer wording in full.",
+          "links": [
+            {
+              "label": "Warranty",
+              "href": "/warranty"
+            }
+          ]
         },
         {
           "question": "How do I file a return, damage, or warranty claim?",
-          "answer": "Email sales@cabinetdealz.com with your order number and a description of the issue. Include photos of the item, any packaging damage, and your signed delivery receipt. We will contact the vendor on your behalf and provide a return authorization number if one applies. For urgent matters, call (941) 899-3288 during business hours (Monday–Friday, 9:00 AM–5:00 PM ET; Saturday by appointment).",
+          "answer": "Email sales@cabinetdealz.com with your order number and a description of the issue. Include photos of the item, any packaging damage, and your signed delivery receipt. We will contact the vendor on your behalf and provide a return authorization number if one applies. For urgent matters, call (941) 899-3288 during business hours (Monday\u2013Friday, 9:00 AM\u20135:00 PM ET; Saturday by appointment).",
           "links": [
-            { "label": "Return Policy", "href": "/return-policy" },
-            { "label": "Contact us", "href": "/contact" }
+            {
+              "label": "Return Policy",
+              "href": "/return-policy"
+            },
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            }
           ]
         }
       ]
@@ -272,8 +471,13 @@
       "entries": [
         {
           "question": "How do I get in touch with CabinetDealz?",
-          "answer": "Call or text (941) 899-3288 during business hours, or email sales@cabinetdealz.com — we respond within 1 business day. We are at 470 N Tamiami Trail, Osprey, FL 34229. Hours are Monday–Friday, 9:00 AM–5:00 PM ET, Saturday by appointment, and Sunday closed. We can help with cabinet orders, design questions, affiliate inquiries, and vendor partnerships.",
-          "links": [{ "label": "Contact us", "href": "/contact" }]
+          "answer": "Call or text (941) 899-3288 during business hours, or email sales@cabinetdealz.com \u2014 we respond within 1 business day. We are at 470 N Tamiami Trail, Osprey, FL 34229. Hours are Monday\u2013Friday, 9:00 AM\u20135:00 PM ET, Saturday by appointment, and Sunday closed. We can help with cabinet orders, design questions, affiliate inquiries, and vendor partnerships.",
+          "links": [
+            {
+              "label": "Contact us",
+              "href": "/contact"
+            }
+          ]
         }
       ]
     }
