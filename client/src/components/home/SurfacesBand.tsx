@@ -21,8 +21,8 @@ const SHORT_LABEL: Record<string, string> = {
 
 /**
  * Homepage promo band for the Pelican "Surfaces & Fixtures" storefront.
- * The landing page (/) does NOT render the shared TopNav, so this band is the
- * primary way shoppers discover Surfaces from the home screen.
+ * The landing page (/) now also renders the shared TopNav; this band remains
+ * a primary in-page way shoppers discover Surfaces from the home screen.
  */
 export function SurfacesBand() {
   const { data: categories } = trpc.pelican.categories.useQuery({ scope: "catalog" });

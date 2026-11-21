@@ -214,7 +214,7 @@ export function TopNav() {
     );
   }
   return (
-    <header data-designer-route={location.startsWith("/design") ? "true" : undefined} data-canvas-only-hidden={designerCanvasOnly && location.startsWith("/design") ? "true" : undefined} className={`sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 ${designerCanvasOnly && location.startsWith("/design") ? "hidden" : ""}`}>
+    <header data-site-header data-designer-route={location.startsWith("/design") ? "true" : undefined} data-canvas-only-hidden={designerCanvasOnly && location.startsWith("/design") ? "true" : undefined} className={`sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 ${designerCanvasOnly && location.startsWith("/design") ? "hidden" : ""}`}>
       <div data-testid="site-toolbar-row" className="container flex min-h-16 items-center justify-between gap-2 py-1">
         {/* Logo — show affiliate branding when on affiliate storefront or ?ref= present */}
         {currentAffiliate ? (

@@ -77,4 +77,17 @@ describe("24 inch cabinets are drawn and described as two doors", () => {
       description: "Tall one door cabinet",
     })).toBe("Tall two doors cabinet");
   });
+
+  it("leaves microwave bases, including the MB spelling, as their own face", () => {
+    for (const row of [
+      { masterCode: "BMC-27", width: 27, description: '27" Base Microwave Cabinet' },
+      { masterCode: "MB30", width: 30, description: '30" Microwave Base Cabinet' },
+      { masterCode: "MB33", width: 33, description: '33" Microwave Base Cabinet' },
+      { masterCode: "BMC30", width: 30, description: '30" Base Microwave Cabinet' },
+      { masterCode: "BMW30", width: 30, description: '30" Base Microwave Cabinet' },
+    ]) {
+      expect(isTwentyFourSingleDoorDataError(row), row.masterCode).toBe(false);
+      expect(correctTwentyFourSingleDoor(row, { doors: 0, drawers: 1 })).toEqual({ doors: 0, drawers: 1 });
+    }
+  });
 });

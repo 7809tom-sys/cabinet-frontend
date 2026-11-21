@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   WALL_OPEN_SHELF_DEPTH_IN,
+  isOpenEndShelfWallCabinet,
   isWallEndOpenShelfCode,
   isWallOpenShelfCabinet,
   kitchenCrestOpenEndShelfCount,
@@ -82,6 +83,26 @@ describe("wall open shelf family", () => {
     expect(isWallOpenShelfCabinet({ masterCode: "OE636", description: '6" x 36" Open End Shelf Wall Cabinet' })).toBe(true);
     // A thin floating shelf is never the wall open-shelf box.
     expect(isWallOpenShelfCabinet({ masterCode: "FS48", description: "48 inch Floating Shelf" })).toBe(false);
+
+    // Live rows for OE636/OE642 still carry wall_0door (and OE642's subcategory
+    // is Standard Wall). The open-end-shelf description and OE prefix must win.
+    const oe642 = {
+      masterCode: "OE642",
+      description: '6" x 42" Open End Shelf Wall Cabinet',
+      subCategory: "Standard Wall",
+      graphicType: "wall_0door",
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+    };
+    expect(isOpenEndShelfWallCabinet(oe642)).toBe(true);
+    expect(isWallOpenShelfCabinet(oe642)).toBe(true);
+    expect(isOpenEndShelfWallCabinet({
+      masterCode: "OE636",
+      description: '6" x 36" Open End Shelf Wall Cabinet',
+      subCategory: "Open Shelf",
+      graphicType: "wall_0door",
+      numberOfDoors: 0,
+    })).toBe(true);
   });
 
   it("reads the code-declared size for all three WEOS heights at the 12-inch wall depth", () => {

@@ -73,4 +73,10 @@ describe("B2B homepage hierarchy", () => {
   it("keeps public featured room scenes free of distributor identity", () => {
     expect(homeSource).not.toContain('distributorName');
   });
+
+  it("renders the shared TopNav on the home page so phone users get logo, menu, and cart", () => {
+    expect(homeSource).toContain('import { TopNav } from "@/components/TopNav"');
+    expect(homeSource).toContain("<TopNav />");
+    expect(homeSource.indexOf("<TopNav />")).toBeLessThan(homeSource.indexOf("<StorefrontBanner />"));
+  });
 });

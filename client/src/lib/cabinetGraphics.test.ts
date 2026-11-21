@@ -178,6 +178,39 @@ describe("cabinetDrawingType", () => {
 	    }
 	  });
 
+	  it("does not treat BES12 as a BEC angled end, and keeps MB microwave bases as microwave-base", () => {
+	    expect(cabinetDrawingType({
+	      masterCode: "BES12",
+	      description: '12" Base End Shelf Cabinet - Open curved unit with 5 shelves (configurable left or right)',
+	      category: "Base",
+	      subCategory: "Base End Cabinet",
+	      graphicType: "curved-open-shelf",
+	      width: 12,
+	      numberOfDoors: 0,
+	      numberOfDrawers: 0,
+	    })).not.toBe("end-angle");
+	    expect(cabinetDrawingType({
+	      masterCode: "MB30",
+	      description: '30" Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+	      category: "Base",
+	      subCategory: "Microwave Base Cabinet",
+	      graphicType: "base_0door",
+	      width: 30,
+	      numberOfDoors: 0,
+	      numberOfDrawers: 1,
+	    })).toBe("microwave-base");
+	    expect(cabinetDrawingType({
+	      masterCode: "MB33",
+	      description: '33" Microwave Base Cabinet',
+	      category: "Base",
+	      subCategory: "Microwave Base Cabinet",
+	      graphicType: "base_0door",
+	      width: 33,
+	      numberOfDoors: 0,
+	      numberOfDrawers: 1,
+	    })).toBe("microwave-base");
+	  });
+
 	  it("keeps vendor-prefixed DCW stacker cabinets as diagonal corner fronts", () => {
 	    expect(cabinetDrawingType({
 	      masterCode: "SW-DCW2412-GD",
