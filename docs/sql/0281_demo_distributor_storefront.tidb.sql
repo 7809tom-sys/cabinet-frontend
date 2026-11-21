@@ -2,6 +2,10 @@
 --
 -- PREPARED, NOT APPLIED. Do not run without Tom's approval.
 --
+-- SUPERSEDED (Nov 21 2026, 4:20 PM CT): the demo designer now opens inside the demo
+-- distributor shell at /distributor-preview/design, so this row is no longer needed for
+-- branding and DEMO_DISTRIBUTOR_DESIGNER_SLUG no longer exists. Kept for reference only.
+--
 -- Why: /distributor-preview/designer opens the live 3D designer through the existing
 -- branded path /store/:slug/design. Until this row exists it points at the existing
 -- "sales-demo" storefront, so the designer chrome shows the Sales Demo branding.

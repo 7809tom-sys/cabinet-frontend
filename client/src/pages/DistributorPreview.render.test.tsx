@@ -1,43 +1,77 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { Router } from "wouter";
 import { describe, expect, it } from "vitest";
-import DistributorPreviewPage from "./DistributorPreview";
+import DistributorPreviewPage, { DistributorDesignerShell, HERO_COPY, PITCH_COPY } from "./DistributorPreview";
+import { DEMO_LINES, productsForLine } from "@/lib/demoDistributor";
 
-function DistributorPreview({ section }: { section?: string }) {
-  return (
-    <Router ssrPath={`/distributor-preview/${section ?? ""}`}>
+function render(section?: string, search = "") {
+  return renderToStaticMarkup(
+    <Router ssrPath={`/distributor-preview/${section ?? ""}`} ssrSearch={search}>
       <DistributorPreviewPage section={section} />
-    </Router>
+    </Router>,
   );
 }
 
 describe("DistributorPreview render", () => {
-  it.each(["storefront", "designer", "dashboard", "signup", undefined, "unknown"])("renders the %s section with the demo banner", (section) => {
-    const html = renderToStaticMarkup(<DistributorPreview section={section} />);
+  it.each(["storefront", "dashboard", "signup", undefined, "unknown"])("renders the %s section with the demo banner and brand", (section) => {
+    const html = render(section);
     expect(html).toContain("Demo Data");
-    expect(html).toContain("Demo Distributor");
+    expect(html).toContain("Cabinet Deals Demo Distributor");
+    expect(html).toContain("Demo Distributor Designer");
   });
 
-  it("shows only the distributor's products on the storefront", () => {
-    const html = renderToStaticMarkup(<DistributorPreview section="storefront" />);
-    expect(html).toContain("DB18-3");
+  it("opens with the pitch banner, then the three-line hero", () => {
+    const html = render("storefront");
+    expect(html).toContain(PITCH_COPY.headline);
+    expect(html).toContain(PITCH_COPY.cta);
+    expect(html).toContain(HERO_COPY.headline);
+    expect(html).toContain(HERO_COPY.cta);
+    expect(html.indexOf(PITCH_COPY.headline)).toBeLessThan(html.indexOf(HERO_COPY.headline));
+    for (const line of DEMO_LINES) {
+      expect(html).toContain(`Shop ${line.name}`);
+      expect(html).toContain(`Design with ${line.name}`);
+      expect(html).toContain(`/distributor-preview/design?line=${line.id}`);
+    }
+  });
+
+  it("shows the selected line's full catalog grouped into Bases, Walls, Talls and Specialties", () => {
+    const html = render("storefront", "line=raised-panel");
+    for (const group of ["Bases", "Walls", "Talls", "Specialties"]) expect(html).toContain(`Demo Raised Panel · ${group}`);
+    expect(html).toContain(`${productsForLine("raised-panel").length} cabinets and parts in Demo Raised Panel`);
+    expect(html).toContain("SB36");
+    expect(html).toContain("W3630");
     expect(html).not.toContain("OL-B24");
   });
 
-  it("links the designer through the existing branded store path", () => {
-    expect(renderToStaticMarkup(<DistributorPreview section="designer" />)).toContain('href="/store/sales-demo/design"');
+  it("shows sinks and faucets with sink-base compatibility", () => {
+    const html = render("storefront");
+    expect(html).toContain("Sinks &amp; Faucets");
+    expect(html).toContain("Sinks that fit");
+    expect(html).toContain("Faucets that fit");
   });
 
   it("shows orders, leads, affiliates, labor and CRM on the back office", () => {
-    const html = renderToStaticMarkup(<DistributorPreview section="dashboard" />);
+    const html = render("dashboard");
     for (const label of ["Orders", "Leads", "Affiliates (distributor-owned)", "Labor analytics", "CRM activity", "DEMO-1042"]) {
       expect(html).toContain(label);
     }
   });
 
   it("keeps the signup CTA disabled until terms are agreed", () => {
-    const html = renderToStaticMarkup(<DistributorPreview section="signup" />);
+    const html = render("signup");
     expect(html).toContain("3%–4%");
     expect(html).not.toContain("/become-a-vendor?type=distributor");
+  });
+
+  it("wraps the designer in the demo distributor shell with the designer label", () => {
+    const html = renderToStaticMarkup(
+      <Router ssrPath="/distributor-preview/design" ssrSearch="line=gray-shaker">
+        <DistributorDesignerShell><div id="designer-slot" /></DistributorDesignerShell>
+      </Router>,
+    );
+    expect(html).toContain("Demo Distributor Designer");
+    expect(html).toContain("Line: Demo Gray Shaker");
+    expect(html).toContain('id="designer-slot"');
+    expect(html).toContain("live Cabinet Deals catalog");
   });
 });

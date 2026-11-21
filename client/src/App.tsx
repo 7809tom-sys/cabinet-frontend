@@ -1,4 +1,4 @@
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch } from "wouter";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TopNav } from "@/components/TopNav";
@@ -69,6 +69,7 @@ const AdminHelperRequestJoin = lazy(() => import("@/pages/AdminHelperRequestJoin
 const Storefront = lazy(() => import("@/pages/Storefront"));
 const StorefrontPreview = lazy(() => import("@/pages/StorefrontPreview"));
 const DistributorPreview = lazy(() => import("@/pages/DistributorPreview"));
+const DistributorDesignerShell = lazy(() => import("@/pages/DistributorPreview").then((m) => ({ default: m.DistributorDesignerShell })));
 const AffiliateDashboard = lazy(() => import("@/pages/AffiliateDashboard"));
 const ContractorDashboard = lazy(() => import("@/pages/ContractorDashboard"));
 const Cart = lazy(() => import("@/pages/Cart"));
@@ -671,6 +672,21 @@ export default function App() {
           )}
         </Route>
         {/* Demo distributor storefront, designer, back office and signup — placeholder data only */}
+        {/* Demo Distributor Designer: the unchanged DesignTool inside the demo distributor shell. */}
+        <Route path="/distributor-preview/design">
+          <ErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+              <DistributorDesignerShell>
+                <DesignerErrorBoundary surface="designer">
+                  <DesignTool />
+                </DesignerErrorBoundary>
+              </DistributorDesignerShell>
+            </Suspense>
+          </ErrorBoundary>
+        </Route>
+        <Route path="/distributor-preview/designer">
+          {() => <Redirect to={`/distributor-preview/design${typeof window !== "undefined" ? window.location.search : ""}`} replace />}
+        </Route>
         <Route path="/distributor-preview/:section">
           {(params) => (
             <Suspense fallback={<PageLoader />}>

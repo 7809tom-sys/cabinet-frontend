@@ -2,11 +2,30 @@
 // Placeholder data for the Distributor preview page (/distributor-preview).
 // Mirrors the affiliate template preview (/store-preview/:template): nothing
 // here is read from or written to the database. Every name, order, lead and
-// number is fictional and is labelled "Demo" wherever it is shown.
+// price is a placeholder and is labelled "Demo" wherever it is shown.
+//
+// The cabinet codes and dimensions are real: they are derived programmatically
+// from the read-only catalog snapshots committed in client/src/lib/__fixtures__
+// (see scripts/emit_demo_distributor_catalog.mjs). Prices are demo placeholders.
+
+import {
+  DEMO_CATALOG_SOURCE_ROWS,
+  DEMO_FIXTURE_SOURCE_ROWS,
+  type DemoCatalogSourceRow,
+} from "./demoDistributorCatalog.generated";
+import type { AutoDesignSinkProduct } from "./autoDesignSink";
+import type { AutoDesignFaucetProduct } from "./autoDesignFaucet";
+import { cheapestAutoDesignFaucet } from "./autoDesignFaucet";
+import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
+import { faucetRowsForBase, sinkRowsForBase } from "./sinkBaseSelection";
+import { KITCHEN_SCENES, type KitchenSceneKey } from "./doorFamilyPhotos";
+
+export const DEMO_BRAND_NAME = "Cabinet Deals Demo Distributor";
+export const DEMO_DESIGNER_LABEL = "Demo Distributor Designer";
 
 export const DEMO_DISTRIBUTOR = {
   id: "demo-distributor",
-  name: "Demo Distributor",
+  name: DEMO_BRAND_NAME,
   code: "DEMO",
   tagline: "Cabinet lines you can design, price and order in one place.",
   logoUrl: "/demo/demo-distributor-logo.svg",
@@ -18,15 +37,21 @@ export const DEMO_DISTRIBUTOR = {
   sampleStoreUrl: "demo-distributor.cabinetdealz.com",
 } as const;
 
-// The 3D designer is reached through the existing branded affiliate path
-// /store/:slug/design (AffiliateShell + DesignTool, unchanged). "sales-demo" is
-// the existing Sales Demo storefront. Swap to "demo-distributor" only after the
-// optional demo row in docs/sql/0281_demo_distributor_storefront.tidb.sql has
-// been reviewed and applied by Tom.
-export const DEMO_DISTRIBUTOR_DESIGNER_SLUG = "sales-demo";
+// Share details for emailing the page to prospective distributors.
+export const DEMO_SHARE = {
+  url: "https://www.cabinetdealz.com/distributor-preview",
+  title: `${DEMO_BRAND_NAME}: an example distributor website`,
+  description:
+    "An example of the website Cabinet Deals can build for a cabinet distributor: your brand, your full catalog, your own 3D designer, and leads and orders that come to you. Demo data.",
+  image: `https://www.cabinetdealz.com${KITCHEN_SCENES["shaker-white"]}`,
+} as const;
 
-export function demoDesignerPath(slug: string = DEMO_DISTRIBUTOR_DESIGNER_SLUG): string {
-  return `/store/${encodeURIComponent(slug)}/design`;
+// The designer opens inside the demo distributor shell at this route. The
+// designer component itself (DesignTool) is mounted unchanged.
+export const DEMO_DESIGNER_ROUTE = "/distributor-preview/design";
+
+export function demoDesignerPath(lineId?: DemoLineId): string {
+  return lineId ? `${DEMO_DESIGNER_ROUTE}?line=${encodeURIComponent(lineId)}` : DEMO_DESIGNER_ROUTE;
 }
 
 // Commission terms shown on the signup CTA. The final rate inside the range is
@@ -61,43 +86,216 @@ export function formatUsd(cents: number): string {
   return (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-// ─── Demo catalog ────────────────────────────────────────────────────────────
-// A small mixed catalog. The storefront filters it to the demo distributor's
-// own lines to show what a distributor-locked storefront looks like.
+// ─── Demo lines, groups and catalog ──────────────────────────────────────────
+// Three door lines. Every line carries the full derived catalog (same codes and
+// dimensions), priced with a fixed per-line demo multiplier.
+
+export const DEMO_LINES = [
+  {
+    id: "white-shaker",
+    name: "Demo White Shaker",
+    scene: "shaker-white" as KitchenSceneKey,
+    swatch: "#f4f4f2",
+    priceMultiplier: 1,
+    headline: "A clean, bright classic",
+    copy: "A simple five-piece shaker door in white. It suits modern and traditional kitchens alike.",
+  },
+  {
+    id: "gray-shaker",
+    name: "Demo Gray Shaker",
+    scene: "shaker-gray" as KitchenSceneKey,
+    swatch: "#8f969c",
+    priceMultiplier: 1.08,
+    headline: "The same shaker door in a calm gray",
+    copy: "A soft neutral for kitchens that want a little color without a bold statement.",
+  },
+  {
+    id: "raised-panel",
+    name: "Demo Raised Panel",
+    scene: "raised-cherry" as KitchenSceneKey,
+    swatch: "#7a3e2b",
+    priceMultiplier: 1.18,
+    headline: "Traditional detail and warmth",
+    copy: "A raised center panel and a warm finish for a more formal, furniture-style kitchen.",
+  },
+] as const;
+
+export type DemoLine = (typeof DEMO_LINES)[number];
+export type DemoLineId = DemoLine["id"];
+
+export function isDemoLineId(value: unknown): value is DemoLineId {
+  return typeof value === "string" && DEMO_LINES.some((line) => line.id === value);
+}
+
+export function demoLineScene(line: DemoLine): string {
+  return KITCHEN_SCENES[line.scene];
+}
+
+export const DEMO_TYPE_GROUPS = ["Bases", "Walls", "Talls", "Specialties"] as const;
+export type DemoTypeGroup = (typeof DEMO_TYPE_GROUPS)[number];
 
 export type DemoProduct = {
   sku: string;
   name: string;
-  category: "Base" | "Wall" | "Tall" | "Vanity" | "Accessory";
+  /** Type group inside a line: Bases, Walls, Talls or Specialties. */
+  group: DemoTypeGroup;
+  /** Sub-type inside the group, e.g. "Sink Base" or "Drawer Base" inside Bases. */
+  category: string;
   doorLine: string;
+  lineId: DemoLineId | null;
   distributorId: string;
   priceCents: number;
+  widthIn: number | null;
+  heightIn: number | null;
+  depthIn: number | null;
 };
 
-export const DEMO_DOOR_LINES = [
-  { id: "demo-white-shaker", name: "Demo White Shaker", swatch: "#f4f4f2", distributorId: DEMO_DISTRIBUTOR.id },
-  { id: "demo-sage-shaker", name: "Demo Sage Shaker", swatch: "#9caf88", distributorId: DEMO_DISTRIBUTOR.id },
-  { id: "demo-espresso-slab", name: "Demo Espresso Slab", swatch: "#3b2a20", distributorId: DEMO_DISTRIBUTOR.id },
-  { id: "other-gray-raised", name: "Other Line Gray Raised", swatch: "#8a8f94", distributorId: "other-line" },
-] as const;
+/** Every source row lands in exactly one type group. */
+export function demoTypeGroupFor(row: Pick<DemoCatalogSourceRow, "kind" | "category" | "subCategory">): DemoTypeGroup {
+  const text = `${row.category ?? ""} ${row.subCategory ?? ""}`;
+  if (row.kind === "wall") return "Walls";
+  if (row.kind === "tall") return "Talls";
+  if (row.kind === "base") return /vanity/i.test(text) ? "Specialties" : "Bases";
+  // Accessory rows: stock wall boxes listed with accessories stay with the walls.
+  if (row.category === "Wall") return "Walls";
+  return "Specialties";
+}
 
-export const DEMO_CATALOG: DemoProduct[] = [
-  { sku: "B12", name: "Base 12\" (1 door, 1 drawer)", category: "Base", doorLine: "Demo White Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 18900 },
-  { sku: "B24", name: "Base 24\" (2 doors, 1 drawer)", category: "Base", doorLine: "Demo White Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 26400 },
-  { sku: "DB18-3", name: "Drawer Base 18\" (3 drawers)", category: "Base", doorLine: "Demo Sage Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 31200 },
-  { sku: "SB36", name: "Sink Base 36\"", category: "Base", doorLine: "Demo Sage Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 28800 },
-  { sku: "W3030", name: "Wall 30\" x 30\"", category: "Wall", doorLine: "Demo White Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 21500 },
-  { sku: "W1542", name: "Wall 15\" x 42\"", category: "Wall", doorLine: "Demo Espresso Slab", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 17900 },
-  { sku: "P2484", name: "Pantry 24\" x 84\"", category: "Tall", doorLine: "Demo Espresso Slab", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 61900 },
-  { sku: "V3021", name: "Vanity 30\" x 21\"", category: "Vanity", doorLine: "Demo Sage Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 24900 },
-  { sku: "TK8", name: "Toe Kick 8'", category: "Accessory", doorLine: "Demo White Shaker", distributorId: DEMO_DISTRIBUTOR.id, priceCents: 3900 },
-  // Another supplier's products — present in the platform catalog, hidden from this storefront.
-  { sku: "OL-B24", name: "Base 24\" (Other Line)", category: "Base", doorLine: "Other Line Gray Raised", distributorId: "other-line", priceCents: 25100 },
-  { sku: "OL-W3030", name: "Wall 30\" x 30\" (Other Line)", category: "Wall", doorLine: "Other Line Gray Raised", distributorId: "other-line", priceCents: 20400 },
+function titleCase(value: string): string {
+  return value.replace(/\w\S*/g, (word) => (word === word.toUpperCase() && word.length > 1 ? word : word.charAt(0).toUpperCase() + word.slice(1)));
+}
+
+export function demoSubTypeFor(row: Pick<DemoCatalogSourceRow, "category" | "subCategory">): string {
+  const raw = (row.subCategory ?? row.category ?? "Other").trim() || "Other";
+  return titleCase(raw);
+}
+
+/** Demo placeholder price in cents, from the box size and the line multiplier. Not a quote. */
+export function demoPriceCents(row: Pick<DemoCatalogSourceRow, "widthIn" | "heightIn">, group: DemoTypeGroup, multiplier: number): number {
+  const w = row.widthIn ?? 3;
+  const h = row.heightIn ?? 30;
+  let dollars: number;
+  switch (group) {
+    case "Bases": dollars = 90 + w * 7.5; break;
+    case "Walls": dollars = 40 + w * h * 0.12; break;
+    case "Talls": dollars = 250 + w * h * 0.18; break;
+    default: dollars = 25 + w * h * 0.05; break;
+  }
+  return Math.max(500, Math.round(dollars * multiplier) * 100);
+}
+
+function buildLineProducts(line: DemoLine): DemoProduct[] {
+  return DEMO_CATALOG_SOURCE_ROWS.map((row) => {
+    const group = demoTypeGroupFor(row);
+    return {
+      sku: row.code,
+      name: row.description,
+      group,
+      category: demoSubTypeFor(row),
+      doorLine: line.name,
+      lineId: line.id,
+      distributorId: DEMO_DISTRIBUTOR.id,
+      priceCents: demoPriceCents(row, group, line.priceMultiplier),
+      widthIn: row.widthIn,
+      heightIn: row.heightIn,
+      depthIn: row.depthIn,
+    };
+  });
+}
+
+// Another supplier's products: present in the platform catalog, hidden from this storefront.
+const OTHER_SUPPLIER_PRODUCTS: DemoProduct[] = [
+  { sku: "OL-B24", name: "Base 24\" (other supplier)", group: "Bases", category: "Standard Base", doorLine: "Other supplier line", lineId: null, distributorId: "other-line", priceCents: 25100, widthIn: 24, heightIn: 34.5, depthIn: 24 },
+  { sku: "OL-W3030", name: "Wall 30\" x 30\" (other supplier)", group: "Walls", category: "Standard Wall", doorLine: "Other supplier line", lineId: null, distributorId: "other-line", priceCents: 20400, widthIn: 30, heightIn: 30, depthIn: 12 },
 ];
+
+export const DEMO_CATALOG: DemoProduct[] = [...DEMO_LINES.flatMap(buildLineProducts), ...OTHER_SUPPLIER_PRODUCTS];
 
 export function filterCatalogForDistributor(catalog: DemoProduct[], distributorId: string): DemoProduct[] {
   return catalog.filter((product) => product.distributorId === distributorId);
+}
+
+export function productsForLine(lineId: DemoLineId, catalog: DemoProduct[] = DEMO_CATALOG): DemoProduct[] {
+  return catalog.filter((p) => p.lineId === lineId && p.distributorId === DEMO_DISTRIBUTOR.id);
+}
+
+export type DemoLineGroupSection = { group: DemoTypeGroup; count: number; subTypes: { name: string; products: DemoProduct[] }[] };
+
+/** Line → type group → sub-type, in display order. Every product appears exactly once. */
+export function groupLineProducts(products: DemoProduct[]): DemoLineGroupSection[] {
+  return DEMO_TYPE_GROUPS.map((group) => {
+    const inGroup = products.filter((p) => p.group === group);
+    const bySub = new Map<string, DemoProduct[]>();
+    for (const p of inGroup) bySub.set(p.category, [...(bySub.get(p.category) ?? []), p]);
+    const subTypes = Array.from(bySub.entries())
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([name, items]) => ({ name, products: items }));
+    return { group, count: inGroup.length, subTypes };
+  });
+}
+
+// ─── Sinks & Faucets (shared across all three lines) ─────────────────────────
+// Rows use the designer's own sink and faucet product shapes, so the existing
+// sink-base rules decide what fits. Prices are demo placeholders.
+
+export const DEMO_FIXTURE_PRICE_MULTIPLIER = 1.1;
+
+function demoFixturePrice(snapshot: number | null): number | null {
+  return snapshot == null ? null : Math.round(snapshot * DEMO_FIXTURE_PRICE_MULTIPLIER * 100) / 100;
+}
+
+const fixtureRow = (row: (typeof DEMO_FIXTURE_SOURCE_ROWS)[number]) => ({
+  id: row.id,
+  pelicanCode: row.pelicanCode,
+  name: row.name,
+  description: row.description,
+  category: row.category,
+  subCategory: row.subCategory,
+  size: row.size,
+  imageUrl: null,
+  sellPrice: demoFixturePrice(row.snapshotPrice),
+});
+
+export const DEMO_SINKS: AutoDesignSinkProduct[] = DEMO_FIXTURE_SOURCE_ROWS.filter((r) => r.subCategory === "Sinks").map(fixtureRow);
+export const DEMO_FAUCETS: AutoDesignFaucetProduct[] = DEMO_FIXTURE_SOURCE_ROWS.filter((r) => r.subCategory === "Faucets").map(fixtureRow);
+export const DEMO_SINK_ACCESSORIES: AutoDesignSinkProduct[] = DEMO_FIXTURE_SOURCE_ROWS.filter((r) => r.subCategory !== "Sinks" && r.subCategory !== "Faucets").map(fixtureRow);
+
+export type DemoSinkBaseCompatibility = {
+  baseCode: string;
+  baseName: string;
+  widthIn: number;
+  sinks: AutoDesignSinkProduct[];
+  faucets: AutoDesignFaucetProduct[];
+  /** The designer's Auto Design pick: lowest-priced double bowl that fits, else lowest-priced sink. */
+  defaultSink: AutoDesignSinkProduct | null;
+  defaultSinkNote: string;
+  /** The designer's Auto Design pick: lowest-priced deck faucet that fits this base. */
+  defaultFaucet: AutoDesignFaucetProduct | null;
+};
+
+export function isDemoSinkBase(row: Pick<DemoCatalogSourceRow, "kind" | "subCategory" | "description">): boolean {
+  return row.kind === "base" && (/sink/i.test(row.subCategory ?? "") || /\bsink base\b/i.test(row.description));
+}
+
+/** Sinks and faucets that fit each sink base, using the designer's existing sink-base rules. Same in every line. */
+export function demoSinkBaseCompatibility(): DemoSinkBaseCompatibility[] {
+  return DEMO_CATALOG_SOURCE_ROWS.filter((row) => isDemoSinkBase(row) && (row.widthIn ?? 0) > 0).map((row) => {
+    const base = { masterCode: row.code, description: row.description, subCategory: row.subCategory, category: row.category, width: row.widthIn } as const;
+    const roomType = /vanity/i.test(`${row.category ?? ""} ${row.subCategory ?? ""} ${row.description}`) ? "bathroom" : "kitchen";
+    const sinks = sinkRowsForBase(DEMO_SINKS, base as never, roomType);
+    const faucets = faucetRowsForBase(DEMO_FAUCETS, base as never, roomType);
+    const budget = roomType === "kitchen" ? pickBudgetDefaultSink({ base: base as never, lineProducts: DEMO_SINKS }) : null;
+    return {
+      baseCode: row.code,
+      baseName: row.description,
+      widthIn: row.widthIn ?? 0,
+      sinks,
+      faucets,
+      defaultSink: budget?.source === "line" ? budget.product : null,
+      defaultSinkNote: budget?.note ?? "Vanity sink base: the designer offers vanity basins and vanity faucets.",
+      defaultFaucet: roomType === "kitchen" ? cheapestAutoDesignFaucet(faucets) : (faucets[0] ?? null),
+    };
+  });
 }
 
 // ─── Demo back office ────────────────────────────────────────────────────────
@@ -191,7 +389,7 @@ export function summarizeDemoOrders(orders: DemoOrder[], rate: number = DEMO_COM
   return { count: orders.length, designerCents, csvCents, totalCents: designerCents + csvCents, commissionCents };
 }
 
-export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "designer", "dashboard", "signup"] as const;
+export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "dashboard", "signup"] as const;
 export type DistributorPreviewSection = (typeof DISTRIBUTOR_PREVIEW_SECTIONS)[number];
 
 export function isDistributorPreviewSection(value: unknown): value is DistributorPreviewSection {
