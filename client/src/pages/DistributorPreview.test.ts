@@ -32,9 +32,11 @@ describe("demo distributor preview page", () => {
     expect(libSource).not.toMatch(/=\s*"sales-demo"/);
   });
 
-  it("labels the page as demo data and keeps the four nav entries", () => {
-    expect(pageSource).toContain("Demo Data");
+  it("labels the page as demo data and has the demo nav entries", () => {
+    expect(pageSource).toContain("Example site with demo data.");
     expect(pageSource).toContain("StorefrontSection");
+    expect(pageSource).toContain('{ id: "shop", label: "Shop", href: "/distributor-preview/shop" }');
+    expect(pageSource).toContain('{ id: "features", label: "Everything you get", href: "/distributor-preview/features" }');
     expect(pageSource).toContain("DashboardSection");
     expect(pageSource).toContain("SignupSection");
     expect(pageSource).toContain("label: DEMO_DESIGNER_LABEL");
@@ -55,6 +57,11 @@ describe("demo distributor preview page", () => {
     expect(pageSource).toContain('href="/become-a-vendor?type=distributor"');
     expect(pageSource).toContain("Direct CSV orders:");
     expect(pageSource).toContain("{agreed ? (");
+  });
+
+  it("keeps the guide copy free of stats and urgency claims", () => {
+    expect(pageSource).toContain("How this demo works");
+    expect(pageSource).not.toMatch(/limited time|act now|\d+% (more|faster)|trusted by|\d+\+ (customers|distributors)/i);
   });
 
   it("names no supplier in the page copy", () => {

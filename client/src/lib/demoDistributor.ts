@@ -93,7 +93,7 @@ export function formatUsd(cents: number): string {
 export const DEMO_LINES = [
   {
     id: "white-shaker",
-    name: "Demo White Shaker",
+    name: "White Shaker",
     scene: "shaker-white" as KitchenSceneKey,
     swatch: "#f4f4f2",
     priceMultiplier: 1,
@@ -102,7 +102,7 @@ export const DEMO_LINES = [
   },
   {
     id: "gray-shaker",
-    name: "Demo Gray Shaker",
+    name: "Gray Shaker",
     scene: "shaker-gray" as KitchenSceneKey,
     swatch: "#8f969c",
     priceMultiplier: 1.08,
@@ -111,7 +111,7 @@ export const DEMO_LINES = [
   },
   {
     id: "raised-panel",
-    name: "Demo Raised Panel",
+    name: "Raised Panel",
     scene: "raised-cherry" as KitchenSceneKey,
     swatch: "#7a3e2b",
     priceMultiplier: 1.18,
@@ -232,6 +232,31 @@ export function groupLineProducts(products: DemoProduct[]): DemoLineGroupSection
       .map(([name, items]) => ({ name, products: items }));
     return { group, count: inGroup.length, subTypes };
   });
+}
+
+// ─── Easy upload ordering example (static) ───────────────────────────────────
+// A sample handwritten list and the shopping list it becomes. Codes are real
+// catalog codes from the derived catalog; nothing is sent to any service.
+
+export const EASY_UPLOAD_SAMPLE: { written: string; code: string; qty: number }[] = [
+  { written: "2 - B24", code: "B24", qty: 2 },
+  { written: "3 - W3030", code: "W3030", qty: 3 },
+  { written: "1 - SB36", code: "SB36", qty: 1 },
+  { written: "2 - 3DB18", code: "3DB18", qty: 2 },
+  { written: "2 - W3012", code: "W3012", qty: 2 },
+  { written: "1 - BBC42", code: "BBC42", qty: 1 },
+];
+
+export type EasyUploadRow = { code: string; qty: number; name: string; unitCents: number; lineCents: number };
+
+/** The shopping list the sample becomes for one door line (demo prices). */
+export function easyUploadShoppingList(lineId: DemoLineId): { rows: EasyUploadRow[]; totalCents: number } {
+  const products = productsForLine(lineId);
+  const rows = EASY_UPLOAD_SAMPLE.flatMap((item) => {
+    const product = products.find((p) => p.sku === item.code);
+    return product ? [{ code: item.code, qty: item.qty, name: product.name, unitCents: product.priceCents, lineCents: product.priceCents * item.qty }] : [];
+  });
+  return { rows, totalCents: rows.reduce((sum, row) => sum + row.lineCents, 0) };
 }
 
 // ─── Sinks & Faucets (shared across all three lines) ─────────────────────────
@@ -389,7 +414,7 @@ export function summarizeDemoOrders(orders: DemoOrder[], rate: number = DEMO_COM
   return { count: orders.length, designerCents, csvCents, totalCents: designerCents + csvCents, commissionCents };
 }
 
-export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "dashboard", "signup"] as const;
+export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates"] as const;
 export type DistributorPreviewSection = (typeof DISTRIBUTOR_PREVIEW_SECTIONS)[number];
 
 export function isDistributorPreviewSection(value: unknown): value is DistributorPreviewSection {
