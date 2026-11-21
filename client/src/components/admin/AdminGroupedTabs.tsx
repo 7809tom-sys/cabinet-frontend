@@ -627,7 +627,14 @@ export default function AdminGroupedTabs() {
         <TabsContent value="commissions" className="mt-6"><AdminTabErrorBoundary tabName="Sales Commissions"><AdminTabHelp tab="commissions" /><SalesCommissionsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="pros" className="mt-6"><AdminTabErrorBoundary tabName="Pro Applications"><AdminTabHelp tab="pros" /><ProApplications /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="contractor-access" className="mt-6"><AdminTabErrorBoundary tabName="Contractor Access"><ContractorAccessAdmin /></AdminTabErrorBoundary></TabsContent>
-        <TabsContent value="vendors" className="mt-6"><AdminTabErrorBoundary tabName="Vendors"><AdminTabHelp tab="vendors" /><VendorApplications /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="vendors" className="mt-6"><AdminTabErrorBoundary tabName="Vendors"><AdminTabHelp tab="vendors" />
+          {/* Demo distributor website (placeholder data) to show prospective distributors. */}
+          <div className="mb-4 flex justify-end">
+            <a href="/distributor-preview" target="_blank" rel="noreferrer" data-testid="vendors-demo-distributor-link">
+              <Button variant="outline" size="sm" className="gap-1.5"><ExternalLink className="h-3.5 w-3.5" /> Demo Distributor</Button>
+            </a>
+          </div>
+          <VendorApplications /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="approved-vendors" className="mt-6"><AdminTabErrorBoundary tabName="Approved Vendors"><ApprovedVendorsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-referrals" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Referrals"><VendorReferralsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="vendor-support" className="mt-6"><AdminTabErrorBoundary tabName="Vendor Support"><VendorSupportAdmin /></AdminTabErrorBoundary></TabsContent>
