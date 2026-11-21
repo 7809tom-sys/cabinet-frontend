@@ -81,7 +81,9 @@ describe("DL shaker blueprint", () => {
     for (const style of styles.filter((item) => shakerDoorFamily(item.doorStyle) === "slim-shaker" || shakerDoorFamily(item.doorStyle) === "double-shaker")) {
       expect(standardShakerDlFacePlan(style, "base"), style.ourName ?? "").toBeNull();
     }
-    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.25, color: "#f4f1ea" }, "base")).toBeNull();
+    // DL_SHAKER_FIRM_RULE (Tom, Nov 21 2026): a plain shaker with an off-standard
+    // rail still uses the DL shaker style. It used to return null (non-DL fallback).
+    expect(standardShakerDlFacePlan({ doorStyle: "Shaker", railWidth: 2.25, color: "#f4f1ea" }, "base")?.dlcCrop?.slug).toMatch(/-shaker$/);
     const stone = styles.find((style) => style.id === 360001);
     expect(stone).toBeTruthy();
     expect(standardShakerDlFacePlan(stone, "base")?.dlcCrop?.solidColor).toBe("#8d8f92");

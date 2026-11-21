@@ -45,6 +45,22 @@ export function brandDoorSurfaceHex(ownColor: string): string {
   return best;
 }
 
+/**
+ * FIRM RULE (Tom, voice, Nov 21 2026, 11:59 AM CT): every shaker door uses the DL
+ * shaker style. Whenever a shaker door is chosen or rendered, the face comes from the
+ * DL Shaker blueprint (`standardShakerDlFacePlan` below). There is no non-DL shaker
+ * fallback: a plain shaker whose stored rail width is not 2.75 or 3 inches still gets
+ * the DL face. The only exceptions are rules Tom set earlier and kept on purpose:
+ *   - a WalzCraft wizard record saved for the style wins (the wizard IS the style);
+ *   - Slim Shaker and Double Shaker are their own frames, not the plain shaker;
+ *   - hickory keeps its own catalog door photo (no substituted grain);
+ *   - a front too small for the frame (under 7 inches) renders as a plain slab;
+ *   - a slab or glass build is never a shaker, and a five-piece slab stays a
+ *     five-piece slab.
+ * Pinned by shared/dlShakerFirmRule.test.ts. Rule doc: docs/rules/SHAKER_DOOR_RULE.md.
+ */
+export const DL_SHAKER_FIRM_RULE = "FIRM RULE (Tom): every shaker door uses the DL shaker style." as const;
+
 /** Designer default when a plain Shaker record does not store a rail width. */
 export const STANDARD_SHAKER_RAIL_IN = 3;
 
@@ -298,7 +314,10 @@ export function matchStandardShakerToDl(
   if (isHickoryDoor(style)) {
     return { adopted: false, railIn, reason: "Hickory keeps its catalog door photo. A substitute grain, a flat swatch, and a guessed tint are not used." };
   }
-  if (!isStandardShakerRail(railIn)) return { adopted: false, railIn, reason: `Rail ${railIn ?? "unset"} in is outside 2.75 and 3 inches.` };
+  // DL_SHAKER_FIRM_RULE: a plain shaker whose stored rail is off the 2.75/3 inch
+  // standard still uses the DL shaker style. It used to fall back to a non-DL
+  // catalog photo here. The style keeps its own stored rail width for the frame.
+  const offStandardRail = !isStandardShakerRail(railIn);
 
   const ownColor = styleOwnColor(style);
   const decision = resolveDoorColor(style);
@@ -327,17 +346,17 @@ export function matchStandardShakerToDl(
     ownColor,
     surfaceColor,
     family: finishFamily,
-    railIn: railIn!,
+    railIn: railIn ?? STANDARD_SHAKER_RAIL_IN,
     deltaE: bestDelta,
     tintHex: tint.tintHex,
     tintLinear: tint.tintLinear,
     tintClamped: tint.clamped,
     grain: best.grain,
-    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to the door color ${surfaceColor} (${decision.appliedSource}; own ${ownColor}).${clampNote}`,
+    reason: `${finishFamily}, ΔE ${bestDelta.toFixed(1)} to ${best.name}; inherited ${grainNote} ${best.grain}; tint ${tint.tintHex} retargets ${best.color} to the door color ${surfaceColor} (${decision.appliedSource}; own ${ownColor}).${clampNote}${offStandardRail ? ` Rail ${railIn ?? "unset"} in is off the 2.75/3 inch standard; the DL shaker style is still used (${DL_SHAKER_FIRM_RULE}).` : ""}`,
   };
 }
 
-/** The one builder every 2.75/3 inch shaker face must use. Geometry stays the DL template. */
+/** The one builder every plain shaker face must use (DL_SHAKER_FIRM_RULE). Geometry stays the DL template. */
 export function standardShakerDlFacePlan(
   style: ShakerStyleInput | null | undefined,
   placement: string | null | undefined,

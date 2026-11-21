@@ -1,5 +1,15 @@
 # Shaker door rule
 
+## FIRM RULE (Tom, voice, Nov 21 2026, 11:59 AM CT): every shaker door uses the DL shaker style
+
+Whenever a shaker door is chosen or rendered, it uses the DL shaker style: the DL Shaker blueprint below (square rail and stile frame, flat center slab, shared notch, the door's own color). This cannot be skipped.
+
+- Stated in code as `DL_SHAKER_FIRM_RULE` in `shared/shakerDoorBlueprint.ts` and enforced by `matchStandardShakerToDl` / `standardShakerDlFacePlan`.
+- There is no non-DL shaker fallback. A plain shaker whose stored rail width is not 2.75 or 3 inches used to drop to a non-DL catalog photo. It now gets the DL shaker face too, keeping its own stored rail width.
+- Kept exceptions, all set earlier by Tom: a WalzCraft wizard record for the style wins; Slim Shaker and Double Shaker keep their own frames; hickory keeps its own catalog door photo; a front under 7 inches tall or wide renders as a plain slab; a slab or glass build is never a shaker, and a five-piece slab stays a five-piece slab.
+- Pinned by `shared/dlShakerFirmRule.test.ts`. Listed in Kitchen Rules as `owner-shaker-always-dl`.
+- Admins can see the DL shaker door box (rails, stiles, center panel, dimensions) and the canonical slab door reference under Admin → Products & Catalog → Door styles → **Door Box Blueprint** (`/admin?tab=door-box-blueprint`). Geometry: `shared/doorBoxBlueprint.ts`.
+
 HARD RULE (Tom, Nov 1 2026): ALL 2.75 in and 3 in shaker doors start from the DL Shaker blueprint as the base template. Geometry (rail/stile frame, sharp square corners, flat center slab, notch) is proven and must not be changed per style. Only texture/color varies. The door's own color paints the surface. It is not replaced by the nearest brand swatch.
 
 ## What this means in the Designer
