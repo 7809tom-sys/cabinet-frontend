@@ -7,7 +7,7 @@ import { SHOWER_PANEL_THICKNESS_IN } from "./showerFixtureGeometry";
 import { baseAngleEndPlan } from "@/lib/baseAngleEndLayout";
 import { wallAngleEndPlan } from "@/lib/wallAngleEndLayout";
 import { canSyncThreeDOrderToCart, constrainedThreeDWallHeight, exactFittedFillerInches, filteredThreeDCatalogItems, hybridPlanUnderlayModel, resolvedPlacedCabinetDoorProfile, resolvedPlacedCabinetDoorSampleUrl, resolvedPlacedCabinetFinish, resolvedThreeDWallHeights, shouldShowThreeDCatalog, THREE_D_EMBEDDED_TOOLBAR_CLASS, THREE_D_WORKSPACE_ACTIONS, threeDCabinetHitFromObject, threeDDecorativeEndSides, threeDDrawerZoneHeight, threeDFillerMeasurementNoticeEntries, threeDFittedFillerWidthText, threeDFrontDatumSnapIndicators, threeDHasVerifiedDoorLayout, threeDOrderLineForSelectedCabinet, threeDPointerSelectsCabinet, threeDPreviewFadeAllowed, threeDSelectedCabinetDescription, threeDSelectedCabinetDockClass, threeDSelectionFromPlaced, threeDStructuralFinish, threeDTallPantryDoorsPerRow, threeDTemporaryPreviewCounterText, threeDTouchTapOpensWindow, threeDUpperCabinetWallMinimums, threeDUsesAuthoritativePlanScene, threeDUsesCatalogFrontVisual, threeDWallClearanceText, threeDWallFitGuideText, threeDWallSideForEdge, threeDWallSideForPolygonEdge, updatedThreeDWallHeights } from "./InteractiveRoom3D";
-import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, photoFaceSkipsToneMapping, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, withCatalogDoorStyleIdentity, type InteractiveRoomScene } from "./InteractiveRoom3D";
+import { addCabinet, addPotFillerFixture, addSinkFixture, addThreeDPeninsulaCountertops, addWallOpening, describedOvenSpecification, diagonalCornerFootprintVertices, diagonalCornerFrontWidth, dimensions, doorProfileKind, existingCabinetTransform, existingCabinetSku, curvedOpenEndShelfBoardGeometry, freestandingRangeHeightProfile, hasPersistedTwoDScene, isEnclosedWallMicrowaveCabinet, isEqualHeightTwoDrawerBase, lCornerCarcassParts, openingTransform, photoFaceSkipsToneMapping, potFillerWallMountTransform, quoteMaterialDetails, rangeCooktopLayout, rangeHoodFrontGeometry, rangeHoodGeometry, rangeHoodSceneStatus, rangeOvenFrontLayout, resolvedCatalogFinish, resolvedPlacedCabinetFrontVisual, resolvedThreeDCountertopFinish, resolvedThreeDDoorProfile, resolvedThreeDDoorSampleUrl, resolvedThreeDDrawerRows, resolvedThreeDFaceLayout, resolvedThreeDOvenLayout, resolvedThreeDSpecialtyProfile, savedRangeHoodTransform, sceneCabinetColor, shouldRenderCountertopOverSceneItem, shouldRenderPlacedDesign, shouldRenderSavedSceneCabinet, sinkFaucetTransform, sinkFixtureTransform, singleOvenTowerAssembly, threeDApplianceFrontVisualUrl, threeDBlindCornerFrontLayout, threeDCabinetFrontVisualUrl, threeDCameraDistanceLimits, threeDCountertopDepthIn, threeDDoorMaterialFallback, threeDFaceMaterialColor, threeDMaterialStatusText, threeDPhotoRenderDoorReferenceStatus, threeDPeninsulaCountertopGeometry, threeDPlacedWall, threeDPlanSyncText, threeDRoomFacingRotation, threeDSceneInputDiagnostics, threeDSceneRevisionKey, threeDSceneVisibilityContract, threeDShakerFramePose, threeDShakerRailThickness, threeDUsesDoorSampleTexture, threeDUsesExactDoorSampleMaterial, threeDUsesPhysicalShakerRails, threeDVisibleMaterialMode, triangleCornerFootprintVertices, triangleCornerFrontPose, triangleCornerFrontWidth, THREE_D_DRAWER_REVEAL_DEPTH, THREE_D_EXPORT_SIZE, THREE_D_ROOM_CONTEXT_DEFAULT, THREE_D_WALL_DEPTH_WRITE, THREE_D_WALL_OPACITY, withCatalogDoorStyleIdentity, type InteractiveRoomScene } from "./InteractiveRoom3D";
 import { addFurniture, addIslandZone, furnitureTransform, islandZoneTransform, ponyWallTransform } from "./InteractiveRoom3D";
 import { threeDFurnitureHitFromIntersections, threeDFurnitureHitFromObject } from "./InteractiveRoom3D";
 import { threeDDesignParitySnapshot, threeDExactPlanGeometryLock } from "./InteractiveRoom3D";
@@ -955,6 +955,110 @@ describe("3D fallback appliance run seams", () => {
     expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(12, 5);
     expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(34.5, 5);
     expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(24, 5);
+  });
+
+  it("puts the BES12 quarter-round on the front exposed corner, not against the back wall", () => {
+    const inch = 1 / 12;
+    const boardSpanAt = (geometry: THREE.BufferGeometry, axis: "x" | "z", edge: number) => {
+      const position = geometry.getAttribute("position");
+      const values: number[] = [];
+      const other = axis === "x" ? "z" : "x";
+      for (let index = 0; index < position.count; index += 1) {
+        const along = axis === "x" ? position.getX(index) : position.getZ(index);
+        if (Math.abs(along - edge) > 1e-4) continue;
+        values.push(other === "x" ? position.getX(index) : position.getZ(index));
+      }
+      if (values.length === 0) return null;
+      return { min: Math.min(...values) / inch, max: Math.max(...values) / inch };
+    };
+
+    const right = curvedOpenEndShelfBoardGeometry(12 * inch, 24 * inch, 0.5 * inch, 1, 12);
+    const rightBox = right.boundingBox!;
+    // Straight back against the wall; only the closed (left) front corner reaches +Z.
+    expect(boardSpanAt(right, "z", rightBox.min.z)).toEqual({ min: -6, max: 6 });
+    const rightFront = boardSpanAt(right, "z", rightBox.max.z)!;
+    expect(rightFront.min).toBeCloseTo(-6, 5);
+    expect(rightFront.max).toBeCloseTo(-6, 5);
+    const rightEdge = boardSpanAt(right, "x", rightBox.max.x)!;
+    expect(rightEdge.min).toBeCloseTo(-12, 5);
+    expect(rightEdge.max).toBeCloseTo(0, 5);
+
+    const left = curvedOpenEndShelfBoardGeometry(12 * inch, 24 * inch, 0.5 * inch, -1, 12);
+    const leftBox = left.boundingBox!;
+    expect(boardSpanAt(left, "z", leftBox.min.z)).toEqual({ min: -6, max: 6 });
+    const leftFront = boardSpanAt(left, "z", leftBox.max.z)!;
+    expect(leftFront.min).toBeCloseTo(6, 5);
+    expect(leftFront.max).toBeCloseTo(6, 5);
+    const leftEdge = boardSpanAt(left, "x", leftBox.min.x)!;
+    expect(leftEdge.min).toBeCloseTo(-12, 5);
+    expect(leftEdge.max).toBeCloseTo(0, 5);
+  });
+
+  it("faces the BES12 quarter-round away from the neighbouring cabinet on either end of a run", () => {
+    const room: RoomData = { width: 144, depth: 120 };
+    const bes = (uid: string, x: number): PlacedCabinet => ({
+      uid,
+      cabinetId: 9360046,
+      masterCode: "BES12",
+      description: '12" Base End Shelf Cabinet - Open curved unit with 5 shelves (configurable left or right)',
+      category: "Base",
+      subCategory: "Base End Cabinet",
+      graphicType: "curved-open-shelf",
+      customProfile: "curved-open-shelf",
+      placement: "base",
+      x,
+      y: 0,
+      width: 12,
+      height: 34.5,
+      depth: 24,
+      rotation: 0,
+      numberOfDoors: 0,
+      numberOfDrawers: 0,
+    });
+    const pedestal = (uid: string, x: number): PlacedCabinet => ({
+      uid,
+      cabinetId: 9360050,
+      masterCode: "MB30",
+      description: '30" W x 34-1/2" H x 24" D Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+      category: "Base",
+      subCategory: "Microwave Base Cabinet",
+      placement: "base",
+      x,
+      y: 0,
+      width: 30,
+      height: 34.5,
+      depth: 24,
+      rotation: 0,
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+    });
+
+    const render = (shelf: PlacedCabinet, peers: PlacedCabinet[]) => {
+      const sku = existingCabinetSku(shelf, room, peers);
+      const root = new THREE.Group();
+      addCabinet(root, sku, null, {}, 144, 120, "#d7c4a3", "#f8f8f6", undefined, { x: shelf.x + shelf.width / 2, z: 12, rotation: 0 });
+      const closed: THREE.Object3D[] = [];
+      const shelves: THREE.Mesh[] = [];
+      root.children[0]!.traverse((node) => {
+        if (node.userData.curvedOpenShelfPart === "closed-side") closed.push(node);
+        if (node instanceof THREE.Mesh && node.userData.curvedOpenShelfFixedShelf) shelves.push(node);
+      });
+      return { sku, closed, shelves };
+    };
+
+    const leftEnd = bes("bes-left", 0);
+    const rightNeighbor = pedestal("mb-right", 12);
+    const leftScene = render(leftEnd, [leftEnd, rightNeighbor]);
+    expect(leftScene.sku.openShelfExposedHand).toBe("left");
+    expect(leftScene.shelves.every((shelf) => shelf.userData.roundedExposedCorner === -1)).toBe(true);
+    expect(leftScene.closed[0]!.position.x).toBeGreaterThan(0);
+
+    const leftNeighbor = pedestal("mb-left", 0);
+    const rightEnd = bes("bes-right", 30);
+    const rightScene = render(rightEnd, [leftNeighbor, rightEnd]);
+    expect(rightScene.sku.openShelfExposedHand).toBe("right");
+    expect(rightScene.shelves.every((shelf) => shelf.userData.roundedExposedCorner === 1)).toBe(true);
+    expect(rightScene.closed[0]!.position.x).toBeLessThan(0);
   });
 
   it("renders a 45-degree base filler as a narrow cabinet-face board above the toe kick", () => {
