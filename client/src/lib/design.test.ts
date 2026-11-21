@@ -145,7 +145,20 @@ describe("knee drawer mounting", () => {
 
     const alone = drawer("DKD30");
     expect(elevationBox(alone, room)).toEqual({ bottom: 24, height: 6 });
-    expect(bearsCountertop(alone)).toBe(false);
+    expect(bearsCountertop(alone)).toBe(true);
+    expect(bearsCountertop({ ...alone, placement: "baseTop" })).toBe(true);
+    expect(bearsCountertop({
+      placement: "base",
+      masterCode: "DSK2421",
+      description: 'Knee Drawer - 24"W x 7.5"H x 21"D',
+      subCategory: "Knee Drawer",
+    })).toBe(true);
+    expect(bearsCountertop({
+      placement: "baseTop",
+      masterCode: "DSK3021",
+      description: 'Knee Drawer - 30"W x 7.5"H x 21"D',
+      subCategory: "Knee Drawer",
+    })).toBe(true);
 
     const deskRun = [desk("left", 0, 30, "DB30", '30" Desk Base'), drawer("DKD-30"), desk("right", 60, 30, "DB30", '30" Desk Base')];
     expect(elevationBox(deskRun[1]!, room, deskRun)).toEqual({ bottom: 24, height: 6 });
@@ -2385,6 +2398,55 @@ describe("bearsCountertop", () => {
     const surfaces = countertopSurfaces([base, supplierFiller], ROOM_12x10);
     expect(surfaces).toHaveLength(1);
     expect(surfaces[0]).toMatchObject({ x: 0, y: 0, width: 27, depth: COUNTERTOP_DEPTH_IN, kind: "base" });
+  });
+
+  it("spans one 25½-inch desktop over a DSK knee drawer between 34½-inch microwave bases", () => {
+    const left = cab({
+      uid: "mb-left",
+      masterCode: "MB30",
+      description: '30" W x 34-1/2" H x 24" D Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+      subCategory: "Microwave Base Cabinet",
+      x: 0,
+      y: 0,
+      width: 30,
+      depth: 24,
+      height: 34.5,
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+    });
+    const knee = cab({
+      uid: "dsk2421",
+      masterCode: "DSK2421",
+      description: 'Knee Drawer - 24"W x 7.5"H x 21"D',
+      subCategory: "Knee Drawer",
+      placement: "baseTop",
+      x: 30,
+      y: 0,
+      width: 24,
+      depth: 21,
+      height: 7.5,
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+    });
+    const right = cab({
+      uid: "mb-right",
+      masterCode: "MB30",
+      description: '30" W x 34-1/2" H x 24" D Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+      subCategory: "Microwave Base Cabinet",
+      x: 54,
+      y: 0,
+      width: 30,
+      depth: 24,
+      height: 34.5,
+      numberOfDoors: 0,
+      numberOfDrawers: 1,
+    });
+    expect(bearsCountertop(left)).toBe(true);
+    expect(bearsCountertop(knee)).toBe(true);
+    expect(bearsCountertop(right)).toBe(true);
+    const surfaces = countertopSurfaces([left, knee, right], ROOM_12x10);
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0]).toMatchObject({ x: 0, y: 0, width: 84, depth: COUNTERTOP_DEPTH_IN, kind: "base" });
   });
 });
 
