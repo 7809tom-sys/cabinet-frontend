@@ -391,7 +391,11 @@ export default function App() {
       <ThemeProvider defaultTheme="light">
       <Switch>
         {/* Home has its own footer, no AppLayout wrapper needed */}
-        <Route path="/faq" element={<FaqPage />} />
+        <Route path="/faq">
+          <AppLayout>
+            <FaqPage />
+          </AppLayout>
+        </Route>
         <Route path="/invoice" element={<InvoicePage />} />
         <Route path="/">
           <AdminEditModeBar />

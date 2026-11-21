@@ -1,6 +1,8 @@
 import { Link } from "wouter";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Phone, Mail, MapPin } from "lucide-react";
+import { GoogleReviewLink } from "@/components/GoogleReviewLink";
+import { GOOGLE_REVIEW_URL } from "@/lib/googleReviewLink";
 
 export function SiteFooter() {
   const { t } = useLanguage();
@@ -38,6 +40,11 @@ export function SiteFooter() {
                   sales@cabinetdealz.com
                 </a>
               </li>
+              {GOOGLE_REVIEW_URL ? (
+              <li>
+                <GoogleReviewLink className="hover:text-white transition-colors" />
+              </li>
+              ) : null}
             </ul>
           </div>
 

@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { GoogleReviewLink } from "@/components/GoogleReviewLink";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
@@ -994,6 +995,7 @@ function Footer() {
             <p className="text-sm leading-relaxed">
               {t("home_footer_blurb")}
             </p>
+            <GoogleReviewLink className="mt-3 block text-sm hover:text-white transition-colors" />
           </div>
 
           <div>
@@ -1001,6 +1003,7 @@ function Footer() {
             <ul className="space-y-2 text-sm">
               {[
                 { label: t("nav_shop_by_style"), href: "/styles" },
+                { label: "FAQ", href: "/faq" },
                 { label: t("nav_design_tool"), href: "/design" },
                 { label: t("nav_build_an_order"), href: "/bulk-order" },
                 { label: t("nav_photo_to_cart"), href: "/photo-to-cart" },
