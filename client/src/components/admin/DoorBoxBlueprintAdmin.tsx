@@ -3,7 +3,8 @@
  *
  * Shows the admin the 3D designer blueprint of a door's box: the DL shaker door
  * (stiles, rails, center panel, box dimensions) and the canonical slab door
- * reference the library falls back to every time. Read-only. Numbers come from
+ * reference the library falls back to every time. Raised panel and slim shaker
+ * sections were added Nov 21 2026, 1:11 PM CT (Tom). Read-only. Numbers come from
  * shared/doorBoxBlueprint.ts, which reads the same constants the 3D Designer uses.
  * This screen does not touch InteractiveRoom3D, DesignTool, or the wall builder.
  */
@@ -15,13 +16,32 @@ import {
   DL_SHAKER_FIRM_RULE,
   DL_SHAKER_REFERENCE_SOURCES,
   DL_SHAKER_SLAB_BELOW_IN,
+  RAISED_PANEL_REFERENCE_SOURCES,
   SLAB_REFERENCE_SOURCES,
+  SLIM_SHAKER_REFERENCE_SOURCES,
+  TBD_CONFIRM_WITH_TOM,
   dlShakerDoorBox,
+  raisedPanelDoorBox,
   slabDoorBox,
+  slimShakerDoorBox,
   type DoorBoxBlueprint,
 } from "@shared/doorBoxBlueprint";
 
 const FINISH_HEX = "#e9e5dc";
+
+const BOX_KIND_LABEL: Record<DoorBoxBlueprint["kind"], string> = {
+  "dl-shaker": "DL shaker",
+  slab: "Slab",
+  "slim-shaker": "DL slim shaker",
+  "raised-panel": "DL raised panel",
+};
+
+const PIECE_FILL: Partial<Record<string, string>> = {
+  "center-panel": "rgba(207,227,255,0.08)",
+  groove: "rgba(0,0,0,0.35)",
+  bevel: "rgba(207,227,255,0.10)",
+  "raised-panel": "rgba(207,227,255,0.28)",
+};
 
 function fmt(value: number): string {
   return `${Number(value.toFixed(3))}"`;
@@ -48,7 +68,7 @@ export function DoorBoxBlueprintSvg({ box, testId }: { box: DoorBoxBlueprint; te
       viewBox={`0 0 ${viewW} ${viewH}`}
       className="w-full max-w-xl rounded border bg-[#0f2a4a]"
       role="img"
-      aria-label={`${box.kind === "slab" ? "Slab" : "DL shaker"} door box blueprint ${box.widthIn} by ${box.heightIn} inches`}
+      aria-label={`${BOX_KIND_LABEL[box.kind]} door box blueprint ${box.widthIn} by ${box.heightIn} inches`}
     >
       <g stroke="#cfe3ff" strokeWidth={stroke} fill="none">
         {box.pieces.map((piece) => (
@@ -59,7 +79,7 @@ export function DoorBoxBlueprintSvg({ box, testId }: { box: DoorBoxBlueprint; te
             y={yTop(piece.yIn, piece.heightIn)}
             width={piece.widthIn}
             height={piece.heightIn}
-            fill={piece.id === "center-panel" ? "rgba(207,227,255,0.08)" : "rgba(207,227,255,0.18)"}
+            fill={PIECE_FILL[piece.id] ?? "rgba(207,227,255,0.18)"}
           />
         ))}
         {/* Overall width */}
@@ -89,6 +109,20 @@ export function DoorBoxBlueprintSvg({ box, testId }: { box: DoorBoxBlueprint; te
             </text>
             <text x={ox + box.frameIn / 2} y={oy + box.heightIn / 2} transform={`rotate(-90 ${ox + box.frameIn / 2} ${oy + box.heightIn / 2})`}>stile {fmt(box.frameIn)}</text>
             <text x={ox + box.widthIn - box.frameIn / 2} y={oy + box.heightIn / 2} transform={`rotate(-90 ${ox + box.widthIn - box.frameIn / 2} ${oy + box.heightIn / 2})`}>stile {fmt(box.frameIn)}</text>
+          </>
+        )}
+        {(box.kind === "slim-shaker" || box.kind === "raised-panel") && (
+          <>
+            <text x={ox + box.widthIn / 2} y={yTop(box.heightIn - box.frameIn, box.frameIn) + box.frameIn / 2 + font / 3}>top rail {fmt(box.frameIn)}</text>
+            <text x={ox + box.widthIn / 2} y={yTop(0, box.frameIn) + box.frameIn / 2 + font / 3}>bottom rail {fmt(box.frameIn)}</text>
+            <text x={ox + box.frameIn / 2} y={oy + box.heightIn / 2} transform={`rotate(-90 ${ox + box.frameIn / 2} ${oy + box.heightIn / 2})`}>stile {fmt(box.frameIn)}</text>
+            <text x={ox + box.widthIn - box.frameIn / 2} y={oy + box.heightIn / 2} transform={`rotate(-90 ${ox + box.widthIn - box.frameIn / 2} ${oy + box.heightIn / 2})`}>stile {fmt(box.frameIn)}</text>
+            {box.pieces.filter((p) => p.id === "center-panel" || p.id === "raised-panel").map((p) => (
+              <g key={p.id}>
+                <text x={ox + box.widthIn / 2} y={oy + box.heightIn / 2}>{p.id === "raised-panel" ? "raised panel" : "center panel"}</text>
+                <text x={ox + box.widthIn / 2} y={oy + box.heightIn / 2 + font * 1.3}>{fmt(p.widthIn)} × {fmt(p.heightIn)}</text>
+              </g>
+            ))}
           </>
         )}
         {box.kind === "slab" && (
@@ -141,7 +175,7 @@ function DoorBox3DPreview({ box, testId }: { box: DoorBoxBlueprint; testId: stri
           mesh.position.set(
             piece.xIn + piece.widthIn / 2 - box.widthIn / 2,
             piece.yIn + piece.heightIn / 2 - box.heightIn / 2,
-            piece.id === "center-panel" ? -(frontDepth - piece.depthIn) / 2 : 0,
+            piece.zIn ?? (piece.id === "center-panel" ? -(frontDepth - piece.depthIn) / 2 : 0),
           );
           const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0x1f3a5c }));
           mesh.add(edges);
@@ -196,6 +230,26 @@ function PieceTable({ box }: { box: DoorBoxBlueprint }) {
   );
 }
 
+/** dlcabinetry.com values and the values still to confirm. Only the new sections pass these. */
+function PublishedAndTbd({ box }: { box: DoorBoxBlueprint }) {
+  return (
+    <div className="space-y-2 text-sm">
+      {box.published && box.published.length > 0 && (
+        <div>
+          <p className="font-medium">Published by DL Cabinetry (dlcabinetry.com)</p>
+          <ul className="list-disc pl-5">{box.published.map((line) => <li key={line}>{line}</li>)}</ul>
+        </div>
+      )}
+      {box.tbd && box.tbd.length > 0 && (
+        <div data-testid={`door-box-${box.kind}-tbd`} className="rounded border border-red-300 bg-red-50 p-2 text-red-900">
+          <p className="font-semibold">{TBD_CONFIRM_WITH_TOM}</p>
+          <ul className="list-disc pl-5">{box.tbd.map((line) => <li key={line}>{line}</li>)}</ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Sources({ sources }: { sources: Record<string, string> }) {
   return (
     <ul className="text-xs text-muted-foreground list-disc pl-5 space-y-0.5">
@@ -217,6 +271,8 @@ export type DoorBoxBlueprintViewProps = {
 export function DoorBoxBlueprintView({ widthIn, heightIn, railIn, show3D = true }: DoorBoxBlueprintViewProps) {
   const shaker = useMemo(() => dlShakerDoorBox(widthIn, heightIn, railIn), [widthIn, heightIn, railIn]);
   const slab = useMemo(() => slabDoorBox(widthIn, heightIn), [widthIn, heightIn]);
+  const raised = useMemo(() => raisedPanelDoorBox(widthIn, heightIn), [widthIn, heightIn]);
+  const slim = useMemo(() => slimShakerDoorBox(widthIn, heightIn), [widthIn, heightIn]);
   return (
     <div className="space-y-6">
       <div data-testid="dl-shaker-firm-rule" className="rounded border-2 border-amber-500 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
@@ -255,6 +311,36 @@ export function DoorBoxBlueprintView({ widthIn, heightIn, railIn, show3D = true 
             Five-piece fronts are not this slab: a five-piece front stays five-piece and is never replaced by the plain slab reference.
             No separate five-piece-slab geometry exists in the code today, so it is not shown as its own reference.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="door-box-raised-panel">
+        <CardHeader>
+          <CardTitle>DL raised panel door box</CardTitle>
+          <p className="text-sm text-muted-foreground">Approved DL Cabinetry style (Glacier White). The 3D Designer's raised panel geometry, with DL's published values and anything still unconfirmed.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <DoorBoxBlueprintSvg box={raised} testId="door-box-raised-panel-svg" />
+          {show3D && <DoorBox3DPreview box={raised} testId="door-box-raised-panel-3d" />}
+          <PieceTable box={raised} />
+          <ul className="text-sm list-disc pl-5">{raised.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+          <PublishedAndTbd box={raised} />
+          <Sources sources={RAISED_PANEL_REFERENCE_SOURCES} />
+        </CardContent>
+      </Card>
+
+      <Card data-testid="door-box-slim-shaker">
+        <CardHeader>
+          <CardTitle>DL slim shaker door box</CardTitle>
+          <p className="text-sm text-muted-foreground">Approved DL Cabinetry style (Slim Shaker Alabaster, Slim Shaker Ebony). Its own 1 inch frame, not the 2.75/3 inch DL shaker template above.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <DoorBoxBlueprintSvg box={slim} testId="door-box-slim-shaker-svg" />
+          {show3D && <DoorBox3DPreview box={slim} testId="door-box-slim-shaker-3d" />}
+          <PieceTable box={slim} />
+          <ul className="text-sm list-disc pl-5">{slim.notes.map((note) => <li key={note}>{note}</li>)}</ul>
+          <PublishedAndTbd box={slim} />
+          <Sources sources={SLIM_SHAKER_REFERENCE_SOURCES} />
         </CardContent>
       </Card>
     </div>
