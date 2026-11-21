@@ -50,6 +50,8 @@ import {
   DEMO_SINKS,
   DEMO_SINK_ACCESSORIES,
   EASY_UPLOAD_SAMPLE,
+  ORGANIZERS_NOTE,
+  ORGANIZERS_SUBTYPE,
   easyUploadShoppingList,
   DISTRIBUTOR_COMMISSION_RANGE,
   demoCommissionCents,
@@ -626,6 +628,7 @@ function CatalogBrowser({ lineId, onLineChange }: { lineId: DemoLineId; onLineCh
               {section.subTypes.map((sub) => (
                 <div key={sub.name} className="space-y-2">
                   <h4 className="text-sm font-semibold text-muted-foreground">{sub.name} <span className="font-normal">({sub.products.length})</span></h4>
+                  {sub.name === ORGANIZERS_SUBTYPE && <p className="text-xs text-muted-foreground">{ORGANIZERS_NOTE}</p>}
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                     {sub.products.map((p) => (
                       <Link

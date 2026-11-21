@@ -131,3 +131,36 @@ describe("demo distributor data", () => {
     expect(isDistributorPreviewSection(undefined)).toBe(false);
   });
 });
+
+describe("demo shop grouping fixes", () => {
+  it("puts universal rollout trays and other organizers in Specialties › Organizers & Rollout Trays, never with corners", async () => {
+    const { groupLineProducts, productsForLine, ORGANIZERS_SUBTYPE, CORNER_BASE_SUBTYPE, isDemoCornerBase } = await import("./demoDistributor");
+    const sections = groupLineProducts(productsForLine("white-shaker"));
+    const specialties = sections.find((s) => s.group === "Specialties")!;
+    const organizers = specialties.subTypes.find((t) => t.name === ORGANIZERS_SUBTYPE)!;
+    const orgCodes = organizers.products.map((p) => p.sku);
+    for (const w of [15, 18, 21, 24, 27, 30, 33, 36]) expect(orgCodes).toContain(`UNIV-ROT${w}`);
+    for (const code of ["RS24-TYPEA", "CHROME-TRAY33", "WOOD TRAY"]) expect(orgCodes).toContain(code);
+
+    // Every item in any corner sub-group is a corner cabinet from the source data.
+    const byCode = new Map(DEMO_CATALOG_SOURCE_ROWS.map((r) => [r.code, r]));
+    for (const section of sections) {
+      for (const sub of section.subTypes.filter((t) => /corner/i.test(t.name))) {
+        for (const p of sub.products) {
+          const row = byCode.get(p.sku)!;
+          expect(row.kind, `${p.sku} in ${sub.name}`).not.toBe("accessory");
+          if (sub.name === CORNER_BASE_SUBTYPE) expect(isDemoCornerBase(row), p.sku).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("moves wall end panels and skins listed under Wall out of the wall boxes", async () => {
+    const { groupLineProducts, productsForLine } = await import("./demoDistributor");
+    const sections = groupLineProducts(productsForLine("gray-shaker"));
+    const walls = sections.find((s) => s.group === "Walls")!.subTypes.flatMap((t) => t.products.map((p) => p.sku));
+    for (const code of ["WDEP42", "WDEP1212", "WEP1542", "WS1542"]) expect(walls).not.toContain(code);
+    const panels = sections.find((s) => s.group === "Specialties")!.subTypes.find((t) => t.name === "Panels")!.products.map((p) => p.sku);
+    for (const code of ["WDEP42", "WEP1542", "WS1542"]) expect(panels).toContain(code);
+  });
+});
