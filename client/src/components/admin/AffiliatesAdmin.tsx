@@ -103,6 +103,12 @@ export default function AffiliatesAdmin() {
               <Eye className="h-3.5 w-3.5" /> Demo Storefront
             </Button>
           </a>
+          {/* Demo distributor — sales tool: storefront, designer, back office and signup with placeholder data */}
+          <a href="/distributor-preview/storefront" target="_blank" rel="noreferrer">
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Eye className="h-3.5 w-3.5" /> Demo Distributor
+            </Button>
+          </a>
           <SalesDemoInviteDialog />
           <CreateAffiliateDialog onCreated={() => utils.affiliates.adminList.invalidate()} />
         </div>

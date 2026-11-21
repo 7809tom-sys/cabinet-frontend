@@ -68,6 +68,7 @@ const AdminCatalogImport = lazy(() => import("@/pages/AdminCatalogImport"));
 const AdminHelperRequestJoin = lazy(() => import("@/pages/AdminHelperRequestJoin"));
 const Storefront = lazy(() => import("@/pages/Storefront"));
 const StorefrontPreview = lazy(() => import("@/pages/StorefrontPreview"));
+const DistributorPreview = lazy(() => import("@/pages/DistributorPreview"));
 const AffiliateDashboard = lazy(() => import("@/pages/AffiliateDashboard"));
 const ContractorDashboard = lazy(() => import("@/pages/ContractorDashboard"));
 const Cart = lazy(() => import("@/pages/Cart"));
@@ -668,6 +669,19 @@ export default function App() {
               <StorefrontPreview template={params.template} />
             </Suspense>
           )}
+        </Route>
+        {/* Demo distributor storefront, designer, back office and signup — placeholder data only */}
+        <Route path="/distributor-preview/:section">
+          {(params) => (
+            <Suspense fallback={<PageLoader />}>
+              <DistributorPreview section={params.section} />
+            </Suspense>
+          )}
+        </Route>
+        <Route path="/distributor-preview">
+          <Suspense fallback={<PageLoader />}>
+            <DistributorPreview />
+          </Suspense>
         </Route>
 
         {/* All other pages use AppLayout with TopNav */}
