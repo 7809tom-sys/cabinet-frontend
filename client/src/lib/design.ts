@@ -13515,6 +13515,13 @@ export function bearsCountertop(p: {
 	  fillerTransitionKind?: "angled-wedge" | "corner-provisional" | "front-miter-pair" | null;
 	  autoPlacedReason?: string | null;
 }): boolean {
+  // A knee drawer hangs in open knee space: no toe kick and no floor carcass.
+  // The desktop still has to run over it at the same finished countertop
+  // height as the flanking bases; otherwise the shared slab splits and leaves
+  // a bare gap between pedestals (Tom, Nov 21 2026). Placement may be "base"
+  // or "baseTop" (accessoryPlacement hangs it under the worktop), so this
+  // check must run before the generic base-only placement guard.
+  if (isKneeDrawerItem(p)) return p.placement === "base" || p.placement === "baseTop";
 	  if (p.placement !== "base" && !isBaseHeightAppliance(p)) return false;
   // The owner's dishwasher return panel (lib/dishwasherPanelRule.ts) continues
   // the run past a dishwasher's finished end, so the top runs over it and ends
@@ -13527,9 +13534,6 @@ export function bearsCountertop(p: {
     const panelHeight = Number(p.height);
     return !Number.isFinite(panelHeight) || panelHeight <= STD.BASE_HEIGHT + 4;
   }
-  // A knee drawer hangs in open knee space. It is not a cabinet box the
-  // desktop can bear, and it must not close that opening with a slab.
-  if (isKneeDrawerItem(p)) return false;
   // Some legacy plans stored a freestanding stove in the base layer. A stove
   // remains an appliance opening regardless of that stale layer value, so it
 	  // must never receive a countertop slab.

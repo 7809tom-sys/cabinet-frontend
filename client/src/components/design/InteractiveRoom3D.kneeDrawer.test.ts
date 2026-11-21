@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { elevationBox, type PlacedCabinet, type RoomData } from "@/lib/design";
-import { addCabinet, existingCabinetSku, existingCabinetTransform, threeDContinuousToeKickSegments } from "./InteractiveRoom3D";
+import { elevationBox, STD, type PlacedCabinet, type RoomData } from "@/lib/design";
+import { addCabinet, addThreeDStandardCountertops, existingCabinetSku, existingCabinetTransform, threeDContinuousToeKickSegments } from "./InteractiveRoom3D";
 
 const room: RoomData = { width: 120, depth: 96, ceilingHeight: 96 };
 
@@ -44,5 +44,38 @@ describe("DKD30 knee drawer placement", () => {
     expect(bounds.min.y).toBeGreaterThan(18 / 12);
     expect(bounds.max.y).toBeCloseTo(30 / 12, 2);
     expect(threeDContinuousToeKickSegments(placed, room).some((segment) => segment.memberUids.includes("dkd30"))).toBe(false);
+  });
+
+  it("draws one desktop slab over a DSK knee drawer between 34½-inch microwave bases at countertop height", () => {
+    const pedestal = (uid: string, x: number): PlacedCabinet => ({
+      uid, cabinetId: 9360050, masterCode: "MB30",
+      description: '30" W x 34-1/2" H x 24" D Microwave Base Cabinet — Open Microwave Shelf, 1 Drawer',
+      category: "Base", subCategory: "Microwave Base Cabinet",
+      placement: "base", x, y: 0, width: 30, height: 34.5, depth: 24, rotation: 0,
+      numberOfDoors: 0, numberOfDrawers: 1,
+    });
+    const knee: PlacedCabinet = {
+      uid: "dsk2421", cabinetId: 15810014, masterCode: "DSK2421",
+      description: 'Knee Drawer - 24"W x 7.5"H x 21"D',
+      category: "Base", subCategory: "Knee Drawer",
+      placement: "baseTop", x: 30, y: 0, width: 24, height: 7.5, depth: 21, rotation: 0,
+      numberOfDoors: 0, numberOfDrawers: 1,
+    };
+    const placed = [pedestal("mb-left", 0), knee, pedestal("mb-right", 54)];
+    expect(elevationBox(knee, room, placed)).toEqual({ bottom: 27, height: 7.5 });
+
+    const root = new THREE.Group();
+    addThreeDStandardCountertops(root, room, placed, "#ece7df");
+    const slabs: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      if (node instanceof THREE.Mesh && node.userData.standardRunCountertop) slabs.push(node);
+    });
+    expect(slabs).toHaveLength(1);
+    const bounds = new THREE.Box3().setFromObject(slabs[0]!);
+    const inch = 1 / 12;
+    expect(bounds.min.x / inch).toBeCloseTo(0, 5);
+    expect(bounds.max.x / inch).toBeCloseTo(84, 5);
+    expect(bounds.min.y / inch).toBeCloseTo(STD.COUNTERTOP_HEIGHT - STD.COUNTERTOP_THICKNESS, 5);
+    expect(bounds.max.y / inch).toBeCloseTo(STD.COUNTERTOP_HEIGHT, 5);
   });
 });
