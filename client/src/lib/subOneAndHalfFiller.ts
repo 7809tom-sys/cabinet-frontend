@@ -8,6 +8,7 @@ import { catalogFillerForGap, fittedCatalogFillerDescription, type CatalogFiller
 import {
   COLLISION_EPSILON_IN,
   STD,
+  clampFillerExtensionIn,
   appendCollisionFreePlacements,
   cabinetWall,
   isFillerItem,
@@ -63,12 +64,24 @@ function qualifies(left: PlacedCabinet, right: PlacedCabinet): boolean {
  * Insert a filler in every along-wall gap under 1.5 inches that this rule owns.
  * Nothing already placed is moved, including the refrigerator.
  */
+function installedRunDepth(left: PlacedCabinet, right: PlacedCabinet, layer: "base" | "wall"): number {
+  const standard = layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH;
+  const depths = [left, right].map((item) => {
+    const raw = Number(item.depth);
+    const value = Number.isFinite(raw) && raw > 0 ? raw : standard;
+    return clampFillerExtensionIn(value, layer);
+  });
+  return depths.length > 0 ? Math.min(...depths) : standard;
+}
+
 export function fillGapsUnderOneAndAHalf(input: {
   placed: PlacedCabinet[];
   room: RoomData;
   fillers: readonly CatalogFillerCandidate[];
   makeUid: () => string;
   styleId: number | null;
+  /** A seam the person already refused, or a filler they already deleted. */
+  suppress?: (draft: PlacedCabinet) => boolean;
 }): SubOneAndHalfFillerResult {
   let placed = [...input.placed];
   const notes: string[] = [];
@@ -102,7 +115,9 @@ export function fillGapsUnderOneAndAHalf(input: {
           continue;
         }
         const cabinet = [left.item, right.item].find((item) => !isPanelOrFridge(item) && !isRefrigerator(item)) ?? left.item;
-        const depth = Math.max(0, Number(cabinet.depth) || (layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH));
+        // A corner cabinet's stored depth is its square plan box (36 for an ERB36).
+        // The filler board follows the run, never that square and never a 42-inch stock height.
+        const depth = installedRunDepth(left.item, right.item, layer);
         const height = Math.max(0, Number(cabinet.height) || (layer === "wall" ? STD.WALL_HEIGHT : STD.BASE_HEIGHT));
         const spot = wallPlacementAt(left.end, gap, depth, wall as WallSide, input.room);
         const piece: PlacedCabinet = {
@@ -129,6 +144,7 @@ export function fillGapsUnderOneAndAHalf(input: {
           fillerTotalWidth: gap,
           mountBottom: layer === "wall" ? (cabinet.mountBottom ?? STD.WALL_MOUNT_BOTTOM) : 0,
         };
+        if (input.suppress?.(piece)) continue;
         const accepted = appendCollisionFreePlacements(placed, [piece], input.room);
         if (accepted.rejected.length > 0) continue;
         placed = accepted.placed;

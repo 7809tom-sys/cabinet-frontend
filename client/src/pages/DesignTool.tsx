@@ -184,7 +184,7 @@ import { overApplianceWallMount } from "@/lib/overApplianceMount";
 import { normalizeBridgeBoards, seatRequiredBridgeFillers } from "@/lib/bridgeHalfInchFillers";
 import { StyleSamplePreview } from "@/components/design/StyleSamplePreview";
 import type { SampleStyleImages } from "@/lib/sampleImageQa";
-import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, declinedAttachedFillerSeams, type AttachedFillerChoice, type AttachedFillerLeftoverOptions, type AttachedFillerSizeIssue } from "@/lib/cabinetAttachedFillers";
 import { buildAttachedFillerPlacement, supportsAttachedFillerChoice } from "@/lib/cabinetAttachedFillerPlacement";
 import { selectedPeninsulaCabinetSequencePlan, selectedPeninsulaCabinetTotalIn, wizardEligibleBaseCabinets, type PeninsulaWizardCabinet } from "@/lib/peninsulaWizardPlan";
 import { swapStandardSinkBaseForFarmSink, matchingFarmSinkBase } from "@/lib/farmSinkBaseSwap";
@@ -202,6 +202,7 @@ import {
   installedSmallGapFillerEditOpportunity,
   installedFillerVerticalSpec,
   installableSmallGapRemainder,
+  openSmallGapSeams,
 	optimalSmallGapFillerCut,
   shouldAutoPlaceLeftoverFiller,
   repairMissingAdjoiningFillers,
@@ -1153,6 +1154,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         fillers: narrowGapFillRef.current.fillers,
         makeUid,
         styleId: narrowGapFillRef.current.styleId,
+        // "No filler", "Leave space open", and a deleted filler all stay empty.
+        // The records are written onto roomRef before this commit runs.
+        suppress: (draft) => isSuppressedFiller(draft, roomRef.current.deletedFillerSuppressions, roomRef.current),
       });
       const cut = applyRefrigeratorEndPanelFieldCuts(filled.placed, roomRef.current);
       return cut === prev ? prev : cut;
@@ -8850,6 +8854,36 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     return fit;
   }, [openings, room]);
 
+  const rememberDeclinedFillerSeams = (seams: Array<{ wallId: string; layer: "base" | "wall" | "tall"; start: number; end: number }>) => {
+    const records: DeletedFillerRecord[] = seams
+      .filter((seam) => seam.end - seam.start > 0.05)
+      .map((seam) => ({
+        groupId: null,
+        wallId: seam.wallId,
+        layer: seam.layer,
+        start: Math.round(seam.start * 1000) / 1000,
+        end: Math.round(seam.end * 1000) / 1000,
+      }));
+    if (records.length === 0) return;
+    // Written before setPlaced so the sub-1.5 inch pass in that commit sees it.
+    roomRef.current = {
+      ...roomRef.current,
+      deletedFillerSuppressions: mergeDeletedFillerRecords(roomRef.current.deletedFillerSuppressions, records),
+    };
+    suppressedSeamGapsRef.current = [
+      ...suppressedSeamGapsRef.current,
+      ...records.map((record) => ({
+        wallId: record.wallId,
+        layer: record.layer === "wall" ? "wall" as const : "base" as const,
+        start: record.start,
+        end: record.end,
+      })),
+    ];
+    setRoom((current) => ({
+      ...current,
+      deletedFillerSuppressions: mergeDeletedFillerRecords(current.deletedFillerSuppressions, records),
+    }));
+  };
   const addCabinetRef = useRef<((...args: any[]) => void) | null>(null);
   const addCabinet = useCallback(
     (c: DesignCabinet, x?: number, y?: number, forceAccessory = false, rotation = 0, strictDropTarget = false, targetCabinetUid?: string | null, targetIslandFace?: IslandFace | null, forceBackDepthAdjustment = false, resolvedWallTarget?: { wallId: WallSide; wallOffset: number; peninsulaSide?: PeninsulaCabinetSide }, blindPullOverride?: number, attachedFillerChoice?: AttachedFillerChoice) => withFloorObstacles(fixtureFloorCabinets(bathroomFurnitureRef.current), () => {
@@ -10148,6 +10182,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	        toast.success(
 	          `${finalCab.masterCode} snapped flush on ${wallLabel}: 0\" gap, 0\" overlap${neighbors.length ? ` · next to ${neighbors.join(" + ")}` : ""}.`,
 	        );
+	      }
+	      if (attachedFillerChoice) {
+	        // "No filler" (and any side left at 0) must stay empty. The gap is
+	        // remembered before the commit, which otherwise inserts a sub-1.5" board.
+	        rememberDeclinedFillerSeams(declinedAttachedFillerSeams(finalCab, committedRun, room, attachedFillerChoice));
 	      }
 	      placedRef.current = committedRun;
 	      setPlaced(() => committedRun);
@@ -14153,6 +14192,21 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     // deleted. Remember it by purchase group and by seam so no repair pass rebuilds it.
     const deletedFillerMemory = deletedFillerRecords(removed, room);
     if (deletedFillerMemory.length > 0) {
+      // The commit below re-runs the sub-1.5 inch filler pass. The seam has to
+      // be on roomRef first, or the deleted board is put straight back.
+      roomRef.current = {
+        ...roomRef.current,
+        deletedFillerSuppressions: mergeDeletedFillerRecords(roomRef.current.deletedFillerSuppressions, deletedFillerMemory),
+      };
+      suppressedSeamGapsRef.current = [
+        ...suppressedSeamGapsRef.current,
+        ...deletedFillerMemory.map((record) => ({
+          wallId: record.wallId,
+          layer: record.layer === "wall" ? "wall" as const : "base" as const,
+          start: record.start,
+          end: record.end,
+        })),
+      ];
       setRoom((current) => ({
         ...current,
         deletedFillerSuppressions: mergeDeletedFillerRecords(current.deletedFillerSuppressions, deletedFillerMemory),
@@ -26088,7 +26142,23 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	        </div>
 	      )}
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setSmallGapFillerPrompt(null)}>Leave space open</Button>
+            <Button variant="ghost" data-testid="small-gap-filler-leave-open" onClick={() => {
+              if (smallGapFillerPrompt && !smallGapFillerPrompt.islandFace) {
+                const seams = openSmallGapSeams(smallGapFillerPrompt);
+                rememberDeclinedFillerSeams(seams);
+                const records: DeletedFillerRecord[] = seams.map((seam) => ({
+                  groupId: null,
+                  wallId: seam.wallId,
+                  layer: seam.layer,
+                  start: seam.start,
+                  end: seam.end,
+                }));
+                if (records.length > 0) {
+                  setPlaced((current) => current.filter((item) => !isSuppressedFiller(item, records, room)));
+                }
+              }
+              setSmallGapFillerPrompt(null);
+            }}>Leave space open</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

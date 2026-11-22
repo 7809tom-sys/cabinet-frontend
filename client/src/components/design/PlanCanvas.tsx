@@ -2936,7 +2936,7 @@ export function PlanCanvas({
                 }
                 className={`group absolute transition-[box-shadow,border-color] duration-200 ${
                   measureMode ? "cursor-crosshair" : "cursor-move"
-	                } ${isWindowCenteredSink || showSeatedPeninsulaCornerFeedback || applianceSnap || showWallSnapSuccess ? "motion-safe:animate-pulse" : ""} ${isAttributesTarget ? "z-30" : isSelected ? "z-20" : isWall ? "z-10" : isAppliance ? "z-[3]" : "z-[2]"}`}
+	                } ${isWindowCenteredSink || showSeatedPeninsulaCornerFeedback || applianceSnap || showWallSnapSuccess ? "motion-safe:animate-pulse" : ""} ${isFillerItem(p) && isSelected ? "z-40" : isAttributesTarget ? "z-30" : isSelected ? "z-20" : isWall ? "z-10" : isAppliance ? "z-[3]" : "z-[2]"}`}
                 style={{
 	                  left: (transitionBounds?.minX ?? bodyLeft) * ppi,
 	                  top: (transitionBounds?.minY ?? bodyTop) * ppi,
