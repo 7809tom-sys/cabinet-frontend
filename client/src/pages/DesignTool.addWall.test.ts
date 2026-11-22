@@ -10,6 +10,12 @@ describe("Add wall from a wall's face", () => {
   it("puts Add wall on the wall context menu and opens a confirm dialog", () => {
     expect(menu).toContain("Add wall");
     expect(menu).toContain('data-testid="wall-actions-add"');
+    expect(menu).toContain("Delete wall");
+    expect(menu).toContain('data-testid="wall-actions-delete"');
+    expect(menu).toContain("text-red-700");
+    expect(planCanvas).toContain("onDeleteWall(wallMenu.side)");
+    expect(designTool).toContain("onDeleteWall={requestWallMenuDeletion}");
+    expect(designTool).toContain("deleteHighlightedCustomWall(room, prompt.wallId, openingUids)");
     expect(planCanvas).toContain("onAddWall?.(wallMenu.side, wallMenu.point)");
     expect(designTool).toContain('data-testid="add-wall-dialog"');
     expect(designTool).toContain('data-testid="add-wall-length"');

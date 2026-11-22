@@ -14,6 +14,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from "react";
 import { WallActionsMenu } from "@/components/design/WallActionsMenu";
+import { wallDeleteDisabledReason } from "@/lib/wallDeletion";
 import { Scissors, Move, Info, CornerDownLeft, CornerDownRight, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,8 @@ interface Props {
   locked?: boolean;
   /** Right-click Add wall. The point is in room inches. Nothing is drawn here. */
   onAddWall?: (wallId: string, point: { x: number; y: number }) => void;
+  /** Opens the existing delete confirm for the right-clicked wall only. */
+  onDeleteWall?: (wallId: string) => void;
 }
 
 type Mode = "select" | "split";
@@ -79,6 +82,7 @@ export function PolygonRoomEditor({
   onDone,
   locked = false,
   onAddWall,
+  onDeleteWall,
 }: Props) {
   const { t } = useLanguage();
   const [mode, setMode] = useState<Mode>("select"); // Tapping a wall reveals its Compass edit control by default.
@@ -663,6 +667,12 @@ export function PolygonRoomEditor({
           menu={wallMenu}
           onEdit={() => { onSelectWall?.(wallMenu.wallId); openCompass(); }}
           onAdd={() => onAddWall?.(wallMenu.wallId, wallMenu.point)}
+          onDelete={onDeleteWall ? () => onDeleteWall(wallMenu.wallId) : undefined}
+          deleteDisabledReason={wallDeleteDisabledReason({
+            room: { vertices, customWalls },
+            wallId: wallMenu.wallId,
+            layoutLocked: locked,
+          })}
           onClose={() => setWallMenu(null)}
         />
       )}

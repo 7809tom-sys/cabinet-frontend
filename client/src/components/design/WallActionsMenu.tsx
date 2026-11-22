@@ -10,16 +10,22 @@ export type WallActionsMenuState = {
  * Right-click menu for a drawn or rectangular room wall.
  * Edit keeps the existing wall attributes dialog. Add wall opens the dialog
  * that collects length, height, and turn before any geometry is created.
+ * Delete wall reuses that same confirm and removes only this wall.
  */
 export function WallActionsMenu({
   menu,
   onEdit,
   onAdd,
+  onDelete,
+  deleteDisabledReason = null,
   onClose,
 }: {
   menu: WallActionsMenuState;
   onEdit: () => void;
   onAdd: () => void;
+  onDelete?: () => void;
+  /** Visible when deleting this wall would leave an invalid room, or the layout is locked. */
+  deleteDisabledReason?: string | null;
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -45,8 +51,9 @@ export function WallActionsMenu({
     };
   }, [onClose]);
 
-  const left = typeof window === "undefined" ? menu.x : Math.max(8, Math.min(menu.x, window.innerWidth - 196));
-  const top = typeof window === "undefined" ? menu.y : Math.max(8, Math.min(menu.y, window.innerHeight - 132));
+  const blockedReason = deleteDisabledReason ?? (onDelete ? null : "This wall cannot be deleted.");
+  const left = typeof window === "undefined" ? menu.x : Math.max(8, Math.min(menu.x, window.innerWidth - 240));
+  const top = typeof window === "undefined" ? menu.y : Math.max(8, Math.min(menu.y, window.innerHeight - (blockedReason ? 280 : 176)));
 
   return (
     <div
@@ -54,7 +61,7 @@ export function WallActionsMenu({
       role="menu"
       data-testid="wall-actions-menu"
       aria-label={`Actions for ${menu.label}`}
-      className="fixed z-[80] min-w-40 rounded-lg border border-slate-300 bg-white p-1 pr-8 text-sm shadow-lg"
+      className="fixed z-[80] min-w-40 max-w-56 rounded-lg border border-slate-300 bg-white p-1 pr-8 text-sm shadow-lg"
       style={{ left, top }}
       onPointerDown={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.preventDefault()}
@@ -76,6 +83,28 @@ export function WallActionsMenu({
       <button type="button" role="menuitem" data-testid="wall-actions-add" className="flex w-full rounded px-2 py-1.5 text-left font-semibold text-[#1a2744] hover:bg-slate-100" onClick={() => { onAdd(); onClose(); }}>
         Add wall
       </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="wall-actions-delete"
+        disabled={Boolean(blockedReason)}
+        aria-disabled={Boolean(blockedReason)}
+        aria-describedby={blockedReason ? "wall-actions-delete-reason" : undefined}
+        title={blockedReason ?? "Delete this wall"}
+        className={`flex w-full rounded px-2 py-1.5 text-left font-semibold ${blockedReason ? "cursor-not-allowed text-red-300" : "text-red-700 hover:bg-red-50"}`}
+        onClick={() => {
+          if (blockedReason || !onDelete) return;
+          onDelete();
+          onClose();
+        }}
+      >
+        Delete wall
+      </button>
+      {blockedReason ? (
+        <p id="wall-actions-delete-reason" data-testid="wall-actions-delete-reason" className="px-2 pb-1 text-[11px] font-medium leading-4 text-red-700">
+          {blockedReason}
+        </p>
+      ) : null}
     </div>
   );
 }

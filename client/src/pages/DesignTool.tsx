@@ -378,8 +378,9 @@ import { normalizeDesignPricingTier, type DesignPricingTier } from "@/lib/design
 import { AIChatBox, type Message as AIMessage } from "@/components/AIChatBox";
 import { PlanCanvas } from "@/components/design/PlanCanvas";
 import { PolygonRoomEditor } from "@/components/design/PolygonRoomEditor";
-import { applyCompassWallEdit, closestWall, deleteCustomWallSegment, polygonBounds, positionAlongWall, resizeHostedWall, type CompassWallAngle, type WallBuilderRoomGeometry } from "@/lib/polygonRoom";
+import { applyCompassWallEdit, closestWall, polygonBounds, positionAlongWall, resizeHostedWall, type CompassWallAngle, type WallBuilderRoomGeometry } from "@/lib/polygonRoom";
 import { attachedWallObstacles, placeAttachedWall, slideAttachedWall } from "@/lib/attachedWall";
+import { countCabinetsOnWall, deleteHighlightedCustomWall, wallDeleteDisabledReason } from "@/lib/wallDeletion";
 import { ElevationView } from "@/components/design/ElevationView";
 import { CornerView, type CornerId } from "@/components/design/CornerView";
 import { IslandElevationView } from "@/components/design/IslandElevationView";
@@ -2737,54 +2738,60 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
         : `Deleted ${run.label ?? "peninsula"}.`,
     );
   }, [peninsulaDeletePrompt, placed, room, layoutLocked, cabinetsLocked]);
-  const requestCustomWallDeletion = useCallback(() => {
-    const draft = wallSettingsDraft;
-    if (!draft || draft.kind !== "custom") return;
-    if ((room.customWalls?.length ?? 0) <= 1 && !room.preserveCardinalWalls) {
-      toast.error("The last remaining wall cannot be deleted. Start a new room layout instead.");
+  const requestCustomWallDeletion = useCallback((requestedWallId?: string) => {
+    const wallId = typeof requestedWallId === "string"
+      ? requestedWallId
+      : wallSettingsDraft?.kind === "custom"
+        ? wallSettingsDraft.wallId
+        : undefined;
+    if (!wallId) return;
+    const custom = room.customWalls?.find((wall) => wall.id === wallId);
+    if (!custom) return;
+    const reason = wallDeleteDisabledReason({ room, wallId });
+    if (reason) {
+      toast.error(reason);
       return;
     }
     setCustomWallDeletePrompt({
-      wallId: draft.wallId,
-      label: draft.label,
-      cabinetCount: placed.filter((cabinet) => cabinetWall(cabinet, room) === draft.wallId).length,
-      openingCount: openings.filter((opening) => opening.side === draft.wallId).length,
+      wallId,
+      label: custom.label?.trim() || wallNameFor(wallId, room),
+      cabinetCount: countCabinetsOnWall(placed, room, wallId),
+      openingCount: openings.filter((opening) => opening.side === wallId).length,
     });
   }, [openings, placed, room, wallSettingsDraft]);
   const confirmCustomWallDeletion = useCallback(() => {
     const prompt = customWallDeletePrompt;
     if (!prompt || prompt.cabinetCount > 0 || !room.vertices || !room.customWalls) return;
-    if (room.preserveCardinalWalls && room.customWalls.length <= 1) {
-      setRoom((previous) => {
-        const { vertices: _vertices, customWalls: _customWalls, preserveCardinalWalls: _preserve, ...rest } = previous;
-        return rest;
-      });
-      setOpenings((previous) => previous.filter((opening) => opening.side !== prompt.wallId));
-      setSelectedOpeningUid(null);
-      setSelectedUid(null);
-      setActiveWall("top");
-      setPlacementTarget("wall");
-      setWallSettingsOpen(false);
-      setCustomWallDeletePrompt(null);
-      toast.success(`Deleted ${prompt.label}.`);
-      return;
-    }
-    const updated = deleteCustomWallSegment(prompt.wallId, room.vertices, room.customWalls);
+    const openingUids = openings.filter((opening) => opening.side === prompt.wallId).map((opening) => opening.uid);
+    const updated = deleteHighlightedCustomWall(room, prompt.wallId, openingUids);
     if (!updated) {
       toast.error("This wall could not be deleted while preserving the other measured walls.");
       return;
     }
-    setRoom((previous) => ({ ...previous, ...updated }));
+    setRoom((previous) => deleteHighlightedCustomWall(previous, prompt.wallId, openingUids) ?? previous);
     setOpenings((previous) => previous.filter((opening) => opening.side !== prompt.wallId));
     setSelectedOpeningUid(null);
     setSelectedUid(null);
-    setActiveWall((updated.customWalls[0]?.id ?? "top") as WallSide);
+    setActiveWall((updated.customWalls?.[0]?.id ?? "top") as WallSide);
     setPlacementTarget("wall");
     setCompassWallStartIn(null);
     setWallSettingsOpen(false);
     setCustomWallDeletePrompt(null);
     toast.success(`Deleted ${prompt.label}. All other measured walls remain unchanged.`);
-  }, [customWallDeletePrompt, room.customWalls, room.vertices]);
+  }, [customWallDeletePrompt, openings, room]);
+  const requestWallMenuDeletion = useCallback((wallId: string) => {
+    if (wallDeleteDisabledReason({ room, wallId, layoutLocked, cabinetsLocked })) return;
+    const peninsula = peninsulaRunById(room, wallId);
+    if (peninsula) {
+      setPeninsulaDeletePrompt({
+        runId: peninsula.id,
+        label: peninsula.label ?? wallNameFor(wallId, room),
+        cabinetCount: countCabinetsOnWall(placed, room, peninsula.id),
+      });
+      return;
+    }
+    requestCustomWallDeletion(wallId);
+  }, [cabinetsLocked, layoutLocked, placed, requestCustomWallDeletion, room]);
 		  const movePeninsulaAttachment = useCallback((runId: string, requestedStartOffset: number) => {
 		    const selectedRun = peninsulaRunById(room, runId);
 		    if (!selectedRun || layoutLocked) return;
@@ -21644,6 +21651,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
                 onDone={() => setPolygonEditMode(false)}
                 locked={layoutLocked}
                 onAddWall={(wallId, point) => openAddWallDialog(wallId as WallSide, point)}
+                onDeleteWall={requestWallMenuDeletion}
               />
             </div>
           )}
@@ -21708,6 +21716,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
               onPeninsulaAttachmentChange={movePeninsulaAttachment}
               onOpenWallSettings={openWallSettings}
               onAddWall={openAddWallDialog}
+              onDeleteWall={requestWallMenuDeletion}
               onSlideHostedWall={slideHostedWall}
               onSlideHostedWallEnd={finishHostedWallSlide}
               conflictUids={conflictUids}
@@ -22040,6 +22049,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 		                  onPeninsulaAttachmentChange={movePeninsulaAttachment}
 		                  onOpenWallSettings={openWallSettings}
               onAddWall={openAddWallDialog}
+              onDeleteWall={requestWallMenuDeletion}
               onSlideHostedWall={slideHostedWall}
               onSlideHostedWallEnd={finishHostedWallSlide}
 		                  conflictUids={conflictUids}
@@ -22441,7 +22451,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	              )}
 	              <DialogFooter data-testid="peninsula-settings-actions" className="shrink-0 border-t bg-background px-4 py-3 sm:flex-wrap">
 	                {wallSettingsDraft?.kind === "custom" && (
-	                  <Button type="button" variant="destructive" className="mr-auto" data-testid="delete-selected-custom-wall" onClick={requestCustomWallDeletion}>
+	                  <Button type="button" variant="destructive" className="mr-auto" data-testid="delete-selected-custom-wall" onClick={() => requestCustomWallDeletion()}>
 	                    <Trash2 className="mr-1.5 h-4 w-4" /> Delete this wall
 	                  </Button>
 	                )}
