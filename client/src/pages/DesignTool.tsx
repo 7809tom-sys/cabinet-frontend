@@ -279,6 +279,7 @@ import { isFramelessFortyWallHeight } from "@/lib/aefAboveFridge";
 import { hasAefPrintedGeometry } from "@shared/aefFramelessGeometry";
 import { automaticAngledWallFiller, measuredAngledWallTransition, repairMissingAngledWallFillers } from "@/lib/angledWallFiller";
 import { designerCabinetName, isRangeBaseCabinetCode } from "@/lib/designerCabinetNames";
+import { selectedCabinetInfoBarDescription } from "@/lib/selectedCabinetInfoBar";
 import { isRangeTopRow, placeRangeTopOnBase, rangeTopRowDisabledReason, rangeTopRowsForBase } from "@/lib/rangeBaseSelection";
 import { rangeBaseCooktopPromptWidth, repairRangeBasesWithoutCooktop } from "@/lib/rangeBaseGuard";
 import { alignFramelessWallCabinetTops, framelessWallTopDatumIn } from "@/lib/framelessWallTopAlignment";
@@ -16552,6 +16553,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 		      ?? description.match(/cut\s+to\s+.+$/i)?.[0];
 		    return cut ? `Filler — ${cut}` : "Filler";
 		  })();
+		  const selectedCabInfoBarDescription = selectedCabinetInfoBarDescription(selectedCabDisplayDescription);
 		  const selectedGlassFrontSnap = useMemo(
 		    () => selectedCab ? glassStackerFrontSnapTarget(selectedCab, placed, room) : null,
 		    [placed, room, selectedCab],
@@ -19654,7 +19656,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               })()}
 		              <span className="text-[11px] text-muted-foreground">
 		                {t("dt_cx_selected")} <span className="font-mono font-semibold text-foreground">{selectedCab.masterCode}</span>
-		                <span className="ml-1 hidden sm:inline text-foreground/70">— {selectedCabDisplayDescription}</span>
+		                <span
+		                  className="ml-1 hidden sm:inline text-foreground/70"
+		                  title={selectedCabInfoBarDescription === selectedCabDisplayDescription ? undefined : selectedCabDisplayDescription}
+		                >— {selectedCabInfoBarDescription}</span>
 		              </span>
 		              {/* Edit jumps straight to the door style coloring this cabinet
 		                  (its color and its style) and comes back to this exact
