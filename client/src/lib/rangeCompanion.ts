@@ -2,6 +2,7 @@ import {
   type DesignCabinet,
   type PlacedCabinet,
   type RoomData,
+  appendCollisionFreePlacements,
   isRangeOrOven,
   isMicrowaveOverRangePair,
   isOverRangeMicrowave,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/design";
 import {
   bridgeMissingAtRangeWidthReason,
+  isBridgeOverRangeCabinet,
   microwaveBridgeClearsCeiling,
   overRangeBridgeCandidates,
   overRangeBridgeLabel,
@@ -294,6 +296,94 @@ export function rangeCompanionPlacement(
     ...(source.turnedSideways ? { turnedSideways: true } : {}),
     styleId,
     ...(spot.wallId ? { wallId: spot.wallId, wallOffset: spot.wallOffset ?? 0 } : {}),
+  };
+}
+
+export type ChosenRangeCompanionResult =
+  | {
+    ok: true;
+    placed: PlacedCabinet[];
+    bridge: PlacedCabinet;
+    microwave: PlacedCabinet;
+    /** The SKU that was already over the range and was removed so the chosen height could sit there. */
+    replacedBridgeCode: string | null;
+  }
+  | { ok: false; reason: string };
+
+/**
+ * Seat the bridge height the person actually picked.
+ *
+ * With no upper beside the range, the first pass treats the wall-height setting
+ * as a 30" neighbour and hangs the 12" bridge (W3012). That box already occupies
+ * the span, so adding the chosen 24" SKU on top of it is rejected and the short
+ * cabinet stays. This removes only that over-range bridge, then places the
+ * catalog row for the chosen height and keeps the microwave ending at the 72"
+ * bridge datum. A missing height is not invented: the caller must pass a
+ * proposal whose bridge is a real catalog row.
+ */
+export function placeChosenRangeCompanions(input: {
+  placed: readonly PlacedCabinet[];
+  range: PlacedCabinet;
+  room: RoomData;
+  proposal: RangeCompanionProposal;
+  makeUid: () => string;
+  styleId: number | null;
+}): ChosenRangeCompanionResult {
+  const bridgeSource = input.proposal.bridge;
+  if (!bridgeSource) {
+    return { ok: false, reason: input.proposal.bridgeUnavailableReason ?? "No bridge cabinet can be added over this range." };
+  }
+  const existingBridge = input.placed.find((item) => isBridgeOverRangeCabinet(item, input.range, input.room)) ?? null;
+  const existingMicrowave = input.placed.find((item) => (
+    item.uid !== input.range.uid
+    && isOverRangeMicrowave(item)
+    && isMicrowaveOverRangePair(item, input.range)
+  )) ?? null;
+  const sameBridge = existingBridge != null
+    && existingBridge.cabinetId === bridgeSource.id
+    && existingBridge.masterCode === bridgeSource.masterCode
+    && Math.abs(Number(existingBridge.height) - Number(bridgeSource.height)) <= 0.01
+    && Math.abs((existingBridge.mountBottom ?? 0) - input.proposal.bridgeMountBottom) <= 0.01;
+  const microwave = existingMicrowave
+    ? { ...existingMicrowave, mountBottom: input.proposal.microwaveMountBottom }
+    : rangeCompanionPlacement(
+      input.proposal.microwave,
+      input.proposal.microwaveSpot,
+      input.proposal.microwaveMountBottom,
+      input.makeUid(),
+      null,
+    );
+  const microwaveMountChanged = existingMicrowave != null
+    && Math.abs((existingMicrowave.mountBottom ?? 0) - input.proposal.microwaveMountBottom) > 0.01;
+  const bridge = sameBridge && existingBridge
+    ? existingBridge
+    : rangeCompanionPlacement(
+      bridgeSource,
+      input.proposal.bridgeSpot,
+      input.proposal.bridgeMountBottom,
+      input.makeUid(),
+      input.styleId,
+    );
+  const drop = new Set<string>();
+  if (existingBridge && !sameBridge) drop.add(existingBridge.uid);
+  if (existingMicrowave && microwaveMountChanged) drop.add(existingMicrowave.uid);
+  const working = input.placed.filter((item) => !drop.has(item.uid));
+  const additions: PlacedCabinet[] = [];
+  if (!existingMicrowave || microwaveMountChanged) additions.push(microwave);
+  if (!sameBridge) additions.push(bridge);
+  if (additions.length === 0) {
+    return { ok: true, placed: [...working], bridge, microwave, replacedBridgeCode: null };
+  }
+  const resolution = appendCollisionFreePlacements(working, additions, input.room);
+  if (resolution.rejected.length > 0 || !resolution.placed.some((item) => item.uid === bridge.uid) || !resolution.placed.some((item) => item.uid === microwave.uid)) {
+    return { ok: false, reason: "The bridge and microwave need a clear upper-wall span above this range. Existing cabinets were left unchanged." };
+  }
+  return {
+    ok: true,
+    placed: resolution.placed,
+    bridge: resolution.placed.find((item) => item.uid === bridge.uid) ?? bridge,
+    microwave: resolution.placed.find((item) => item.uid === microwave.uid) ?? microwave,
+    replacedBridgeCode: existingBridge && !sameBridge ? existingBridge.masterCode : null,
   };
 }
 
