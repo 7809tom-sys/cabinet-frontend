@@ -31,7 +31,7 @@ import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, counte
 import { wallOpenShelfShelfCenters } from "@/lib/wallOpenShelf";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
-import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDDecorativeEndIsDoor, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
+import { addThreeDCrownMolding, applyThreeDStructuralFinishMaterials, threeDDecorativeEndBoards, threeDDecorativeEndIsDoor, threeDStructuralSampleTexture } from "./InteractiveRoom3D";
 import { addThreeDProductionLightRig, normalizeThreeDPlanarUv, THREE_D_BACKSPLASH_FACE_INSET_IN, THREE_D_BACKSPLASH_TILE_SIZE_IN, threeDBacksplashPlaneUv, threeDBacksplashRenderInterval, threeDBacksplashSegments, threeDBacksplashSupportSpans, threeDBacksplashTileTextureTransform, threeDBacksplashTransform, threeDCabinetGrainTransform, threeDCountertopUpstandSegments, threeDCountertopSlabTextureTransform, threeDDoorFinishSurfaceProfile, threeDFlooringPatternProfile, threeDPhysicalSurfaceProfile, threeDPlankAtlasProfile, threeDProductMaterialSource, threeDProductSurfaceTextureTransform, threeDRenderQualityProfile, threeDSupportsBacksplash, threeDSurfaceImageCrop, threeDSurfaceTextureTransform } from "./InteractiveRoom3D";
 import kitchenFixture from "../../lib/__fixtures__/autoDesignGapKitchen.json";
 import type { PlacedCabinet, RoomData, WallOpening } from "@/lib/design";
@@ -2779,6 +2779,97 @@ describe("interactive 3D room scene helpers", () => {
     expect(threeDDecorativeEndSides("left")).toEqual([-1]);
     expect(threeDDecorativeEndSides("right")).toEqual([1]);
     expect(threeDDecorativeEndSides("both")).toEqual([-1, 1]);
+  });
+
+  it("seats a decorative end on the exposed leg of an L corner and a diagonal return", () => {
+    const toe = { includeFloorStub: true, toeKickHeight: 4.5 / 12, toeKickRecess: 3 / 12 };
+    const box = threeDDecorativeEndBoards({
+      side: 1, profile: "box", bodyWidth: 30 / 12, bodyDepth: 24 / 12, bodyHeight: 34.5 / 12, ...toe,
+    });
+    expect(box.panel.z).toBe(0);
+    expect(box.panel.x).toBeCloseTo(30 / 12 / 2 + 0.022, 6);
+    expect(box.panel.sizeZ).toBeCloseTo(24 / 12 - 0.05, 6);
+    expect(box.stub?.sizeZ).toBeLessThan(box.panel.sizeZ);
+
+    const lazySusan = threeDDecorativeEndBoards({
+      side: 1, profile: "corner-return", bodyWidth: 3, bodyDepth: 3, bodyHeight: 34.5 / 12, legRatio: 24 / 36, ...toe,
+    });
+    const legFront = -1.5 + 2;
+    expect(lazySusan.panel.x).toBeCloseTo(1.5 + 0.022, 6);
+    expect(lazySusan.panel.z).toBeCloseTo(-0.5, 6);
+    expect(lazySusan.panel.z + lazySusan.panel.sizeZ / 2).toBeLessThan(legFront);
+    expect(lazySusan.panel.sizeZ).toBeCloseTo(2 - 0.05, 6);
+    expect(lazySusan.stub).not.toBeNull();
+    expect((lazySusan.stub?.z ?? 0) + (lazySusan.stub?.sizeZ ?? 0) / 2).toBeLessThan(lazySusan.panel.z + lazySusan.panel.sizeZ / 2);
+
+    const returnEnd = threeDDecorativeEndBoards({
+      side: -1, profile: "corner-return", bodyWidth: 3, bodyDepth: 3, bodyHeight: 34.5 / 12, legRatio: 24 / 36, ...toe,
+    });
+    expect(returnEnd.panel.sizeZ).toBeCloseTo(0.042, 6);
+    expect(returnEnd.panel.z).toBeCloseTo(1.5 + 0.022, 6);
+    expect(returnEnd.panel.x).toBeCloseTo(-0.5, 6);
+    expect(returnEnd.panel.x + returnEnd.panel.sizeX / 2).toBeLessThan(0.5);
+
+    const diagonal = threeDDecorativeEndBoards({
+      side: 1, profile: "corner-return", bodyWidth: 2, bodyDepth: 2, bodyHeight: 42 / 12, legRatio: 0.5,
+      includeFloorStub: false, toeKickHeight: 0, toeKickRecess: 0,
+    });
+    expect(diagonal.panel.z).toBeCloseTo(-0.5, 6);
+    expect(diagonal.panel.sizeZ).toBeCloseTo(1 - 0.05, 6);
+    expect(diagonal.panel.z + diagonal.panel.sizeZ / 2).toBeLessThanOrEqual(0);
+    expect(diagonal.stub).toBeNull();
+  });
+
+  it("draws the lazy Susan and diagonal end panels on the real return, not the square box", () => {
+    const localZ = (mesh: THREE.Object3D) => (mesh.parent?.position.z ?? 0) + mesh.position.z;
+    const panelsOf = (root: THREE.Object3D, side: "left" | "right") => {
+      const panels: THREE.Mesh[] = [];
+      const stubs: THREE.Mesh[] = [];
+      root.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        if (node.userData.decorativeEndSide !== side) return;
+        if (node.userData.decorativeEndPanel) panels.push(node);
+        if (node.userData.decorativeEndToFloor) stubs.push(node);
+      });
+      return { panels, stubs };
+    };
+    const lazy = new THREE.Group();
+    addCabinet(lazy, {
+      masterCode: "ERB36",
+      description: "Easy Reach Base",
+      placementType: "base",
+      width: 36,
+      depth: 36,
+      height: 34.5,
+      cornerGeometryKind: "l-shape",
+      decorativeEnd: "both",
+    } as never, null, {}, 144, 120, "#f4f1ea", "#f8f8f6");
+    const right = panelsOf(lazy, "right");
+    const left = panelsOf(lazy, "left");
+    expect(right.panels).toHaveLength(1);
+    expect(localZ(right.panels[0]!)).toBeCloseTo(-0.5, 2);
+    expect((right.panels[0]!.geometry as THREE.BoxGeometry).parameters.depth).toBeCloseTo(2 - 0.05, 2);
+    expect(right.stubs).toHaveLength(1);
+    expect(left.panels).toHaveLength(1);
+    expect((left.panels[0]!.geometry as THREE.BoxGeometry).parameters.depth).toBeCloseTo(0.042, 3);
+    expect(localZ(left.panels[0]!)).toBeCloseTo(1.5 + 0.022, 2);
+
+    const diagonal = new THREE.Group();
+    addCabinet(diagonal, {
+      masterCode: "DCW2442",
+      description: "Diagonal Corner Wall",
+      placementType: "wall",
+      width: 24,
+      depth: 24,
+      height: 42,
+      cornerGeometryKind: "diagonal",
+      decorativeEnd: "right",
+    } as never, null, {}, 144, 120, "#f4f1ea", "#f8f8f6");
+    const wallEnd = panelsOf(diagonal, "right");
+    expect(wallEnd.panels).toHaveLength(1);
+    expect(localZ(wallEnd.panels[0]!)).toBeCloseTo(-0.5, 2);
+    expect((wallEnd.panels[0]!.geometry as THREE.BoxGeometry).parameters.depth).toBeCloseTo(0.95, 2);
+    expect(wallEnd.stubs).toHaveLength(0);
   });
 
   it("shows a host-selected W3024 in the 3D action card without requiring a second click", () => {

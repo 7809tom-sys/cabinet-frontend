@@ -3121,6 +3121,117 @@ export function threeDDecorativeEndSides(treatment: SceneSku["decorativeEnd"] | 
   return treatment === "both" ? [-1, 1] : [];
 }
 
+/** 1/2 inch finished end board, seated just outside the carcass face. */
+const DECORATIVE_END_THICKNESS = 0.042;
+const DECORATIVE_END_OUTSET = 0.022;
+const DECORATIVE_END_INSET = 0.05;
+
+export type DecorativeEndBoard = {
+  x: number;
+  y: number;
+  z: number;
+  rotationY: number;
+  sizeX: number;
+  sizeY: number;
+  sizeZ: number;
+};
+
+/**
+ * Cabinet-local pose for one decorative end. A rectangular cabinet wears the
+ * board on the full side of the box. An L-corner or diagonal corner wears it
+ * on the exposed end of that side's leg or return, so it does not hang off
+ * the square bounding box.
+ *
+ * Right is the end along +X (the back-wall leg). Left is the end along +Z
+ * (the return leg). Both match the faces already used by the carcass.
+ */
+export function threeDDecorativeEndBoards(input: {
+  side: -1 | 1;
+  profile: "box" | "corner-return";
+  bodyWidth: number;
+  bodyDepth: number;
+  bodyHeight: number;
+  /** Leg length as a fraction of the square. Diagonal corners use 1/2. */
+  legRatio?: number;
+  includeFloorStub: boolean;
+  toeKickHeight: number;
+  toeKickRecess: number;
+}): { panel: DecorativeEndBoard; stub: DecorativeEndBoard | null } {
+  const height = Math.max(0.12, input.bodyHeight - DECORATIVE_END_INSET);
+  const y = 0;
+  if (input.profile === "corner-return") {
+    const ratio = Math.max(0.3, Math.min(0.95, input.legRatio ?? 0.5));
+    const alongX = input.side === 1;
+    const span = alongX ? input.bodyDepth * ratio : input.bodyWidth * ratio;
+    const boardSpan = Math.max(0.12, span - DECORATIVE_END_INSET);
+    const panel: DecorativeEndBoard = alongX
+      ? {
+        x: input.bodyWidth / 2 + DECORATIVE_END_OUTSET,
+        y,
+        z: -input.bodyDepth / 2 + span / 2,
+        rotationY: 0,
+        sizeX: DECORATIVE_END_THICKNESS,
+        sizeY: height,
+        sizeZ: boardSpan,
+      }
+      : {
+        x: -input.bodyWidth / 2 + span / 2,
+        y,
+        z: input.bodyDepth / 2 + DECORATIVE_END_OUTSET,
+        rotationY: 0,
+        sizeX: boardSpan,
+        sizeY: height,
+        sizeZ: DECORATIVE_END_THICKNESS,
+      };
+    if (!input.includeFloorStub) return { panel, stub: null };
+    const stubSpan = Math.max(0.04, span - DECORATIVE_END_INSET - Math.max(0, input.toeKickRecess));
+    const stub: DecorativeEndBoard = alongX
+      ? {
+        x: panel.x,
+        y: -input.bodyHeight / 2 - input.toeKickHeight / 2,
+        z: -input.bodyDepth / 2 + DECORATIVE_END_INSET / 2 + stubSpan / 2,
+        rotationY: 0,
+        sizeX: DECORATIVE_END_THICKNESS,
+        sizeY: input.toeKickHeight,
+        sizeZ: stubSpan,
+      }
+      : {
+        x: -input.bodyWidth / 2 + DECORATIVE_END_INSET / 2 + stubSpan / 2,
+        y: -input.bodyHeight / 2 - input.toeKickHeight / 2,
+        z: panel.z,
+        rotationY: 0,
+        sizeX: stubSpan,
+        sizeY: input.toeKickHeight,
+        sizeZ: DECORATIVE_END_THICKNESS,
+      };
+    return { panel, stub };
+  }
+  const depth = Math.max(0.12, input.bodyDepth - DECORATIVE_END_INSET);
+  const panel: DecorativeEndBoard = {
+    x: input.side * (input.bodyWidth / 2 + DECORATIVE_END_OUTSET),
+    y,
+    z: 0,
+    rotationY: 0,
+    sizeX: DECORATIVE_END_THICKNESS,
+    sizeY: height,
+    sizeZ: depth,
+  };
+  if (!input.includeFloorStub) return { panel, stub: null };
+  const stubSpan = Math.max(0.04, input.bodyDepth - DECORATIVE_END_INSET - Math.max(0, input.toeKickRecess));
+  return {
+    panel,
+    stub: {
+      x: panel.x,
+      y: -input.bodyHeight / 2 - input.toeKickHeight / 2,
+      z: -input.bodyDepth / 2 + DECORATIVE_END_INSET / 2 + stubSpan / 2,
+      rotationY: 0,
+      sizeX: DECORATIVE_END_THICKNESS,
+      sizeY: input.toeKickHeight,
+      sizeZ: stubSpan,
+    },
+  };
+}
+
 export function shouldRenderCountertopOverSceneItem(
 	  placementOrItem: string | Pick<PlacedCabinet,
 	    "placement" | "masterCode" | "description" | "subCategory" |
@@ -6584,12 +6695,30 @@ export function addCabinet(
   // again from the same door appearance the fronts use, so a late-registered end
   // skin cannot fall back to a second solid colour.
   applyStructuralFinish(color, doorTexture);
+  const decorativeEndProfile = specialty.kind === "l-corner" || specialty.kind === "corner-drawer" || specialty.kind === "diagonal-corner"
+    ? "corner-return" as const
+    : "box" as const;
+  const decorativeEndLegRatio = specialty.kind === "diagonal-corner" ? 0.5 : lCornerLegRatio;
   for (const side of threeDDecorativeEndSides(sku.decorativeEnd)) {
+    const boards = threeDDecorativeEndBoards({
+      side,
+      profile: decorativeEndProfile,
+      bodyWidth,
+      bodyDepth,
+      bodyHeight,
+      legRatio: decorativeEndLegRatio,
+      includeFloorStub: isFloorStandingCabinet && !hasFurnitureBaseMolding && !suppressInstalledFillerToeKick,
+      toeKickHeight: THREE_D_TOE_KICK * INCH,
+      toeKickRecess: THREE_D_TOE_KICK_RECESS_IN * INCH,
+    });
     const endPanel = new THREE.Mesh(
-      new THREE.BoxGeometry(0.042, Math.max(0.12, bodyHeight - 0.05), Math.max(0.12, bodyDepth - 0.05)),
+      new THREE.BoxGeometry(boards.panel.sizeX, boards.panel.sizeY, boards.panel.sizeZ),
       decorativeEndIsDoor ? faceMaterial : decorativeEndSkin,
     );
-    endPanel.position.set(side * (bodyWidth / 2 + 0.022), 0, -faceDepth);
+    // The pose is cabinet-local. A rectangular front group sits on the face
+    // plane, so the child position subtracts that shift and stays on the side.
+    endPanel.position.set(boards.panel.x, boards.panel.y, boards.panel.z - frontGroup.position.z);
+    endPanel.rotation.y = boards.panel.rotationY;
     endPanel.userData = {
       decorativeEndPanel: true,
       decorativeEndSide: side === -1 ? "left" : "right",
@@ -6598,20 +6727,13 @@ export function addCabinet(
       ...(decorativeEndIsDoor ? { cabinetFront: true } : { selectedFinishSideSkin: true }),
     };
     frontGroup.add(endPanel);
-    if (isFloorStandingCabinet && !hasFurnitureBaseMolding && !suppressInstalledFillerToeKick) {
-      const recess = THREE_D_TOE_KICK_RECESS_IN * INCH;
-      const toeKickHeight = THREE_D_TOE_KICK * INCH;
-      const lowerDepth = Math.max(0.04, bodyDepth - 0.05 - recess);
+    if (boards.stub) {
       const lower = new THREE.Mesh(
-        new THREE.BoxGeometry(0.042, toeKickHeight, lowerDepth),
+        new THREE.BoxGeometry(boards.stub.sizeX, boards.stub.sizeY, boards.stub.sizeZ),
         decorativeEndIsDoor ? faceMaterial : decorativeEndSkin,
       );
-      const cabinetZ = -bodyDepth / 2 + 0.025 + lowerDepth / 2;
-      lower.position.set(
-        side * (bodyWidth / 2 + 0.022),
-        -bodyHeight / 2 - toeKickHeight / 2,
-        cabinetZ - faceDepth,
-      );
+      lower.position.set(boards.stub.x, boards.stub.y, boards.stub.z - frontGroup.position.z);
+      lower.rotation.y = boards.stub.rotationY;
       lower.userData = {
         decorativeEndToFloor: true,
         cabinetSideToFloor: true,
