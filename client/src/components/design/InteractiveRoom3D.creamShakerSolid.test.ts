@@ -107,4 +107,69 @@ describe("live Shaker Classic Cream renders as flat paint", () => {
     expect(frontMaps.every((mapped) => mapped === false)).toBe(true);
     expect(structuralMaps.every((mapped) => mapped === false)).toBe(true);
   });
+
+  it("paints Zenith Sage flat on a DCW2442, with no screenshot texture", () => {
+    const sage = {
+      id: 330005,
+      distributorId: 210001,
+      ourName: "Fresh Sage",
+      aliasName: "Zenith Sage (Ashford)",
+      styleCode: "FS",
+      doorStyle: "Shaker",
+      panelConstruction: "flat",
+      finish: "Zenith Sage (Ashford)",
+      color: "#8FAF8A",
+      renderHex: "#798764",
+      doorColorSource: "approved-ai-image",
+      grainDirection: "none",
+      doorSampleImageUrl: "/manus-storage/media-library/zenith-sage-screenshot.jpg",
+      drawerSampleImageUrl: "/manus-storage/media-library/zenith-sage-drawer-screenshot.jpg",
+    };
+    const profile = designerCatalogDoorProfile(sage as never);
+    expect(profile?.paintedFinish).toBe(true);
+    const finish = doorStyleFinishColors(sage as never);
+    const root = new THREE.Group();
+    addCabinet(
+      root,
+      {
+        placementUid: "sage-dcw",
+        masterCode: "DCW2442",
+        description: '24" x 42" Wall',
+        placementType: "wall",
+        width: 24,
+        depth: 12,
+        height: 42,
+        numberOfDoors: 2,
+        numberOfDrawers: 0,
+        category: "Wall",
+        subCategory: "Wall",
+      } as never,
+      "back",
+      { back: 0 },
+      144,
+      120,
+      finish.face,
+      "#eeeeee",
+      profile as never,
+      { x: 0, z: 0, rotation: 0 },
+      sage.doorSampleImageUrl,
+      undefined,
+      { drawerSampleUrl: sage.drawerSampleImageUrl, faceCrop: designerFacePlan(sage as never, "wall")?.dlcCrop ?? null },
+    );
+    let frames = 0;
+    let outlines = 0;
+    let mapped = 0;
+    root.traverse((node) => {
+      if (node.userData?.physicalRails) frames += 1;
+      if (node.userData?.shakerFrameOutline) outlines += 1;
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      if (material?.map) mapped += 1;
+    });
+    expect(frames).toBeGreaterThan(0);
+    expect(outlines).toBe(frames);
+    expect(mapped).toBe(0);
+    expect(finish.face.toLowerCase()).toBe("#798764");
+  });
 });

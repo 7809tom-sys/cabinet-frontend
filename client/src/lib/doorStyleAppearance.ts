@@ -15,7 +15,7 @@ import {
 import { resolveDoorColor } from "@shared/doorColorResolve";
 import { styleWithChosenColorHex } from "@shared/doorColorSourceSelection";
 import { withCheckedDoorImage } from "@/lib/acceptedDoorAppearance";
-import { prefersSolidPaintedShakerFace } from "@shared/doorFrontFinish";
+import { prefersSolidPaintedFace } from "@shared/doorFrontFinish";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { isSolidSlabFace } from "@shared/solidSlabFace";
 import { raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
@@ -88,9 +88,9 @@ export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | u
  * frame measurement; bevel, edge, and raised-panel family come from the mapping.
  *
  * Two facts ride along for the renderer:
- * - `paintedFinish`: the style states paint / HDF / MDF, or it is a shaker with a
- *   saved solid color (render hex, catalog hex, Sherwin-Williams paint, or hex).
- *   Those fronts are a flat color. A stained shaker keeps its grain photo.
+ * - `paintedFinish`: paint / HDF / MDF, or any door style whose color is a saved
+ *   paint (render hex, catalog hex, Sherwin-Williams paint, or a named paint)
+ *   and not a stain. Those fronts are a flat color. Wood grain keeps its photo.
  * - `raisedPanelSource`: "library" when the raised-panel entry in
  *   `shared/raisedPanelDoorBlueprint.ts` is the default profile (a raised style the
  *   WalzCraft wizard never dressed), "wizard" when the wizard's profile wins.
@@ -113,7 +113,7 @@ export function designerCatalogDoorProfile(
     ...appearance.profile,
     // A slab in a solid colour is flat too, even when nobody wrote "paint" in the
     // finish text (Tom, Nov 14 2026: "most is a slab door with a solid color").
-    paintedFinish: isPaintedFinish(style) || isSolidSlabFace(style as never) || prefersSolidPaintedShakerFace(style),
+    paintedFinish: isPaintedFinish(style) || isSolidSlabFace(style as never) || prefersSolidPaintedFace(style),
     raisedPanelSource: raisedPanel.source,
   };
 }

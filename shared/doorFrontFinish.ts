@@ -1,29 +1,44 @@
 /**
- * Painted shaker fronts vs a framed door photograph.
+ * Painted cabinet fronts vs a framed door photograph.
  *
- * A cream/off-white shaker stores a color (render hex, catalog hex, a confirmed
- * Sherwin-Williams paint chip, or a confirmed hex) and the face plan already
- * paints that hex with no grain. The 3D view was still wrapping the style's door
- * photograph onto every front. That photograph contains its own frame, and the
- * grain-tile repeat (faceTileIn) stamped it many times, so each door looked like
- * doors inside doors. Box, face-frame, and toe-kick surfaces picked up the same
- * picture.
+ * A painted color (white, cream, sage, gray, navy, black, and the rest) stores a
+ * hex and often a door photograph. The 3D view was wrapping that photograph onto
+ * the fronts, and a tile repeat reprinted the frame across doors, drawers, the
+ * box, and the toe kick.
  *
- * A shaker with one of those saved colors renders flat, in that color, with the
- * single built shaker outline. A stained or wood-grain style keeps its photo.
- * A door photograph is never tiled: one copy, clamped, per front. Frame-free
- * grain boards still repeat.
+ * Paint renders flat, in the saved hex, with the door style's own frame (one
+ * shaker outline on a shaker). Stain and wood grain keep their photo, mapped
+ * once. The signals are the grain direction, finish category, stain and wood
+ * words, and the Sherwin-Williams finish. A color-source choice of "approved AI
+ * image" or "original image" does not keep a photograph on a painted color:
+ * Zenith Sage was missed that way.
  */
+import { matchCabinetColorName } from "./cabinetColorNames";
 import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
-import { shakerDoorFamily, type ShakerStyleInput } from "./shakerDoorBlueprint";
+import { isAspenCharcoalIdentity } from "./doorRenderIdentity";
+import { isPaintedFinish, type PaintedFinishInput } from "./paintedFinish";
+import type { ShakerStyleInput } from "./shakerDoorBlueprint";
 
 const HEX = /^#?[0-9a-f]{6}$/i;
 
-export type SolidPaintedShakerInput = ShakerStyleInput & DoorColorInput & {
+export type SolidPaintedShakerInput = ShakerStyleInput & DoorColorInput & PaintedFinishInput & {
+  doorPanelType?: string | null;
+  doorShape?: string | null;
+  styleCode?: string | null;
+  code?: string | null;
+  grainDirection?: string | null;
   doorColorSource?: string | null;
   checkedDoorSource?: string | null;
   doorColorSourceSelection?: unknown;
   doorColorSourceValue?: unknown;
+};
+
+export type DoorFinishFamily = "paint" | "stain" | "unspecified";
+
+export type DoorFinishClassification = {
+  family: DoorFinishFamily;
+  /** Short reason, safe to show in a review. */
+  reason: string;
 };
 
 export type DoorFrontTextureWrap = "clamp" | "repeat" | "mirror";
@@ -67,30 +82,81 @@ function sherwinFinish(style: SolidPaintedShakerInput): string {
   return String(fromSelection ?? fromValue ?? "").trim().toLowerCase();
 }
 
+function styleText(style: SolidPaintedShakerInput): string {
+  return [style.ourName, style.aliasName, style.name, style.finish, style.woodSpecies, style.color, style.doorStyle]
+    .filter((part) => typeof part === "string" && part.trim())
+    .join(" ");
+}
+
+function isGlassDoor(style: SolidPaintedShakerInput): boolean {
+  return /\bglass\b/i.test(`${style.doorStyle ?? ""} ${style.doorPanelType ?? ""} ${style.doorShape ?? ""}`);
+}
+
+function hasVisibleGrain(style: SolidPaintedShakerInput): boolean {
+  const direction = (style.grainDirection ?? "").trim().toLowerCase();
+  return direction === "horizontal" || direction === "vertical" || direction === "vertical-stiles-horizontal-rails";
+}
+
+function hasSavedPaintColor(style: SolidPaintedShakerInput): boolean {
+  if (exactHex(style.renderHex) || exactHex(style.color)) return true;
+  const named = matchCabinetColorName(`${style.color ?? ""} ${style.finish ?? ""}`);
+  return Boolean(named);
+}
+
 /**
- * True when this shaker should render as a flat painted color instead of its
- * door photograph.
+ * Paint, stain, or not enough to decide.
  *
- * An explicit original-image or approved-AI choice keeps the photograph (mapped
- * once). An explicit hex or Sherwin-Williams paint choice is solid. Otherwise a
- * shaker that is not a stain and that has a saved render hex or catalog hex is
- * solid. Wood-grain and stained shakers stay on the photo.
+ * Stain wins when the row says stain, names a wood the color resolver treats as
+ * grain, or stores a real grain direction. "Solid Birch" by itself does not:
+ * the Preston painted colors use that species for a painted substrate.
+ * Paint wins from an explicit paint finish, a saved hex, or a named paint color.
+ * An approved-AI or original-image choice does not keep a photo on a paint row.
  */
-export function prefersSolidPaintedShakerFace(style: SolidPaintedShakerInput | null | undefined): boolean {
-  if (!style) return false;
-  if (shakerDoorFamily(style) === "other") return false;
+export function classifyDoorFinish(style: SolidPaintedShakerInput | null | undefined): DoorFinishClassification {
+  if (!style) return { family: "unspecified", reason: "No door style." };
+  if (isGlassDoor(style)) return { family: "unspecified", reason: "Glass door. The glass face stays." };
   const source = confirmedSourceName(style);
-  if (source === "original-image" || source === "approved-ai-image" || source === "uploaded-sample" || source === "ai-image") {
-    return false;
+  const sherwin = sherwinFinish(style);
+  if (source === "sherwin-williams" && sherwin === "stain") {
+    return { family: "stain", reason: "Sherwin-Williams stain chip." };
   }
-  if (source === "hex") return true;
-  if (source === "sherwin-williams") {
-    const finish = sherwinFinish(style);
-    if (finish === "stain") return false;
-    if (finish === "paint") return true;
+  if (isAspenCharcoalIdentity(style)) {
+    return { family: "stain", reason: "Aspen Charcoal is a stain." };
   }
-  if (resolveDoorColor(style).usesGrain) return false;
-  return Boolean(exactHex(style.renderHex) || exactHex(style.color));
+  if (resolveDoorColor(style).usesGrain) {
+    return { family: "stain", reason: "Wood species or name (oak, maple, hickory, walnut, and the rest)." };
+  }
+  if (!isPaintedFinish(style)) {
+    if (hasVisibleGrain(style)) {
+      return { family: "stain", reason: `Grain direction is ${style.grainDirection}.` };
+    }
+    if (/\b(?:unfinished|stained|veneer(?:ed)?)\b/i.test(styleText(style))) {
+      return { family: "stain", reason: "Finish or species says unfinished, stained, or veneer." };
+    }
+    if (/\bbirch\b/i.test(style.woodSpecies ?? "") && source === "original-image") {
+      return { family: "stain", reason: "Original image on a birch species." };
+    }
+  }
+  if (isPaintedFinish(style)) {
+    return { family: "paint", reason: "Finish says painted, HDF, or MDF." };
+  }
+  if (source === "hex" || (source === "sherwin-williams" && sherwin === "paint")) {
+    return { family: "paint", reason: source === "hex" ? "Confirmed hex color." : "Sherwin-Williams paint chip." };
+  }
+  if (hasSavedPaintColor(style)) {
+    return { family: "paint", reason: exactHex(style.renderHex) ? "Saved render hex." : exactHex(style.color) ? "Saved catalog hex." : "Named paint color." };
+  }
+  return { family: "unspecified", reason: "No paint color and no stain signal." };
+}
+
+/** True when this door renders as a flat painted color instead of its photograph. */
+export function prefersSolidPaintedFace(style: SolidPaintedShakerInput | null | undefined): boolean {
+  return classifyDoorFinish(style).family === "paint";
+}
+
+/** @deprecated Name from the shaker-only rule. Same decision, any door style. */
+export function prefersSolidPaintedShakerFace(style: SolidPaintedShakerInput | null | undefined): boolean {
+  return prefersSolidPaintedFace(style);
 }
 
 /**
