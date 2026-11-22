@@ -324,6 +324,7 @@ import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
 import { postBuildFixturePrompts, productFromOpeningPick } from "@/lib/autoDesignOpeningFixturePick";
+import { followUpAfterCabinetStyle, initialDesignerPopup, popupsForRestoredDraft, shouldPromptFixturePick } from "@/lib/designerStartPopups";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
@@ -1067,6 +1068,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   // Fresh room layouts require a supply line and door style before cabinet
   // placement begins. Saved plans restore their existing choices instead.
   const [catalogSetupOpen, setCatalogSetupOpen] = useState(false);
+  // Set only when the style popup is the Start-from-scratch opener. Confirming
+  // it then opens the room layout. Skipping or any other opener does not.
+  const chainRoomLayoutAfterStyleRef = useRef(false);
   const [beginnerFirstCabinetGuideOpen, setBeginnerFirstCabinetGuideOpen] = useState(false);
   const [interactive3dOpen, setInteractive3dOpen] = useState(false);
   const [requestedThreeDPreview, setRequestedThreeDPreview] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "3d");
@@ -1563,16 +1567,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   const [autoDesignSinkPrompt, setAutoDesignSinkPrompt] = useState<{ mode: "replace" | "add"; sinkUid: string | null } | null>(null);
   /** The sink the post-build question placed, shown so the setup view can state it. */
   const [autoDesignSinkPicks, setAutoDesignSinkPicks] = useState<AutoDesignSinkProduct[]>([]);
-  /** Rule 1: when the designer opens, a pop-up asks for the faucet and sink first. Required at open, easy to dismiss. */
+  /**
+   * Faucet and sink picker. It does not open when the designer opens. It opens
+   * once after a sink base is placed, unless that base already has a chosen sink.
+   * Auto Design still asks with its own dialogs after a measured build.
+   */
   const [fixturePickOpen, setFixturePickOpen] = useState(false);
   const [fixturePick, setFixturePick] = useState<FixturePick>({ sinkId: null, faucetId: null });
   const fixturePickRef = useRef<FixturePick>({ sinkId: null, faucetId: null });
-  const fixturePickShownRef = useRef(false);
-  useEffect(() => {
-    if (!autoDesignAvailable || fixturePickShownRef.current) return;
-    fixturePickShownRef.current = true;
-    setFixturePickOpen(true);
-  }, [autoDesignAvailable]);
+  const fixturePickTargetUidRef = useRef<string | null>(null);
+  const fixturePickPromptedUidsRef = useRef(new Set<string>());
   /** Sink bases the post-build sink question has already been asked about. */
   const autoDesignSinkPromptedRef = useRef(new Set<string>());
   /** The faucet prompt queued behind the sink question, applied once the sink is settled. */
@@ -3738,11 +3742,31 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setSelectedLayoutPresetId(layoutPresetId);
     setLayoutStarterOpen(false);
     setBeginnerFirstCabinetGuideOpen(false);
-    // Let the room-layout dialog finish its close animation before opening
-    // the next modal. Opening two Radix dialogs in the same event can leave
-    // the responsive flow showing the inline "Pick a distributor" card.
-    window.setTimeout(() => setCatalogSetupOpen(true), 0);
-  }, []);
+    // Start from scratch already asked for the door style. Ask again only when
+    // a layout is applied before any style exists. Opening two Radix dialogs in
+    // the same event can leave the responsive flow showing the inline card.
+    if (styleId == null) {
+      window.setTimeout(() => setCatalogSetupOpen(true), 0);
+    }
+  }, [styleId]);
+  const finishCabinetStylePopup = useCallback((action: "confirm" | "dismiss") => {
+    const followUp = followUpAfterCabinetStyle({
+      action,
+      chainRoomLayout: chainRoomLayoutAfterStyleRef.current,
+    });
+    chainRoomLayoutAfterStyleRef.current = false;
+    setCatalogSetupOpen(false);
+    if (action !== "confirm") return;
+    setPaletteType("base");
+    if (panelDrawerMode) setMobilePanel("catalog");
+    if (followUp === "room-layout") {
+      toast.success("Cabinet style saved. Choose a room layout next.");
+      // Let this dialog finish closing before the next one opens.
+      window.setTimeout(() => setLayoutStarterOpen(true), 0);
+      return;
+    }
+    toast.success("Catalog ready. Choose a cabinet to begin your design.");
+  }, [panelDrawerMode]);
   const activeSceneLayoutPresetId = selectedLayoutPresetId ?? "kitchen_l_standard";
   const hasPersistedRoomLayout = hasDesignedRoomGeometry(room);
   const hasPersistedTwoDPlan = hasPersistedRoomLayout || placed.length > 0 || openings.length > 0 || sinks.length > 0 || island != null || furniture.length > 0 || ponyWalls.length > 0;
@@ -10311,6 +10335,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             toast.info(`${finalCab.masterCode} is a farmhouse / apron-front sink base. Choose its apron-front sink, then its faucet.`);
           }
         }
+        // The faucet and sink list opens once for this base. A saved room is not
+        // replayed through here, and a base that already has a chosen sink is not
+        // asked again. The Sink / Range Top chooser stays available after skip.
+        if (roomType === "kitchen" && shouldPromptFixturePick({
+          cabinet: finalCab,
+          existingSink: existingFixture ?? null,
+          explicitSinkProduct: pelicanSinkDraft != null,
+          promptedUids: fixturePickPromptedUidsRef.current,
+        })) {
+          fixturePickPromptedUidsRef.current.add(finalCab.uid);
+          fixturePickTargetUidRef.current = finalCab.uid;
+          setFixturePickOpen(true);
+        }
       }
       if (isFloatingShelfItem(finalCab)) {
         setFloatingShelfAttrUid(finalCab.uid);
@@ -10349,7 +10386,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         setMobilePanel(null);
       }
     }),
-    [room, activeWall, openings, island, islandPlacementMode, islandFace, catalogFillers, appliancePalette, styleId, catalogDistributorScopeId, distributorNameById, rememberFailedWallFit, setSinks, setSelectedSinkUid, setCountertop, queueSmallGapFillerOpportunity]
+    [room, roomType, activeWall, openings, island, islandPlacementMode, islandFace, catalogFillers, appliancePalette, styleId, catalogDistributorScopeId, distributorNameById, rememberFailedWallFit, setSinks, setSelectedSinkUid, setCountertop, queueSmallGapFillerOpportunity]
 	  );
 	  const placeOnRecommendedWall = useCallback(() => {
 	    const recommendation = alternateWallRecommendation;
@@ -14502,6 +14539,71 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	    },
 	    []
 	  );
+  const saveFixturePick = useCallback((pick: FixturePick) => {
+    fixturePickRef.current = pick;
+    setFixturePick(pick);
+    setFixturePickOpen(false);
+    const targetUid = fixturePickTargetUidRef.current;
+    fixturePickTargetUidRef.current = null;
+    if (!targetUid) {
+      toast.success("Faucet and sink saved. They are offered first once the layout is built.");
+      return;
+    }
+    const base = placedRef.current.find((cabinet) => cabinet.uid === targetUid) ?? null;
+    const sinkProduct = productFromOpeningPick(autoDesignSinkProductsRef.current, pick.sinkId);
+    const faucetProduct = productFromOpeningPick(autoDesignFaucetProductsRef.current, pick.faucetId);
+    const placedSink = placeSinkOnBase({
+      base,
+      room,
+      roomType,
+      product: sinkProduct,
+      faucet: faucetProduct,
+    });
+    if (!placedSink.ok) {
+      toast.error(placedSink.reason);
+      return;
+    }
+    setSinks((current) => [
+      ...current.filter((sink) => !base || !fixtureBelongsToCabinet(sink, base)),
+      placedSink.sink,
+    ]);
+    setSelectedSinkUid(placedSink.sink.uid);
+    setCabAttr(targetUid, {
+      sinkTopType: "sink",
+      sinkTopProductId: sinkProduct?.id ?? null,
+      faucetProductId: faucetProduct?.id ?? null,
+      faucetImageUrl: faucetProduct?.imageUrl ?? null,
+      sinkImageUrl: sinkProduct?.imageUrl ?? null,
+      rangeTopImageUrl: null,
+      rangeTopFinish: null,
+    });
+    const chosen = [sinkProduct, faucetProduct].filter((product): product is NonNullable<typeof product> => product != null);
+    if (chosen.length > 0) {
+      setSelectedSurfaces((previous) => [
+        ...previous,
+        ...chosen
+          .filter((product) => !previous.some((surface) => surface.id === product.id))
+          .map((product) => ({
+            id: product.id,
+            pelicanCode: product.pelicanCode ?? null,
+            slug: ("slug" in product ? product.slug : null) ?? product.name,
+            name: product.name,
+            category: product.category ?? "Sinks & Faucets",
+            subCategory: product.subCategory ?? null,
+            size: product.size ?? null,
+            imageUrl: product.imageUrl ?? null,
+            sellPrice: product.sellPrice ?? null,
+          })),
+      ]);
+    }
+    setCountertop(true);
+    setSinkBaseDialog(null);
+    toast.success("Faucet and sink saved for this sink base. You can change them later.");
+  }, [room, roomType, setCabAttr, setSinks, setSelectedSinkUid]);
+  const dismissFixturePick = useCallback(() => {
+    setFixturePickOpen(false);
+    fixturePickTargetUidRef.current = null;
+  }, []);
 	  const applyAttachedCabinetFillers = useCallback((uid: string, choice: AttachedFillerChoice) => {
 	    const owner = placedRef.current.find((item) => item.uid === uid);
 	    if (!owner || !supportsAttachedFillerChoice(owner)) return;
@@ -15903,6 +16005,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     wallCabHeight,
     annotations,
     ponyWalls,
+    // Sink bases already asked. A version refresh restores this with the draft
+    // so the faucet and sink popup does not open again for those bases.
+    fixturePickPromptedUids: [...fixturePickPromptedUidsRef.current],
   }));
 
   // Every save reads the snapshot of the last committed render. snapshotDraft()
@@ -16014,6 +16119,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     }
     let restoredDesignedKitchen = false;
     let restoredSnapshot = false;
+    let restoredStyleId: number | null = null;
+    let draftPlaced: { uid: string; masterCode?: string | null; description?: string | null; subCategory?: string | null; category?: string | null; placement?: string | null; sinkTopProductId?: number | null; faucetProductId?: number | null }[] = [];
+    let draftSinks: { cabinetUid?: string | null; pelicanProductId?: number | null; pelicanFaucetProductId?: number | null }[] = [];
+    let draftPromptedUids: string[] | null = null;
     try {
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
@@ -16042,6 +16151,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          lastPushedRef.current = null;
           localStorage.setItem(activeDraftKey, draftKey);
           if (d.room) setRoom(d.room);
+          if (Array.isArray(d.placed)) draftPlaced = d.placed;
+          if (Array.isArray(d.sinks)) draftSinks = d.sinks;
+          if (Array.isArray(d.fixturePickPromptedUids)) draftPromptedUids = d.fixturePickPromptedUids.filter((uid: unknown): uid is string => typeof uid === "string");
           if (Array.isArray(d.placed)) {
             // Normalize appliance placement (same fix as loadSavedDesign)
             const normalizedDraft = (d.placed as PlacedCabinet[]).map((p) => {
@@ -16094,6 +16206,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           if (Array.isArray(d.openings)) setOpenings(d.openings);
           setIsland(d.island ?? null);
           setStyleId(d.styleId ?? null);
+          if (typeof d.styleId === "number") restoredStyleId = d.styleId;
           if (typeof d.styleB === "number") setStyleB(d.styleB);
           if (d.activeSlot === "A" || d.activeSlot === "B") setActiveSlot(d.activeSlot);
           if (d.activeSlot === "B") {
@@ -16206,13 +16319,40 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     } catch {
       /* corrupt draft — ignore */
     }
+    if (restoredSnapshot) {
+      // A refresh restores the in-progress draft. Bases already in it are not
+      // new placements: no style popup, no room layout, no faucet/sink popup.
+      const refresh = popupsForRestoredDraft({
+        restoredSnapshot: true,
+        placed: draftPlaced,
+        sinks: draftSinks,
+        promptedUids: draftPromptedUids,
+      });
+      for (const uid of refresh.promptedUids) fixturePickPromptedUidsRef.current.add(uid);
+      if (refresh.suppressOpeningPopups) restoredDesignedKitchen = true;
+    }
     draftRestoredRef.current = true;
     if (latchedFreshStart.fresh && restoredSnapshot) freshSessionRestoredRef.current = true;
     // A fresh door-style preview never resumes the previous draft, and it does
     // not stop on the room-layout wizard. The floor plan opens directly.
     if (!restoredDesignedKitchen && !roomLayoutHandoffAppliedRef.current) {
       // A door-style preview starts on the floor plan instead of the room wizard.
-      if (!latchedFreshStart.fresh) setLayoutStarterOpen(true);
+      // Start from scratch asks for the cabinet style and color first. The room
+      // layout opens after that choice is confirmed, not before, and not if the
+      // shopper skips the style popup.
+      if (!latchedFreshStart.fresh) {
+        const popup = initialDesignerPopup({
+          freshEmptyStart: true,
+          restoredDesign: false,
+          styleChosen: restoredStyleId != null || preloadStyleId != null,
+        });
+        if (popup === "cabinet-style") {
+          chainRoomLayoutAfterStyleRef.current = true;
+          setCatalogSetupOpen(true);
+        } else if (popup === "room-layout") {
+          setLayoutStarterOpen(true);
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verified, draftKey, activeDraftKey, crashDraftKey, crashRestoreRevision, storeScope, verifiedEmail, accountId, draftIdentity, loadDesignId, bundleIdParam, selectCatalogHardware]);
@@ -23914,8 +24054,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          faucetProducts={autoDesignFaucetProducts}
 	          loading={autoDesignSinkCatalogLoading || autoDesignFaucetCatalogLoading}
 	          initial={fixturePick}
-	          onSave={(pick) => { fixturePickRef.current = pick; setFixturePick(pick); setFixturePickOpen(false); toast.success("Faucet and sink saved. They are offered first once the layout is built."); }}
-	          onDismiss={() => setFixturePickOpen(false)}
+	          onSave={saveFixturePick}
+	          onDismiss={dismissFixturePick}
 	        />
 	      )}
 	      {autoDesignAvailable && (
@@ -24403,7 +24543,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	      />
 
 	      {/* Sink Base Top Dialog: opens when a sink base cabinet is placed */}
-	      {sinkBaseDialog && (() => {
+	      {sinkBaseDialog && !(fixturePickOpen && autoDesignAvailable) && (() => {
           const filteredRangeTops = (rangeTopProducts ?? []) as Array<{
           id: number; pelicanCode?: string | null; name: string; subCategory: string | null; size: string | null; imageUrl: string | null; sellPrice: number | null; slug: string; category: string;
         }>;
@@ -26052,7 +26192,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           whole Designer that X, Escape and an outside tap could not dismiss, with
           the page still pointer-events:none behind it. Dismissing is always
           allowed; it can be reopened from the palette. */}
-      <Dialog open={catalogSetupOpen} onOpenChange={setCatalogSetupOpen}>
+      <Dialog open={catalogSetupOpen} onOpenChange={(open) => { if (!open) finishCabinetStylePopup("dismiss"); }}>
         <DialogContent
           data-testid="fresh-room-catalog-setup"
           className="max-h-[min(92vh,900px)] max-w-3xl overflow-y-auto"
@@ -26138,23 +26278,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               type="button"
               className="w-full bg-[#a87f33] text-white hover:bg-[#8f6b29]"
               disabled={catalogDistributorId == null || styleId == null}
-              onClick={() => {
-                setCatalogSetupOpen(false);
-                setPaletteType("base");
-                if (panelDrawerMode) setMobilePanel("catalog");
-                toast.success("Catalog ready. Choose a cabinet to begin your design.");
-              }}
+              onClick={() => finishCabinetStylePopup("confirm")}
             >
               Continue to cabinet catalog
             </Button>
             {/* Never a one-way door: a modal that covers the whole Designer has
                 to be dismissible even before a vendor is chosen. The palette's
-                own setup card reopens it whenever a cabinet is added. */}
+                own setup card reopens it whenever a cabinet is added. Skipping
+                does not open the room layout. */}
             <Button
               type="button"
               variant="ghost"
               data-testid="fresh-room-catalog-setup-skip"
-              onClick={() => { setCatalogSetupOpen(false); }}
+              onClick={() => finishCabinetStylePopup("dismiss")}
             >
               Not now
             </Button>
