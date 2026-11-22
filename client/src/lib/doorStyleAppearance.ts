@@ -83,6 +83,19 @@ export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | u
 }
 
 /**
+ * A style the measured swatch table lists as paint (a non-demoted row, so a real
+ * measurement and not a nearest-chip guess) is an opaque solid. Aura Cream (Ashford,
+ * 330002) is a Shaker whose catalog record carries no "paint" text, so it fell onto
+ * the door-photo path and the photo's own frame edges drew nested lines over the
+ * fronts. Stain-category rows, door-image colors and raised panels are untouched:
+ * those keep their grain / photo.
+ */
+function isMeasuredPaintSwatch(style: DoorStyleAppearanceInput): boolean {
+  const decision = resolveDoorColor(style as never);
+  return decision.layers.swatch?.category === "paint" && decision.appliedCategory === "paint";
+}
+
+/**
  * Profile passed into the 3D Designer. Rail and stile stay on the verified
  * frame measurement; bevel, edge, and raised-panel family come from the mapping.
  *
@@ -110,7 +123,7 @@ export function designerCatalogDoorProfile(
     ...appearance.profile,
     // A slab in a solid colour is flat too, even when nobody wrote "paint" in the
     // finish text (Tom, Nov 14 2026: "most is a slab door with a solid color").
-    paintedFinish: isPaintedFinish(style) || isSolidSlabFace(style as never),
+    paintedFinish: isPaintedFinish(style) || isSolidSlabFace(style as never) || isMeasuredPaintSwatch(style),
     raisedPanelSource: raisedPanel.source,
   };
 }
