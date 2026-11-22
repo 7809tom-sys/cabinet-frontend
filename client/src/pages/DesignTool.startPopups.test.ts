@@ -23,6 +23,17 @@ describe("Start from scratch popup chain", () => {
     expect(source).toContain('window.setTimeout(() => setLayoutStarterOpen(true), 0);');
   });
 
+  it("persists the asked sink bases in the draft and does not reopen them on refresh", () => {
+    expect(source).toContain("fixturePickPromptedUids: [...fixturePickPromptedUidsRef.current]");
+    expect(source).toContain("popupsForRestoredDraft({");
+    const restoreStart = source.indexOf("const refresh = popupsForRestoredDraft({");
+    const restore = source.slice(restoreStart, source.indexOf("draftRestoredRef.current = true;", restoreStart));
+    expect(restore).toContain("popupsForRestoredDraft({");
+    expect(restore).not.toContain("setFixturePickOpen(true)");
+    expect(restore).not.toContain("setCatalogSetupOpen(true)");
+    expect(restore).not.toContain("setLayoutStarterOpen(true)");
+  });
+
   it("asks for a faucet and sink only when a sink base is placed", () => {
     expect(source).toContain("shouldPromptFixturePick({");
     expect(source).toContain('roomType === "kitchen" && shouldPromptFixturePick({');

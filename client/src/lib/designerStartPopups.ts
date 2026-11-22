@@ -50,6 +50,7 @@ export type FixturePickCabinet = {
 export type FixturePickSink = {
   cabinetUid?: string | null;
   pelicanProductId?: number | null;
+  pelicanFaucetProductId?: number | null;
 };
 
 function hasChosenProductId(id: number | null | undefined): boolean {
@@ -78,5 +79,48 @@ export function shouldPromptFixturePick(input: {
   if (hasChosenProductId(input.existingSink?.pelicanProductId)) return false;
   if (hasChosenProductId(cabinet.sinkTopProductId)) return false;
   if (hasChosenProductId(cabinet.faucetProductId)) return false;
+  if (hasChosenProductId(input.existingSink?.pelicanFaucetProductId)) return false;
   return true;
+}
+
+/**
+ * A version refresh reloads the page and restores the local draft. Bases already
+ * in that draft are not new placements, so none of the opening popups run, and
+ * those bases stay in the "already asked" set. A sink base placed after the
+ * restore has a new uid and is still asked once.
+ * Older drafts have no saved set; every sink base in the restored plan is
+ * treated as already asked.
+ */
+export function popupsForRestoredDraft(input: {
+  restoredSnapshot: boolean;
+  placed: readonly FixturePickCabinet[];
+  sinks: readonly FixturePickSink[];
+  promptedUids?: readonly string[] | null;
+}): {
+  openingPopup: null;
+  openFixturePick: false;
+  /** True when style, room layout, and the faucet/sink popup must stay closed. */
+  suppressOpeningPopups: boolean;
+  promptedUids: string[];
+} {
+  const prompted = new Set(
+    (input.promptedUids ?? []).filter((uid): uid is string => typeof uid === "string" && uid.length > 0),
+  );
+  if (!input.restoredSnapshot) {
+    return { openingPopup: null, openFixturePick: false, suppressOpeningPopups: false, promptedUids: [...prompted] };
+  }
+  for (const cabinet of input.placed) {
+    if (cabinet.placement != null && cabinet.placement !== "base") continue;
+    if (!isSinkBaseCabinet(cabinet)) continue;
+    prompted.add(cabinet.uid);
+  }
+  const hasPlan = input.placed.length > 0
+    || input.sinks.length > 0
+    || prompted.size > 0;
+  return {
+    openingPopup: null,
+    openFixturePick: false,
+    suppressOpeningPopups: hasPlan,
+    promptedUids: [...prompted],
+  };
 }

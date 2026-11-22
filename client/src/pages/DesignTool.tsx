@@ -322,7 +322,7 @@ import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
 import { postBuildFixturePrompts, productFromOpeningPick } from "@/lib/autoDesignOpeningFixturePick";
-import { followUpAfterCabinetStyle, initialDesignerPopup, shouldPromptFixturePick } from "@/lib/designerStartPopups";
+import { followUpAfterCabinetStyle, initialDesignerPopup, popupsForRestoredDraft, shouldPromptFixturePick } from "@/lib/designerStartPopups";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
@@ -15990,6 +15990,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     wallCabHeight,
     annotations,
     ponyWalls,
+    // Sink bases already asked. A version refresh restores this with the draft
+    // so the faucet and sink popup does not open again for those bases.
+    fixturePickPromptedUids: [...fixturePickPromptedUidsRef.current],
   }));
 
   // Every save reads the snapshot of the last committed render. snapshotDraft()
@@ -16102,6 +16105,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
     let restoredDesignedKitchen = false;
     let restoredSnapshot = false;
     let restoredStyleId: number | null = null;
+    let draftPlaced: { uid: string; masterCode?: string | null; description?: string | null; subCategory?: string | null; category?: string | null; placement?: string | null; sinkTopProductId?: number | null; faucetProductId?: number | null }[] = [];
+    let draftSinks: { cabinetUid?: string | null; pelicanProductId?: number | null; pelicanFaucetProductId?: number | null }[] = [];
+    let draftPromptedUids: string[] | null = null;
     try {
       // A v1 draft had no store truth. Move it only to owner and delete the
       // ambiguous source, even when the current page is an affiliate store.
@@ -16130,6 +16136,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	          lastPushedRef.current = null;
           localStorage.setItem(activeDraftKey, draftKey);
           if (d.room) setRoom(d.room);
+          if (Array.isArray(d.placed)) draftPlaced = d.placed;
+          if (Array.isArray(d.sinks)) draftSinks = d.sinks;
+          if (Array.isArray(d.fixturePickPromptedUids)) draftPromptedUids = d.fixturePickPromptedUids.filter((uid: unknown): uid is string => typeof uid === "string");
           if (Array.isArray(d.placed)) {
             // Normalize appliance placement (same fix as loadSavedDesign)
             const normalizedDraft = (d.placed as PlacedCabinet[]).map((p) => {
@@ -16294,6 +16303,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
       }
     } catch {
       /* corrupt draft — ignore */
+    }
+    if (restoredSnapshot) {
+      // A refresh restores the in-progress draft. Bases already in it are not
+      // new placements: no style popup, no room layout, no faucet/sink popup.
+      const refresh = popupsForRestoredDraft({
+        restoredSnapshot: true,
+        placed: draftPlaced,
+        sinks: draftSinks,
+        promptedUids: draftPromptedUids,
+      });
+      for (const uid of refresh.promptedUids) fixturePickPromptedUidsRef.current.add(uid);
+      if (refresh.suppressOpeningPopups) restoredDesignedKitchen = true;
     }
     draftRestoredRef.current = true;
     if (latchedFreshStart.fresh && restoredSnapshot) freshSessionRestoredRef.current = true;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   followUpAfterCabinetStyle,
   initialDesignerPopup,
+  popupsForRestoredDraft,
   shouldPromptFixturePick,
 } from "./designerStartPopups";
 
@@ -108,5 +109,76 @@ describe("sink and faucet picker trigger", () => {
       existingSink: { cabinetUid: "sb-1", pelicanProductId: null },
       promptedUids: none,
     })).toBe(true);
+  });
+});
+
+describe("version refresh restores an in-progress draft", () => {
+  const sb1 = { ...sinkBase, uid: "sb-1", sinkTopProductId: 501 };
+  const chosen = { cabinetUid: "sb-1", pelicanProductId: 501 };
+  const sb2 = { ...sinkBase, uid: "sb-2" };
+
+  it("does not open any popup for sink base 1, then opens for a newly placed sink base 2", () => {
+    const restored = popupsForRestoredDraft({
+      restoredSnapshot: true,
+      placed: [sb1],
+      sinks: [chosen],
+      promptedUids: ["sb-1"],
+    });
+    expect(restored.openFixturePick).toBe(false);
+    expect(restored.openingPopup).toBeNull();
+    expect(restored.suppressOpeningPopups).toBe(true);
+
+    const memory = new Set(restored.promptedUids);
+    expect(shouldPromptFixturePick({ cabinet: sb1, existingSink: chosen, promptedUids: memory })).toBe(false);
+    expect(shouldPromptFixturePick({ cabinet: sb2, promptedUids: memory })).toBe(true);
+  });
+
+  it("keeps the once-per-base memory across a second refresh after sink base 2 was asked", () => {
+    const first = popupsForRestoredDraft({
+      restoredSnapshot: true,
+      placed: [sb1],
+      sinks: [chosen],
+      promptedUids: ["sb-1"],
+    });
+    const afterSecondBase = new Set(first.promptedUids);
+    afterSecondBase.add("sb-2");
+    const refreshed = popupsForRestoredDraft({
+      restoredSnapshot: true,
+      placed: [sb1, sb2],
+      sinks: [chosen],
+      promptedUids: [...afterSecondBase],
+    });
+    const memory = new Set(refreshed.promptedUids);
+    expect(refreshed.openFixturePick).toBe(false);
+    expect(refreshed.suppressOpeningPopups).toBe(true);
+    expect(shouldPromptFixturePick({ cabinet: sb1, existingSink: chosen, promptedUids: memory })).toBe(false);
+    expect(shouldPromptFixturePick({ cabinet: sb2, promptedUids: memory })).toBe(false);
+  });
+
+  it("treats sink bases already in an older draft as asked, even without the saved list", () => {
+    const restored = popupsForRestoredDraft({
+      restoredSnapshot: true,
+      placed: [sb1],
+      sinks: [chosen],
+      promptedUids: null,
+    });
+    expect(restored.openFixturePick).toBe(false);
+    expect(restored.suppressOpeningPopups).toBe(true);
+    expect(restored.promptedUids).toContain("sb-1");
+    expect(shouldPromptFixturePick({
+      cabinet: sb2,
+      promptedUids: new Set(restored.promptedUids),
+    })).toBe(true);
+  });
+
+  it("does not suppress the style popup when the restored draft has no plan", () => {
+    const restored = popupsForRestoredDraft({
+      restoredSnapshot: true,
+      placed: [],
+      sinks: [],
+      promptedUids: [],
+    });
+    expect(restored.suppressOpeningPopups).toBe(false);
+    expect(restored.promptedUids).toEqual([]);
   });
 });
