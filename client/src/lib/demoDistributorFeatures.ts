@@ -7,10 +7,13 @@
 // Sources:
 //   customers / partners — public routes in client/src/App.tsx and the pages
 //                          they render
-//   back office          — the 29 DISTRIBUTOR-ACCESSIBLE items in the admin
-//                          permission matrix (distributor-scope
-//                          ADMIN_PERMISSION_MATRIX.md); `matrix` holds the row
-//                          numbers. Internal-only admin tools are left off.
+//   back office          — DISTRIBUTOR-ACCESSIBLE items in the admin permission
+//                          matrix (distributor-scope ADMIN_PERMISSION_MATRIX.md)
+//                          that a single distributor can use today; `matrix`
+//                          holds the row numbers. Left off: internal-only tools,
+//                          rows the matrix lists as still needing an own-scoped
+//                          endpoint (10, 31, 35, 42, 49, 57, 58, 71) and the six
+//                          rows marked for Tom's call (7, 9, 14, 77, 88, 89).
 // Copy stays plain: no supplier names, no stats, no urgency.
 
 export type DemoFeatureGroup = "customers" | "partners" | "backOffice";
@@ -74,33 +77,19 @@ export const DEMO_FEATURES: DemoFeature[] = [
 
   // ── For your team (back office) — permission matrix DISTRIBUTOR-ACCESSIBLE rows ──
   { id: "back-office", group: "backOffice", spotlight: true, name: "Back office dashboard", text: "Orders, leads, affiliates, labor and customer notes on one screen.", demoHref: "/distributor-preview/dashboard", mirrors: [`${P}VendorPortal.tsx`, `${P}DistributorPortal.tsx`] },
-  { id: "incoming-orders", group: "backOffice", name: "Incoming orders", text: "See and fulfill orders for your lines, and confirm stock and invoice.", demoHref: "/distributor-preview/dashboard#orders", mirrors: [`${A}IncomingOrdersAdmin.tsx`], matrix: [1] },
-  { id: "order-detail", group: "backOffice", name: "Order detail", text: "The full detail for each order you fulfill.", demoHref: "/distributor-preview/dashboard#orders", mirrors: [`${P}AdminOrderPage.tsx`], matrix: [90] },
+  { id: "incoming-orders", group: "backOffice", name: "Incoming orders", text: "See and fulfill orders for your lines, and confirm stock and invoice.", demoHref: "/distributor-preview/dashboard?tab=orders", mirrors: [`${A}IncomingOrdersAdmin.tsx`], matrix: [1] },
+  { id: "order-detail", group: "backOffice", name: "Order detail", text: "The full detail for each order you fulfill.", demoHref: "/distributor-preview/dashboard?tab=orders", mirrors: [`${P}AdminOrderPage.tsx`], matrix: [90] },
   { id: "sales-forecast", group: "backOffice", name: "Sales forecast", text: "Demand from customers' saved designs, so you can stock ahead.", mirrors: [`${A}SalesForecastAdmin.tsx`], matrix: [3] },
   { id: "sample-orders", group: "backOffice", name: "Sample orders", text: "Send sample doors to customers who ask for them.", mirrors: [`${A}SupplierSamplesAdmin.tsx`], matrix: [4] },
   { id: "inventory", group: "backOffice", name: "Inventory", text: "Keep on-hand stock for your lines up to date.", mirrors: [`${A}VendorInventoryAdmin.tsx`], matrix: [6] },
-  { id: "design-leads", group: "backOffice", name: "Design leads", text: "Leads from the designer on your store come to you.", demoHref: "/distributor-preview/dashboard#leads", mirrors: [`${A}DesignLeadsAdmin.tsx`], matrix: [10] },
-  { id: "crm", group: "backOffice", name: "Sales CRM", text: "A pipeline to follow up with your customers.", demoHref: "/distributor-preview/dashboard#crm", mirrors: ["client/src/components/crm/CrmBoard.tsx"], matrix: [7] },
-  { id: "consultations", group: "backOffice", name: "Consultations", text: "Customer requests for design help.", mirrors: [`${A}ConsultationsAdmin.tsx`], matrix: [9] },
-  { id: "customers", group: "backOffice", name: "Customers", text: "The customers who signed up on your store.", mirrors: [`${A}CustomersAdmin.tsx`], matrix: [14] },
-  { id: "line-download", group: "backOffice", name: "Cabinet line download", text: "Download your line exactly as it is listed.", mirrors: [`${A}CabinetLineDownload.tsx`], matrix: [31] },
   { id: "featured-styles", group: "backOffice", name: "Featured door styles", text: "Choose which of your door styles to feature.", mirrors: [`${A}FeaturedStylesAdmin.tsx`], matrix: [32] },
-  { id: "door-blueprint", group: "backOffice", name: "Door measurements", text: "Send the exact door dimensions for your styles.", mirrors: [`${A}DoorBoxBlueprintAdmin.tsx`], matrix: [35] },
   { id: "product-images", group: "backOffice", name: "Product photos", text: "Add and replace photos of your products.", mirrors: [`${A}SkuImageManager.tsx`], matrix: [36] },
   { id: "fulfillment", group: "backOffice", name: "Fulfillment settings", text: "Order email, warehouse, pickup and lead time.", mirrors: [`${A}DistributorFulfillmentEditor.tsx`], matrix: [40] },
-  { id: "glass-policy", group: "backOffice", name: "Glass door policy", text: "Say whether glass doors ship with glass.", mirrors: ["client/src/lib/cartGlassPolicy.ts", "client/src/components/GlassPolicyBadge.tsx"], matrix: [42] },
   { id: "catalog-import", group: "backOffice", name: "Price list upload", text: "Upload your price list to update your catalog.", mirrors: [`${A}CatalogImporterTab.tsx`], matrix: [43, 97] },
   { id: "product-details", group: "backOffice", name: "Complete product details", text: "Fill in missing details for products not yet matched.", mirrors: [`${A}PendingDistributorConnectionsAdmin.tsx`], matrix: [44] },
   { id: "onboarding", group: "backOffice", name: "Go-live checklist", text: "Track the steps to launch your store.", mirrors: [`${A}VendorOnboardingAdmin.tsx`], matrix: [45] },
-  { id: "package-data", group: "backOffice", name: "Carton sizes and weights", text: "Package data that shipping quotes depend on.", mirrors: [`${A}BulkDimensionsAdmin.tsx`], matrix: [49] },
   { id: "package-builder", group: "backOffice", name: "Build kitchen packages", text: "Put together packages from your own line.", mirrors: [`${A}BundleDealsAdmin.tsx`], matrix: [51] },
-  { id: "unpriced", group: "backOffice", name: "Unpriced items", text: "Find items in your line that still need a price.", mirrors: [`${A}UnpricedCabinetsAdmin.tsx`], matrix: [57] },
-  { id: "price-flags", group: "backOffice", name: "Designer price flags", text: "See which codes customers picked that had no price.", mirrors: [`${A}DesignerPriceFlagsAdmin.tsx`], matrix: [58] },
-  { id: "designer-coverage", group: "backOffice", name: "Designer coverage", text: "See which of your cabinets can be placed in the 3D designer.", mirrors: [`${A}DesignerCoverageAdmin.tsx`], matrix: [71] },
   { id: "analytics", group: "backOffice", name: "Store analytics", text: "Visits and sales on your store.", mirrors: [`${A}AnalyticsAdmin.tsx`], matrix: [85] },
-  { id: "legal-pages", group: "backOffice", name: "Warranty and policy pages", text: "Your warranty and policy pages on your store.", mirrors: [`${A}LegalPagesOperationsAdmin.tsx`], matrix: [77] },
-  { id: "literature", group: "backOffice", name: "Partner brochures", text: "Brochures your partners can hand to customers.", mirrors: [`${A}AffiliateLiteratureAdmin.tsx`], matrix: [88] },
-  { id: "resources", group: "backOffice", name: "Partner resources", text: "Guides and files for your partners.", mirrors: [`${A}AffiliateResourcesAdmin.tsx`], matrix: [89] },
 ];
 
 export function featuresInGroup(group: DemoFeatureGroup): DemoFeature[] {
@@ -132,7 +121,7 @@ export const FEATURE_SPOTLIGHTS = {
       "Labor: their installation and labor estimates.",
       "Orders: everything they ordered through your store.",
     ],
-    cta: { label: "See labor in the back office", href: "/distributor-preview/dashboard#labor" },
+    cta: { label: "See labor in the back office", href: "/distributor-preview/dashboard?tab=contractors" },
   },
   affiliates: {
     title: "Affiliate program",
@@ -143,7 +132,7 @@ export const FEATURE_SPOTLIGHTS = {
       "A marketing hub and installation tools.",
       "They can add their own contractors.",
     ],
-    cta: { label: "See affiliates in the back office", href: "/distributor-preview/dashboard#affiliates" },
+    cta: { label: "See affiliates in the back office", href: "/distributor-preview/dashboard?tab=affiliates" },
   },
 } as const;
 
