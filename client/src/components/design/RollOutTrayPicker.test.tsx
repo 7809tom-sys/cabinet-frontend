@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RollOutTrayPicker } from "./RollOutTrayPicker";
 
@@ -48,6 +48,7 @@ const base18 = {
 };
 
 afterEach(() => {
+  cleanup();
   useQuery.mockReset();
 });
 
@@ -107,6 +108,7 @@ describe("RollOutTrayPicker", () => {
     });
     const b21 = { ...base18, uid: "aura-b21", masterCode: "B-21", width: 21, nominalWidth: 21 } as never;
 
+    const onAddSinkAndFaucet = vi.fn();
     render(
       <RollOutTrayPicker
         cabinet={b21}
@@ -115,18 +117,26 @@ describe("RollOutTrayPicker", () => {
         pricingTier="contractor"
         qty={1}
         onSetQty={vi.fn()}
+        onAddSinkAndFaucet={onAddSinkAndFaucet}
       />,
     );
 
     expect(screen.getByText(/UNIV-ROT21/)).toBeTruthy();
     expect(screen.getByText(/\$46\.27/)).toBeTruthy();
+    expect(screen.getByTestId("add-rollout-tray")).toBeTruthy();
+    expect(screen.getByTestId("add-sink-and-faucet")).toBeTruthy();
+    expect(screen.getByTestId("rollout-qty-1")).toBeTruthy();
+    expect(screen.getByTestId("rollout-qty-3")).toBeTruthy();
+    expect(screen.queryByTestId("rollout-qty-4")).toBeNull();
+    fireEvent.click(screen.getByTestId("add-sink-and-faucet"));
+    expect(onAddSinkAndFaucet).toHaveBeenCalledWith("aura-b21");
     expect(useQuery).toHaveBeenCalledWith(
       { styleId: 330002, width: 21, distributorId: 210001 },
       expect.objectContaining({ enabled: true }),
     );
   });
 
-	it("renders no controls below 18 inches, above 36 inches, or for an appliance tower", () => {
+	it("renders no controls below 21 inches or for an appliance tower, and offers add-ons on a wider straight base", () => {
     useQuery.mockReturnValue({ data: tray, isLoading: false });
     const narrow = { ...base18, uid: "base-15", masterCode: "B15", width: 15, nominalWidth: 15 } as never;
     const { rerender, container } = render(<RollOutTrayPicker cabinet={narrow} designStyleId={4} distributorId={9} pricingTier="homeowner" qty={0} onSetQty={vi.fn()} />);
@@ -138,7 +148,8 @@ describe("RollOutTrayPicker", () => {
 
 	  const wideBase = { ...base18, uid: "base-39", masterCode: "B39", width: 39, nominalWidth: 39 } as never;
 	  rerender(<RollOutTrayPicker cabinet={wideBase} designStyleId={4} distributorId={9} pricingTier="homeowner" qty={0} onSetQty={vi.fn()} />);
-	  expect(container.textContent).toBe("");
+	  expect(container.querySelector('[data-testid="add-rollout-tray"]')).toBeTruthy();
+	  expect(container.querySelector('[data-testid="add-sink-and-faucet"]')).toBeNull();
 
 	  const widePantry = { ...base18, uid: "pantry-39", masterCode: "P3996", placement: "tall", subCategory: "Pantry / Utility", width: 39, nominalWidth: 39, numberOfDoors: 4 } as never;
 	  rerender(<RollOutTrayPicker cabinet={widePantry} designStyleId={4} distributorId={9} pricingTier="homeowner" qty={0} onSetQty={vi.fn()} />);

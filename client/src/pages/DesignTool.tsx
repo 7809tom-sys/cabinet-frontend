@@ -6597,7 +6597,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       numberOfDoors: p.numberOfDoors,
       // Placed items don't always carry the catalog corner flag; derive it from
       // the code/description so corners are reliably excluded.
-      isCornerCabinet: isCornerCabinet(p.masterCode, p.description),
+      isCornerCabinet: isCornerCabinet(p.masterCode, p.description, p.cornerType),
+      cornerType: p.cornerType ?? null,
+      description: p.description,
       nominalWidth: p.nominalWidth ?? null,
       width: p.width,
       effectiveStyleId: pricingStyleIdFor(p) ?? designStyleId,
@@ -14649,7 +14651,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     }
     setCountertop(true);
     setSinkBaseDialog(null);
-    toast.success("Faucet and sink saved for this sink base. You can change them later.");
+    toast.success(base && isSinkBaseCabinet(base)
+      ? "Faucet and sink saved for this sink base. You can change them later."
+      : "Faucet and sink saved for this cabinet. You can change them later.");
   }, [room, roomType, setCabAttr, setSinks, setSelectedSinkUid]);
   const dismissFixturePick = useCallback(() => {
     setFixturePickOpen(false);
@@ -15104,6 +15108,19 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 
 	  // Set 0–5 roll-out trays inside the exact eligible cabinet. The matching
 	  // same-line RS shelf is resolved by the picker and flows into BOM/cart lines.
+  const openSinkAndFaucetPicker = useCallback((uid: string) => {
+    const cabinet = placedRef.current.find((item) => item.uid === uid) ?? null;
+    fixturePickPromptedUidsRef.current.add(uid);
+    fixturePickTargetUidRef.current = uid;
+    const next = {
+      sinkId: typeof cabinet?.sinkTopProductId === "number" ? cabinet.sinkTopProductId : null,
+      faucetId: typeof cabinet?.faucetProductId === "number" ? cabinet.faucetProductId : null,
+    };
+    fixturePickRef.current = next;
+    setFixturePick(next);
+    setFixturePickOpen(true);
+    setAttrOpen(false);
+  }, []);
 	  const setRolloutQtyFor = useCallback((uid: string, qty: number) => {
 	    const normalizedQty = normalizedRollOutTrayQty(qty);
 	    const cabinet = placed.find((item) => item.uid === uid);
@@ -20738,6 +20755,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                  pricingTier={DESIGN_TIER_TO_SHARED[tier]}
 	                  qty={selectedCab.rolloutQty ?? 0}
                   onSetQty={(q) => setRolloutQtyFor(selectedCab.uid, q)}
+                  onAddSinkAndFaucet={openSinkAndFaucetPicker}
                 />
               </div>
             </div>
@@ -24472,6 +24490,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	        distributorId={lockedDistributorId}
 	        pricingTier={DESIGN_TIER_TO_SHARED[tier]}
 	        onSetRolloutQty={setRolloutQtyFor}
+	        onAddSinkAndFaucet={openSinkAndFaucetPicker}
         onSetGlassDoor={setGlassDoorFor}
         onSetDecorativeEnd={(uid, treatment) => setCabAttr(uid, { decorativeEnd: treatment })}
         glassDoorAvailable={glassDoorAvailableForAttr}

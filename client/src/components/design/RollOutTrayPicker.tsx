@@ -7,6 +7,8 @@ import { trpc } from "@/lib/trpc";
 import { resolveTierPrice, type PricingTier } from "@shared/pricingTier";
 import { PlacedCabinet, effectiveStyleId, isCornerCabinet } from "@/lib/design";
 import { isRollOutEligible, MAX_ROLLOUT_TRAYS_PER_CABINET, normalizedRollOutTrayQty, targetWidth } from "@/lib/rollOutTrayMatch";
+import { isBaseCabinetAttributeAddOnEligible, isDrawerBaseCabinet } from "@/lib/baseCabinetAttributeAddOns";
+import { BaseCabinetAddOnButtons, attributeAddOnTarget } from "@/components/design/BaseCabinetAddOnButtons";
 
 export interface RollOutTrayPickerProps {
   cabinet: PlacedCabinet;
@@ -20,6 +22,8 @@ export interface RollOutTrayPickerProps {
   qty: number;
 	  /** Persist a new quantity from 0 (remove) through 5 onto the cabinet. */
   onSetQty: (qty: number) => void;
+  /** Opens the existing sink and faucet picker. Used for 21"+ straight bases. */
+  onAddSinkAndFaucet?: (uid: string) => void;
 }
 
 /**
@@ -36,18 +40,21 @@ export function RollOutTrayPicker({
 	  pricingTier,
   qty,
   onSetQty,
+  onAddSinkAndFaucet,
 }: RollOutTrayPickerProps) {
   const { t } = useLanguage();
 
   // PlacedCabinet doesn't carry the catalog corner flag; derive it so corner
   // bases (lazy susans, blind corners) are reliably excluded.
+  const addOnTarget = attributeAddOnTarget(cabinet);
+  const attributeAddOn = isBaseCabinetAttributeAddOnEligible(addOnTarget);
   const eligible = isRollOutEligible({
     placement: cabinet.placement,
     category: cabinet.category,
     subCategory: cabinet.subCategory,
     masterCode: cabinet.masterCode,
     numberOfDoors: cabinet.numberOfDoors,
-    isCornerCabinet: isCornerCabinet(cabinet.masterCode, cabinet.description),
+    isCornerCabinet: isCornerCabinet(cabinet.masterCode, cabinet.description, cabinet.cornerType),
     nominalWidth: cabinet.nominalWidth ?? null,
     width: cabinet.width,
   });
@@ -56,12 +63,30 @@ export function RollOutTrayPicker({
 
 	const trayQuery = trpc.design.resolveRollOutTray.useQuery(
 	  { styleId: sid ?? 0, width, distributorId: distributorId ?? undefined },
-	  { enabled: eligible && sid != null && width > 0, retry: 2, staleTime: 0, refetchOnMount: "always" },
+	  { enabled: (eligible || attributeAddOn) && sid != null && width > 0, retry: 2, staleTime: 0, refetchOnMount: "always" },
 	);
 
   const tray = trayQuery.data ?? null;
 
 	  const safeQty = useMemo(() => normalizedRollOutTrayQty(qty), [qty]);
+
+  // Drawer bases never get a tray control. 21"+ straight bases get the
+  // attributes buttons, including while the line's SKU is still loading.
+  if (isDrawerBaseCabinet(addOnTarget)) return null;
+  if (attributeAddOn) {
+    return (
+      <BaseCabinetAddOnButtons
+        cabinet={cabinet}
+        qty={qty}
+        tray={tray}
+        checking={sid != null && (trayQuery.isLoading || (trayQuery.isFetching && trayQuery.data == null))}
+        missingLine={sid == null}
+        pricingTier={pricingTier}
+        onSetQty={onSetQty}
+        onAddSinkAndFaucet={onAddSinkAndFaucet}
+      />
+    );
+  }
 
   // Not an eligible cabinet → render nothing (no section at all).
   if (!eligible || sid == null || width <= 0) return null;

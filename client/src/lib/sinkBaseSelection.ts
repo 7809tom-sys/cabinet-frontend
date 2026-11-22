@@ -19,6 +19,7 @@
  * dialog, the seeded default, and the tests all take exactly one path.
  */
 import {
+  isCornerCabinet,
   isFarmSinkBasePaletteItem,
   isSinkBaseCabinet,
   makeSinkForCabinet,
@@ -41,6 +42,7 @@ import {
 } from "./bathroomVanityCatalog";
 import { isAutoFilledFaucet, withDefaultFaucet } from "./autoDesignFaucet";
 import { DEFAULT_VANITY_BASIN_SKU, resolveSinkFinish } from "./bathroomSinkFinish";
+import { isBaseCabinetAttributeAddOnEligible } from "./baseCabinetAttributeAddOns";
 
 export type SinkFamily = "vanity" | "farmhouse" | "standard";
 export type FaucetFamily = "vanity" | "kitchen";
@@ -229,17 +231,36 @@ export function placeSinkOnBase(input: {
 }): SinkPlacementResult {
   const { base, room, product, faucet } = input;
   if (!base || base.placement !== "base") return { ok: false, reason: "Select a sink base first." };
-  if (!isSinkBaseCabinet(base)) return { ok: false, reason: `${base.masterCode} is not a sink base.` };
+  const sinkBase = isSinkBaseCabinet(base);
+  const attributeAddOnBase = isBaseCabinetAttributeAddOnEligible({
+    placement: base.placement,
+    category: base.category,
+    subCategory: base.subCategory,
+    masterCode: base.masterCode,
+    description: base.description,
+    isCornerCabinet: isCornerCabinet(base.masterCode, base.description, base.cornerType),
+    cornerType: base.cornerType,
+    nominalWidth: base.nominalWidth ?? null,
+    width: typeof base.width === "number" ? base.width : Number(base.width),
+    height: typeof base.height === "number" ? base.height : Number(base.height),
+  });
+  if (!sinkBase && !attributeAddOnBase) return { ok: false, reason: `${base.masterCode} is not a sink base.` };
   const family = sinkFamilyForBase(base, input.roomType);
 
   const profile = product ? verifiedPelicanSinkProfile(product.pelicanCode) : null;
+  const apronProduct = Boolean(profile && (profile.sinkType === "farmhouse" || profile.apronFront === true));
   if (product && !profile) {
     return { ok: false, reason: `${product.name} is not a source-verified Pelican sink, so it cannot be measured and drawn.` };
   }
   if (profile && !verifiedPelicanSinkFitsCabinet(profile, sinkBaseOpeningWidthIn(base))) {
     return { ok: false, reason: `${profile.name} requires a sink base at least ${profile.minimumCabinetWidthIn}" wide.` };
   }
-  if (product && !sinkRowFitsBase(product, base, input.roomType)) {
+  // A straight base opened from attributes can take the same verified sink the
+  // picker already offers. An apron-front choice keeps the farmhouse placement
+  // (apron past the face, no countertop over that front). A real sink base
+  // keeps its existing family filter.
+  const allowApronOnStraightBase = attributeAddOnBase && !sinkBase && apronProduct;
+  if (product && !allowApronOnStraightBase && !sinkRowFitsBase(product, base, input.roomType)) {
     return {
       ok: false,
       reason: family === "farmhouse"
@@ -249,7 +270,7 @@ export function placeSinkOnBase(input: {
   }
 
   const measured = makeSinkForCabinet(
-    (family === "farmhouse" ? "farmhouse" : "single") as SinkType,
+    ((family === "farmhouse" || allowApronOnStraightBase) ? "farmhouse" : "single") as SinkType,
     base,
     room,
     profile ? { width: profile.exteriorWidthIn, depth: profile.exteriorDepthIn } : defaultSinkDimensions(family),
