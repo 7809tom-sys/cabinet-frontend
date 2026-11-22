@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useSearch, useLocation } from "wouter";
 import { useCart, type CartItem } from "@/contexts/CartContext";
+import { filterDesignDistributors, filterDesignDoorStyles, type DesignCatalogFilter } from "@/lib/designCatalogFilter";
 import {
   LayoutGrid, Eye, Trash2, RotateCw, Search, Plus,
   DollarSign, PanelTop, Columns3, Ruler, Square, DoorOpen,
@@ -660,13 +661,13 @@ export function designerRoomLabel(roomType: RoomType): string {
   return "Kitchen";
 }
 
-export default function DesignTool(props: { affiliateSlug?: string }) {
+export default function DesignTool(props: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter }) {
   const search = useSearch();
   const scope = resolvedDesignToolStoreScope(props.affiliateSlug, search);
   return <ScopedDesignTool key={scope} {...props} />;
 }
 
-function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?: string }) {
+function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter }) {
   const { t, lang } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const signedInRole = (user as { role?: string | null } | null)?.role ?? null;
@@ -3611,7 +3612,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 
   // Data — door-style-first: members pick a door style; the supply line behind
   // it is resolved server-side and never shown.
-  const { data: doorStylesRaw, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
+  const { data: doorStylesQueried, isError: doorStylesError } = trpc.doorStyles.list.useQuery();
+  // Optional catalogFilter (demo distributor designer only): unchanged when omitted.
+  const doorStylesRaw = useMemo(() => filterDesignDoorStyles(doorStylesQueried, catalogFilter), [doorStylesQueried, catalogFilter]);
   const selectedStyleMissingFromPicker =
     styleId != null && !((doorStylesRaw ?? []) as Array<{ id: number }>).some((style) => style.id === styleId);
   const { data: persistedSelectedStyle, isFetching: persistedStyleFetching } = trpc.doorStyles.byId.useQuery(
@@ -3687,7 +3690,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
   );
   // Neutral, customer-safe distributor labels (white-label safe) used to group the
   // door-style picker by supply line. Never carries the hidden supplier brand.
-  const { data: distributorLabels } = trpc.distributors.list.useQuery();
+  const { data: distributorLabelsQueried } = trpc.distributors.list.useQuery();
+  const distributorLabels = useMemo(
+    () => filterDesignDistributors(distributorLabelsQueried, doorStylesRaw, catalogFilter),
+    [distributorLabelsQueried, doorStylesRaw, catalogFilter],
+  );
   const distributorNameById = useMemo(
     () => new Map((distributorLabels ?? []).map((distributor) => [distributor.id, distributor.name] as const)),
     [distributorLabels],
