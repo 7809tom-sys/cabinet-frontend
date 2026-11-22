@@ -14229,11 +14229,18 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	        faceStart: { x: start.x / INCH, y: -start.y / INCH },
 	        faceEnd: { x: end.x / INCH, y: -end.y / INCH },
 	      }, room);
-	      const wall = new THREE.Mesh(threeDMiteredRoomWallGeometry(outline.corners, sideWallHeight, wallHoles), wallMaterial.clone());
+	      const freestandingAddedWall = Boolean(addedOntoRectangle && customWall);
+	      const wallSurface = wallMaterial.clone();
+	      if (freestandingAddedWall && showRoomContext) {
+	        wallSurface.opacity = THREE_D_WALL_OPACITY;
+	        wallSurface.depthWrite = true;
+	      }
+	      const wall = new THREE.Mesh(threeDMiteredRoomWallGeometry(outline.corners, sideWallHeight, wallHoles), wallSurface);
 	      wall.userData = {
 	        roomWall: true,
 	        physicalWallSide: side,
 	        customWallId: customWall?.id ?? null,
+	        freestandingAddedWall,
 	        wallHeightIn: typeof customWallHeight === "number" ? customWallHeight : wallHeights[side],
 	        wallThicknessIn: ROOM_WALL_THICKNESS_IN,
 	        miteredStart: outline.miteredStart,
@@ -14446,7 +14453,15 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
 	      if (cutawayRoomWalls && showRoomContext && !showSolidFrontWalls) {
 	        const hiddenSides = new Set<string>();
 	        for (const { mesh, frame: wallFrame } of dollhouseFrames) {
-	          const hide = threeDDollhouseWallHidesFromCamera(wallFrame, camera.position);
+	          const freestanding = mesh.userData.freestandingAddedWall === true;
+	          const hide = freestanding
+	            ? threeDWallObscuresOrbitTarget(
+	              { x: wallFrame.startX, y: -wallFrame.startZ },
+	              { x: wallFrame.endX, y: -wallFrame.endZ },
+	              camera.position,
+	              controls.target,
+	            )
+	            : threeDDollhouseWallHidesFromCamera(wallFrame, camera.position);
 	          mesh.visible = !hide;
 	          if (hide && wallFrame.side) hiddenSides.add(wallFrame.side);
 	        }
