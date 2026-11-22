@@ -286,7 +286,7 @@ import { applyExposedSidePanels, exposedSidePanelNeeds, syncExposedSidePanelsFor
 import { resolveOverRangeMicrowavePlacement } from "./designToolMicrowavePlacement";
 import { resolveRangeHoodPlacement } from "./designToolRangeHoodPlacement";
 import { overRangeBridgeLabel } from "@/lib/overRangeCompanion";
-import { rangeCompanionDetail, rangeCompanionPlacement, rangeCompanionProposal, rangeCompanionSummary, repairLegacyWscMicrowaveBridges, type RangeCompanionProposal } from "@/lib/rangeCompanion";
+import { placeChosenRangeCompanions, rangeCompanionDetail, rangeCompanionProposal, rangeCompanionSummary, repairLegacyWscMicrowaveBridges, type RangeCompanionProposal } from "@/lib/rangeCompanion";
 import { APPLIANCE_FINISH_CHOICES, applyApplianceFinish, type ApplianceFinish } from "@/lib/applianceFinish";
 import { isWscSpiceCabinet, wsc30UpperChoices, wsc30UpperPlacement } from "@/lib/spiceStack";
 import { commitThreeDCabinetCandidate, countertopMountedCabinet, threeDSeatedWallMoveTarget, threeDPlanMoveDelta } from "./designTool3DMovement";
@@ -10472,40 +10472,37 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp }: { affiliateSlug?
 	      return;
 	    }
 
-	    const microwave = existingMicrowave ?? rangeCompanionPlacement(
-	      proposal.microwave,
-	      proposal.microwaveSpot,
-	      proposal.microwaveMountBottom,
-	      makeUid(),
-	      null,
-	    );
-	    const bridge = rangeCompanionPlacement(
-	      approvedBridge,
-	      proposal.bridgeSpot,
-	      proposal.bridgeMountBottom,
-	      makeUid(),
-	      styleIdRef.current ?? null,
-	    );
-	    const additions = existingMicrowave ? [bridge] : [microwave, bridge];
-	    const resolution = appendCollisionFreePlacements(placedRef.current, additions, room);
-	    if (resolution.rejected.length > 0 || !resolution.placed.some((item) => item.uid === bridge.uid)) {
+	    // A wall with no neighbouring uppers already received the 12" bridge that
+	    // the 30" wall-height stand-in selects. The approved height replaces that
+	    // box instead of being rejected for overlapping it.
+	    const seated = placeChosenRangeCompanions({
+	      placed: placedRef.current,
+	      range,
+	      room,
+	      proposal,
+	      makeUid,
+	      styleId: styleIdRef.current ?? null,
+	    });
+	    if (!seated.ok) {
 	      setRangeCompanionPrompt(null);
 	      toast.error("The bridge and microwave need a clear upper-wall span above this range. Existing cabinets were left unchanged.");
 	      return;
 	    }
-	    const committed = normalizeRefrigeratorBayUppers(resolution.placed, room);
+	    const committed = normalizeRefrigeratorBayUppers(seated.placed, room);
 	    placedRef.current = committed;
 	    setPlaced(() => committed);
-	    setSelectedUid(bridge.uid);
+	    setSelectedUid(seated.bridge.uid);
 	    setPlacementWarning(null);
 	    setFailedWallFit(null);
 	    setRangeCompanionPrompt(null);
 	    // The person confirmed this answer, so it is saved with the layout.
 	    setOverRangeAnswer("microwave-bridge");
 	    justPlacedRef.current = true;
-	    toast.success(existingMicrowave
-	      ? `${bridge.masterCode} was added above the existing ${microwave.masterCode}.`
-	      : `${bridge.masterCode} and ${microwave.masterCode} were centered above ${range.masterCode}.`);
+	    toast.success(seated.replacedBridgeCode
+	      ? `${seated.bridge.masterCode} replaced ${seated.replacedBridgeCode} above ${seated.microwave.masterCode}.`
+	      : existingMicrowave
+	      ? `${seated.bridge.masterCode} was added above the existing ${seated.microwave.masterCode}.`
+	      : `${seated.bridge.masterCode} and ${seated.microwave.masterCode} were centered above ${range.masterCode}.`);
 	  }, [appliancePalette, rangeCompanionPrompt, room, setOverRangeAnswer]);
 	  // Auto-Design leaves a range with nothing above it and asks what belongs there.
 	  // The answer is saved with the layout, so a reload re-uses it.

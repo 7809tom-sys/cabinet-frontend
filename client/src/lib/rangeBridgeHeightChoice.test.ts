@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  appendCollisionFreePlacements,
   microwaveBridgeHeightForNeighbor,
   normalizeStandardWallMounts,
   type DesignCabinet,
@@ -8,6 +9,7 @@ import {
 } from "./design";
 import {
   RANGE_BRIDGE_HEIGHTS_IN,
+  placeChosenRangeCompanions,
   preselectedRangeBridgeHeight,
   rangeBridgeHeightChoices,
   rangeCompanionDetail,
@@ -120,6 +122,82 @@ describe("microwave bridge height choice (Tom, Nov 8)", () => {
     });
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ masterCode: "W3015", qty: 1, unitPrice: 120 });
+  });
+
+  it("places the explicit 24 inch catalog bridge on a wall with no neighboring uppers", () => {
+    // No upper stands beside the range, so the wall-height setting (30) is the
+    // stand-in neighbour and the first pass hangs W3012. The person then picks
+    // 24". That pick is a real W3024, and it replaces the short box. The
+    // microwave stays underneath, ending at the 72" bridge datum.
+    const chosen = rangeCompanionProposal(range, room, catalog(), [microwaveRow], 30, {
+      placed: [range],
+      lineName: "Natura Maple",
+      bridgeHeightIn: 24,
+    })!;
+    expect(chosen.bridgeHeightIn).toBe(24);
+    expect(chosen.bridge).toMatchObject({ masterCode: "W3024", height: "24" });
+    expect(chosen.bridgeMountBottom).toBe(72);
+    expect(chosen.microwaveMountBottom + Number(chosen.microwave.height)).toBe(72);
+
+    const fallback = rangeCompanionProposal(range, room, catalog(), [microwaveRow], 30, {
+      placed: [range],
+      lineName: "Natura Maple",
+    })!;
+    expect(fallback.bridge!.masterCode).toBe("W3012");
+    const defaultBridge = rangeCompanionPlacement(fallback.bridge!, fallback.bridgeSpot, fallback.bridgeMountBottom, "default-bridge", 11);
+    const defaultMicrowave = rangeCompanionPlacement(fallback.microwave, fallback.microwaveSpot, fallback.microwaveMountBottom, "mw", null);
+    const blocked = appendCollisionFreePlacements(
+      [range, defaultMicrowave, defaultBridge],
+      [rangeCompanionPlacement(chosen.bridge!, chosen.bridgeSpot, chosen.bridgeMountBottom, "blocked-24", 11)],
+      room,
+    );
+    expect(blocked.rejected.map((item) => item.masterCode)).toEqual(["W3024"]);
+
+    let nextUid = 0;
+    const seated = placeChosenRangeCompanions({
+      placed: [range, defaultMicrowave, defaultBridge],
+      range,
+      room,
+      proposal: chosen,
+      makeUid: () => `chosen-${nextUid += 1}`,
+      styleId: 11,
+    });
+    expect(seated.ok).toBe(true);
+    if (!seated.ok) return;
+    expect(seated.replacedBridgeCode).toBe("W3012");
+    const bridges = seated.placed.filter((item) => item.placement === "wall");
+    expect(bridges).toHaveLength(1);
+    expect(bridges[0]).toMatchObject({
+      cabinetId: 3024,
+      masterCode: "W3024",
+      height: 24,
+      mountBottom: 72,
+      overRangeMicrowaveBridge: true,
+    });
+    const microwave = seated.placed.find((item) => item.masterCode === "MW-30")!;
+    expect(microwave.mountBottom).toBe(56);
+    expect(microwave.mountBottom + microwave.height).toBe(bridges[0]!.mountBottom);
+    expect(bridges[0]!.mountBottom! + bridges[0]!.height).toBe(96);
+  });
+
+  it("says the line has no 24 inch bridge instead of inventing one", () => {
+    const proposal = rangeCompanionProposal(range, room, catalog([24]), [microwaveRow], 30, {
+      placed: [range],
+      lineName: "Natura Maple",
+      bridgeHeightIn: 24,
+    })!;
+    const missing = proposal.bridgeChoices.find((choice) => choice.heightIn === 24)!;
+    expect(missing.bridge).toBeNull();
+    expect(missing.disabledReason).toBe("W3024 is not in the Natura Maple catalog.");
+    const refused = placeChosenRangeCompanions({
+      placed: [range],
+      range,
+      room,
+      proposal: { ...proposal, bridge: null, bridgeHeightIn: null, bridgeUnavailableReason: missing.disabledReason },
+      makeUid: () => "none",
+      styleId: null,
+    });
+    expect(refused).toEqual({ ok: false, reason: "W3024 is not in the Natura Maple catalog." });
   });
 
   it("writes the dialog text for the chosen height instead of a fixed 72 to 84", () => {

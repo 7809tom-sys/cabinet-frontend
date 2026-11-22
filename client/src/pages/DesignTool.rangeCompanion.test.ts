@@ -27,9 +27,12 @@ describe("Design Tool range companion workflow", () => {
     const previewStart = source.indexOf("data-testid=\"range-companion-source-preview\"");
     const previewSource = source.slice(previewStart, previewStart + 2300);
 
-    expect(actionSource).toContain("proposal.microwaveMountBottom");
-    // The placed record is built by the shared rangeCompanionPlacement helper.
-    expect(actionSource).toContain("rangeCompanionPlacement(");
+    expect(companionSource).toContain("proposal.microwaveMountBottom");
+    // The placed record is built by the shared rangeCompanionPlacement helper,
+    // called from placeChosenRangeCompanions so an explicit height can replace
+    // the default 12" box already sitting over the microwave.
+    expect(actionSource).toContain("placeChosenRangeCompanions(");
+    expect(companionSource).toContain("rangeCompanionPlacement(");
     expect(companionSource).toContain("overRangeMicrowaveBridge: true");
     // The preview text follows the chosen bridge height (exact wording is unit-tested).
     expect(previewSource).toContain("rangeCompanionDetail(rangeCompanionPrompt.proposal)");
@@ -59,9 +62,9 @@ describe("Design Tool range companion workflow", () => {
     expect(actionSource).toContain("microwaveStillAvailable");
     expect(actionSource).toContain("existingHood");
     expect(actionSource).toContain("existingMicrowave");
-    expect(actionSource).toContain("const additions = existingMicrowave ? [bridge] : [microwave, bridge]");
-    expect(actionSource).toContain("${bridge.masterCode} was added above the existing ${microwave.masterCode}");
-    expect(actionSource).toContain("appendCollisionFreePlacements(placedRef.current, additions, room)");
+    expect(actionSource).toContain("placeChosenRangeCompanions(");
+    expect(actionSource).toContain("${seated.bridge.masterCode} was added above the existing ${seated.microwave.masterCode}");
+    expect(companionSource).toContain("appendCollisionFreePlacements(");
     expect(actionSource).toContain("Existing cabinets were left unchanged.");
     expect(actionSource).toContain("setRangeCompanionPrompt(null)");
   });
