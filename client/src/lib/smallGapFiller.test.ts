@@ -12,7 +12,8 @@ import {
 	findIslandSmallGapFillerOpportunity,
 	installedFillerVerticalSpec,
 	installedSmallGapFillerEditOpportunity,
-	optimalSmallGapFillerCut,
+  openSmallGapSeams,
+  optimalSmallGapFillerCut,
 	removePlacedCabinetGroup,
   smallGapFillerOpportunityFromDragPreview,
   shouldAutoPlaceLeftoverFiller,
@@ -29,6 +30,17 @@ describe("automatic leftover filler", () => {
     expect(shouldAutoPlaceLeftoverFiller(3.25)).toBe(false);
     expect(shouldAutoPlaceLeftoverFiller(6)).toBe(false);
     expect(shouldAutoPlaceLeftoverFiller(0)).toBe(false);
+  });
+
+  it("records only the filler-sized remainder when the space is left open", () => {
+    expect(openSmallGapSeams({
+      wall: "top",
+      layer: "base",
+      cabinetStart: 36.25,
+      cabinetSpan: 18,
+      openingStart: 36,
+      openingLength: 18.25,
+    })).toEqual([{ wallId: "top", layer: "base", start: 36, end: 36.25 }]);
   });
 });
 

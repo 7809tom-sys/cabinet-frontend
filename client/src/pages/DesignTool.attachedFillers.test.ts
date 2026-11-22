@@ -11,6 +11,9 @@ describe("regular Designer attached filler workflow", () => {
     expect(source).toContain("setAttachedFillerPrompt({");
     expect(source).toContain("Choose attached fillers");
     expect(source).toContain("attached-filler-no-filler");
+    expect(source).toContain("rememberDeclinedFillerSeams(declinedAttachedFillerSeams(");
+    expect(source).toContain("suppress: (draft) => isSuppressedFiller(draft, roomRef.current.deletedFillerSuppressions, roomRef.current)");
+    expect(source).toContain("data-testid=\"small-gap-filler-leave-open\"");
     expect(source).toContain('step="0.125"');
 	    expect(source).toContain('(!isAccessory || (isFlatPanel && accPlacement === "tall"))');
     expect(source).toContain("!isFillerAccessory");

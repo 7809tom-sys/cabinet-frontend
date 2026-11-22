@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROOM, type PlacedCabinet, type RoomData } from "@/lib/design";
-import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, isCornerFillerCabinet } from "./cabinetAttachedFillers";
+import { attachedFillerLeftoverOptions, attachedFillerNeedsReview, attachedFillerPlanForCandidate, attachedFillerSizeIssues, declinedAttachedFillerSeams, isCornerFillerCabinet } from "./cabinetAttachedFillers";
 import { buildAttachedFillerPlacement } from "./cabinetAttachedFillerPlacement";
 import { cabinetWall } from "@/lib/design";
 
@@ -231,6 +231,22 @@ describe("corner cabinet fillers", () => {
 
   it("does not let a filler wider than its leg's gap be chosen", () => {
     expect(attachedFillerPlanForCandidate(lsb36, [b21, b30], room, { leftIn: 4, rightIn: 0 })).toBeNull();
+  });
+
+  it("records a quarter-inch seam between two straight cabinets when the choice is no filler", () => {
+    const left = cabinet({ uid: "left", masterCode: "B36", x: 0, width: 36 });
+    const right = cabinet({ uid: "right", masterCode: "3DB18", x: 36.25, width: 18 });
+    expect(declinedAttachedFillerSeams(right, [left], room, { leftIn: 0, rightIn: 0 })).toEqual([
+      { wallId: "top", layer: "base", start: 36, end: 36.25 },
+    ]);
+  });
+
+  it("records both leg gaps when the choice is no filler", () => {
+    expect(declinedAttachedFillerSeams(lsb36, [b21, b30], room, { leftIn: 0, rightIn: 0 })).toEqual([
+      { wallId: "left", layer: "base", start: 36, end: 39 },
+      { wallId: "top", layer: "base", start: 36, end: 39 },
+    ]);
+    expect(declinedAttachedFillerSeams(lsb36, [b21, b30], room, { leftIn: 3, rightIn: 3 })).toEqual([]);
   });
 });
 

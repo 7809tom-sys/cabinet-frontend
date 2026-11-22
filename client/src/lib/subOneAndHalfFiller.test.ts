@@ -3,7 +3,8 @@ import { anchorWiggleLimitIn } from "./designerLayoutRules";
 import { removeIllegalFillers } from "./fillerPlacementRule";
 import { holdRefrigeratorPanelsOnWall } from "./autoDesignRefrigeratorBay";
 import { fillGapsUnderOneAndAHalf } from "./subOneAndHalfFiller";
-import { wallPlacementAt, type PlacedCabinet, type RoomData } from "./design";
+import { isFillerItem, wallPlacementAt, type PlacedCabinet, type RoomData } from "./design";
+import { isSuppressedFiller, type DeletedFillerRecord } from "./deletedFillerMemory";
 
 const room: RoomData = { width: 144, depth: 120, ceilingHeight: 96 };
 const fillerStock = [{
@@ -71,5 +72,46 @@ describe("gaps under 1.5 inches", () => {
     const held = holdRefrigeratorPanelsOnWall([panel], room);
     expect(held.additions[0]?.wallOffset).toBeCloseTo(143.25, 2);
     expect(held.note).toMatch(/not slid/i);
+  });
+
+  it("leaves a quarter-inch seam empty when that seam was declined", () => {
+    const placed = [
+      box({ uid: "a", masterCode: "ERB36", width: 36 }, 0, 36),
+      box({ uid: "b", masterCode: "3DB18", width: 18 }, 36.25),
+    ];
+    const open = fillGapsUnderOneAndAHalf({
+      placed, room, fillers: fillerStock, makeUid: () => "fill-1", styleId: 1, suppress: () => true,
+    });
+    expect(open.placed.some((item) => isFillerItem(item))).toBe(false);
+    expect(open.placed).toHaveLength(placed.length);
+  });
+
+  it("does not put back a filler the person deleted from the same seam", () => {
+    const placed = [
+      box({ uid: "a", masterCode: "B24", width: 24 }, 0),
+      box({ uid: "b", masterCode: "B18", width: 18 }, 24.25),
+    ];
+    const records: DeletedFillerRecord[] = [{ groupId: null, wallId: "top", layer: "base", start: 24, end: 24.25 }];
+    const result = fillGapsUnderOneAndAHalf({
+      placed,
+      room,
+      fillers: fillerStock,
+      makeUid: () => "fill-back",
+      styleId: 1,
+      suppress: (draft) => isSuppressedFiller(draft, records, room),
+    });
+    expect(result.placed.some((item) => item.uid === "fill-back")).toBe(false);
+  });
+
+  it("uses the 24 inch run depth beside a 36 inch corner box", () => {
+    const placed = [
+      box({ uid: "a", masterCode: "ERB36", width: 36 }, 0, 36),
+      box({ uid: "b", masterCode: "3DB18", width: 18 }, 36.25),
+    ];
+    const result = fillGapsUnderOneAndAHalf({ placed, room, fillers: fillerStock, makeUid: () => "fill-depth", styleId: 1 });
+    const filler = result.placed.find((item) => item.uid === "fill-depth");
+    expect(filler?.width).toBeCloseTo(0.25, 2);
+    expect(filler?.depth).toBe(24);
+    expect(filler?.depth).toBeLessThanOrEqual(24);
   });
 });

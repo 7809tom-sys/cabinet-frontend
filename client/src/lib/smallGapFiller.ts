@@ -153,6 +153,23 @@ export function optimalSmallGapFillerCut(opportunity: Pick<SmallGapFillerOpportu
   return installableSmallGapRemainder(opportunity.remaining);
 }
 
+/**
+ * The filler-sized parts of a measured opening the person left empty.
+ * A "Leave space open" choice records these so a repair cannot fill them later.
+ */
+export function openSmallGapSeams(
+  opportunity: Pick<SmallGapFillerOpportunity, "wall" | "layer" | "cabinetStart" | "cabinetSpan" | "openingStart" | "openingLength">,
+): Array<{ wallId: string; layer: "base" | "wall"; start: number; end: number }> {
+  const openingEnd = opportunity.openingStart + opportunity.openingLength;
+  const layer = opportunity.layer === "wall" ? "wall" : "base";
+  return [
+    { start: opportunity.openingStart, end: opportunity.cabinetStart },
+    { start: opportunity.cabinetStart + opportunity.cabinetSpan, end: openingEnd },
+  ]
+    .filter((span) => span.end - span.start > EDGE_EPSILON_IN && span.end - span.start <= effectiveSmallGapFillerMaxIn() + EDGE_EPSILON_IN)
+    .map((span) => ({ wallId: opportunity.wall, layer, start: span.start, end: span.end }));
+}
+
 /** True when a detected leftover must be filled without asking the user. */
 export function shouldAutoPlaceLeftoverFiller(remaining: number): boolean {
   return Number.isFinite(remaining)

@@ -22,6 +22,41 @@ describe("Plan and 3D cabinet hardware parity", () => {
     expect(planCabinetHardwarePosition(b12({ hardwarePosition: "center" }))).toBe("right");
   });
 
+  it("marks a single-door diagonal corner and an easy-reach base, and not a drawer bank or a filler", () => {
+    // Gold dots are the door pull, drawn on every hinged door whether or not it is selected.
+    // A default left hinge puts the pull on the right edge of the plan box.
+    expect(planCabinetHardwarePosition(b12({
+      masterCode: "DCW2442",
+      description: "Diagonal Corner Wall Single Door",
+      placement: "wall",
+      numberOfDoors: 1,
+      width: 24,
+      depth: 12,
+      height: 42,
+    }))).toBe("right");
+    expect(planCabinetHardwarePosition(b12({
+      masterCode: "ERB36",
+      description: "Easy Reach Base",
+      numberOfDoors: 2,
+      width: 36,
+      depth: 36,
+    }))).toBe("right");
+    expect(planCabinetHardwarePosition(b12({
+      masterCode: "3DB18",
+      description: "18 inch 3 Drawer Base Cabinet",
+      numberOfDoors: 0,
+      numberOfDrawers: 3,
+    }))).toBeNull();
+    expect(planCabinetHardwarePosition(b12({
+      masterCode: "F342",
+      description: "Filler — 3 in W x 42 in H",
+      numberOfDoors: 0,
+      width: 0.25,
+      depth: 24,
+      fillerPieceGroupId: "sub-1-5-a-b",
+    }))).toBeNull();
+  });
+
   it("preserves explicit B-12 handle sides and retires top-center on an ordinary door (rule 5, Nov 13 2026)", () => {
     expect(planCabinetHardwarePosition(b12({ hardwarePosition: "left" }))).toBe("left");
     // Top center is kept only where it is a real choice (tray dividers, pull-outs, B15/B18).

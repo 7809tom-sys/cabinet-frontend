@@ -49,7 +49,44 @@ export type AttachedFillerPlan = {
    * wall's own run direction.
    */
   pieces: Array<{ side: AttachedFillerSide; startIn: number; widthIn: number; wall?: WallSide; attachmentSide?: AttachedFillerSide }>;
+  /**
+   * Filler-sized spaces this choice left empty. "No filler" records every one
+   * of them so a later automatic pass cannot drop a board into the same seam.
+   */
+  openGaps: AttachedFillerOpenGap[];
 };
+
+export type AttachedFillerOpenGap = {
+  side: AttachedFillerSide;
+  wall: WallSide;
+  startIn: number;
+  endIn: number;
+};
+
+/** A seam wider than this is an open run, not a declined filler. */
+const DECLINED_FILLER_MAX_IN = 6;
+
+/**
+ * The part of a measured gap the choice did not fill. A cut that uses the whole
+ * gap returns nothing. A gap wider than a filler is left off so declining a
+ * cabinet does not freeze an entire open run.
+ */
+function openRemainder(
+  side: AttachedFillerSide,
+  wall: WallSide,
+  gapStart: number,
+  gapEnd: number,
+  chosenIn: number,
+  fillerAtStart: boolean,
+): AttachedFillerOpenGap | null {
+  const width = gapEnd - gapStart;
+  if (width <= EDGE_EPSILON_IN || width > DECLINED_FILLER_MAX_IN + EDGE_EPSILON_IN) return null;
+  const cut = Math.min(width, Math.max(0, chosenIn));
+  const startIn = fillerAtStart ? gapStart + cut : gapStart;
+  const endIn = fillerAtStart ? gapEnd : gapEnd - cut;
+  if (endIn - startIn <= EDGE_EPSILON_IN) return null;
+  return { side, wall, startIn, endIn };
+}
 
 /** Corner cabinets whose fillers belong at the ends of their two legs. */
 export function isCornerFillerCabinet(masterCode: string | null | undefined): boolean {
@@ -214,6 +251,18 @@ export function attachedFillerPlanForCandidate(
     if (rightIn > 0) {
       pieces.push(cornerLeg.at === "start" ? { side: "right", startIn: cabinetStart + cabinetSpan, widthIn: rightIn } : legPiece("right", rightIn));
     }
+    const legSide: AttachedFillerSide = cornerLeg.at === "start" ? "left" : "right";
+    const ownSide: AttachedFillerSide = cornerLeg.at === "start" ? "right" : "left";
+    const legSpan = cornerLeg.legAtStart
+      ? { start: cornerLeg.legEndIn, end: cornerLeg.legEndIn + cornerLeg.gapIn }
+      : { start: cornerLeg.legEndIn - cornerLeg.gapIn, end: cornerLeg.legEndIn };
+    const ownSpan = cornerLeg.at === "start"
+      ? { start: cabinetStart + cabinetSpan, end: cabinetStart + cabinetSpan + ownGapIn }
+      : { start: cabinetStart - ownGapIn, end: cabinetStart };
+    const openGaps = [
+      openRemainder(legSide, cornerLeg.wall, legSpan.start, legSpan.end, legSide === "left" ? leftIn : rightIn, cornerLeg.legAtStart),
+      openRemainder(ownSide, wall, ownSpan.start, ownSpan.end, ownSide === "left" ? leftIn : rightIn, cornerLeg.at === "start"),
+    ].filter((gap): gap is AttachedFillerOpenGap => gap != null);
     return {
       wall,
       placement: candidate.placement,
@@ -228,6 +277,7 @@ export function attachedFillerPlanForCandidate(
       cabinetSpanIn: cabinetSpan,
       cornerCabinet: true,
       pieces,
+      openGaps,
     };
   }
 
@@ -261,6 +311,10 @@ export function attachedFillerPlanForCandidate(
   const pieces: AttachedFillerPlan["pieces"] = [];
   if (leftIn > 0) pieces.push({ side: "left", startIn: fittedStart - leftIn, widthIn: leftIn });
   if (rightIn > 0) pieces.push({ side: "right", startIn: fittedStart + cabinetSpan, widthIn: rightIn });
+  const openGaps = [
+    openRemainder("left", wall, openingStart, fittedStart - leftIn, 0, true),
+    openRemainder("right", wall, fittedStart + cabinetSpan + rightIn, openingEnd, 0, true),
+  ].filter((gap): gap is AttachedFillerOpenGap => gap != null);
   return {
     wall,
     placement,
@@ -275,7 +329,25 @@ export function attachedFillerPlanForCandidate(
     cabinetSpanIn: cabinetSpan,
     cornerCabinet: false,
     pieces,
+    openGaps,
   };
+}
+
+/** Seams an explicit filler choice left empty, including a "No filler" choice. */
+export function declinedAttachedFillerSeams(
+  candidate: PlacedCabinet,
+  placed: readonly PlacedCabinet[],
+  room: RoomData,
+  choice: AttachedFillerChoice,
+): Array<{ wallId: string; layer: "base" | "wall" | "tall"; start: number; end: number }> {
+  const plan = attachedFillerPlanForCandidate(candidate, placed, room, choice);
+  if (!plan) return [];
+  return plan.openGaps.map((gap) => ({
+    wallId: gap.wall,
+    layer: plan.placement,
+    start: Math.round(gap.startIn * 1000) / 1000,
+    end: Math.round(gap.endIn * 1000) / 1000,
+  }));
 }
 
 export type AttachedFillerLeftoverOptions = {
