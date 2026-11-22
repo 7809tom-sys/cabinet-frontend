@@ -19,6 +19,7 @@ import { cheapestAutoDesignFaucet } from "./autoDesignFaucet";
 import { pickBudgetDefaultSink } from "./autoDesignBudgetSink";
 import { faucetRowsForBase, sinkRowsForBase } from "./sinkBaseSelection";
 import { KITCHEN_SCENES, type KitchenSceneKey } from "./doorFamilyPhotos";
+import { DEMO_LINE_DOOR_STYLES } from "./demoDesignerCatalog";
 
 export const DEMO_BRAND_NAME = "Cabinet Deals Demo Distributor";
 export const DEMO_DESIGNER_LABEL = "Demo Distributor Designer";
@@ -51,7 +52,9 @@ export const DEMO_SHARE = {
 export const DEMO_DESIGNER_ROUTE = "/distributor-preview/design";
 
 export function demoDesignerPath(lineId?: DemoLineId): string {
-  return lineId ? `${DEMO_DESIGNER_ROUTE}?line=${encodeURIComponent(lineId)}` : DEMO_DESIGNER_ROUTE;
+  if (!lineId) return DEMO_DESIGNER_ROUTE;
+  // `style` is the designer's existing door-style preselect parameter.
+  return `${DEMO_DESIGNER_ROUTE}?line=${encodeURIComponent(lineId)}&style=${DEMO_LINE_DOOR_STYLES[lineId].doorStyleId}`;
 }
 
 // Commission terms shown on the signup CTA. The final rate inside the range is
@@ -123,6 +126,8 @@ export const DEMO_LINES = [
 export type DemoLine = (typeof DEMO_LINES)[number];
 export type DemoLineId = DemoLine["id"];
 
+export { DEMO_LINE_DOOR_STYLES, demoDesignerCatalogFilter } from "./demoDesignerCatalog";
+
 export function isDemoLineId(value: unknown): value is DemoLineId {
   return typeof value === "string" && DEMO_LINES.some((line) => line.id === value);
 }
@@ -150,14 +155,39 @@ export type DemoProduct = {
   depthIn: number | null;
 };
 
+/** Organizers that drop into an existing cabinet: rollout trays, roll-out shelves, lazy susan inserts. */
+export const ORGANIZERS_SUBTYPE = "Organizers & Rollout Trays";
+export const ORGANIZERS_NOTE = "Universal rollout trays fit standard base cabinets of the matching width.";
+export const CORNER_BASE_SUBTYPE = "Corner Cabinets";
+
+type GroupingRow = Pick<DemoCatalogSourceRow, "kind" | "category" | "subCategory"> & { code?: string };
+
+export function isDemoOrganizer(row: GroupingRow): boolean {
+  if (row.kind !== "accessory") return false;
+  return /rollout tray|roll-out shelf|lazy susan insert/i.test(row.subCategory ?? "") || /^UNIV-ROT\d|TRAY/i.test(row.code ?? "");
+}
+
+/** Panels and skins listed under the Wall category are parts, not wall boxes. */
+function isWallListedPanel(row: GroupingRow): boolean {
+  return row.kind === "accessory" && row.category === "Wall" && /^(WDEP|WEP|WS)\d/i.test(row.code ?? "");
+}
+
+/** A real corner base cabinet (never an accessory or a part). */
+export function isDemoCornerBase(row: GroupingRow): boolean {
+  if (row.kind !== "base") return false;
+  if (/vanity/i.test(`${row.category ?? ""} ${row.subCategory ?? ""}`)) return false;
+  return row.category === "Corner" || /corner|lazy susan|easy reach/i.test(row.subCategory ?? "");
+}
+
 /** Every source row lands in exactly one type group. */
-export function demoTypeGroupFor(row: Pick<DemoCatalogSourceRow, "kind" | "category" | "subCategory">): DemoTypeGroup {
+export function demoTypeGroupFor(row: GroupingRow): DemoTypeGroup {
   const text = `${row.category ?? ""} ${row.subCategory ?? ""}`;
   if (row.kind === "wall") return "Walls";
   if (row.kind === "tall") return "Talls";
   if (row.kind === "base") return /vanity/i.test(text) ? "Specialties" : "Bases";
-  // Accessory rows: stock wall boxes listed with accessories stay with the walls.
-  if (row.category === "Wall") return "Walls";
+  // Accessory rows: stock wall boxes listed with accessories stay with the walls;
+  // panels and organizers are Specialties.
+  if (row.category === "Wall" && !isWallListedPanel(row)) return "Walls";
   return "Specialties";
 }
 
@@ -165,7 +195,12 @@ function titleCase(value: string): string {
   return value.replace(/\w\S*/g, (word) => (word === word.toUpperCase() && word.length > 1 ? word : word.charAt(0).toUpperCase() + word.slice(1)));
 }
 
-export function demoSubTypeFor(row: Pick<DemoCatalogSourceRow, "category" | "subCategory">): string {
+export function demoSubTypeFor(row: GroupingRow): string {
+  if (isDemoOrganizer(row)) return ORGANIZERS_SUBTYPE;
+  if (isDemoCornerBase(row)) return CORNER_BASE_SUBTYPE;
+  if (isWallListedPanel(row)) return "Panels";
+  // Accessory parts named after a corner (e.g. SBF4242 corner sink base floor) are parts, not corner cabinets.
+  if (row.kind === "accessory" && /corner/i.test(row.subCategory ?? "")) return "Cabinet Parts";
   const raw = (row.subCategory ?? row.category ?? "Other").trim() || "Other";
   return titleCase(raw);
 }
@@ -414,7 +449,7 @@ export function summarizeDemoOrders(orders: DemoOrder[], rate: number = DEMO_COM
   return { count: orders.length, designerCents, csvCents, totalCents: designerCents + csvCents, commissionCents };
 }
 
-export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates"] as const;
+export const DISTRIBUTOR_PREVIEW_SECTIONS = ["storefront", "shop", "dashboard", "signup", "features", "auto-design", "contractors", "affiliates", "dealers", "designs", "examples"] as const;
 export type DistributorPreviewSection = (typeof DISTRIBUTOR_PREVIEW_SECTIONS)[number];
 
 export function isDistributorPreviewSection(value: unknown): value is DistributorPreviewSection {
