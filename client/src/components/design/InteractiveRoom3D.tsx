@@ -95,6 +95,7 @@ import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, r
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
+import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedShakerFace } from "@shared/doorFrontFinish";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -4240,7 +4241,7 @@ export function resolvedThreeDDoorProfile(
   return {
     ...source,
     ...resolved,
-    paintedFinish: catalogDoorProfile?.paintedFinish ?? isPaintedFinish(merged),
+    paintedFinish: catalogDoorProfile?.paintedFinish ?? (isPaintedFinish(merged) || prefersSolidPaintedShakerFace(merged)),
     raisedPanelSource: catalogDoorProfile?.raisedPanelSource ?? raisedPanelApplicationForStyle(merged).source,
   };
 }
@@ -5136,11 +5137,19 @@ export function addCabinet(
   // The flag comes from the door style (`shared/paintedFinish.ts`); the renderer
   // never guesses paint from a color.
   const paintedFinish = doorProfile?.paintedFinish === true;
+  // A painted shaker crop is a solid color and no grain. The Designer can still
+  // pass the style's door photograph as a fallback sample. That photograph has
+  // its own frame, and faceTileIn would tile it across the front. Drop it.
+  const faceCrop = surfaceTextures?.faceCrop ?? null;
+  const solidPaintCrop = Boolean(faceCrop?.solidColor)
+    && !faceCrop?.grainUrl
+    && faceCrop?.grainSubstituted !== true;
+  const renderSolidFace = paintedFinish || (solidPaintCrop && !isFrameFreeGrainTexture(doorSampleUrl));
   // Wood grain tile set (approved in the door style editor, browser draft only): each front gets a tile
   // picked deterministically from its uid, with flip + small UV offset. No set → the single door photo.
-  const woodGrainTile = paintedFinish ? null : woodGrainTileForFront(doorProfile?.styleId ?? null, sku.placementUid ?? `${sku.masterCode}@${transform?.x ?? 0},${transform?.z ?? 0}`, undefined, { horizontal: doorProfile?.grainDirection === "horizontal" });
+  const woodGrainTile = renderSolidFace ? null : woodGrainTileForFront(doorProfile?.styleId ?? null, sku.placementUid ?? `${sku.masterCode}@${transform?.x ?? 0},${transform?.z ?? 0}`, undefined, { horizontal: doorProfile?.grainDirection === "horizontal" });
   if (woodGrainTile) doorSampleUrl = woodGrainTile.url;
-  if (paintedFinish) doorSampleUrl = null;
+  if (renderSolidFace) doorSampleUrl = null;
   const placement = (sku.placementType ?? "base").toLowerCase();
   const isKneeDrawer = isKneeDrawerItem(sku);
   const isWall = placement === "wall";
@@ -6103,8 +6112,8 @@ export function addCabinet(
 	  // Tom's paint rule: a painted / HDF / MDF face is a solid of the resolved color.
 	  // No door photo, no grain tile, and no per-piece wood-grain crop. Stained wood
 	  // keeps its grain. `doorSampleUrl` is already cleared for a painted style above.
-	  const useDoorTexture = !paintedFinish && threeDUsesDoorSampleTexture(doorSampleUrl);
-	  const usesCuratedCabinetGrain = !paintedFinish && isCuratedCabinetGrainSample(doorSampleUrl);
+	  const useDoorTexture = !renderSolidFace && threeDUsesDoorSampleTexture(doorSampleUrl);
+	  const usesCuratedCabinetGrain = !renderSolidFace && isCuratedCabinetGrainSample(doorSampleUrl);
 	  // Assigned once the texture exists. The loader callback runs after the
 	  // face meshes are built, which is when box skins receive the sample.
 	  let stampCabinetWoodGrain = () => {};
@@ -6126,6 +6135,8 @@ export function addCabinet(
     })
     : null;
   if (doorTexture) onDoorTextureState?.("loading");
+	  // A framed door photograph is clamped to one copy. Grain boards keep the tile below.
+	  let doorPhotographMappedOnce = false;
 	  if (doorTexture) {
 	    doorTexture.colorSpace = THREE.SRGBColorSpace;
 	    applyThreeDFaceTextureFiltering(doorTexture, surfaceTextures?.maxAnisotropy);
@@ -6140,38 +6151,54 @@ export function addCabinet(
 	    const grainTransform = usesCuratedCabinetGrain
 	      ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl)
 	      : null;
-	    doorTexture.wrapS = dlcDoorGrain ? THREE.MirroredRepeatWrapping : usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-	    doorTexture.wrapT = dlcDoorGrain ? THREE.MirroredRepeatWrapping : usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-	    // Door photos are already cropped inside the door edge, so the whole photo
-	    // is the finish. A combined door+drawer swatch instead uses only the
-	    // lower door band on door faces.
-	    doorTexture.repeat.set(
-	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatX,
-	      usesCuratedCabinetGrain ? 1 : doorFrame.repeatY,
-	    );
-	    // DL grain faces: each cabinet starts its grain at a different phase, so neighbouring doors do not band
-	    // at the same spot (mirrored tiles make any offset seamless).
-	    const dlcStagger = dlcDoorGrain ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl) : null;
-	    doorTexture.offset.set(grainTransform?.offsetX ?? dlcStagger?.offsetX ?? doorFrame.offsetX, grainTransform?.offsetY ?? dlcStagger?.offsetY ?? doorFrame.offsetY);
-	    if (woodGrainTile) {
-	      doorTexture.wrapS = THREE.RepeatWrapping;
-	      doorTexture.wrapT = THREE.RepeatWrapping;
-	      doorTexture.repeat.set(woodGrainTile.flipX ? -1 : 1, woodGrainTile.flipY ? -1 : 1);
-	      doorTexture.offset.set((woodGrainTile.flipX ? 1 : 0) + woodGrainTile.offsetU, (woodGrainTile.flipY ? 1 : 0) + woodGrainTile.offsetV);
-	      doorTexture.center.set(0.5, 0.5);
-	      doorTexture.rotation = woodGrainTile.rotation;
+	    const doorMapping = doorFrontTextureMapping({
+	      sampleUrl: doorSampleUrl,
+	      curatedGrain: usesCuratedCabinetGrain || Boolean(woodGrainTile),
+	      grainRepeat: dlcDoorGrain,
+	    });
+	    doorPhotographMappedOnce = doorMapping.wrap === "clamp";
+	    if (doorPhotographMappedOnce) {
+	      // One copy of the door photograph. faceTileIn must not reprint its frame.
+	      doorTexture.wrapS = THREE.ClampToEdgeWrapping;
+	      doorTexture.wrapT = THREE.ClampToEdgeWrapping;
+	      doorTexture.repeat.set(1, 1);
+	      doorTexture.offset.set(0, 0);
+	    } else {
+	      doorTexture.wrapS = dlcDoorGrain ? THREE.MirroredRepeatWrapping : usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+	      doorTexture.wrapT = dlcDoorGrain ? THREE.MirroredRepeatWrapping : usesCuratedCabinetGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+	      // Door photos are already cropped inside the door edge, so the whole photo
+	      // is the finish. A combined door+drawer swatch instead uses only the
+	      // lower door band on door faces.
+	      doorTexture.repeat.set(
+	        usesCuratedCabinetGrain ? 1 : doorFrame.repeatX,
+	        usesCuratedCabinetGrain ? 1 : doorFrame.repeatY,
+	      );
+	      // DL grain faces: each cabinet starts its grain at a different phase, so neighbouring doors do not band
+	      // at the same spot (mirrored tiles make any offset seamless).
+	      const dlcStagger = dlcDoorGrain ? threeDCabinetGrainTransform(sku.placementUid, doorSampleUrl) : null;
+	      doorTexture.offset.set(grainTransform?.offsetX ?? dlcStagger?.offsetX ?? doorFrame.offsetX, grainTransform?.offsetY ?? dlcStagger?.offsetY ?? doorFrame.offsetY);
+	      if (woodGrainTile) {
+	        doorTexture.wrapS = THREE.RepeatWrapping;
+	        doorTexture.wrapT = THREE.RepeatWrapping;
+	        doorTexture.repeat.set(woodGrainTile.flipX ? -1 : 1, woodGrainTile.flipY ? -1 : 1);
+	        doorTexture.offset.set((woodGrainTile.flipX ? 1 : 0) + woodGrainTile.offsetU, (woodGrainTile.flipY ? 1 : 0) + woodGrainTile.offsetV);
+	        doorTexture.center.set(0.5, 0.5);
+	        doorTexture.rotation = woodGrainTile.rotation;
+	      }
 	    }
 	    doorTexture.userData = {
 	      ...doorTexture.userData,
 	      curatedCabinetFinish: usesCuratedCabinetGrain,
-	      ...(surfaceTextures?.faceSourceKind === "combined" ? { combinedFaceWindow: doorFrame } : {}),
-	      ...(grainTransform ? { cabinetGrainTransform: grainTransform, grainPlacementUid: sku.placementUid ?? "legacy-cabinet" } : {}),
+	      doorPhotographMappedOnce,
+	      ...(surfaceTextures?.faceSourceKind === "combined" && !doorPhotographMappedOnce ? { combinedFaceWindow: doorFrame } : {}),
+	      ...(grainTransform && !doorPhotographMappedOnce ? { cabinetGrainTransform: grainTransform, grainPlacementUid: sku.placementUid ?? "legacy-cabinet" } : {}),
 	      materialOnlyNoDoorGeometry: true,
 	    };
 	  }
 	  stampCabinetWoodGrain = () => {
-	    // A painted face is solid: no per-piece grain window is stamped onto it.
-	    if (paintedFinish) return;
+	    // A painted face is solid. A framed door photograph is already one copy:
+	    // a per-piece window would crop a different part of its frame onto each board.
+	    if (renderSolidFace || doorPhotographMappedOnce) return;
 	    applyThreeDCabinetPieceGrain(cabinet, {
 	      placementUid: sku.placementUid,
 	      sampleUrl: doorSampleUrl,
@@ -6183,15 +6210,15 @@ export function addCabinet(
   // Door faces use the door sample. Drawer meshes (cabinetDrawerFront) get the
   // drawer-front sample below. A wall cabinet never receives that drawer texture.
   // A painted drawer front is solid, so it gets neither sample.
-  const drawerSampleUrl = !isWall && !paintedFinish ? surfaceTextures?.drawerSampleUrl?.trim() || null : null;
-  const useDrawerTexture = !paintedFinish && threeDUsesSeparateDrawerTexture({
+  const drawerSampleUrl = !isWall && !renderSolidFace ? surfaceTextures?.drawerSampleUrl?.trim() || null : null;
+  const useDrawerTexture = !renderSolidFace && threeDUsesSeparateDrawerTexture({
     isWall,
     doorSampleUrl,
     drawerSampleUrl,
     faceSourceKind: surfaceTextures?.faceSourceKind,
     separateFace: Boolean(surfaceTextures?.faceCrop?.faceTileDrawerIn),
   });
-  const usesCuratedDrawerGrain = !paintedFinish && isCuratedCabinetGrainSample(drawerSampleUrl);
+  const usesCuratedDrawerGrain = !renderSolidFace && isCuratedCabinetGrainSample(drawerSampleUrl);
   const drawerTexture = useDrawerTexture && drawerSampleUrl
     ? new THREE.TextureLoader().load(drawerSampleUrl)
     : null;
@@ -6204,22 +6231,35 @@ export function addCabinet(
       : null) ?? threeDSampleTextureFrame(surfaceTextures?.faceSourceKind, "drawer");
     drawerTexture.colorSpace = THREE.SRGBColorSpace;
     applyThreeDFaceTextureFiltering(drawerTexture, surfaceTextures?.maxAnisotropy);
-    drawerTexture.wrapS = dlcDrawerGrain ? THREE.MirroredRepeatWrapping : usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-    drawerTexture.wrapT = dlcDrawerGrain ? THREE.MirroredRepeatWrapping : usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
-    drawerTexture.repeat.set(
-      usesCuratedDrawerGrain ? 1 : drawerFrame.repeatX,
-      usesCuratedDrawerGrain ? 1 : drawerFrame.repeatY,
-    );
-    const dlcDrawerStagger = dlcDrawerGrain ? threeDCabinetGrainTransform(sku.placementUid, drawerSampleUrl) : null;
-    drawerTexture.offset.set(
-      usesCuratedDrawerGrain ? 0 : dlcDrawerStagger?.offsetX ?? drawerFrame.offsetX,
-      usesCuratedDrawerGrain ? 0 : dlcDrawerStagger?.offsetY ?? drawerFrame.offsetY,
-    );
+    const drawerMapping = doorFrontTextureMapping({
+      sampleUrl: drawerSampleUrl,
+      curatedGrain: usesCuratedDrawerGrain,
+      grainRepeat: dlcDrawerGrain,
+    });
+    if (drawerMapping.wrap === "clamp") {
+      drawerTexture.wrapS = THREE.ClampToEdgeWrapping;
+      drawerTexture.wrapT = THREE.ClampToEdgeWrapping;
+      drawerTexture.repeat.set(1, 1);
+      drawerTexture.offset.set(0, 0);
+    } else {
+      drawerTexture.wrapS = dlcDrawerGrain ? THREE.MirroredRepeatWrapping : usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+      drawerTexture.wrapT = dlcDrawerGrain ? THREE.MirroredRepeatWrapping : usesCuratedDrawerGrain ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
+      drawerTexture.repeat.set(
+        usesCuratedDrawerGrain ? 1 : drawerFrame.repeatX,
+        usesCuratedDrawerGrain ? 1 : drawerFrame.repeatY,
+      );
+      const dlcDrawerStagger = dlcDrawerGrain ? threeDCabinetGrainTransform(sku.placementUid, drawerSampleUrl) : null;
+      drawerTexture.offset.set(
+        usesCuratedDrawerGrain ? 0 : dlcDrawerStagger?.offsetX ?? drawerFrame.offsetX,
+        usesCuratedDrawerGrain ? 0 : dlcDrawerStagger?.offsetY ?? drawerFrame.offsetY,
+      );
+    }
     drawerTexture.userData = {
       ...drawerTexture.userData,
       drawerFrontSample: true,
       grainRotation: 0,
-      ...(surfaceTextures?.faceSourceKind === "combined" ? { combinedFaceWindow: drawerFrame } : {}),
+      doorPhotographMappedOnce: drawerMapping.wrap === "clamp",
+      ...(surfaceTextures?.faceSourceKind === "combined" && drawerMapping.wrap !== "clamp" ? { combinedFaceWindow: drawerFrame } : {}),
     };
   }
   // A DLC finish whose photo has no drawer front: the drawer gets a solid finish colour,
