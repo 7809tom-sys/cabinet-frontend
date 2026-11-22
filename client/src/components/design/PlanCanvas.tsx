@@ -1,6 +1,7 @@
 import { FlooringRotationControl } from "@/components/design/FlooringLayoutPicker";
 import { PlacedItemContextMenu, type PlacedItemContextMenuState } from "@/components/design/PlacedItemContextMenu";
 import { WallActionsMenu } from "@/components/design/WallActionsMenu";
+import { wallDeleteDisabledReason } from "@/lib/wallDeletion";
 import { doorOpeningAppearance, roomDoorSwing, supportsRoomDoorSwing } from "@/lib/doorOpeningAppearance";
 import { applyApronFrontCountertopNotches } from "@/lib/farmSinkCountertopNotch";
 import { flooringPlanPatternStyle, flooringPlanRotationLayerStyle, type FlooringRotationDegrees } from "@/lib/flooringLayout";
@@ -448,6 +449,8 @@ interface Props {
   onOpenWallSettings?: (side: WallSide) => void;
   /** Opens the Add wall dialog for the wall under the pointer. Nothing is drawn until that dialog is confirmed. */
   onAddWall?: (side: WallSide, point: { x: number; y: number }) => void;
+  /** Opens the existing delete confirm for the right-clicked wall only. */
+  onDeleteWall?: (side: WallSide) => void;
   /** Slides a wall that is locked to a host face along that host. */
   onSlideHostedWall?: (wallId: string, point: { x: number; y: number }, grabAlong: number) => void;
   /** Called when a hosted-wall drag ends so the plan can record one undo step. */
@@ -626,7 +629,7 @@ export function PlanCanvas({
   openings = [], selectedOpeningUid = null, openingMeasurementReference = null, sinkWindowSnap = null, onSelectOpening, onOpenWindowAttributes, onOpenDoorAttributes, onOpeningChange, onDeleteOpening,
 	  finish = DEFAULT_FINISH_COLORS,
 	  drawMode = false, onDrawRoom,
-	  activeWall, onSelectWall, wallCompassStartIn = null, wallCompassVisible = false, onWallCompassDrop, onRotateDrawing, drawingRotationDisabled = false, peninsulaDraft = null, onPeninsulaDraftLengthChange, onPeninsulaAttachmentChange, onOpenWallSettings, onAddWall, onSlideHostedWall, onSlideHostedWallEnd, conflictUids, missingPriceUids,
+	  activeWall, onSelectWall, wallCompassStartIn = null, wallCompassVisible = false, onWallCompassDrop, onRotateDrawing, drawingRotationDisabled = false, peninsulaDraft = null, onPeninsulaDraftLengthChange, onPeninsulaAttachmentChange, onOpenWallSettings, onAddWall, onDeleteWall, onSlideHostedWall, onSlideHostedWallEnd, conflictUids, missingPriceUids,
   layoutLocked = false, lockedWalls,
   countertopMaterialId = null, islandCountertopMaterialId = null, sinks = [], potFillers = [], selectedSinkUid = null, onSelectSink, onAutoDesignFaucetClick, onMoveSink,
   finishFor,
@@ -1707,6 +1710,13 @@ export function PlanCanvas({
           menu={wallMenu}
           onEdit={() => onOpenWallSettings?.(wallMenu.side)}
           onAdd={() => onAddWall?.(wallMenu.side, wallMenu.point)}
+          onDelete={onDeleteWall ? () => onDeleteWall(wallMenu.side) : undefined}
+          deleteDisabledReason={wallDeleteDisabledReason({
+            room,
+            wallId: wallMenu.side,
+            layoutLocked,
+            cabinetsLocked,
+          })}
           onClose={() => setWallMenu(null)}
         />
       )}
