@@ -95,7 +95,7 @@ import { DARK_STAIN_DOOR_LIGHTS, RESTORED_DOOR_LIGHTS, isVeryDarkCabinetStain, r
 import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindow } from "@shared/doorFaceRecognition";
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
-import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedShakerFace } from "@shared/doorFrontFinish";
+import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -4241,7 +4241,7 @@ export function resolvedThreeDDoorProfile(
   return {
     ...source,
     ...resolved,
-    paintedFinish: catalogDoorProfile?.paintedFinish ?? (isPaintedFinish(merged) || prefersSolidPaintedShakerFace(merged)),
+    paintedFinish: catalogDoorProfile?.paintedFinish ?? (isPaintedFinish(merged) || prefersSolidPaintedFace(merged)),
     raisedPanelSource: catalogDoorProfile?.raisedPanelSource ?? raisedPanelApplicationForStyle(merged).source,
   };
 }
