@@ -144,4 +144,22 @@ describe("RollOutTrayPicker", () => {
 	  rerender(<RollOutTrayPicker cabinet={widePantry} designStyleId={4} distributorId={9} pricingTier="homeowner" qty={0} onSetQty={vi.fn()} />);
 	  expect(container.textContent).toBe("");
 	});
+
+	it("renders no rollout tray option or text for corner cabinet SKUs", () => {
+	  useQuery.mockReturnValue({ data: tray, isLoading: false, isFetching: false });
+	  const corners = [
+	    { uid: "bbc-36", masterCode: "BBC36", description: "36in Blind Corner Base", subCategory: "Blind Corner Base", width: 36, nominalWidth: 36, numberOfDoors: 1 },
+	    { uid: "bls-36", masterCode: "BLS36", description: "36in Lazy Susan", subCategory: "Lazy Susan", width: 36, nominalWidth: 36, numberOfDoors: 1 },
+	    { uid: "lsb-33", masterCode: "LSB33", description: "33in Lazy Susan Corner Base", subCategory: "Lazy Susan", width: 33, nominalWidth: 33, numberOfDoors: 1 },
+	    { uid: "csb-36", masterCode: "CSB36", description: "36in Corner Sink Base", subCategory: "Corner Sink Base", width: 36, nominalWidth: 36, numberOfDoors: 1 },
+	    { uid: "erb-33", masterCode: "ERB33", description: "33in Easy Reach", subCategory: "Easy Reach", width: 33, nominalWidth: 33, numberOfDoors: 1 },
+	  ];
+	  const { rerender, container } = render(
+	    <RollOutTrayPicker cabinet={{ ...base18, ...corners[0] } as never} designStyleId={4} distributorId={9} pricingTier="homeowner" qty={0} onSetQty={vi.fn()} />,
+	  );
+	  for (const corner of corners) {
+	    rerender(<RollOutTrayPicker cabinet={{ ...base18, ...corner } as never} designStyleId={4} distributorId={9} pricingTier="homeowner" qty={0} onSetQty={vi.fn()} />);
+	    expect(container.textContent, corner.masterCode).toBe("");
+	  }
+	});
 });

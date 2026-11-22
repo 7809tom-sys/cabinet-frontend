@@ -12,6 +12,8 @@
 //    present. End panels finish any run. A touch-up kit is always sensible.
 //  - Fillers make sense when there are cabinets at all (gaps against walls).
 
+import { isCornerCabinetExcludedFromRollOut } from "./rollOutCornerExclusion";
+
 export type CrossSellCategory =
   | "touchUpKit"
   | "rollOutTray"
@@ -60,7 +62,11 @@ export function relevantCategories(lines: CrossSellCartLine[]): CrossSellCategor
     const p = norm(l.placement);
     if (PLACEMENT_BASE.has(p)) {
       hasBase = true;
-      if ((l.numberOfDoors ?? 0) > 0) hasBaseWithDoors = true;
+      // Corner cabinets cannot take a roll-out tray, so they do not make the
+      // tray upsell relevant. A regular base with doors in the same cart still does.
+      if ((l.numberOfDoors ?? 0) > 0 && !isCornerCabinetExcludedFromRollOut(l)) {
+        hasBaseWithDoors = true;
+      }
     }
     if (p === "wall") hasWall = true;
   }

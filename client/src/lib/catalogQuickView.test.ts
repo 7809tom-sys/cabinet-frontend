@@ -84,4 +84,46 @@ describe("catalog quick view helpers", () => {
     const baseOptions = suggestedAccessoryOptions(base, [base, crown, basePanel, filler]);
     expect(baseOptions.map((item) => item.masterCode)).toEqual(["BEP3", "F642", "CM8"]);
   });
+
+  it("does not suggest roll-out trays on corner cabinets, but still does on a regular base", () => {
+    const tray = {
+      id: 6,
+      masterCode: "RS18-TYPEA",
+      category: "Accessory",
+      subCategory: "Roll-Out Shelf",
+      description: 'Roll-Out Shelf, Type A — 13-3/8" W (for 18" base)',
+      width: "13.38",
+    };
+    const univ = {
+      id: 7,
+      masterCode: "UNIV-ROT18",
+      category: "Accessory",
+      subCategory: "Rollout Tray",
+      description: "Universal rollout tray for 18-inch cabinet",
+      width: "18.00",
+    };
+    const lazySusan = {
+      id: 8,
+      masterCode: "LSB33",
+      category: "Base",
+      subCategory: "Lazy Susan",
+      description: "33in Lazy Susan Corner Base",
+      width: "33.00",
+      numberOfDoors: 1,
+    };
+    const regularBase = {
+      ...base,
+      id: 9,
+      masterCode: "B18",
+      subCategory: "Single Door Base",
+      numberOfDoors: 1,
+      numberOfDrawers: 1,
+    };
+    const catalog = [lazySusan, regularBase, crown, basePanel, filler, tray, univ];
+    expect(suggestedAccessoryOptions(lazySusan, catalog).map((item) => item.masterCode)).not.toContain("RS18-TYPEA");
+    expect(suggestedAccessoryOptions(lazySusan, catalog).map((item) => item.masterCode)).not.toContain("UNIV-ROT18");
+    const regular = suggestedAccessoryOptions(regularBase, catalog).map((item) => item.masterCode);
+    expect(regular).toContain("RS18-TYPEA");
+    expect(regular).toContain("BEP3");
+  });
 });

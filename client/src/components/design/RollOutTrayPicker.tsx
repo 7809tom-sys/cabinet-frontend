@@ -46,8 +46,10 @@ export function RollOutTrayPicker({
     category: cabinet.category,
     subCategory: cabinet.subCategory,
     masterCode: cabinet.masterCode,
+    description: cabinet.description,
     numberOfDoors: cabinet.numberOfDoors,
-    isCornerCabinet: isCornerCabinet(cabinet.masterCode, cabinet.description),
+    isCornerCabinet: isCornerCabinet(cabinet.masterCode, cabinet.description, cabinet.cornerType),
+    cornerType: cabinet.cornerType ?? null,
     nominalWidth: cabinet.nominalWidth ?? null,
     width: cabinet.width,
   });

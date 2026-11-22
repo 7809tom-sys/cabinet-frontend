@@ -1,3 +1,5 @@
+import { isCornerCabinetExcludedFromRollOut, isRollOutTrayProduct } from "@shared/rollOutCornerExclusion";
+
 export type CatalogQuickViewItem = {
   id: number;
   masterCode: string;
@@ -95,8 +97,10 @@ export function suggestedAccessoryOptions(
   catalogItems: CatalogQuickViewItem[],
   limit = 4,
 ) {
+  const hideRollOutTrays = isCornerCabinetExcludedFromRollOut(cabinet);
   return catalogItems
     .filter((item) => item.id !== cabinet.id && isCatalogAccessory(item))
+    .filter((item) => !(hideRollOutTrays && isRollOutTrayProduct(item)))
     .map((item) => ({ item, score: relevance(cabinet, item) }))
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.item.masterCode.localeCompare(b.item.masterCode, undefined, { numeric: true }))

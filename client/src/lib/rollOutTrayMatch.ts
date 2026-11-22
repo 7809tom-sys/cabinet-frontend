@@ -15,6 +15,8 @@
 //     cabinets 18" through 36" wide with doors. Wall cabinets, corners, drawer-only cabinets,
 //     appliance/opening towers, fillers, panels, and trim are excluded.
 
+import { isCornerCabinetExcludedFromRollOut } from "@shared/rollOutCornerExclusion";
+
 export const MIN_ROLLOUT_ELIGIBLE_WIDTH_IN = 18;
 export const MAX_ROLLOUT_ELIGIBLE_WIDTH_IN = 36;
 export const MAX_ROLLOUT_TRAYS_PER_CABINET = 5;
@@ -39,8 +41,10 @@ export interface TrayTarget {
   category?: string | null;
   subCategory?: string | null;
   masterCode?: string | null;
+  description?: string | null;
   numberOfDoors?: number | null;
   isCornerCabinet?: boolean | null;
+  cornerType?: string | null;
   /** Catalog nominal width; falls back to live width when absent. */
   nominalWidth?: number | null;
   width?: number | null;
@@ -56,7 +60,9 @@ export function isRollOutEligible(c: TrayTarget): boolean {
 	  const placement = (c.placement ?? "").toLowerCase();
 	  if (placement && placement !== "base" && placement !== "tall") return false;
 
-  if (c.isCornerCabinet) return false;
+  // Corner cabinets (lazy Susan, blind, diagonal, BLS, etc.) never take a tray,
+  // even when the catalog isCornerCabinet flag was not copied onto the placed row.
+  if (isCornerCabinetExcludedFromRollOut(c)) return false;
 
   const code = (c.masterCode ?? "").toUpperCase();
   const sub = (c.subCategory ?? "").toLowerCase();

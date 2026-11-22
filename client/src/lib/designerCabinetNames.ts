@@ -28,6 +28,7 @@
  */
 
 import { twoDoorShopperDescription, type DoorFaceCabinet } from "@shared/twentyFourDoorFace";
+import { cornerSafeDisplayText } from "@shared/rollOutCornerExclusion";
 
 /** The dimension block the catalog rows lead with, e.g. `24" W × 34.75" H × 24" D `. */
 const LEADING_DIMENSIONS = /^(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*W\s*[×x]\s*(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*H\s*[×x]\s*(\d+(?:\.\d+)?(?:\s*-?\s*\d+\/\d+)?)\s*"?\s*D\s*/i;
@@ -89,6 +90,8 @@ export function leadingDimensionBlock(description: string | null | undefined): s
 export function designerCabinetName(input: {
   masterCode?: string | null;
   description?: string | null;
+  isCornerCabinet?: boolean | null;
+  cornerType?: string | null;
 } & DoorFaceCabinet): string {
   const family = rangeBaseFamilyForCode(input.masterCode);
   if (family) {
@@ -102,7 +105,7 @@ export function designerCabinetName(input: {
       .replace(/\s{2,}/g, " ")
       .trim(),
   });
-  return cleaned || (input.masterCode ?? "").trim();
+  return cornerSafeDisplayText(cleaned || (input.masterCode ?? "").trim(), input);
 }
 
 /**

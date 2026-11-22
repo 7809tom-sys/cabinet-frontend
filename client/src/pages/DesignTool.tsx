@@ -518,6 +518,7 @@ import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } 
 import { confirmPlacedItemRemoval } from "@/lib/placedItemRemoval";
 import { surfaceRole, formatPrice } from "@/lib/pelican";
 import { buildRollOutLines, normalizedRollOutTrayQty, rollOutTrayCartItems, type TrayOptionForStyle, type TrayPlaced } from "@/lib/rollOutTrayMatch";
+import { cornerSafeDisplayText } from "@shared/rollOutCornerExclusion";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useSeo } from "@/hooks/useSeo";
 import { useWhiteLabelHead } from "@/hooks/useWhiteLabelHead";
@@ -6565,10 +6566,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       category: p.category,
       subCategory: p.subCategory,
       masterCode: p.masterCode,
+      description: p.description,
       numberOfDoors: p.numberOfDoors,
       // Placed items don't always carry the catalog corner flag; derive it from
-      // the code/description so corners are reliably excluded.
-      isCornerCabinet: isCornerCabinet(p.masterCode, p.description),
+      // the code, stored type, and description so corners are reliably excluded.
+      isCornerCabinet: isCornerCabinet(p.masterCode, p.description, p.cornerType),
+      cornerType: p.cornerType ?? null,
       nominalWidth: p.nominalWidth ?? null,
       width: p.width,
       effectiveStyleId: pricingStyleIdFor(p) ?? designStyleId,
@@ -21110,7 +21113,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                         <CatalogPaletteCard
                           key={c.masterCode}
                           cabinet={c}
-                          description={c.description}
+                          description={cornerSafeDisplayText(c.description, c)}
                           sizeLabel={panelSizeLabel}
                           sizeTestId={paletteType === "panel" ? `panel-catalog-dimensions-${c.masterCode}` : undefined}
                           cardTestId={paletteType === "panel" ? `panel-catalog-item-${c.masterCode}` : undefined}
@@ -21152,7 +21155,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                    <CatalogPaletteCard
 	                      key={`${c.masterCode}:${c.catalogImageUrl ?? c.id}`}
 	                      cabinet={c}
-	                      description={designerCabinetName(c)}
+	                      description={cornerSafeDisplayText(designerCabinetName(c), c)}
 	                      sizeLabel={sizeLabel}
 	                      finishSwatchUrl={paletteFinishSwatch}
 	                      finishName={activeStyleName}
@@ -26476,8 +26479,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                <CabinetImage cabinet={catalogSpecificationsItem} className="h-16 w-16 shrink-0 rounded border border-[#d8c7a1] object-contain bg-white" />
 	                <div className="min-w-0">
 	                  <p className="font-mono text-base font-bold">{cabinetCode}</p>
-	                  <p className="text-sm">{catalogSpecificationsItem.description}</p>
-	                  <p className="mt-1 text-xs text-[#806a42]">{catalogSpecificationsItem.category ?? "Catalog item"}{catalogSpecificationsItem.subCategory ? ` · ${catalogSpecificationsItem.subCategory}` : ""}</p>
+	                  <p className="text-sm">{cornerSafeDisplayText(catalogSpecificationsItem.description, catalogSpecificationsItem)}</p>
+	                  <p className="mt-1 text-xs text-[#806a42]">{catalogSpecificationsItem.category ?? "Catalog item"}{cornerSafeDisplayText(catalogSpecificationsItem.subCategory, catalogSpecificationsItem) ? ` · ${cornerSafeDisplayText(catalogSpecificationsItem.subCategory, catalogSpecificationsItem)}` : ""}</p>
 	                </div>
 	              </div>
 	              <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-2 border-t border-[#d8c7a1] pt-3 text-xs">

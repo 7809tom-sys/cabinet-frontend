@@ -65,6 +65,25 @@ describe("isRollOutEligible", () => {
     expect(isRollOutEligible(base({ isCornerCabinet: true, subCategory: "Lazy Susan Base" }))).toBe(false);
   });
 
+  it("rejects corner SKUs even when the isCornerCabinet flag is missing", () => {
+    const corners = [
+      { masterCode: "BBC36", subCategory: "Blind Corner Base", nominalWidth: 36, width: 36 },
+      { masterCode: "BLS36", subCategory: "Lazy Susan Base", nominalWidth: 36, width: 36 },
+      { masterCode: "LSB33", subCategory: "Lazy Susan", nominalWidth: 33, width: 33 },
+      { masterCode: "WBC2430", placement: "wall" as const, subCategory: "Blind Corner Wall", nominalWidth: 24, width: 24 },
+      { masterCode: "DCW2436", placement: "wall" as const, subCategory: "Diagonal Corner Wall", nominalWidth: 24, width: 24 },
+      { masterCode: "CSB36", subCategory: "Corner Sink Base", nominalWidth: 36, width: 36 },
+      { masterCode: "CDB36", subCategory: "Corner Drawer Base", numberOfDoors: 0, nominalWidth: 36, width: 36 },
+      { masterCode: "ERB33", subCategory: "Easy Reach", nominalWidth: 33, width: 33 },
+      { masterCode: "BER36", subCategory: "Easy Reach", nominalWidth: 36, width: 36 },
+      { masterCode: "BCB42", description: "Base Blind w/Rollout Trays", cornerType: "blind-corner", nominalWidth: 36, width: 36 },
+    ];
+    for (const partial of corners) {
+      expect(isRollOutEligible(base({ isCornerCabinet: false, numberOfDoors: 1, ...partial })), partial.masterCode).toBe(false);
+      expect(matchRollOutTray(base({ isCornerCabinet: false, numberOfDoors: 1, ...partial }), ALL_TRAYS), partial.masterCode).toBeNull();
+    }
+  });
+
   it("rejects drawer-only bases (no door)", () => {
     expect(
       isRollOutEligible(base({ subCategory: "Drawer Base", masterCode: "DB18", numberOfDoors: 0 })),
