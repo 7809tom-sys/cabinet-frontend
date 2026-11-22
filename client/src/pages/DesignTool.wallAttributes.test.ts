@@ -27,7 +27,7 @@ describe("Continuous Wall Builder wall attributes", () => {
     expect(source).toContain('data-testid="delete-selected-custom-wall"');
     expect(source).toContain('data-testid="custom-wall-delete-dialog"');
     expect(source).toContain("prompt.cabinetCount > 0");
-    expect(source).toContain("deleteCustomWallSegment(prompt.wallId, room.vertices, room.customWalls)");
+    expect(source).toContain("deleteHighlightedCustomWall(room, prompt.wallId, openingUids)");
     expect(source).toContain("previous.filter((opening) => opening.side !== prompt.wallId)");
     expect(source).toContain("Every other wall keeps its existing length, height, angle, and position.");
   });
