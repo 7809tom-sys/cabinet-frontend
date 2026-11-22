@@ -66,6 +66,8 @@ import { refrigeratorEndPanelCutDownNote } from "@/lib/refrigeratorEndPanelCut";
 import { cabinetDrawingType } from "@/lib/cabinetGraphics";
 import { CUSTOM_CABINET_PROFILES } from "@/lib/customCabinetProfiles";
 import { RollOutTrayPicker } from "@/components/design/RollOutTrayPicker";
+import { attributeAddOnTarget } from "@/components/design/BaseCabinetAddOnButtons";
+import { isBaseCabinetAttributeAddOnEligible, isDrawerBaseCabinet } from "@/lib/baseCabinetAttributeAddOns";
 import { CABINET_ATTRIBUTES_DIALOG_CLASS } from "@/lib/cabinetAttributesDialogLayout";
 import { cabinetEditConfigLink } from "@/lib/cabinetEditConfigLink";
 import { masterTracProduct, MASTERTRAC_PRICE_DATE } from "@/lib/closet";
@@ -430,6 +432,8 @@ export interface CabinetAttributesDialogProps {
 	  distributorId: number | null;
 	  pricingTier: PricingTier;
   onSetRolloutQty: (uid: string, qty: number) => void;
+  /** Opens the existing sink and faucet picker for this cabinet. */
+  onAddSinkAndFaucet?: (uid: string) => void;
   // Glass door upgrade toggle
   onSetGlassDoor: (uid: string, glassDoor: boolean) => void;
   onSetDecorativeEnd: (uid: string, treatment: "none" | "left" | "right" | "both") => void;
@@ -629,6 +633,7 @@ export function CabinetAttributesDialog({
 	  distributorId,
 	  pricingTier,
   onSetRolloutQty,
+  onAddSinkAndFaucet,
   onSetGlassDoor,
   onSetDecorativeEnd,
   glassDoorAvailable,
@@ -675,6 +680,8 @@ export function CabinetAttributesDialog({
   if (!cabinet) return null;
 
   const uid = cabinet.uid;
+  const addOnTarget = attributeAddOnTarget(cabinet);
+  const showAttributeAddOns = isBaseCabinetAttributeAddOnEligible(addOnTarget);
   const canSwing = hasDoorSwing(cabinet) && swing !== "double";
   const isDouble = swing === "double";
   const noDoor = !!cabinet.noDoor;
@@ -1016,6 +1023,18 @@ export function CabinetAttributesDialog({
               )}
             </div>
           </section>
+
+          {showAttributeAddOns && (
+            <RollOutTrayPicker
+              cabinet={cabinet}
+              designStyleId={designStyleId}
+              distributorId={distributorId}
+              pricingTier={pricingTier}
+              qty={cabinet.rolloutQty ?? 0}
+              onSetQty={(q) => onSetRolloutQty(uid, q)}
+              onAddSinkAndFaucet={onAddSinkAndFaucet}
+            />
+          )}
 
           <details data-testid="cabinet-attributes-more-options" className="group rounded-lg border border-border bg-muted/15">
             <Tooltip>
@@ -1514,15 +1533,17 @@ export function CabinetAttributesDialog({
             </section>
           )}
 
-          {/* Add-ons: per-cabinet roll-out shelves (auto-sized, same line) */}
-          <RollOutTrayPicker
-            cabinet={cabinet}
-            designStyleId={designStyleId}
-	          distributorId={distributorId}
-	          pricingTier={pricingTier}
-            qty={cabinet.rolloutQty ?? 0}
-            onSetQty={(q) => onSetRolloutQty(uid, q)}
-          />
+          {/* 18" bases and pantries keep the existing stepper. 21"+ straight bases use the buttons above. */}
+          {!showAttributeAddOns && !isDrawerBaseCabinet(addOnTarget) && (
+            <RollOutTrayPicker
+              cabinet={cabinet}
+              designStyleId={designStyleId}
+              distributorId={distributorId}
+              pricingTier={pricingTier}
+              qty={cabinet.rolloutQty ?? 0}
+              onSetQty={(q) => onSetRolloutQty(uid, q)}
+            />
+          )}
             </div>
           </details>
         </div>

@@ -15,6 +15,8 @@
 //     cabinets 18" through 36" wide with doors. Wall cabinets, corners, drawer-only cabinets,
 //     appliance/opening towers, fillers, panels, and trim are excluded.
 
+import { isBaseCabinetAttributeAddOnEligible } from "./baseCabinetAttributeAddOns";
+
 export const MIN_ROLLOUT_ELIGIBLE_WIDTH_IN = 18;
 export const MAX_ROLLOUT_ELIGIBLE_WIDTH_IN = 36;
 export const MAX_ROLLOUT_TRAYS_PER_CABINET = 5;
@@ -41,9 +43,16 @@ export interface TrayTarget {
   masterCode?: string | null;
   numberOfDoors?: number | null;
   isCornerCabinet?: boolean | null;
+  cornerType?: string | null;
+  description?: string | null;
   /** Catalog nominal width; falls back to live width when absent. */
   nominalWidth?: number | null;
   width?: number | null;
+}
+
+/** Existing 18–36" door boxes, plus a 21"+ straight base from the attributes menu. */
+export function canCarryRollOutTray(c: TrayTarget): boolean {
+  return isRollOutEligible(c) || isBaseCabinetAttributeAddOnEligible(c);
 }
 
 /**
@@ -102,7 +111,7 @@ export function targetWidth(c: TrayTarget): number {
  * matches a 24" shelf.
  */
 export function matchRollOutTray(c: TrayTarget, options: TrayOption[]): TrayOption | null {
-  if (!isRollOutEligible(c)) return null;
+  if (!canCarryRollOutTray(c)) return null;
   const w = targetWidth(c);
   if (w <= 0) return null;
   if (!options || options.length === 0) return null;
@@ -198,7 +207,7 @@ export function buildRollOutLines(
   for (const p of placed) {
 	    const qty = normalizedRollOutTrayQty(p.rolloutQty);
     if (qty <= 0) continue;
-    if (!isRollOutEligible(p)) continue;
+    if (!canCarryRollOutTray(p)) continue;
     const sid = p.effectiveStyleId;
     if (sid == null) continue;
     const opts = optionsByStyle.get(sid);
