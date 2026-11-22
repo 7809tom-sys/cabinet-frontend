@@ -54,6 +54,25 @@ describe("regular Designer clear 3D view", () => {
     expect(threeDWallObscuresOrbitTarget(...front, camera, target)).toBe(false);
   });
 
+  it("keeps a free-standing 40 in partition solid unless the sightline crosses it", () => {
+    const renderer = readFileSync(new URL("./InteractiveRoom3D.tsx", import.meta.url), "utf8");
+    expect(renderer).toContain("const freestandingAddedWall = Boolean(addedOntoRectangle && customWall);");
+    expect(renderer).toContain("wallSurface.opacity = THREE_D_WALL_OPACITY");
+    expect(renderer).toContain("wallSurface.depthWrite = true");
+    expect(renderer).toContain("freestandingAddedWall,");
+    expect(renderer).toContain("const freestanding = mesh.userData.freestandingAddedWall === true;");
+    expect(renderer).toContain("? threeDWallObscuresOrbitTarget(");
+    expect(renderer).toContain(": threeDDollhouseWallHidesFromCamera(wallFrame, camera.position)");
+    // 144 x 120 room. Camera sits outside the front wall; the orbit target is the room center.
+    const camera = { x: 72, z: 40 };
+    const target = { x: 72, z: -60 };
+    // 40 in partition beside the ray, past the target, stays solid (the renderer leaves it visible).
+    expect(threeDWallObscuresOrbitTarget({ x: 10, y: 90 }, { x: 50, y: 90 }, camera, target)).toBe(false);
+    // The same length placed across the camera-to-target ray is the only reason that wall is hidden.
+    expect(threeDWallObscuresOrbitTarget({ x: 52, y: 30 }, { x: 92, y: 30 }, camera, target)).toBe(true);
+    expect(threeDWallObscuresOrbitTarget({ x: 0, y: 0 }, { x: 144, y: 0 }, camera, target)).toBe(true);
+  });
+
   it("does not ghost a wall outside the sightline, or a wall behind the camera", () => {
     expect(threeDWallObscuresOrbitTarget({ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 60, z: 10 }, { x: 60, z: -60 })).toBe(false);
     expect(threeDWallObscuresOrbitTarget(...front, { x: 60, z: -60 }, { x: 60, z: -80 })).toBe(false);
