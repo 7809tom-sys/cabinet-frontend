@@ -96,7 +96,7 @@ import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindo
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
-import { centerPanelGrainCanvas, woodGrainUv, woodMeshGrain, woodPanelPreviewUv, woodPanelSampleInches, type WoodGrainAxis } from "@/lib/woodPanelGrain";
+import { centerPanelGrainCanvas, placeWoodGrainCoordinate, woodGrainPieceOffset, woodGrainUv, woodMeshGrain, woodPanelPreviewUv, woodPanelSampleInches, type WoodGrainAxis } from "@/lib/woodPanelGrain";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -476,7 +476,7 @@ export function scaleWoodGrainUvs(
   geometry: THREE.BufferGeometry,
   grain: WoodGrainAxis,
   sample: { width: number; height: number },
-  salt = 0,
+  salt: { u: number; v: number } = { u: 0, v: 0 },
 ): THREE.BufferGeometry {
   // One UV per corner. A shared vertex cannot carry both a side and a top.
   const source = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -487,6 +487,8 @@ export function scaleWoodGrainUvs(
     source.setAttribute("uv", new THREE.Float32BufferAttribute(position.count * 2, 2));
     uv = source.getAttribute("uv");
   }
+  const rawU: number[] = [];
+  const rawV: number[] = [];
   const point = (index: number) => ({ x: position.getX(index), y: position.getY(index), z: position.getZ(index) });
   for (let index = 0; index + 2 < position.count; index += 3) {
     const a = point(index);
@@ -506,10 +508,18 @@ export function scaleWoodGrainUvs(
         face,
         grain,
         sample,
-        salt,
+        0,
       );
-      uv.setXY(index + corner, mapped.u, mapped.v);
+      rawU.push(mapped.u);
+      rawV.push(mapped.v);
     }
+  }
+  // A face no bigger than one tile stays inside that tile. A larger face is
+  // shifted so the next piece does not repeat the same mirrored figure.
+  const fittedU = placeWoodGrainCoordinate(rawU, salt.u);
+  const fittedV = placeWoodGrainCoordinate(rawV, salt.v);
+  for (let index = 0; index < fittedU.length; index += 1) {
+    uv.setXY(index, fittedU[index]!, fittedV[index]!);
   }
   uv.needsUpdate = true;
   return source;
@@ -541,7 +551,17 @@ export function applyLoadedWoodPanelGrain(
     if (options?.drawersOnly && !drawer) return;
     if (!options?.drawersOnly && drawer && mesh.userData?.drawerGrain) return;
     const grain = woodMeshGrain(mesh.userData as Record<string, unknown>);
-    const salt = (index * 0.37 + (mesh.position.x + mesh.position.y) * 0.5) % 1;
+    const pieceName = String(mesh.userData?.grainPiece ?? (mesh.userData?.cabinetDrawerFront ? "drawer" : "face"));
+    let owner: THREE.Object3D | null = mesh;
+    let ownerId = "";
+    while (owner) {
+      if (typeof owner.userData?.placedUid === "string" && owner.userData.placedUid) {
+        ownerId = owner.userData.placedUid;
+        break;
+      }
+      owner = owner.parent;
+    }
+    const salt = woodGrainPieceOffset(`${ownerId}|${pieceName}|${index}`);
     index += 1;
     mesh.geometry = scaleWoodGrainUvs(mesh.geometry.clone(), grain, sample, salt);
     const next = material.clone();
@@ -6952,6 +6972,11 @@ export function addCabinet(
   // the decorative face plane adds another half-depth and makes the hood float
   // forward into the room.
   frontGroup.position.z = isPlacedHood || specialty.kind === "diagonal-corner" || specialty.kind === "triangle-corner" || specialty.kind === "l-corner" || specialty.kind === "end-return" || specialty.kind === "base-angle-end" || specialty.kind === "wall-angle-end" ? 0 : faceDepth;
+  // A wood door slab was seated in front of the carcass, so the drawer face
+  // stepped past the end panel. Bring that slab flush with the side's front.
+  if (woodDoorPhotograph && frontGroup.position.z === faceDepth) {
+    frontGroup.position.z = bodyDepth / 2 - 0.052;
+  }
   if (isPlacedHood) {
     frontGroup.userData = {
       ...frontGroup.userData,
@@ -7141,18 +7166,17 @@ export function addCabinet(
         frameGroup.add(mesh);
       }
     }
-    // Painted faces keep the outer and opening lines. A wood photograph already
-    // has a physical rail, so only the single opening line is drawn. The outer
-    // line sat on the rail's own edge and read as a second rail.
-    if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish || woodDoorPhotograph)) {
+    // A wood photograph's physical rails are the only frame. An opening line
+    // just inside the stile reads, at an angle, as a second stile crossing the
+    // rails. Painted faces keep their outline.
+    if (!raisedProfile && !forceGlassFrame && !woodDoorPhotograph && (dlcDoorFinish || paintedFinish)) {
       attachShakerFrameOutline(frameGroup, {
         faceWidth,
         faceHeight,
         rail,
         stile,
-        color: woodDoorPhotograph ? "#9b7e5e" : (dlcDoorFinish ?? color),
+        color: dlcDoorFinish ?? color,
         proud: Boolean(dlcDoorFinish),
-        ...(woodDoorPhotograph ? { outer: false, opening: true } : {}),
       });
     }
     frontGroup.add(frameGroup);

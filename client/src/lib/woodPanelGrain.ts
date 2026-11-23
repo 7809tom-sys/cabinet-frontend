@@ -103,6 +103,37 @@ export function woodGrainAxes(normal: Vec3, grain: WoodGrainAxis): { along: Vec3
   return { along, across: normalise(cross(n, along)) };
 }
 
+/** Stable 0–1 offsets so neighboring doors do not repeat the same figure. */
+export function woodGrainPieceOffset(seed: string): { u: number; v: number } {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  hash = Math.imul(hash ^ (hash >>> 16), 2246822507);
+  hash = Math.imul(hash ^ (hash >>> 13), 3266489909);
+  const u = (hash >>> 0) / 4294967296;
+  const v = (Math.imul(hash ^ 0x85ebca6b, 0xc2b2ae35) >>> 0) / 4294967296;
+  return { u, v };
+}
+
+/**
+ * Keep a piece that fits in one tile inside that tile, so the mirror repeat
+ * never starts. A larger piece is shifted by a fraction of a tile.
+ */
+export function placeWoodGrainCoordinate(values: number[], salt: number): number[] {
+  if (!values.length) return values;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min;
+  if (span <= 1) {
+    const start = Math.min(1, Math.max(0, salt)) * (1 - span);
+    return values.map((value) => value - min + start);
+  }
+  const shift = Math.min(0.999, Math.max(0, salt));
+  return values.map((value) => value + shift);
+}
+
 export function woodGrainUv(
   pointIn: Vec3,
   normal: Vec3,

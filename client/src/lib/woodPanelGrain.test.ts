@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   WOOD_PANEL_SAMPLE_IN,
   WOOD_PANEL_WINDOW,
+  placeWoodGrainCoordinate,
+  woodGrainPieceOffset,
   woodGrainUv,
   woodMeshGrain,
   woodPanelPreviewUv,
@@ -60,6 +62,19 @@ describe("wood panel grain", () => {
     const far = woodGrainUv({ x: 36, y: 40, z: 12 }, { x: 0, y: 1, z: 0 }, "vertical", sample, 0);
     expect(Math.abs(far.v - near.v)).toBeCloseTo(36 / sample.height);
     expect(Math.abs(far.u - near.u)).toBeCloseTo(12 / sample.width);
+  });
+
+  it("keeps a piece that fits in one tile from mirroring, and shifts the next piece", () => {
+    const small = placeWoodGrainCoordinate([2.2, 2.5], 0.25);
+    expect(Math.max(...small) - Math.min(...small)).toBeCloseTo(0.3);
+    expect(Math.min(...small)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...small)).toBeLessThanOrEqual(1);
+    const wide = placeWoodGrainCoordinate([0, 2.4], 0.4);
+    expect(Math.max(...wide) - Math.min(...wide)).toBeCloseTo(2.4);
+    const left = woodGrainPieceOffset("cabinet-a|stile|left");
+    const right = woodGrainPieceOffset("cabinet-a|stile|right");
+    expect(Math.abs(left.u - right.u)).toBeGreaterThan(0.05);
+    expect(Math.abs(left.v - right.v)).toBeGreaterThan(0.05);
   });
 
   it("shifts neighboring pieces and keeps drawers horizontal", () => {

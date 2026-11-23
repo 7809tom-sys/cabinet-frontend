@@ -123,7 +123,7 @@ describe("Oxford Toffee wood photo", () => {
     root.traverse((node) => {
       if (node.userData?.shakerFrameOutline) outlines += 1;
     });
-    expect(outlines).toBeGreaterThan(0);
+    expect(outlines).toBe(0);
   });
 
   it("keeps the center-panel crop on a base, a wall, and a DCW", () => {
@@ -195,7 +195,7 @@ describe("Oxford Toffee wood photo", () => {
       drawers += 1;
     });
     expect(drawers).toBeGreaterThanOrEqual(3);
-    const tall = scaleWoodGrainUvs(new THREE.BoxGeometry(0.75 / 12, 96 / 12, 24 / 12), "vertical", WOOD_PANEL_SAMPLE_IN, 0);
+    const tall = scaleWoodGrainUvs(new THREE.BoxGeometry(0.75 / 12, 96 / 12, 24 / 12), "vertical", WOOD_PANEL_SAMPLE_IN, { u: 0, v: 0 });
     const tallUv = tall.getAttribute("uv");
     const position = tall.getAttribute("position");
     const normal = tall.getAttribute("normal");

@@ -61,6 +61,10 @@ function meshes(root: THREE.Object3D) {
   return found;
 }
 
+function framePieces(frame: THREE.Object3D) {
+  return frame.children.filter((child) => (child as THREE.Mesh).isMesh && child.userData.physicalRail) as THREE.Mesh[];
+}
+
 describe("one wood shaker frame", () => {
   it("gives a plain tall pantry one full-height frame per door and no carcass frame", () => {
     const root = build({
@@ -85,14 +89,16 @@ describe("one wood shaker frame", () => {
       if (node.userData.physicalRails) frames.add(node);
     });
     expect(frames.size).toBe(2);
+    const topRails: number[] = [];
     for (const frame of frames) {
-      const rails = frame.children.filter((child) => (child as THREE.Mesh).isMesh && child.userData.physicalRail);
-      expect(rails).toHaveLength(4);
-      expect(frame.children.some((child) => child.userData.shakerNotch)).toBe(false);
-      const outline = frame.children.find((child) => child.userData.shakerFrameOutline) as THREE.LineSegments | undefined;
-      expect(outline).toBeTruthy();
-      expect(outline!.geometry.getAttribute("position").count).toBe(8);
+      const pieces = framePieces(frame);
+      expect(pieces).toHaveLength(4);
+      expect(frame.children.some((child) => child.userData.shakerNotch || child.userData.shakerFrameOutline)).toBe(false);
+      const rails = pieces.filter((piece) => piece.userData.grainPiece === "rail");
+      expect(rails).toHaveLength(2);
+      topRails.push(Math.max(...rails.map((rail) => rail.position.y)));
     }
+    expect(topRails[0]).toBeCloseTo(topRails[1]!, 5);
     expect(meshes(root).some((mesh) => mesh.userData.cabinetFaceFrame)).toBe(false);
   });
 
@@ -121,10 +127,76 @@ describe("one wood shaker frame", () => {
       if (node.userData.physicalRails && node.userData.faceRole === "drawer") frames.add(node);
     });
     expect(frames.size).toBe(drawers.length);
+    const side = meshes(root).find((mesh) => mesh.userData.selectedStyleSideSkin);
+    const sideFront = new THREE.Box3().setFromObject(side!).max.z;
     for (const frame of frames) {
-      expect(frame.children.filter((child) => child.userData.physicalRail)).toHaveLength(4);
-      expect(frame.children.some((child) => child.userData.shakerNotch)).toBe(false);
+      const pieces = framePieces(frame);
+      expect(pieces).toHaveLength(4);
+      expect(frame.children.some((child) => child.userData.shakerNotch || child.userData.shakerFrameOutline)).toBe(false);
+      const stiles = pieces.filter((piece) => piece.userData.grainPiece === "stile");
+      const rails = pieces.filter((piece) => piece.userData.grainPiece === "rail");
+      expect(stiles).toHaveLength(2);
+      expect(rails).toHaveLength(2);
+      const half = (drawers[0]!.geometry as THREE.BoxGeometry).parameters.width / 2;
+      for (const stile of stiles) {
+        // The stile is the end of this drawer, not a second stile inset across the face.
+        expect(half - Math.abs(stile.position.x)).toBeLessThan(1.5 / 12);
+      }
+      for (const rail of rails) {
+        const railHalf = (rail.geometry as THREE.BoxGeometry).parameters.width / 2;
+        for (const stile of stiles) {
+          const stileHalf = (stile.geometry as THREE.BoxGeometry).parameters.width / 2;
+          expect(Math.abs(stile.position.x) + stileHalf).toBeGreaterThan(Math.abs(rail.position.x) + railHalf - 0.02);
+        }
+      }
+    }
+    root.updateMatrixWorld(true);
+    for (const drawer of drawers) {
+      expect(new THREE.Box3().setFromObject(drawer).max.z).toBeLessThanOrEqual(sideFront + 0.02);
     }
     expect(meshes(root).some((mesh) => mesh.userData.cabinetFaceFrame)).toBe(false);
+  });
+
+  it("keeps a two-cabinet island seam between drawers, not across them", () => {
+    const root = new THREE.Group();
+    for (const x of [9, 27]) {
+      addCabinet(
+        root,
+        {
+          placementUid: `island-${x}`,
+          masterCode: "3DB18",
+          description: "Island drawer base",
+          placementType: "base",
+          width: 18,
+          height: 34.5,
+          depth: 24,
+          numberOfDoors: 0,
+          numberOfDrawers: 3,
+          category: "Base",
+        } as never,
+        "back",
+        { back: 0 },
+        144,
+        120,
+        "#b9a281",
+        "#f7f4ef",
+        designerCatalogDoorProfile(AIR_DAWN as never) as never,
+        { x, z: 0, rotation: 0 },
+        AIR_DAWN.doorSampleImageUrl,
+        undefined,
+        { selectedToeKick: true, drawerSampleUrl: AIR_DAWN.doorSampleImageUrl, faceCrop: CROP },
+      );
+    }
+    const drawers = meshes(root).filter((mesh) => mesh.userData.cabinetDrawerFront);
+    expect(drawers).toHaveLength(6);
+    const frames: THREE.Object3D[] = [];
+    root.traverse((node) => {
+      if (node.userData.physicalRails && node.userData.faceRole === "drawer") frames.push(node);
+    });
+    expect(frames).toHaveLength(6);
+    expect(meshes(root).some((mesh) => mesh.userData.cabinetFaceFrame)).toBe(false);
+    for (const frame of frames) {
+      expect(framePieces(frame)).toHaveLength(4);
+    }
   });
 });
