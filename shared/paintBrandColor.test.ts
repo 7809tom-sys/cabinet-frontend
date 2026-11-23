@@ -84,6 +84,9 @@ describe("paint brand parse and serialize", () => {
     expect(serializePaintBrandColor({ ...ALABASTER, brand: "Glidden" })).toBeNull();
     expect(serializePaintBrandColor({ ...ALABASTER, code: "  " })).toBeNull();
     expect(serializePaintBrandColor({ ...ALABASTER, name: "" })).toBeNull();
+    expect(serializePaintBrandColor({ ...ALABASTER, code: "C".repeat(33) })).toBeNull();
+    expect(serializePaintBrandColor({ ...ALABASTER, name: "N".repeat(65) })).toBeNull();
+    expect(serializePaintBrandColor({ ...ALABASTER, code: "C".repeat(32), name: "N".repeat(64) })?.code).toHaveLength(32);
     expect(parsePaintBrandColor({ kind: "other", brand: "Behr", code: "MQ3-07", name: "Alabaster", hex: "#f2f0ea", confirmed: true })).toBeNull();
   });
 

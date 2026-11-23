@@ -53,6 +53,7 @@ import {
   normalizeHex,
   parseDoorColorSourceSelection,
   selectedDoorHex,
+  serializePaintBrandColor,
   selectionForStyle,
   styleForDoorColorSource,
   writeDoorColorSourceSelection,
@@ -773,16 +774,26 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     // A typed Hex or Sherwin-Williams pick only counts after Confirm. Saving with
     // one still pending used to store the supplier photo silently, which looked
     // like the tile "never moved up". Say it instead.
-    const pendingColorPick = colorSource.active === "hex"
-      ? Boolean(normalizeHex(colorSource.pendingHex))
-      : colorSource.active === "sherwin-williams" && colorSource.pendingSherwin
-        ? Boolean(colorSource.pendingSherwin)
-        : colorSource.active === "paint-brand" && colorSource.pendingPaint
-          ? Boolean(colorSource.pendingPaint.brand || colorSource.pendingPaint.code.trim() || colorSource.pendingPaint.name.trim() || colorSource.pendingPaint.hex.trim())
-          : false;
-    if (pendingColorPick && awaitingConfirm(colorSource)) {
-      const which = colorSource.active === "hex" ? "the Hex tile" : colorSource.active === "paint-brand" ? "Paint brand" : "the Sherwin-Williams tile";
-      toast.error(`Press Confirm on ${which} before saving. Until then the door keeps its supplier photo.`);
+    const typedHex = normalizeHex(colorSource.pendingHex);
+    const hexUnconfirmed = Boolean(typedHex) && !(colorSource.stored?.source === "hex" && colorSource.stored.hex === typedHex);
+    const paintUnconfirmed = Boolean(colorSource.pendingPaint && (
+      colorSource.pendingPaint.brand
+      || colorSource.pendingPaint.code.trim()
+      || colorSource.pendingPaint.name.trim()
+      || colorSource.pendingPaint.hex.trim()
+    ) && !serializePaintBrandColor({ ...colorSource.pendingPaint, chosenAt: colorSource.stored?.source === "paint-brand" ? colorSource.stored.chosenAt : "" }));
+    const paintChanged = Boolean(colorSource.pendingPaint && serializePaintBrandColor({ ...colorSource.pendingPaint, chosenAt: "x" })
+      && !(colorSource.stored?.source === "paint-brand"
+        && colorSource.stored.brand === colorSource.pendingPaint.brand
+        && colorSource.stored.code === colorSource.pendingPaint.code.trim()
+        && colorSource.stored.name === colorSource.pendingPaint.name.trim()
+        && colorSource.stored.hex === normalizeHex(colorSource.pendingPaint.hex)));
+    const swUnconfirmed = colorSource.active === "sherwin-williams"
+      && Boolean(colorSource.pendingSherwin)
+      && colorSource.stored?.source !== "sherwin-williams";
+    if (hexUnconfirmed || paintUnconfirmed || paintChanged || swUnconfirmed) {
+      const which = hexUnconfirmed ? "Hex" : paintUnconfirmed || paintChanged ? "Paint brand" : "the Sherwin-Williams tile";
+      toast.error(`Press Confirm on ${which} before saving. Until then the door keeps its current color.`);
       return;
     }
     const skinErr = doorSkinError(doorSkin);
@@ -1179,7 +1190,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               }}
             />
             );
-            const pendingHex = colorSource.pendingHex ?? "";
+            const pendingHex = colorSource.pendingHex
+              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : "");
             // A tile with no picture stays empty (striped placeholder + warning dot):
             // the Hex tile only paints once a hex has been picked or confirmed.
             const hexSwatch = normalizeHex(colorSource.pendingHex)

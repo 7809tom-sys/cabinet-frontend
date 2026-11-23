@@ -90,17 +90,18 @@ describe("DoorColorSourceSelector", () => {
     expect(screen.getByTestId("door-color-source-hex-swatch").getAttribute("style")).toContain("rgb(51, 102, 153)");
   });
 
-  it("opens only the selected tile's editor", () => {
+  it("keeps the hex box and paint fields on screen, and opens only the selected tile's extra editor", () => {
     render(<Harness />);
-    // Original selected: no hex input, no wheels.
-    expect(screen.queryByTestId("hex-in")).toBeNull();
+    expect(screen.getByTestId("hex-in")).toBeTruthy();
+    expect(screen.getByTestId("paint-brand-select")).toBeTruthy();
     expect(screen.queryByTestId("existing-sw-wheels")).toBeNull();
     fireEvent.click(screen.getByTestId("door-color-source-hex"));
     expect(screen.getByTestId("hex-in")).toBeTruthy();
     expect(screen.queryByTestId("existing-sw-wheels")).toBeNull();
     fireEvent.click(screen.getByTestId("door-color-source-sherwin-williams"));
     expect(screen.getByTestId("existing-sw-wheels")).toBeTruthy();
-    expect(screen.queryByTestId("hex-in")).toBeNull();
+    expect(screen.getByTestId("hex-in")).toBeTruthy();
+    expect(screen.getByTestId("paint-brand-select")).toBeTruthy();
   });
 
   it("Hex shows the existing hex picker and needs Confirm", () => {
@@ -125,7 +126,8 @@ describe("DoorColorSourceSelector", () => {
     fireEvent.click(screen.getByTestId("door-color-source-sherwin-williams"));
     expect(screen.getByTestId("existing-sw-wheels")).toBeTruthy();
     expect((screen.getByTestId("door-color-source-sherwin-williams-confirm") as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByTestId("door-color-source-hex-confirm")).toBeNull();
+    expect(screen.getByTestId("door-color-source-hex-confirm")).toBeTruthy();
+    expect(screen.getByTestId("paint-brand-select")).toBeTruthy();
   });
 
   it("Approved AI image with none accepted says so and offers the existing AI tool without starting it", () => {
@@ -165,12 +167,53 @@ describe("DoorColorSourceSelector", () => {
     expect(screen.getByTestId("door-color-source-ai-saved").textContent).toMatch(/not an accepted render yet/);
   });
 
+  it("paint brand fields and the hex box show for every starting source", () => {
+    const sources: Array<DoorColorSourceSelection | null> = [
+      null,
+      { source: "original-image", chosenAt: "2026-11-22T18:00:00.000Z" },
+      { source: "approved-ai-image", chosenAt: "2026-11-22T18:00:00.000Z" },
+      {
+        source: "sherwin-williams",
+        confirmed: true,
+        chosenAt: "2026-11-22T18:00:00.000Z",
+        color: { finish: "paint", code: "SW7008", label: "Alabaster", hex: "#edeae0", woodSpecies: null, grainDirection: "none", profileImageUrl: null },
+      },
+      { source: "hex", confirmed: true, chosenAt: "2026-11-22T18:00:00.000Z", hex: "#224466" },
+    ];
+    for (const stored of sources) {
+      cleanup();
+      render(<Harness stored={stored} />);
+      expect(tiles()).toHaveLength(4);
+      expect(screen.getByTestId("paint-brand-select")).toBeTruthy();
+      expect(screen.getByTestId("paint-brand-code")).toBeTruthy();
+      expect(screen.getByTestId("paint-brand-name")).toBeTruthy();
+      expect(screen.getByTestId("paint-brand-hex")).toBeTruthy();
+      expect(screen.getByTestId("door-color-source-paint-brand-confirm")).toBeTruthy();
+      expect(screen.getByTestId("hex-in")).toBeTruthy();
+      expect(screen.getByTestId("door-color-source-hex-confirm")).toBeTruthy();
+      expect((screen.getByTestId("paint-brand-code") as HTMLInputElement).maxLength).toBe(32);
+      expect((screen.getByTestId("paint-brand-name") as HTMLInputElement).maxLength).toBe(64);
+    }
+  });
+
+  it("prefills an old Sherwin-Williams row as brand Sherwin-Williams", () => {
+    render(<Harness stored={{
+      source: "sherwin-williams",
+      confirmed: true,
+      chosenAt: "2026-11-22T18:00:00.000Z",
+      color: { finish: "paint", code: "SW7008", label: "Alabaster", hex: "#EDEAE0", woodSpecies: null, grainDirection: "none", profileImageUrl: null },
+    }} />);
+    expect(screen.getByTestId("door-color-source-sherwin-williams").getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByTestId("paint-brand-select") as HTMLSelectElement).value).toBe("Sherwin-Williams");
+    expect((screen.getByTestId("paint-brand-code") as HTMLInputElement).value).toBe("SW7008");
+    expect((screen.getByTestId("paint-brand-name") as HTMLInputElement).value).toBe("Alabaster");
+    expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#edeae0");
+  });
+
   it("paint brand is not a fifth tile and lists exactly the six brands", () => {
-    render(<Harness hexSeed="#e8e4d8" />);
+    render(<Harness />);
     expect(tiles()).toHaveLength(4);
-    expect(screen.queryByTestId("paint-brand-select")).toBeNull();
-    fireEvent.click(screen.getByTestId("door-color-source-paint-brand-open"));
-    expect(tiles().filter((el) => el.getAttribute("aria-checked") === "true")).toEqual([]);
+    expect(screen.getByTestId("door-color-source-original-image").getAttribute("aria-checked")).toBe("true");
     const options = screen.getAllByRole("option").map((option) => option.textContent);
     expect(options).toEqual([
       "Choose a brand",
@@ -181,12 +224,12 @@ describe("DoorColorSourceSelector", () => {
       "PPG",
       "Clark + Kensington",
     ]);
-    expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#e8e4d8");
     const confirm = screen.getByTestId("door-color-source-paint-brand-confirm") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     fireEvent.change(screen.getByTestId("paint-brand-select"), { target: { value: "Clark + Kensington" } });
     fireEvent.change(screen.getByTestId("paint-brand-code"), { target: { value: "CK 001" } });
     fireEvent.change(screen.getByTestId("paint-brand-name"), { target: { value: "Swiss Coffee" } });
+    fireEvent.change(screen.getByTestId("paint-brand-hex"), { target: { value: "#e8e4d8" } });
     expect(confirm.disabled).toBe(false);
     fireEvent.click(confirm);
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Paint brand · Clark \+ Kensington CK 001 Swiss Coffee · #e8e4d8/);

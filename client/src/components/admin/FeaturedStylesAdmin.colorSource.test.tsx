@@ -64,10 +64,13 @@ describe("Edit Door: one door color source selector", () => {
     expect(selector.compareDocumentPosition(overrides) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(dialog.querySelectorAll('[data-testid="door-color-source-selector"]').length).toBe(1);
     expect(screen.getByTestId("door-color-source-original-image").getAttribute("aria-checked")).toBe("true");
-    // The old render hex field moved into the selector, and the photo eyedropper
-    // now lives under the Hex tile, so neither is in the panel by default.
+    // The old render hex field lives in the selector. The hex box and its eyedropper
+    // stay visible no matter which source tile is selected.
     expect(dialog.querySelector("#ed-render-hex")).toBeNull();
-    expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(0);
+    expect(dialog.querySelector('[data-testid="door-color-source-hex-input"]')).toBeTruthy();
+    expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(1);
+    expect(dialog.textContent).toMatch(/Click either door picture to pick the hex/);
+    expect(dialog.querySelector('[data-testid="paint-brand-select"]')).toBeTruthy();
     // Every color tool sits in one card, so an edit and its result are seen together.
     const panel = dialog.querySelector('[data-testid="door-color-panel"]')!;
     expect(panel).toBeTruthy();
@@ -88,13 +91,18 @@ describe("Edit Door: one door color source selector", () => {
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Hex · #224466/);
   });
 
-  it("Hex opens the eyedropper under the Hex tile, and only there", () => {
+  it("shows the hex input, swatch and eyedropper whichever source tile is selected", () => {
     const dialog = openFirst();
-    expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(0);
-    fireEvent.click(screen.getByTestId("door-color-source-hex"));
     const slot = dialog.querySelector('[data-testid="door-color-source-hex-picker"]')!;
+    expect(slot.querySelector('[data-testid="door-color-source-hex-input"]')).toBeTruthy();
+    expect(slot.querySelector('[aria-label="Pick hex"]')).toBeTruthy();
     expect(slot.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(1);
+    expect(slot.textContent).toMatch(/Click either door picture to pick the hex/);
     expect(slot.querySelector('[data-testid="edit-dialog-sample-photo"]')).toBeTruthy();
+    expect(screen.getByTestId("door-color-source-original-image").getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByTestId("door-color-source-approved-ai-image"));
+    expect(dialog.querySelector('[data-testid="door-color-source-hex-input"]')).toBeTruthy();
+    expect(dialog.querySelector('[data-testid="paint-brand-select"]')).toBeTruthy();
   });
 
   it("Sherwin-Williams keeps one wheel set, in the always-visible WalzCraft wizard", () => {
@@ -165,7 +173,39 @@ describe("Edit Door: one door color source selector", () => {
     openFirst();
     expect(screen.getByTestId("door-color-source-sherwin-williams").getAttribute("aria-checked")).toBe("true");
     expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Sherwin-Williams · Alabaster · #edeae0/);
-    expect(screen.queryByTestId("paint-brand-select")).toBeNull();
+    expect((screen.getByTestId("paint-brand-select") as HTMLSelectElement).value).toBe("Sherwin-Williams");
+    expect((screen.getByTestId("paint-brand-code") as HTMLInputElement).value).toBe("SW7008");
+    expect((screen.getByTestId("paint-brand-name") as HTMLInputElement).value).toBe("Alabaster");
+    expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#edeae0");
+    expect(screen.getByTestId("door-color-source-hex-input")).toBeTruthy();
+  });
+
+  it("shows paint brand fields and the hex box for original, approved AI, Sherwin-Williams, and hex", () => {
+    const cases = [
+      { doorColorSource: "original-image", doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z" },
+      { doorColorSource: "approved-ai-image", doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z" },
+      {
+        doorColorSource: "sherwin-williams",
+        doorColorSourceValue: { finish: "paint", code: "SW7006", label: "Extra White", hex: "#f2f0ea", woodSpecies: null, grainDirection: "none", profileImageUrl: null },
+        doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z",
+      },
+      { doorColorSource: "hex", doorColorSourceValue: { hex: "#224466" }, doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z" },
+    ];
+    for (const fields of cases) {
+      cleanup();
+      localStorage.clear();
+      styles[0] = { ...firstStyle, ...fields };
+      const dialog = openFirst();
+      expect(dialog.querySelector('[data-testid="paint-brand-select"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="paint-brand-code"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="paint-brand-name"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="paint-brand-hex"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="door-color-source-paint-brand-confirm"]')).toBeTruthy();
+      expect(dialog.querySelector('[data-testid="door-color-source-hex-input"]')).toBeTruthy();
+      expect(dialog.querySelector('[aria-label="Pick hex"]')).toBeTruthy();
+      expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(1);
+      expect(dialog.textContent).toMatch(/Click either door picture to pick the hex/);
+    }
   });
 
   it("hydrates the selector from server fields when localStorage is empty", () => {
