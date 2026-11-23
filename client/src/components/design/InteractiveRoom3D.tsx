@@ -409,6 +409,36 @@ export function threeDDesignerRoomPhotoCompensation(finishHex: string | null | u
 }
 
 /**
+ * Tint for a wood door photograph so the room lights do not turn it dark brown.
+ *
+ * The catalog hex must not multiply the photo. The pale-finish cut is for flat
+ * paint that the room environment washes out, not for a photograph that should
+ * come back at its own brightness. Tone mapping stays off on these materials.
+ */
+export function woodDoorPhotoMaterialColor(): string {
+  return dlcPhotoLightCompensation(threeDDesignerRoomCompensationRig(RESTORED_DOOR_LIGHTS), null).hex;
+}
+
+export function applyWoodDoorPhotoFidelity(material: THREE.MeshStandardMaterial): void {
+  // The room lights and ACES tone map turn a wood photograph dark and brown.
+  // The photograph already contains its grain and bevel, so the face shows that
+  // picture directly. Paint with no photo never calls this.
+  material.color.set("#ffffff");
+  material.toneMapped = false;
+  material.envMapIntensity = 0;
+  if ("clearcoat" in material) (material as THREE.MeshPhysicalMaterial).clearcoat = 0;
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <opaque_fragment>",
+      "gl_FragColor = vec4( diffuseColor.rgb, diffuseColor.a );",
+    );
+  };
+  material.customProgramCacheKey = () => "wood-door-photo";
+  material.userData = { ...material.userData, woodPhotoFidelity: true };
+  material.needsUpdate = true;
+}
+
+/**
  * The live designer room lights: hemisphere, a mirrored neutral key pair and the
  * room point light. Room width/depth are in inches; `wallHeight` is in scene units.
  * The pair splits the rig's key + fill energy, so overall brightness is unchanged.
@@ -5137,14 +5167,10 @@ export function addCabinet(
   // The flag comes from the door style (`shared/paintedFinish.ts`); the renderer
   // never guesses paint from a color.
   const paintedFinish = doorProfile?.paintedFinish === true;
-  // A painted shaker crop is a solid color and no grain. The Designer can still
-  // pass the style's door photograph as a fallback sample. That photograph has
-  // its own frame, and faceTileIn would tile it across the front. Drop it.
-  const faceCrop = surfaceTextures?.faceCrop ?? null;
-  const solidPaintCrop = Boolean(faceCrop?.solidColor)
-    && !faceCrop?.grainUrl
-    && faceCrop?.grainSubstituted !== true;
-  const renderSolidFace = paintedFinish || (solidPaintCrop && !isFrameFreeGrainTexture(doorSampleUrl));
+  // Only a positive paint classification drops the door photograph. A shaker
+  // crop often carries a solid hex and no grain file even for a wood tone such
+  // as Warm Toffee. That crop must not flatten the photo.
+  const renderSolidFace = paintedFinish;
   // Wood grain tile set (approved in the door style editor, browser draft only): each front gets a tile
   // picked deterministically from its uid, with flip + small UV offset. No set → the single door photo.
   const woodGrainTile = renderSolidFace ? null : woodGrainTileForFront(doorProfile?.styleId ?? null, sku.placementUid ?? `${sku.masterCode}@${transform?.x ?? 0},${transform?.z ?? 0}`, undefined, { horizontal: doorProfile?.grainDirection === "horizontal" });
@@ -6324,6 +6350,7 @@ export function addCabinet(
       // A drawer front is the same wood as the door beside it.
       if (!dlcPhotoComp) applyGrainTemplateTint(material);
       markPhotoFaceToneMapOff(material);
+      matchWoodPhotoBrightness(material);
       if (dlcDrawerNormalUrl && dlcDrawerNormal) {
         material.normalMap = dlcDrawerNormal;
         material.normalScale.set(0.6, 0.6);
@@ -6398,6 +6425,18 @@ export function addCabinet(
   // multiplied in linear light to the door's own recorded colour.
   if (!dlcPhotoComp && doorTexture) applyGrainTemplateTint(faceMaterial);
   markPhotoFaceToneMapOff(faceMaterial);
+  // A catalog wood photo is not a DL studio crop. Cancel the room lights without
+  // the pale-paint cut and without multiplying by the catalog hex, or oak renders
+  // as dark walnut. Painted faces never reach this: they have no photo map.
+  const woodDoorPhotograph = !paintedFinish
+    && !usesCuratedCabinetGrain
+    && !isFrameFreeGrainTexture(doorSampleUrl)
+    && surfaceTextures?.faceCrop?.grainSubstituted !== true;
+  const matchWoodPhotoBrightness = (material: THREE.MeshStandardMaterial | null | undefined) => {
+    if (!woodDoorPhotograph || !material?.map) return;
+    applyWoodDoorPhotoFidelity(material);
+  };
+  matchWoodPhotoBrightness(faceMaterial);
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
   let structuralSampleTexture: THREE.Texture | null = null;
@@ -6435,6 +6474,7 @@ export function addCabinet(
   const applyStructuralFinish = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
     applyStructuralFinishBase(finishColor, _sampleTexture);
     applyDlcGrain();
+    for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) matchWoodPhotoBrightness(material);
   };
   const applyStructuralFinishBase = (finishColor: string, sampleTexture: THREE.Texture | null = null) => {
     // ONE authoritative door appearance for every visible surface of a cabinet.
@@ -6513,6 +6553,7 @@ export function addCabinet(
 	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
   if (!dlcPhotoComp && doorTexture) applyGrainTemplateTint(trimMaterial);
   markPhotoFaceToneMapOff(trimMaterial);
+  matchWoodPhotoBrightness(trimMaterial);
 	  // A per-host Door Style sample can fail to load. Faces and their physical
 	  // rails must then fall back together to the chosen style color instead of
 	  // leaving the rails with an unresolved (black) texture map.

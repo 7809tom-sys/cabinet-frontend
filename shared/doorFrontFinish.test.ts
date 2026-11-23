@@ -120,6 +120,43 @@ describe("prefersSolidPaintedShakerFace", () => {
 });
 
 describe("painted colors across the live door-style inventory", () => {
+  it("keeps Warm Toffee on its wood photo", () => {
+    const toffee = {
+      id: 330030,
+      ourName: "Oxford Toffee",
+      aliasName: "Warm Toffee (Madison)",
+      doorStyle: "Shaker",
+      finish: "Warm Toffee (Madison)",
+      woodSpecies: "Solid Birch frame / veneered center panel",
+      color: "#A07850",
+      grainDirection: null,
+      doorSampleImageUrl: "/manus-storage/media-library/warm-toffee-door.jpg",
+    };
+    expect(classifyDoorFinish(toffee).family).toBe("stain");
+    expect(prefersSolidPaintedShakerFace(toffee)).toBe(false);
+  });
+
+  it("keeps Carmel Shaker and Shaker Espresso on the photo", () => {
+    expect(classifyDoorFinish({
+      ourName: "Carmel Shaker",
+      aliasName: "Terra Shaker (Ashford)",
+      doorStyle: "Shaker",
+      finish: "Terra Shaker (Ashford)",
+      color: "#C8A882",
+      renderHex: "#5a4226",
+      grainDirection: "none",
+    }).family).toBe("stain");
+    expect(classifyDoorFinish({
+      ourName: "Shaker Espresso",
+      aliasName: "Cobalt Abyss (Preston)",
+      doorStyle: "Shaker",
+      finish: "Cobalt Abyss (Preston)",
+      woodSpecies: "Solid Birch",
+      color: "#25130e",
+      grainDirection: "none",
+    }).family).toBe("stain");
+  });
+
   it("paints Zenith Sage even though its color source is an approved AI image", () => {
     const sage = {
       id: 330005,
@@ -135,7 +172,10 @@ describe("painted colors across the live door-style inventory", () => {
     };
     // PR 523 stopped at an image color source, so this row kept the screenshot.
     expect(isPaintedFinish(sage)).toBe(false);
-    expect(classifyDoorFinish(sage)).toEqual({ family: "paint", reason: "Saved render hex." });
+    expect(classifyDoorFinish(sage)).toEqual({
+      family: "paint",
+      reason: "Paint color name (white, cream, sage, gray, navy, black, and the rest).",
+    });
   });
 
   it("classifies the named paint and stain rows the same way", () => {
