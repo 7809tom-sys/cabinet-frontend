@@ -15,6 +15,7 @@ type GeneratedImage = {
   sourceKey: string;
   sourceLabel: string;
   imageUrl: string;
+  sourcePhotoUrl?: string | null;
   createdAt: Date;
   designId: number | null;
   designName: string;
@@ -109,6 +110,12 @@ export function GeneratedDesignImagesAdmin() {
                 <div className="grid md:grid-cols-[minmax(220px,42%)_1fr]">
                   <div className="min-h-56 bg-slate-100 p-2">
                     <img src={image.imageUrl} alt={`${image.designName} generated image`} className="h-full min-h-56 w-full rounded-md object-cover" loading="lazy" />
+                    {image.sourcePhotoUrl ? (
+                      <a href={image.sourcePhotoUrl} target="_blank" rel="noreferrer" className="mt-2 flex items-center gap-2 rounded-md border bg-white p-1.5 text-xs text-muted-foreground" data-testid={`generated-image-source-photo-${image.source}-${image.sourceId}`}>
+                        <img src={image.sourcePhotoUrl} alt={`${image.designName} source photo`} className="h-14 w-20 rounded object-cover" loading="lazy" />
+                        <span>Source photo sent to the generator</span>
+                      </a>
+                    ) : null}
                   </div>
                   <CardContent className="space-y-4 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">

@@ -27,4 +27,9 @@ describe("GeneratedDesignImagesAdmin", () => {
     expect(nav).toContain('value: "generated-design-images"');
     expect(tabs).toContain('<GeneratedDesignImagesAdmin />');
   });
+
+  it("shows the source photo sent to the generator beside the output", () => {
+    expect(source).toContain("sourcePhotoUrl");
+    expect(source).toContain("Source photo sent to the generator");
+  });
 });
