@@ -1,6 +1,7 @@
 import { isAefFramelessStyleCode } from "./aefFramelessSpecs";
 import { resolveDoorColor, type DoorColorInput } from "./doorColorResolve";
 import { findDlcFinishForStyle } from "./dlcFr26Mapping";
+import type { DlcFr26CatalogEntry } from "./dlcFr26Catalog.generated";
 import type { DlcFaceCrop } from "./dlcFr26Textures";
 import { retintGrain, standardShakerDlFacePlan, type ShakerStyleInput } from "./shakerDoorBlueprint";
 
@@ -271,6 +272,40 @@ export function classifyFaceSource(style: DoorStyleFaceInput | null | undefined)
 }
 
 /**
+ * Face plan for one DLC_FR26 catalog finish: the finish's frame-free grain (and normal map where
+ * it has one), tinted or made solid by the door color decision. Door and drawer faces use the
+ * grain; the 3D rails and stiles supply the frame. The photo crops stay in the catalog but are
+ * never mapped onto a face (they carried frame lines).
+ */
+export function dlcEntryFacePlan(
+  dlc: DlcFr26CatalogEntry,
+  style: DoorStyleFaceInput | null | undefined,
+  placement: string | null | undefined,
+): CabinetFacePlan {
+  const wall = (placement ?? "").toLowerCase() === "wall";
+  return withResolvedDoorColor({
+    sourceKind: "split",
+    doorUrl: dlc.faceDoor,
+    drawerUrl: wall ? null : dlc.faceDrawer,
+    sections: wall ? 1 : 2,
+    drawerTextureApplied: !wall,
+    grainRotation: 0,
+    dlcCrop: {
+      slug: dlc.slug,
+      doorSize: dlc.doorSize,
+      drawerSize: dlc.drawerSize,
+      drawerSolidColor: null,
+      faceTileIn: dlc.faceTileIn,
+      faceTileDrawerIn: dlc.faceTileDrawerIn,
+      normalUrl: dlc.faceNormal,
+      tintHex: dlc.faceTint,
+      solidColor: dlc.solidColor,
+      grainUrl: dlc.grainFrameFree ? dlc.grain : null,
+    },
+  }, style);
+}
+
+/**
  * Paint is an opaque solid of the resolved hex. Stain keeps the grain and retints
  * it toward that hex. A fallback that is already the crop's own solid keeps the
  * catalog tint, so a rejected swatch does not wash the grain out.
@@ -313,30 +348,7 @@ export function resolveCabinetFaceImages(
   const wall = (placement ?? "").toLowerCase() === "wall";
   // A DL style that maps to a DLC_FR26 finish uses the processed (cropped) door and drawer PNGs.
   const dlc = findDlcFinishForStyle(style);
-  if (dlc) {
-    // Door and drawer faces use the finish's frame-free grain; the 3D rails and stiles supply the frame.
-    // The photo crops stay in the catalog but are never mapped onto a face (they carried frame lines).
-    return withResolvedDoorColor({
-      sourceKind: "split",
-      doorUrl: dlc.faceDoor,
-      drawerUrl: wall ? null : dlc.faceDrawer,
-      sections: wall ? 1 : 2,
-      drawerTextureApplied: !wall,
-      grainRotation: 0,
-      dlcCrop: {
-        slug: dlc.slug,
-        doorSize: dlc.doorSize,
-        drawerSize: dlc.drawerSize,
-        drawerSolidColor: null,
-        faceTileIn: dlc.faceTileIn,
-        faceTileDrawerIn: dlc.faceTileDrawerIn,
-        normalUrl: dlc.faceNormal,
-        tintHex: dlc.faceTint,
-        solidColor: dlc.solidColor,
-        grainUrl: dlc.grainFrameFree ? dlc.grain : null,
-      },
-    }, style);
-  }
+  if (dlc) return dlcEntryFacePlan(dlc, style, placement);
   // 2.75 and 3 inch shakers that are not themselves a DL finish still use the DL blueprint.
   const adopted = standardShakerDlFacePlan(style as ShakerStyleInput, placement);
   if (adopted) return withResolvedDoorColor(adopted, style);

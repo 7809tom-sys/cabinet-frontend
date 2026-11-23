@@ -48,12 +48,23 @@ describe("the accepted render is the door's texture", () => {
     expect(wall.sections).toBe(1);
   });
 
-  it("outranks the DL shaker blueprint, which used to paint a flat hex", () => {
+  it("keeps the accepted COLOR but does not map its framed photo onto a shaker (scratch fix)", () => {
     const plan = designerFacePlan(ACCEPTED_SH, "base");
-    expect(plan?.doorUrl).toBe(ACCEPTED_TEXTURE);
+    // The framed render would be mapped on the slab and on every rail and stile, doubling
+    // the real frame (Tom, Nov 23 2026). The shaker uses the DL blueprint's grain instead.
+    expect(plan?.doorUrl).not.toBe(ACCEPTED_TEXTURE);
+    expect(plan?.drawerUrl ?? null).not.toBe(ACCEPTED_TEXTURE);
+    expect(plan?.dlcCrop).toBeDefined();
+    const crop = plan!.dlcCrop!;
+    // The accepted render's hex is the door color on every surface.
+    expect(crop.solidColor.toLowerCase()).toBe("#d6bb92");
+  });
+
+  it("still uses an accepted image that is a frame-free grain tile", () => {
+    const grain = "/textures/dlc-fr26/grain/ewo-v.jpg";
+    const plan = designerFacePlan({ ...ACCEPTED_SH, approvedReferenceImageUrl: grain }, "base");
+    expect(plan?.doorUrl).toBe(grain);
     expect(plan?.acceptedColorHex).toBe("#d6bb92");
-    // No DL crop and no flat solid: the approved render is the appearance.
-    expect(plan?.dlcCrop).toBeUndefined();
   });
 
   it("does not claim an acceptance when no run was approved", () => {
