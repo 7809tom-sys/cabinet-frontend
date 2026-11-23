@@ -172,4 +172,76 @@ describe("live Shaker Classic Cream renders as flat paint", () => {
     expect(mapped).toBe(0);
     expect(finish.face.toLowerCase()).toBe("#798764");
   });
+
+  it("keeps Warm Toffee's door photo when the shaker crop is only a tan hex", () => {
+    const toffee = {
+      id: 330030,
+      distributorId: 210002,
+      ourName: "Oxford Toffee",
+      aliasName: "Warm Toffee (Madison)",
+      styleCode: "OT",
+      doorStyle: "Shaker",
+      finish: "Warm Toffee (Madison)",
+      woodSpecies: "Solid Birch frame / veneered center panel",
+      color: "#A07850",
+      grainDirection: null,
+      doorSampleImageUrl: "/manus-storage/media-library/warm-toffee-door.jpg",
+    };
+    const profile = designerCatalogDoorProfile(toffee as never);
+    expect(profile?.paintedFinish).toBe(false);
+    const root = new THREE.Group();
+    addCabinet(
+      root,
+      {
+        placementUid: "toffee-dcw",
+        masterCode: "DCW2442",
+        description: '24" x 42" Wall',
+        placementType: "wall",
+        width: 24,
+        depth: 12,
+        height: 42,
+        numberOfDoors: 2,
+        numberOfDrawers: 0,
+        category: "Wall",
+      } as never,
+      "back",
+      { back: 0 },
+      144,
+      120,
+      "#a07850",
+      "#eeeeee",
+      profile as never,
+      { x: 0, z: 0, rotation: 0 },
+      toffee.doorSampleImageUrl,
+      undefined,
+      {
+        faceCrop: {
+          slug: "versa-shaker",
+          doorSize: [12, 24],
+          drawerSize: null,
+          drawerSolidColor: null,
+          solidColor: "#a07850",
+          grainUrl: null,
+          faceTileIn: [12, 24],
+          faceTileDrawerIn: [12, 7.5],
+        },
+      },
+    );
+    let fronts = 0;
+    let mappedFronts = 0;
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+      if (!mesh.userData.cabinetFront && !mesh.userData.physicalRail) return;
+      fronts += 1;
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      if (!material.map) return;
+      mappedFronts += 1;
+      expect(Math.abs(material.map.repeat.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(material.map.repeat.y)).toBeLessThanOrEqual(1);
+      expect(material.map.wrapS).toBe(THREE.ClampToEdgeWrapping);
+    });
+    expect(fronts).toBeGreaterThan(0);
+    expect(mappedFronts).toBe(fronts);
+  });
 });

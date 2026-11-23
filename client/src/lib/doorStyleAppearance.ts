@@ -88,9 +88,9 @@ export function doorStyleFinishColors(style: DoorStyleAppearanceInput | null | u
  * frame measurement; bevel, edge, and raised-panel family come from the mapping.
  *
  * Two facts ride along for the renderer:
- * - `paintedFinish`: paint / HDF / MDF, or any door style whose color is a saved
- *   paint (render hex, catalog hex, Sherwin-Williams paint, or a named paint)
- *   and not a stain. Those fronts are a flat color. Wood grain keeps its photo.
+ * - `paintedFinish`: a positive paint signal (painted / HDF / MDF / thermofoil,
+ *   a confirmed hex or Sherwin-Williams paint chip, or a paint color name).
+ *   A catalog hex alone is not enough. Wood tones keep their photo.
  * - `raisedPanelSource`: "library" when the raised-panel entry in
  *   `shared/raisedPanelDoorBlueprint.ts` is the default profile (a raised style the
  *   WalzCraft wizard never dressed), "wizard" when the wizard's profile wins.
