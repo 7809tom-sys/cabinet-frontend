@@ -2,7 +2,9 @@ import { preferredDoorReferenceUrl, preferredDrawerReferenceUrl } from "@/lib/ap
 import { resolveCabinetFaceImages, type CabinetFacePlan, type DoorStyleFaceInput } from "@shared/doorFaceRecognition";
 import { findDlcFinishForStyle } from "@shared/dlcFr26Mapping";
 import { resolveDoorColor } from "@shared/doorColorResolve";
-import { standardShakerDlFacePlan } from "@shared/shakerDoorBlueprint";
+import { isHickoryDoor, shakerDoorFamily, standardShakerDlFacePlan, type ShakerStyleInput } from "@shared/shakerDoorBlueprint";
+import { finishGrainSwatchFacePlan } from "@shared/finishGrainSwatches";
+import { isFrameFreeGrainTexture } from "@shared/doorFrontFinish";
 import { appliedSlabGrainPlan } from "@shared/slabGrainApply";
 import { WIZARD_DOOR_FINISH_STORAGE_KEY, wizardDoorFacePlan, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
 import {
@@ -32,6 +34,33 @@ export type DesignerFaceStyle = DoorStyleFaceInput & {
 
 function trimmedImageUrl(value: string | null | undefined): string {
   return value?.trim() ?? "";
+}
+
+/**
+ * True when an accepted render's picture would be a framed door photograph on a plain shaker.
+ * The 3D renderer maps such a photo once onto the slab AND onto every rail and stile, so its baked
+ * frame lines, shadows and grain doubled the real geometry and read as scratches (Tom, Nov 23
+ * 2026). A shaker keeps the DL Shaker blueprint, the finish's grain swatch and the accepted
+ * render's COLOR instead; a frame-free grain image is still used as is.
+ */
+function acceptedPhotoWouldFrameShaker(style: DesignerFaceStyle, accepted: CabinetFacePlan | null): boolean {
+  if (!accepted?.doorUrl) return false;
+  if (isFrameFreeGrainTexture(accepted.doorUrl)) return false;
+  // A checkmarked image (uploaded sample or AI picture) is the owner's explicit choice of face
+  // (Tom, Nov 20 2026: used as is). Only the automatic accepted-render layer is changed here.
+  if (style.checkedDoorSource) return false;
+  const input = style as ShakerStyleInput;
+  return shakerDoorFamily(input) === "shaker" && !isHickoryDoor(input);
+}
+
+/**
+ * Face plan for a plain shaker with no framed photo: the finish's own grain swatch when it has
+ * one, otherwise the DL Shaker blueprint's template grain or paint solid. Color follows
+ * `resolveDoorColor` (an accepted render's hex wins), so the accepted look is kept.
+ */
+function shakerGrainFacePlan(style: DesignerFaceStyle, placement: string | null | undefined): CabinetFacePlan | null {
+  const input = style as ShakerStyleInput & DesignerFaceStyle;
+  return finishGrainSwatchFacePlan(input, placement) ?? standardShakerDlFacePlan(input, placement);
 }
 
 /**
@@ -172,8 +201,12 @@ export function selectedDoorColorFacePlan(
     // sketch - so texturing a cabinet with it put sketch pages on the doors. The door
     // paints from the colour instead, sampled from that same picture on approval, so the
     // kitchen still follows the approved look without wearing the drawing.
-    return acceptedRenderFacePlan(style, placement)
-      ?? resolveCabinetFaceImages(photoStyle, placement);
+    const approved = acceptedRenderFacePlan(style, placement);
+    if (approved && acceptedPhotoWouldFrameShaker(style, approved)) {
+      const grain = shakerGrainFacePlan(style, placement);
+      if (grain) return grain;
+    }
+    return approved ?? resolveCabinetFaceImages(photoStyle, placement);
   }
   const key = style.id ?? "selected";
   const finish: WizardDoorFinish | null = selection.source === "sherwin-williams"
@@ -245,13 +278,19 @@ function baseDesignerFacePlan(
   // Tom's accepted render is the source of truth for the door's appearance: its
   // texture and its derived color. It outranks the DL blueprint, a slab grain, and
   // any catalog photo, because it is the appearance an operator signed off on.
+  // Exception (Tom, Nov 23 2026): a framed photo on a plain shaker is not mapped; see
+  // acceptedPhotoWouldFrameShaker. The accepted COLOR still applies through resolveDoorColor.
   const accepted = acceptedRenderFacePlan(style, placement);
-  if (accepted) return accepted;
+  if (accepted && !acceptedPhotoWouldFrameShaker(style, accepted)) return accepted;
   const slabGrain = appliedSlabGrainPlan(style);
   if (slabGrain) return slabGrain;
   // A real DL finish keeps its own grain and color. Other 2.75/3 inch shakers
   // still use that blueprint, and do not paint a framed catalog photo on the slab.
   if (findDlcFinishForStyle(style)) return resolveCabinetFaceImages(style, placement);
+  // A shaker finish with a real grain swatch in the repo (name match, e.g. EWO) draws that grain
+  // through the existing dlcCrop fields; any other finish falls through unchanged.
+  const swatch = finishGrainSwatchFacePlan(style as ShakerStyleInput & DesignerFaceStyle, placement);
+  if (swatch) return swatch;
   const adopted = standardShakerDlFacePlan(style, placement);
   if (adopted) return adopted;
   // Door color rule (Tom, Nov 11 2026, docs/rules/DOOR_COLOR_SOURCE_RULE.md): the
