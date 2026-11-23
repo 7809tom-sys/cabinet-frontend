@@ -19,7 +19,7 @@ import Home from "@/pages/Home";
 import NotFound from "@/pages/NotFound";
 import FaqPage from "@/pages/FaqPage";
 import InvoicePage from "@/pages/InvoicePage";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Spinner } from "@/components/ui/spinner";
@@ -27,6 +27,7 @@ import { toast } from "sonner";
 import { startVersionWatcher, setVersionNotifier } from "@/lib/versionWatcher";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { stageAdminDesignerGateBypass } from "@/lib/designerAdminGateBypass";
 import { useReferral } from "@/hooks/useReferral";
 import {
   affiliateSlugForStoreScope,
@@ -246,10 +247,21 @@ function AffiliateShell({ slug, children, fullHeight = false, hideAdminEditModeB
 
 function DesignerRoute() {
   const search = useSearch();
+  const { user: designerAuthUser, loading: designerAuthLoading } = useAuth();
+  // Admins skip the email form. DesignTool reads its one-shot contact handoff
+  // when it mounts, so wait for auth.me (the server's role) and stage it first.
+  // Guests only wait for auth.me to answer, then see the form as before.
+  const [designerAdminChecked, setDesignerAdminChecked] = useState(false);
+  useEffect(() => {
+    if (designerAuthLoading) return;
+    stageAdminDesignerGateBypass(designerAuthUser);
+    setDesignerAdminChecked(true);
+  }, [designerAuthLoading, designerAuthUser]);
   const affiliateSlug = new URLSearchParams(search).get("affiliate")?.trim() || null;
   // Canvas-only mode published by the Designer (it owns the toggle). The history
   // row is a sibling of the Designer, so it reads the flag instead of a prop.
   const [designerCanvasOnly] = useDesignerCanvasOnly();
+  if (!designerAdminChecked) return <PageLoader />;
   const designer = (
     <ErrorBoundary>
       <Suspense fallback={<PageLoader />}>
