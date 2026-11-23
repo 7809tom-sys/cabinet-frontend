@@ -10927,10 +10927,63 @@ function floorPlanDimensionLayer(cabinet: PlacedCabinet): "base" | "wall" | null
 }
 
 /**
+ * A diagonal, lazy-Susan, easy-reach, corner-drawer, or blind corner is saved
+ * on one anchor wall, but the body also occupies the wall that meets it at the
+ * shared vertex. Dimension chains have to count that return leg or the other
+ * wall's callouts stop short of the corner.
+ *
+ * The length is the footprint `freeSegmentsOnWall` already reserves: an
+ * L-corner's full square envelope on both walls, and the shorter plan leg for
+ * a diagonal, corner drawer, or blind corner. Nothing here is a fixed SKU size.
+ */
+function floorPlanAdjoiningCornerSpan(
+  cabinet: PlacedCabinet,
+  frame: WallRunFrame,
+  room: RoomData,
+): { start: number; span: number } | null {
+  const kind = placedCornerGeometryKind(cabinet);
+  if (kind !== "l-shape" && kind !== "diagonal" && kind !== "corner-drawer" && kind !== "blind-corner") return null;
+  const assignedWall = cabinetWall(cabinet, room);
+  if (!assignedWall || assignedWall === frame.id) return null;
+  const sourceFrame = wallRunFrame(assignedWall, room);
+  if (!sourceFrame) return null;
+  const sourceStart = wallRunOffset(cabinet, assignedWall, room);
+  const sourceEnd = sourceStart + wallRunSpan(cabinet, assignedWall, room);
+  // Match the reservation tolerance, including a blind base pulled 3–6 inches
+  // along its anchor wall: the return leg still starts at the shared vertex.
+  const cornerSeatTolerance = isBaseBlindCorner(cabinet)
+    ? Math.max(2, blindPullRange(cabinet)?.max ?? 0)
+    : 2;
+  const atSourceStart = sourceStart <= cornerSeatTolerance;
+  const atSourceEnd = sourceEnd >= sourceFrame.length - cornerSeatTolerance;
+  if (!atSourceStart && !atSourceEnd) return null;
+  const envelope = placedFootprint(cabinet);
+  const adjacentLeg = kind === "l-shape"
+    ? Math.max(0, envelope.w)
+    : Math.min(envelope.w, envelope.d);
+  if (adjacentLeg <= COLLISION_EPSILON_IN) return null;
+  for (const at of ["start", "end"] as const) {
+    const join = wallRunJoinAt(frame, at, room);
+    if (!join || join.frame.id !== sourceFrame.id) continue;
+    const vertex = at === "start" ? frame.start : frame.end;
+    const sharedIsSourceStart = Math.hypot(join.frame.start.x - vertex.x, join.frame.start.y - vertex.y) <= 0.01;
+    const seatedOnThisJoin = (sharedIsSourceStart && atSourceStart) || (!sharedIsSourceStart && atSourceEnd);
+    if (!seatedOnThisJoin) continue;
+    const span = Math.min(frame.length, adjacentLeg);
+    return at === "start"
+      ? { start: 0, span }
+      : { start: Math.max(0, frame.length - span), span };
+  }
+  return null;
+}
+
+/**
  * Returns a gap-and-piece dimension chain for every explicitly seated wall run.
  * Segments use `wallRunSpan`, so a 45° cabinet reports its catalog width rather
- * than its rotated screen envelope.  A chain is only returned where it has a
- * cabinet on that layer; this keeps otherwise empty walls visually quiet.
+ * than its rotated screen envelope. A corner cabinet is measured on both walls
+ * it occupies, each time with that wall's along-wall footprint. A chain is only
+ * returned where it has a cabinet on that layer; this keeps otherwise empty
+ * walls visually quiet. The outer overall dimension stays the wall length.
  */
 export function floorPlanWallDimensionChains(
   room: RoomData,
@@ -10940,12 +10993,17 @@ export function floorPlanWallDimensionChains(
   for (const frame of roomWallRunFrames(room)) {
     for (const layer of ["base", "wall"] as const) {
       const members = placed
-        .filter((cabinet) => floorPlanDimensionLayer(cabinet) === layer && cabinetWall(cabinet, room) === frame.id)
-        .map((cabinet) => ({
-          cabinet,
-          start: Math.max(0, Math.min(frame.length, wallRunOffset(cabinet, frame.id, room))),
-          span: Math.max(0, wallRunSpan(cabinet, frame.id, room)),
-        }))
+        .filter((cabinet) => floorPlanDimensionLayer(cabinet) === layer)
+        .flatMap((cabinet) => {
+          const owned = cabinetWall(cabinet, room) === frame.id;
+          const run = owned
+            ? {
+                start: Math.max(0, Math.min(frame.length, wallRunOffset(cabinet, frame.id, room))),
+                span: Math.max(0, wallRunSpan(cabinet, frame.id, room)),
+              }
+            : floorPlanAdjoiningCornerSpan(cabinet, frame, room);
+          return run ? [{ cabinet, start: run.start, span: run.span }] : [];
+        })
         .filter((member) => member.start < frame.length - COLLISION_EPSILON_IN && member.start + member.span > COLLISION_EPSILON_IN)
         .sort((left, right) => left.start - right.start || left.cabinet.uid.localeCompare(right.cabinet.uid));
       if (members.length === 0) continue;
