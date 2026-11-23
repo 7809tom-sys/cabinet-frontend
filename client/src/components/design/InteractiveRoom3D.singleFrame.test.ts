@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * A wood shaker front is one frame: two rails, two stiles, and one opening
- * line. A second carcass frame, a notch pair, or an outer edge line on the
- * same rail reads as extra horizontal lines.
+ * A wood shaker front is one frame: two rails, two stiles, and one line on
+ * the panel boundary. The rails sit on the slab. A proud step, a second
+ * carcass frame, or a notch reads as an extra horizontal strip.
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
@@ -65,6 +65,24 @@ function framePieces(frame: THREE.Object3D) {
   return frame.children.filter((child) => (child as THREE.Mesh).isMesh && child.userData.physicalRail) as THREE.Mesh[];
 }
 
+function openingLine(frame: THREE.Object3D) {
+  return frame.children.find((child) => child.userData.shakerFrameOutline) as THREE.LineSegments | undefined;
+}
+
+function expectOneBoundaryLine(frame: THREE.Object3D) {
+  const line = openingLine(frame);
+  expect(line).toBeTruthy();
+  const position = line!.geometry.getAttribute("position");
+  expect(position.count).toBe(8);
+  const rails = framePieces(frame).filter((piece) => piece.userData.grainPiece === "rail");
+  const rail = rails[0]!;
+  const faceHeight = Math.abs(rails[0]!.position.y) + Math.abs(rails[1]!.position.y) + (rail.geometry as THREE.BoxGeometry).parameters.height;
+  const railSize = (rail.geometry as THREE.BoxGeometry).parameters.height;
+  const ys: number[] = [];
+  for (let index = 0; index < position.count; index += 1) ys.push(Math.abs(position.getY(index)));
+  expect(Math.max(...ys)).toBeCloseTo(faceHeight / 2 - railSize, 4);
+}
+
 describe("one wood shaker frame", () => {
   it("gives a plain tall pantry one full-height frame per door and no carcass frame", () => {
     const root = build({
@@ -93,13 +111,31 @@ describe("one wood shaker frame", () => {
     for (const frame of frames) {
       const pieces = framePieces(frame);
       expect(pieces).toHaveLength(4);
-      expect(frame.children.some((child) => child.userData.shakerNotch || child.userData.shakerFrameOutline)).toBe(false);
+      expect(frame.children.some((child) => child.userData.shakerNotch)).toBe(false);
+      expectOneBoundaryLine(frame);
       const rails = pieces.filter((piece) => piece.userData.grainPiece === "rail");
       expect(rails).toHaveLength(2);
       topRails.push(Math.max(...rails.map((rail) => rail.position.y)));
     }
     expect(topRails[0]).toBeCloseTo(topRails[1]!, 5);
     expect(meshes(root).some((mesh) => mesh.userData.cabinetFaceFrame)).toBe(false);
+    root.updateMatrixWorld(true);
+    for (const door of doors) {
+      const doorBox = new THREE.Box3().setFromObject(door);
+      const frame = [...frames].find((candidate) => Math.abs(candidate.position.y - door.position.y) < 0.05 && Math.abs(candidate.position.x - door.position.x) < 0.05);
+      const topRail = framePieces(frame!).filter((piece) => piece.userData.grainPiece === "rail").sort((a, b) => b.position.y - a.position.y)[0]!;
+      const railBox = new THREE.Box3().setFromObject(topRail);
+      expect(railBox.max.z - doorBox.max.z).toBeGreaterThan(0);
+      expect(railBox.max.z - doorBox.max.z).toBeLessThan(0.004);
+      const railBottom = railBox.min.y;
+      const strips = meshes(root).filter((mesh) => {
+        if (mesh === topRail || mesh.userData.physicalRail) return false;
+        const box = new THREE.Box3().setFromObject(mesh);
+        const height = box.max.y - box.min.y;
+        return height < 0.2 && height > 0.01 && box.max.y < railBottom + 0.01 && box.max.y > railBottom - 0.15;
+      });
+      expect(strips).toHaveLength(0);
+    }
   });
 
   it("keeps each drawer front inside the cabinet and on one frame", () => {
@@ -132,7 +168,8 @@ describe("one wood shaker frame", () => {
     for (const frame of frames) {
       const pieces = framePieces(frame);
       expect(pieces).toHaveLength(4);
-      expect(frame.children.some((child) => child.userData.shakerNotch || child.userData.shakerFrameOutline)).toBe(false);
+      expect(frame.children.some((child) => child.userData.shakerNotch)).toBe(false);
+      expectOneBoundaryLine(frame);
       const stiles = pieces.filter((piece) => piece.userData.grainPiece === "stile");
       const rails = pieces.filter((piece) => piece.userData.grainPiece === "rail");
       expect(stiles).toHaveLength(2);

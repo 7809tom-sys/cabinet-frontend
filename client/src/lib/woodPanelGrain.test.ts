@@ -3,12 +3,15 @@ import {
   WOOD_PANEL_SAMPLE_IN,
   WOOD_PANEL_WINDOW,
   placeWoodGrainCoordinate,
+  woodGrainFaceKind,
   woodGrainPieceOffset,
   woodGrainUv,
   woodMeshGrain,
   woodPanelPreviewUv,
   woodPanelSampleInches,
   woodPanelSourceRect,
+  woodPieceCropInches,
+  woodPieceCropOrigin,
 } from "./woodPanelGrain";
 
 describe("wood panel grain", () => {
@@ -75,6 +78,41 @@ describe("wood panel grain", () => {
     const right = woodGrainPieceOffset("cabinet-a|stile|right");
     expect(Math.abs(left.u - right.u)).toBeGreaterThan(0.05);
     expect(Math.abs(left.v - right.v)).toBeGreaterThan(0.05);
+  });
+
+  it("gives a door piece one crop at real scale, and the largest crop that fits when the piece is bigger", () => {
+    const rail = woodPieceCropInches(1, 14, { width: 6, height: 21 });
+    expect(rail.scale).toBeCloseTo(1);
+    expect(rail.across).toBeCloseTo(1);
+    expect(rail.along).toBeCloseTo(14);
+    const stile = woodPieceCropInches(1, 80, { width: 6, height: 21 });
+    expect(stile.scale).toBeCloseTo(21 / 80);
+    expect(stile.along / stile.across).toBeCloseTo(80);
+    expect(stile.along).toBeLessThanOrEqual(21);
+    expect(stile.across).toBeLessThanOrEqual(6);
+    const wide = woodPieceCropInches(10, 36, { width: 6, height: 21 });
+    expect(wide.scale).toBeCloseTo(Math.min(6 / 10, 21 / 36));
+    expect(wide.along / wide.across).toBeCloseTo(36 / 10);
+  });
+
+  it("keeps a seeded crop inside the center window", () => {
+    const rect = { x: 10, y: 20, width: 100, height: 200 };
+    const origin = woodPieceCropOrigin(rect, 40, 80, { u: 1, v: 0 });
+    expect(origin).toEqual({ x: 70, y: 20 });
+    expect(origin.x + 40).toBeLessThanOrEqual(rect.x + rect.width);
+    expect(origin.y + 80).toBeLessThanOrEqual(rect.y + rect.height);
+  });
+
+  it("crops door and drawer pieces and tiles only the large faces", () => {
+    expect(woodGrainFaceKind({ cabinetFront: true })).toBe("piece");
+    expect(woodGrainFaceKind({ physicalRail: true, grainPiece: "rail" })).toBe("piece");
+    expect(woodGrainFaceKind({ cabinetDrawerFront: true })).toBe("piece");
+    expect(woodGrainFaceKind({ falseDrawerFront: true })).toBe("piece");
+    expect(woodGrainFaceKind({ selectedStyleSideSkin: true })).toBe("large");
+    expect(woodGrainFaceKind({ refrigeratorEndPanel: true })).toBe("large");
+    expect(woodGrainFaceKind({ decorativeEndPanel: true, cabinetFront: true })).toBe("large");
+    expect(woodGrainFaceKind({ baseToeKick: true })).toBe("large");
+    expect(woodGrainFaceKind({ baseFillerFace: true })).toBe("large");
   });
 
   it("shifts neighboring pieces and keeps drawers horizontal", () => {

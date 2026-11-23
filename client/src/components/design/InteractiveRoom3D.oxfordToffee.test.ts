@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, doorProfileKind, scaleWoodGrainUvs } from "./InteractiveRoom3D";
+import { addCabinet, configureWoodGrainMap, doorProfileKind, scaleWoodGrainUvs } from "./InteractiveRoom3D";
 import { WOOD_PANEL_SAMPLE_IN } from "@/lib/woodPanelGrain";
 import { designerCatalogDoorProfile } from "@/lib/doorStyleAppearance";
 import { isRaisedPanelStyle } from "@shared/raisedPanelDoorBlueprint";
@@ -121,9 +121,17 @@ describe("Oxford Toffee wood photo", () => {
     expect(rails).toBeGreaterThan(0);
     let outlines = 0;
     root.traverse((node) => {
-      if (node.userData?.shakerFrameOutline) outlines += 1;
+      if (!node.userData?.shakerFrameOutline) return;
+      outlines += 1;
+      expect((node as THREE.LineSegments).geometry.getAttribute("position").count).toBe(8);
     });
-    expect(outlines).toBe(0);
+    expect(outlines).toBeGreaterThan(0);
+  });
+
+  it("mirrors a large face along the grain only", () => {
+    const map = configureWoodGrainMap(new THREE.Texture());
+    expect(map.wrapS).toBe(THREE.RepeatWrapping);
+    expect(map.wrapT).toBe(THREE.MirroredRepeatWrapping);
   });
 
   it("keeps the center-panel crop on a base, a wall, and a DCW", () => {

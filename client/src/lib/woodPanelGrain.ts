@@ -103,6 +103,86 @@ export function woodGrainAxes(normal: Vec3, grain: WoodGrainAxis): { along: Vec3
   return { along, across: normalise(cross(n, along)) };
 }
 
+/**
+ * Door and drawer pieces (the slab, the rails, the stiles, a drawer or false
+ * front) take one crop. Sides, ends, tops, toe kicks and fillers are large
+ * faces and tile along the grain.
+ */
+export function woodGrainFaceKind(userData: Record<string, unknown> | null | undefined): "piece" | "large" {
+  if (!userData) return "large";
+  if (userData.decorativeEndPanel || userData.refrigeratorEndPanel) return "large";
+  if (userData.physicalRail || userData.cabinetDrawerFront || userData.falseDrawerFront) return "piece";
+  if (userData.cabinetFront) return "piece";
+  return "large";
+}
+
+/**
+ * Inches of the center-panel photo that cover this piece at the photo's real
+ * scale. A piece larger than the photo keeps its aspect and uses the largest
+ * crop that still fits, so the grain is never stretched one way.
+ */
+export function woodPieceCropInches(
+  pieceAcrossIn: number,
+  pieceAlongIn: number,
+  sample: { width: number; height: number } = WOOD_PANEL_SAMPLE_IN,
+) {
+  const across = Math.max(0.05, pieceAcrossIn);
+  const along = Math.max(0.05, pieceAlongIn);
+  const scale = Math.min(1, sample.width / across, sample.height / along);
+  return { across: across * scale, along: along * scale, scale };
+}
+
+/** Top-left of a crop inside the center window. The salt slides it; it never leaves the window. */
+export function woodPieceCropOrigin(
+  rect: { x: number; y: number; width: number; height: number },
+  cropWidth: number,
+  cropHeight: number,
+  salt: { u: number; v: number },
+) {
+  const slackX = Math.max(0, rect.width - cropWidth);
+  const slackY = Math.max(0, rect.height - cropHeight);
+  const u = Math.min(1, Math.max(0, salt.u));
+  const v = Math.min(1, Math.max(0, salt.v));
+  return {
+    x: rect.x + Math.round(u * slackX),
+    y: rect.y + Math.round(v * slackY),
+  };
+}
+
+/**
+ * One crop for a door or drawer piece. Horizontal grain is rotated so the
+ * photo's vertical grain runs along the piece. Returns null without a canvas.
+ */
+export function woodPieceCropCanvas(
+  image: CanvasImageSource & { width: number; height: number },
+  pieceAcrossIn: number,
+  pieceAlongIn: number,
+  salt: { u: number; v: number },
+  grain: WoodGrainAxis,
+): HTMLCanvasElement | null {
+  if (typeof document === "undefined" || image.width < 4 || image.height < 4) return null;
+  const sample = woodPanelSampleInches(image.width, image.height);
+  const rect = woodPanelSourceRect(image.width, image.height);
+  const fitted = woodPieceCropInches(pieceAcrossIn, pieceAlongIn, sample);
+  const cropW = Math.max(1, Math.min(rect.width, Math.round(fitted.across * (rect.width / sample.width))));
+  const cropH = Math.max(1, Math.min(rect.height, Math.round(fitted.along * (rect.height / sample.height))));
+  const origin = woodPieceCropOrigin(rect, cropW, cropH, salt);
+  const canvas = document.createElement("canvas");
+  const horizontal = grain === "horizontal";
+  canvas.width = horizontal ? cropH : cropW;
+  canvas.height = horizontal ? cropW : cropH;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  if (horizontal) {
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate(Math.PI / 2);
+    context.drawImage(image, origin.x, origin.y, cropW, cropH, -cropW / 2, -cropH / 2, cropW, cropH);
+  } else {
+    context.drawImage(image, origin.x, origin.y, cropW, cropH, 0, 0, cropW, cropH);
+  }
+  return canvas;
+}
+
 /** Stable 0–1 offsets so neighboring doors do not repeat the same figure. */
 export function woodGrainPieceOffset(seed: string): { u: number; v: number } {
   let hash = 2166136261;

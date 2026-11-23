@@ -96,7 +96,7 @@ import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindo
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
-import { centerPanelGrainCanvas, placeWoodGrainCoordinate, woodGrainPieceOffset, woodGrainUv, woodMeshGrain, woodPanelPreviewUv, woodPanelSampleInches, type WoodGrainAxis } from "@/lib/woodPanelGrain";
+import { centerPanelGrainCanvas, placeWoodGrainCoordinate, woodGrainFaceKind, woodGrainPieceOffset, woodGrainUv, woodMeshGrain, woodPanelPreviewUv, woodPanelSampleInches, woodPieceCropCanvas, type WoodGrainAxis } from "@/lib/woodPanelGrain";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -450,10 +450,14 @@ export function applyWoodDoorPhotoFidelity(material: THREE.MeshStandardMaterial)
 
 const WOOD_GRAIN_ANISOTROPY = 16;
 
-/** Full-resolution center grain, mirrored when a face is larger than one tile. */
+/**
+ * Full-resolution center grain for a large face. The grain axis (v) mirrors.
+ * Across the grain (u) repeats without a mirror, so a wide end does not
+ * kaleidoscope sideways.
+ */
 export function configureWoodGrainMap(map: THREE.Texture): THREE.Texture {
   map.colorSpace = THREE.SRGBColorSpace;
-  map.wrapS = THREE.MirroredRepeatWrapping;
+  map.wrapS = THREE.RepeatWrapping;
   map.wrapT = THREE.MirroredRepeatWrapping;
   map.magFilter = THREE.LinearFilter;
   map.minFilter = THREE.LinearMipmapLinearFilter;
@@ -468,9 +472,9 @@ export function configureWoodGrainMap(map: THREE.Texture): THREE.Texture {
 }
 
 /**
- * Rewrite a mesh's UVs in inches of the center-grain tile. Tops run the grain
- * along local X. A rotated or diagonal face uses its real edge lengths, so the
- * top is not a 0–1 smear. The texture repeats mirrored from these UVs.
+ * Rewrite a large face's UVs in inches of the center-grain tile. Tops run the
+ * grain along local X. A rotated or diagonal face uses its real edge lengths.
+ * Door and drawer pieces do not use this: each of those is one crop.
  */
 export function scaleWoodGrainUvs(
   geometry: THREE.BufferGeometry,
@@ -525,11 +529,38 @@ export function scaleWoodGrainUvs(
   return source;
 }
 
+function woodPieceInches(mesh: THREE.Mesh, grain: WoodGrainAxis) {
+  if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+  const size = mesh.geometry.boundingBox?.getSize(new THREE.Vector3()) ?? new THREE.Vector3();
+  const widthIn = Math.abs(size.x) * 12;
+  const heightIn = Math.abs(size.y) * 12;
+  if (grain === "horizontal") return { across: heightIn, along: widthIn };
+  return { across: widthIn, along: heightIn };
+}
+
+function woodPieceMap(canvas: HTMLCanvasElement) {
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.ClampToEdgeWrapping;
+  map.wrapT = THREE.ClampToEdgeWrapping;
+  map.magFilter = THREE.LinearFilter;
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.generateMipmaps = true;
+  map.anisotropy = WOOD_GRAIN_ANISOTROPY;
+  map.repeat.set(1, 1);
+  map.offset.set(0, 0);
+  map.rotation = 0;
+  map.center.set(0, 0);
+  map.needsUpdate = true;
+  return map;
+}
+
 /**
  * Replace a framed door photograph with the full-resolution center grain.
- * Every face is mapped in real inches, mirrored where it is larger than one
- * tile, so a tall end or a wide drawer is not a stretched strip. Painted
- * materials are not marked and are skipped.
+ * A door or drawer piece gets one unmirrored crop at the photo's real scale.
+ * A large face (side, end, top, toe kick, filler) tiles along the grain only,
+ * mirrored on that axis and repeated plain across it. Painted materials are
+ * not marked and are skipped.
  */
 export function applyLoadedWoodPanelGrain(
   root: THREE.Object3D,
@@ -541,7 +572,6 @@ export function applyLoadedWoodPanelGrain(
   const sample = woodPanelSampleInches(image.width, image.height);
   const grainMap = configureWoodGrainMap(new THREE.CanvasTexture(board));
   let applied = false;
-  let index = 0;
   root.traverse((node) => {
     const mesh = node as THREE.Mesh;
     if (!mesh.isMesh || Array.isArray(mesh.material)) return;
@@ -550,8 +580,10 @@ export function applyLoadedWoodPanelGrain(
     const drawer = Boolean(mesh.userData?.cabinetDrawerFront);
     if (options?.drawersOnly && !drawer) return;
     if (!options?.drawersOnly && drawer && mesh.userData?.drawerGrain) return;
-    const grain = woodMeshGrain(mesh.userData as Record<string, unknown>);
-    const pieceName = String(mesh.userData?.grainPiece ?? (mesh.userData?.cabinetDrawerFront ? "drawer" : "face"));
+    const userData = mesh.userData as Record<string, unknown>;
+    const grain = woodMeshGrain(userData);
+    const kind = woodGrainFaceKind(userData);
+    const pieceName = String(userData.grainPiece ?? (userData.cabinetDrawerFront ? "drawer" : kind === "piece" ? "face" : "panel"));
     let owner: THREE.Object3D | null = mesh;
     let ownerId = "";
     while (owner) {
@@ -561,18 +593,37 @@ export function applyLoadedWoodPanelGrain(
       }
       owner = owner.parent;
     }
-    const salt = woodGrainPieceOffset(`${ownerId}|${pieceName}|${index}`);
-    index += 1;
-    mesh.geometry = scaleWoodGrainUvs(mesh.geometry.clone(), grain, sample, salt);
+    const frame = mesh.parent;
+    const salt = woodGrainPieceOffset(
+      `${ownerId}|${pieceName}|${(frame?.position.x ?? 0).toFixed(3)}|${(frame?.position.y ?? 0).toFixed(3)}|${mesh.position.x.toFixed(3)}|${mesh.position.y.toFixed(3)}`,
+    );
     const next = material.clone();
-    next.map = grainMap;
-    next.userData = {
-      ...material.userData,
-      centerPanelGrain: true,
-      woodPanelGrain: grain,
-      woodPanelGrainSalt: salt,
-      woodPanelSampleIn: sample,
-    };
+    if (kind === "piece") {
+      const inches = woodPieceInches(mesh, grain);
+      const crop = woodPieceCropCanvas(image, inches.across, inches.along, salt, grain);
+      if (!crop) return;
+      next.map = woodPieceMap(crop);
+      next.userData = {
+        ...material.userData,
+        centerPanelGrain: true,
+        woodPanelGrain: grain,
+        woodGrainFaceKind: "piece",
+        woodPieceCrop: true,
+        woodPanelGrainSalt: salt,
+        woodPanelSampleIn: sample,
+      };
+    } else {
+      mesh.geometry = scaleWoodGrainUvs(mesh.geometry.clone(), grain, sample, salt);
+      next.map = grainMap;
+      next.userData = {
+        ...material.userData,
+        centerPanelGrain: true,
+        woodPanelGrain: grain,
+        woodGrainFaceKind: "large",
+        woodPanelGrainSalt: salt,
+        woodPanelSampleIn: sample,
+      };
+    }
     applyWoodDoorPhotoFidelity(next);
     mesh.material = next;
     applied = true;
@@ -6973,9 +7024,11 @@ export function addCabinet(
   // forward into the room.
   frontGroup.position.z = isPlacedHood || specialty.kind === "diagonal-corner" || specialty.kind === "triangle-corner" || specialty.kind === "l-corner" || specialty.kind === "end-return" || specialty.kind === "base-angle-end" || specialty.kind === "wall-angle-end" ? 0 : faceDepth;
   // A wood door slab was seated in front of the carcass, so the drawer face
-  // stepped past the end panel. Bring that slab flush with the side's front.
+  // stepped past the end panel. Sit the slab's front on the side's front.
+  // Pulling by a full door thickness buried the doors behind the carcass face,
+  // and that face's tiled grain read as extra rails.
   if (woodDoorPhotograph && frontGroup.position.z === faceDepth) {
-    frontGroup.position.z = bodyDepth / 2 - 0.052;
+    frontGroup.position.z = bodyDepth / 2 - 0.021;
   }
   if (isPlacedHood) {
     frontGroup.userData = {
@@ -7058,6 +7111,20 @@ export function addCabinet(
     : 3;
 	  // 2.75 and 3 inch shakers are built only by standardShakerDlFacePlan (shared/shakerDoorBlueprint.ts).
 	  // Do not give those styles a different frame, corner, slab, or notch.
+  const woodSlabBehindFrame = (x: number, y: number, z: number) => {
+    let best: THREE.Mesh | null = null;
+    let bestDist = Infinity;
+    for (const child of frontGroup.children) {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.userData?.flushPhysicalFace || mesh.userData.physicalRail) continue;
+      const dist = (mesh.position.x - x) ** 2 + (mesh.position.y - y) ** 2 + (mesh.position.z - z) ** 2;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = mesh;
+      }
+    }
+    return bestDist < 0.02 ? best : null;
+  };
 	  const addShakerFrame = (faceWidth: number, faceHeight: number, x: number, y: number, z = 0.036, rotationY = 0, forceGlassFrame = false, faceRole: "door" | "drawer" = "door") => {
 	    const raisedProfile = threeDFaceUsesRaisedPanelBevel({
 	      profileKind,
@@ -7085,6 +7152,27 @@ export function addCabinet(
 	      insideEdgeProfile: doorProfile?.insideEdgeProfile ?? "square",
 	      ...(forceGlassFrame ? { glassDoorFrame: true, selectedFinishGlassFrame: true } : {}),
 	    };
+    // A proud rail's front lip and the recessed slab behind it read as two
+    // parallel lines (the second strip under a pantry top rail, and the doubled
+    // line on an island drawer band). On a wood photo the rail front sits on
+    // the slab, and one line marks the inner boundary.
+    const railDepth = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
+    if (woodDoorPhotograph && !forceGlassFrame && !raisedProfile) {
+      const slab = woodSlabBehindFrame(x, y, z);
+      if (slab) {
+        const depth = (slab.geometry as THREE.BoxGeometry).parameters?.depth ?? 0.045;
+        const ry = slab.rotation.y || 0;
+        const half = depth / 2;
+        const nx = Math.sin(rotationY);
+        const nz = Math.cos(rotationY);
+        const excess =
+          (pose.x + nx * (railDepth / 2) - (slab.position.x + Math.sin(ry) * (half + 0.0012))) * nx
+          + (pose.z + nz * (railDepth / 2) - (slab.position.z + Math.cos(ry) * (half + 0.0012))) * nz;
+        frameGroup.position.x = pose.x - nx * excess;
+        frameGroup.position.z = pose.z - nz * excess;
+        frameGroup.userData = { ...frameGroup.userData, woodRailCoplanar: true };
+      }
+    }
     const pieces = [
       [faceWidth, rail, 0, faceHeight / 2 - rail / 2, "rail" as const],
       [faceWidth, rail, 0, -faceHeight / 2 + rail / 2, "rail" as const],
@@ -7093,7 +7181,6 @@ export function addCabinet(
     ] as const;
     for (const [pieceWidth, pieceHeight, offsetX, offsetY, piece] of pieces) {
       // DL styles: rails and stiles stand 20% proud, back plane unchanged, so the edge shading is stronger.
-      const railDepth = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
       const railMesh = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, railDepth), frameMaterialFor(piece));
       railMesh.position.set(offsetX, offsetY, dlcDoorFinish ? (railDepth - DLC_FRAME_DETAIL.standardRailDepth) / 2 : 0);
 	      railMesh.userData = { selectedStyleFace: forceGlassFrame ? "glass-door-frame" : raisedProfile ? "raised-panel" : "shaker", physicalRail: true, grainPiece: piece, ...(forceGlassFrame ? { glassDoorFrameRail: true, selectedFinishGlassFrame: true } : {}) };
@@ -7166,10 +7253,20 @@ export function addCabinet(
         frameGroup.add(mesh);
       }
     }
-    // A wood photograph's physical rails are the only frame. An opening line
-    // just inside the stile reads, at an angle, as a second stile crossing the
-    // rails. Painted faces keep their outline.
-    if (!raisedProfile && !forceGlassFrame && !woodDoorPhotograph && (dlcDoorFinish || paintedFinish)) {
+    // Wood photos: one line, exactly on the stile/rail-to-panel boundary.
+    // Painted faces keep the outer rectangle and the opening.
+    if (!raisedProfile && !forceGlassFrame && woodDoorPhotograph) {
+      attachShakerFrameOutline(frameGroup, {
+        faceWidth,
+        faceHeight,
+        rail,
+        stile,
+        color,
+        proud: false,
+        outer: false,
+        opening: true,
+      });
+    } else if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish)) {
       attachShakerFrameOutline(frameGroup, {
         faceWidth,
         faceHeight,
