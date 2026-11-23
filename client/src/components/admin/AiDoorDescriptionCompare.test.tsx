@@ -200,7 +200,8 @@ describe("the three columns render", () => {
 
     fireEvent.click(screen.getByTestId("ai-door-copy-claude"));
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-    expect(writeText.mock.calls[0][0]).toBe(AI_DOOR_PROMPTS.claude);
+    expect(String(writeText.mock.calls[0][0]).startsWith(AI_DOOR_PROMPTS.claude.trim())).toBe(true);
+    expect(String(writeText.mock.calls[0][0])).toContain("GROUND TRUTH");
     await waitFor(() => expect(screen.getByTestId("ai-door-copy-claude").textContent).toContain("Copied"));
   });
 });
@@ -261,7 +262,8 @@ describe("Generate", () => {
       model: string; prompt: string; image: { url: string } | null; styleId: number | null;
     };
     expect(sent.model).toBe("claude");
-    expect(sent.prompt).toBe(AI_DOOR_PROMPTS.claude);
+    expect(sent.prompt.startsWith(AI_DOOR_PROMPTS.claude.trim())).toBe(true);
+    expect(sent.prompt).toContain("GROUND TRUTH");
     expect(sent.image).toEqual({ url: "/uploads/cabinet-door.jpg" });
     expect(sent.styleId).toBe(STYLE.id);
     // Only Claude's box got the text.
