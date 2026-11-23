@@ -112,6 +112,11 @@ function AffiliateLanding() {
               access to thousands of cabinets and surfaces at trade pricing, and we handle all the fulfillment.
               A single completed kitchen order typically returns more than the membership costs.
             </p>
+            <p className="text-white/80 text-base mt-4 leading-relaxed">
+              An affiliate is a contractor first: the same trade work, and the same contractor treatment. The difference is that
+              an affiliate also owns a website, a branded CabinetDealz storefront that brings in homeowners and designs. Because of
+              that website, an affiliate is expected to sell more than a typical contractor.
+            </p>
             <div className="mt-10 flex flex-wrap items-end gap-6">
               <div>
                 <div className="font-serif text-4xl md:text-5xl font-bold text-[var(--color-gold)]">

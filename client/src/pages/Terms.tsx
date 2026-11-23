@@ -72,7 +72,7 @@ export default function Terms() {
         <section>
           <h2 className="text-xl font-semibold mb-3">7. Affiliate Program</h2>
           <ul className="list-disc pl-5 space-y-2 text-muted-foreground">
-            <li>Affiliates are independent contractors, not employees of CabinetDealz.</li>
+            <li>Affiliates are independent contractors, not employees of CabinetDealz. An affiliate is a contractor who also owns a branded CabinetDealz website and is expected to sell more than a typical contractor.</li>
             <li>Affiliates earning $600 or more in a calendar year will receive a 1099-NEC tax form.</li>
             <li>Affiliates must provide accurate W-9 information and a valid government-issued ID before receiving payouts.</li>
             <li>CabinetDealz reserves the right to terminate any affiliate account for violation of these terms or misrepresentation.</li>
