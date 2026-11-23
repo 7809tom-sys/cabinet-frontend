@@ -58,6 +58,10 @@ export const PAINT_BRANDS = [
 ] as const;
 export type PaintBrand = (typeof PAINT_BRANDS)[number];
 
+/** Matches cabinet-backend `PAINT_BRAND_CODE_MAX` / `PAINT_BRAND_NAME_MAX`. */
+export const PAINT_BRAND_CODE_MAX = 32;
+export const PAINT_BRAND_NAME_MAX = 64;
+
 /** The four picture tiles, plus the paint-brand form (not a fifth tile). */
 export type DoorColorSourceActive = DoorColorSourceOption | "paint-brand";
 
@@ -155,6 +159,7 @@ export function parsePaintBrandColor(raw: unknown, chosenAt = ""): ({ source: "p
   const name = textField(record.name);
   const hex = normalizeHex(typeof record.hex === "string" ? record.hex : undefined);
   if (!isPaintBrand(brand) || !code || !name || !hex) return null;
+  if (code.length > PAINT_BRAND_CODE_MAX || name.length > PAINT_BRAND_NAME_MAX) return null;
   const when = textField(record.chosenAt) || chosenAt;
   return { source: "paint-brand", confirmed: true, chosenAt: when, kind: "paint-brand", brand, code, name, hex };
 }
@@ -603,7 +608,7 @@ export type DoorColorSourceAction =
   | { type: "pendingHex"; hex: string }
   | { type: "pendingSherwin"; color: SherwinWilliamsChoice | null }
   | { type: "pendingPaint"; patch: Partial<PaintBrandDraft> }
-  | { type: "confirm"; now: string }
+  | { type: "confirm"; now: string; source?: "hex" | "sherwin-williams" | "paint-brand" }
   /** Leaving the selector (dialog closed) without confirming turns the toggle back off. */
   | { type: "abandon" }
   | { type: "reset"; stored: DoorColorSourceSelection | null };
@@ -623,12 +628,39 @@ function blankPaintDraft(hex = ""): PaintBrandDraft {
   return { brand: "", code: "", name: "", hex };
 }
 
-function paintDraftFromState(state: DoorColorSourceDraft): PaintBrandDraft {
-  if (state.pendingPaint) return state.pendingPaint;
-  if (state.stored?.source === "paint-brand") {
-    return { brand: state.stored.brand, code: state.stored.code, name: state.stored.name, hex: state.stored.hex };
+/** What the always-visible paint fields show for a saved choice. Old Sherwin-Williams rows prefill as that brand. */
+export function paintBrandDraftForSelection(selection: DoorColorSourceSelection | null | undefined): PaintBrandDraft {
+  if (selection?.source === "paint-brand") {
+    return {
+      brand: selection.brand,
+      code: selection.code.slice(0, PAINT_BRAND_CODE_MAX),
+      name: selection.name.slice(0, PAINT_BRAND_NAME_MAX),
+      hex: selection.hex,
+    };
+  }
+  if (selection?.source === "sherwin-williams") {
+    const name = (selection.color.label || selection.color.code).trim().slice(0, PAINT_BRAND_NAME_MAX);
+    return {
+      brand: "Sherwin-Williams",
+      code: selection.color.code.trim().slice(0, PAINT_BRAND_CODE_MAX),
+      name,
+      hex: normalizeHex(selection.color.hex) ?? "",
+    };
   }
   return blankPaintDraft();
+}
+
+function paintDraftFromState(state: DoorColorSourceDraft): PaintBrandDraft {
+  if (state.pendingPaint) return state.pendingPaint;
+  return paintBrandDraftForSelection(state.stored);
+}
+
+function clampPaintDraft(draft: PaintBrandDraft): PaintBrandDraft {
+  return {
+    ...draft,
+    code: draft.code.slice(0, PAINT_BRAND_CODE_MAX),
+    name: draft.name.slice(0, PAINT_BRAND_NAME_MAX),
+  };
 }
 
 export function doorColorSourceReducer(state: DoorColorSourceDraft, action: DoorColorSourceAction): DoorColorSourceDraft {
@@ -670,36 +702,42 @@ export function doorColorSourceReducer(state: DoorColorSourceDraft, action: Door
       };
     }
     case "pendingHex":
-      return state.active === "hex" ? { ...state, pendingHex: action.hex.trim(), notice: null } : state;
+      return { ...state, pendingHex: action.hex.trim(), notice: null };
     case "pendingSherwin":
       return state.active === "sherwin-williams" ? { ...state, pendingSherwin: action.color, notice: null } : state;
     case "pendingPaint":
-      return state.active === "paint-brand"
-        ? { ...state, pendingPaint: { ...paintDraftFromState(state), ...action.patch }, notice: null }
-        : state;
+      return { ...state, pendingPaint: clampPaintDraft({ ...paintDraftFromState(state), ...action.patch }), notice: null };
     case "confirm": {
-      if (state.active === "hex") {
-        const hex = normalizeHex(state.pendingHex);
+      const which = action.source
+        ?? (state.active === "hex" || state.active === "sherwin-williams" || state.active === "paint-brand" ? state.active : null);
+      if (which === "hex") {
+        const hex = normalizeHex(state.pendingHex ?? (state.stored?.source === "hex" ? state.stored.hex : null));
         if (!hex) return { ...state, notice: "Enter a 6-digit hex like #2a211c before confirming." };
-        return { ...state, stored: { source: "hex", confirmed: true, chosenAt: action.now, hex }, pendingHex: null, notice: `Confirmed ${hex}.` };
+        return { ...state, active: "hex", stored: { source: "hex", confirmed: true, chosenAt: action.now, hex }, pendingHex: null, pendingPaint: null, notice: `Confirmed ${hex}.` };
       }
-      if (state.active === "sherwin-williams") {
+      if (which === "sherwin-williams") {
         const color = state.pendingSherwin;
         if (!color || !normalizeHex(color.hex)) return { ...state, notice: "Pick and apply a Sherwin-Williams color before confirming." };
         return {
           ...state,
+          active: "sherwin-williams",
           stored: { source: "sherwin-williams", confirmed: true, chosenAt: action.now, color: { ...color, hex: normalizeHex(color.hex)! } },
           pendingSherwin: null,
+          pendingHex: null,
+          pendingPaint: null,
           notice: `Confirmed ${color.label || color.code || color.hex}.`,
         };
       }
-      if (state.active === "paint-brand") {
-        const draft = state.pendingPaint;
-        if (!draft || !isPaintBrand(draft.brand)) return { ...state, notice: "Choose a paint brand before confirming." };
+      if (which === "paint-brand") {
+        const draft = state.pendingPaint ?? paintBrandDraftForSelection(state.stored);
+        if (!isPaintBrand(draft.brand)) return { ...state, notice: "Choose a paint brand before confirming." };
         if (!draft.code.trim() || !draft.name.trim()) return { ...state, notice: "Enter a color code and a color name before confirming." };
+        if (draft.code.trim().length > PAINT_BRAND_CODE_MAX || draft.name.trim().length > PAINT_BRAND_NAME_MAX) {
+          return { ...state, notice: `Color code must be ${PAINT_BRAND_CODE_MAX} characters or fewer, and the color name ${PAINT_BRAND_NAME_MAX} or fewer.` };
+        }
         const stored = serializePaintBrandColor({ ...draft, chosenAt: action.now });
         if (!stored) return { ...state, notice: "Enter a 6-digit hex like #f2f0ea before confirming." };
-        return { ...state, stored, pendingPaint: null, notice: `Confirmed ${stored.brand} ${stored.code} ${stored.name}.` };
+        return { ...state, active: "paint-brand", stored, pendingPaint: null, pendingHex: null, notice: `Confirmed ${stored.brand} ${stored.code} ${stored.name}.` };
       }
       return state;
     }
