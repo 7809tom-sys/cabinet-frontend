@@ -5,6 +5,15 @@
  */
 export const WOOD_PANEL_WINDOW = { x: 0.3, y: 0.15, width: 0.4, height: 0.7 } as const;
 
+/**
+ * The photograph is one door. Fifteen inches across the picture is the nominal
+ * real width; the height follows the photo's own aspect. The center window is
+ * that fraction of the door, so one tile is real wood, not a stretched slice.
+ */
+export const WOOD_PHOTO_DOOR_WIDTH_IN = 15;
+
+export const WOOD_PANEL_SAMPLE_IN = woodPanelSampleInches(15, 30);
+
 /** Three.js UV origin is the bottom of the image when flipY is on. */
 export function woodPanelPreviewUv() {
   return {
@@ -23,72 +32,88 @@ export function woodPanelSourceRect(imageWidth: number, imageHeight: number) {
   return { x, y, width, height };
 }
 
-function fraction(value: number) {
-  return value - Math.floor(value);
-}
-
-/**
- * One crop of the center panel for a single piece.
- *
- * The crop's aspect matches the piece, so the grain is stretched onto that
- * piece once instead of being tiled. A long piece takes a taller (or, for a
- * rail, a longer) strip inside the same frame-free window. `salt` slides the
- * crop so neighboring doors are not the same patch. Nothing here repeats.
- */
-export function woodPanelPieceCrop(
-  widthIn: number,
-  heightIn: number,
-  grain: "vertical" | "horizontal",
-  salt = 0,
-) {
-  const win = WOOD_PANEL_WINDOW;
-  const pieceW = Math.max(widthIn, 0.5);
-  const pieceH = Math.max(heightIn, 0.5);
-  // A rail turns the crop a quarter turn, so the crop itself is tall when the
-  // rail is long. Image aspect is width / height.
-  const aspect = grain === "horizontal" ? pieceH / pieceW : pieceW / pieceH;
-  const winAspect = win.width / win.height;
-  let cropW: number;
-  let cropH: number;
-  if (aspect >= winAspect) {
-    cropW = win.width;
-    cropH = win.width / aspect;
-  } else {
-    cropH = win.height;
-    cropW = win.height * aspect;
-  }
-  // Leave a little of the window unused so each piece can sit on a different
-  // patch. The aspect stays the piece's aspect.
-  const inset = 0.84;
-  cropW = Math.min(win.width, Math.max(0.05, cropW * inset));
-  cropH = Math.min(win.height, Math.max(0.05, cropH * inset));
-  const slackX = Math.max(0, win.width - cropW);
-  const slackY = Math.max(0, win.height - cropH);
-  const x = win.x + slackX * fraction(salt * 0.618033 + 0.11);
-  const y = win.y + slackY * fraction(salt * 0.414214 + 0.37);
+export function woodPanelSampleInches(imageWidth: number, imageHeight: number) {
+  const doorWidth = WOOD_PHOTO_DOOR_WIDTH_IN;
+  const doorHeight = doorWidth * (imageHeight / Math.max(1, imageWidth));
   return {
-    x,
-    y,
-    width: cropW,
-    height: cropH,
-    rotation: grain === "horizontal" ? Math.PI / 2 : 0,
+    width: doorWidth * WOOD_PANEL_WINDOW.width,
+    height: doorHeight * WOOD_PANEL_WINDOW.height,
   };
 }
 
-/** Bottom-left UV for one clamped copy of `woodPanelPieceCrop`. Repeat never exceeds 1. */
-export function woodPanelPieceUv(
-  widthIn: number,
-  heightIn: number,
-  grain: "vertical" | "horizontal",
+export type WoodGrainAxis = "vertical" | "horizontal";
+
+/** Drawer fronts, rails, toe kicks and fillers run the grain along their length. */
+export function woodMeshGrain(userData: Record<string, unknown> | null | undefined): WoodGrainAxis {
+  if (!userData) return "vertical";
+  if (userData.grainPiece === "rail" || userData.grainPiece === "horizontal") return "horizontal";
+  if (userData.cabinetDrawerFront || userData.falseDrawerFront) return "horizontal";
+  if (userData.baseToeKick) return "horizontal";
+  if (userData.baseFillerFace || userData.ovenTowerFiller) return "horizontal";
+  return "vertical";
+}
+
+type Vec3 = { x: number; y: number; z: number };
+
+function lengthOf(v: Vec3) {
+  return Math.hypot(v.x, v.y, v.z);
+}
+
+function normalise(v: Vec3): Vec3 {
+  const length = lengthOf(v) || 1;
+  return { x: v.x / length, y: v.y / length, z: v.z / length };
+}
+
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return {
+    x: a.y * b.z - a.z * b.y,
+    y: a.z * b.x - a.x * b.z,
+    z: a.x * b.y - a.y * b.x,
+  };
+}
+
+function dot(a: Vec3, b: Vec3) {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+function reject(v: Vec3, n: Vec3): Vec3 {
+  const amount = dot(v, n);
+  return { x: v.x - n.x * amount, y: v.y - n.y * amount, z: v.z - n.z * amount };
+}
+
+/**
+ * Inches of a point on a face, in the texture's across-grain (u) and
+ * along-grain (v) directions. Tops run the grain along the cabinet width.
+ * The caller divides by the sample size, so every face shares one scale.
+ */
+export function woodGrainAxes(normal: Vec3, grain: WoodGrainAxis): { along: Vec3; across: Vec3 } {
+  const n = normalise(normal);
+  if (Math.abs(n.y) > 0.65) {
+    return { along: { x: 1, y: 0, z: 0 }, across: { x: 0, y: 0, z: 1 } };
+  }
+  if (grain === "horizontal") {
+    let along = cross({ x: 0, y: 1, z: 0 }, n);
+    if (lengthOf(along) < 0.2) along = { x: 1, y: 0, z: 0 };
+    along = normalise(along);
+    return { along, across: normalise(cross(n, along)) };
+  }
+  let along = reject({ x: 0, y: 1, z: 0 }, n);
+  if (lengthOf(along) < 0.2) along = { x: 1, y: 0, z: 0 };
+  along = normalise(along);
+  return { along, across: normalise(cross(n, along)) };
+}
+
+export function woodGrainUv(
+  pointIn: Vec3,
+  normal: Vec3,
+  grain: WoodGrainAxis,
+  sample = WOOD_PANEL_SAMPLE_IN,
   salt = 0,
 ) {
-  const crop = woodPanelPieceCrop(widthIn, heightIn, grain, salt);
+  const { along, across } = woodGrainAxes(normal, grain);
   return {
-    offsetX: crop.x,
-    offsetY: 1 - crop.y - crop.height,
-    repeatX: crop.width,
-    repeatY: crop.height,
-    rotation: crop.rotation,
+    u: dot(pointIn, across) / sample.width + salt,
+    v: dot(pointIn, along) / sample.height + salt * 0.37,
   };
 }
 
@@ -101,36 +126,5 @@ export function centerPanelGrainCanvas(image: CanvasImageSource & { width: numbe
   const context = canvas.getContext("2d");
   if (!context) return null;
   context.drawImage(image, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
-  return canvas;
-}
-
-/** One aspect-matched copy of the center grain. Rails are already turned. */
-export function pieceGrainCanvas(
-  image: CanvasImageSource & { width: number; height: number },
-  widthIn: number,
-  heightIn: number,
-  grain: "vertical" | "horizontal",
-  salt = 0,
-): HTMLCanvasElement | null {
-  if (typeof document === "undefined" || image.width < 4 || image.height < 4) return null;
-  const crop = woodPanelPieceCrop(widthIn, heightIn, grain, salt);
-  const sx = Math.round(image.width * crop.x);
-  const sy = Math.round(image.height * crop.y);
-  const sw = Math.max(1, Math.round(image.width * crop.width));
-  const sh = Math.max(1, Math.round(image.height * crop.height));
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) return null;
-  if (grain === "horizontal") {
-    canvas.width = sh;
-    canvas.height = sw;
-    context.translate(canvas.width / 2, canvas.height / 2);
-    context.rotate(-Math.PI / 2);
-    context.drawImage(image, sx, sy, sw, sh, -sw / 2, -sh / 2, sw, sh);
-  } else {
-    canvas.width = sw;
-    canvas.height = sh;
-    context.drawImage(image, sx, sy, sw, sh, 0, 0, sw, sh);
-  }
   return canvas;
 }

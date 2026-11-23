@@ -6,7 +6,8 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, doorProfileKind, pieceGrainTexture } from "./InteractiveRoom3D";
+import { addCabinet, doorProfileKind, scaleWoodGrainUvs } from "./InteractiveRoom3D";
+import { WOOD_PANEL_SAMPLE_IN } from "@/lib/woodPanelGrain";
 import { designerCatalogDoorProfile } from "@/lib/doorStyleAppearance";
 import { isRaisedPanelStyle } from "@shared/raisedPanelDoorBlueprint";
 import { woodPanelPreviewUv } from "@/lib/woodPanelGrain";
@@ -190,15 +191,31 @@ describe("Oxford Toffee wood photo", () => {
       expect(material!.map!.repeat.x).not.toBeCloseTo(1);
       expect(material!.map!.repeat.y).not.toBeCloseTo(1);
       expect(material!.toneMapped).toBe(false);
-      const piece = pieceGrainTexture(material!.map!, 30, 6, "vertical", 0.2);
-      expect(piece.wrapS).toBe(THREE.ClampToEdgeWrapping);
-      expect(piece.wrapT).toBe(THREE.ClampToEdgeWrapping);
-      expect(piece.repeat.x).toBeLessThanOrEqual(1);
-      expect(piece.repeat.y).toBeLessThanOrEqual(1);
-      expect(piece.repeat.x / piece.repeat.y).toBeCloseTo(30 / 6, 0);
+      expect(material!.userData.woodPhotoLightGain).toBeCloseTo(0.74);
       drawers += 1;
     });
     expect(drawers).toBeGreaterThanOrEqual(3);
+    const tall = scaleWoodGrainUvs(new THREE.BoxGeometry(0.75 / 12, 96 / 12, 24 / 12), "vertical", WOOD_PANEL_SAMPLE_IN, 0);
+    const tallUv = tall.getAttribute("uv");
+    const position = tall.getAttribute("position");
+    const normal = tall.getAttribute("normal");
+    let sideMin = Infinity;
+    let sideMax = -Infinity;
+    let topMin = Infinity;
+    let topMax = -Infinity;
+    for (let index = 0; index < position.count; index += 1) {
+      if (normal.getX(index) > 0.9) {
+        sideMin = Math.min(sideMin, tallUv.getY(index));
+        sideMax = Math.max(sideMax, tallUv.getY(index));
+      }
+      if (normal.getY(index) > 0.9) {
+        topMin = Math.min(topMin, tallUv.getX(index));
+        topMax = Math.max(topMax, tallUv.getX(index));
+      }
+    }
+    expect(sideMax - sideMin).toBeCloseTo(96 / WOOD_PANEL_SAMPLE_IN.height, 1);
+    expect(topMax - topMin).toBeCloseTo(24 / WOOD_PANEL_SAMPLE_IN.width, 1);
+    expect(sideMax - sideMin).toBeGreaterThan(2);
   });
 
   it("does not leave the box, sides, or toe kick as the bare catalog hex", () => {

@@ -1,45 +1,77 @@
 import { describe, expect, it } from "vitest";
-import { WOOD_PANEL_WINDOW, woodPanelPieceCrop, woodPanelPieceUv, woodPanelPreviewUv, woodPanelSourceRect } from "./woodPanelGrain";
+import {
+  WOOD_PANEL_SAMPLE_IN,
+  WOOD_PANEL_WINDOW,
+  woodGrainUv,
+  woodMeshGrain,
+  woodPanelPreviewUv,
+  woodPanelSampleInches,
+  woodPanelSourceRect,
+} from "./woodPanelGrain";
 
 describe("wood panel grain", () => {
   it("keeps the full-height center strip inside the frame", () => {
-    const rect = woodPanelSourceRect(454, 715);
-    expect(rect.x).toBeGreaterThanOrEqual(Math.floor(454 * WOOD_PANEL_WINDOW.x));
-    expect(rect.x + rect.width).toBeLessThanOrEqual(Math.ceil(454 * (WOOD_PANEL_WINDOW.x + WOOD_PANEL_WINDOW.width)));
-    expect(rect.y).toBeGreaterThanOrEqual(Math.floor(715 * WOOD_PANEL_WINDOW.y));
-    expect(rect.y + rect.height).toBeLessThanOrEqual(Math.ceil(715 * (WOOD_PANEL_WINDOW.y + WOOD_PANEL_WINDOW.height)));
+    const rect = woodPanelSourceRect(1017, 1928);
+    expect(rect.width).toBeGreaterThan(300);
+    expect(rect.height).toBeGreaterThan(1000);
+    expect(rect.x).toBeGreaterThanOrEqual(Math.floor(1017 * WOOD_PANEL_WINDOW.x));
+    expect(rect.x + rect.width).toBeLessThanOrEqual(Math.ceil(1017 * (WOOD_PANEL_WINDOW.x + WOOD_PANEL_WINDOW.width)) + 1);
     expect(WOOD_PANEL_WINDOW.width).toBeCloseTo(0.4);
     expect(WOOD_PANEL_WINDOW.height).toBeCloseTo(0.7);
   });
 
-  it("previews that window as one clamped copy", () => {
+  it("sizes one tile from a 15 inch door, not from the piece", () => {
+    expect(WOOD_PANEL_SAMPLE_IN.width).toBeCloseTo(6);
+    expect(WOOD_PANEL_SAMPLE_IN.height).toBeCloseTo(21);
+    const dawn = woodPanelSampleInches(1017, 1928);
+    expect(dawn.width).toBeCloseTo(6);
+    expect(dawn.height).toBeCloseTo(15 * (1928 / 1017) * 0.7, 1);
+  });
+
+  it("previews that window as one clamped copy before the photo loads", () => {
     const uv = woodPanelPreviewUv();
-    expect(uv.repeatX).toBeLessThanOrEqual(1);
-    expect(uv.repeatY).toBeLessThanOrEqual(1);
     expect(uv.repeatX).toBe(WOOD_PANEL_WINDOW.width);
-    expect(uv.offsetX).toBe(WOOD_PANEL_WINDOW.x);
-    expect(uv.offsetY).toBeCloseTo(1 - WOOD_PANEL_WINDOW.y - WOOD_PANEL_WINDOW.height);
+    expect(uv.repeatY).toBe(WOOD_PANEL_WINDOW.height);
+    expect(uv.repeatX).toBeLessThanOrEqual(1);
   });
 
-  it("crops one copy to the piece aspect and never repeats", () => {
-    const panel = woodPanelPieceUv(14, 24, "vertical", 0.2);
-    expect(panel.repeatX).toBeLessThanOrEqual(1);
-    expect(panel.repeatY).toBeLessThanOrEqual(1);
-    expect(panel.rotation).toBe(0);
-    expect(panel.repeatX / panel.repeatY).toBeCloseTo(14 / 24, 1);
-    const rail = woodPanelPieceCrop(24, 2.75, "horizontal", 0.4);
-    expect(rail.rotation).toBe(Math.PI / 2);
-    expect(rail.width / rail.height).toBeCloseTo(2.75 / 24, 1);
-    expect(rail.x).toBeGreaterThanOrEqual(WOOD_PANEL_WINDOW.x);
-    expect(rail.y).toBeGreaterThanOrEqual(WOOD_PANEL_WINDOW.y);
-    expect(rail.x + rail.width).toBeLessThanOrEqual(WOOD_PANEL_WINDOW.x + WOOD_PANEL_WINDOW.width + 0.001);
-    expect(rail.y + rail.height).toBeLessThanOrEqual(WOOD_PANEL_WINDOW.y + WOOD_PANEL_WINDOW.height + 0.001);
+  it("keeps the same inches per tile on a door, a tall end, and a wide drawer", () => {
+    const sample = WOOD_PANEL_SAMPLE_IN;
+    const doorA = woodGrainUv({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, "vertical", sample, 0);
+    const doorB = woodGrainUv({ x: 12, y: 30, z: 0 }, { x: 0, y: 0, z: 1 }, "vertical", sample, 0);
+    expect(Math.abs(doorB.u - doorA.u)).toBeCloseTo(12 / sample.width);
+    expect(Math.abs(doorB.v - doorA.v)).toBeCloseTo(30 / sample.height);
+
+    const endA = woodGrainUv({ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, "vertical", sample, 0);
+    const endB = woodGrainUv({ x: 0, y: 96, z: 24 }, { x: 1, y: 0, z: 0 }, "vertical", sample, 0);
+    expect(Math.abs(endB.v - endA.v)).toBeCloseTo(96 / sample.height);
+    expect(Math.abs(endB.u - endA.u)).toBeCloseTo(24 / sample.width);
+    expect(96 / Math.abs(endB.v - endA.v)).toBeCloseTo(30 / Math.abs(doorB.v - doorA.v));
+
+    const drawerA = woodGrainUv({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 }, "horizontal", sample, 0);
+    const drawerB = woodGrainUv({ x: 30, y: 6, z: 0 }, { x: 0, y: 0, z: 1 }, "horizontal", sample, 0);
+    expect(Math.abs(drawerB.v - drawerA.v)).toBeCloseTo(30 / sample.height);
+    expect(Math.abs(drawerB.u - drawerA.u)).toBeCloseTo(6 / sample.width);
   });
 
-  it("shifts neighboring pieces onto different patches", () => {
-    const left = woodPanelPieceCrop(2.75, 24, "vertical", 0.05);
-    const right = woodPanelPieceCrop(2.75, 24, "vertical", 0.85);
-    expect(left.x).not.toBeCloseTo(right.x, 2);
-    expect(left.width).toBeCloseTo(right.width);
+  it("runs top grain along the cabinet width at the same scale", () => {
+    const sample = WOOD_PANEL_SAMPLE_IN;
+    const near = woodGrainUv({ x: 0, y: 40, z: 0 }, { x: 0, y: 1, z: 0 }, "vertical", sample, 0);
+    const far = woodGrainUv({ x: 36, y: 40, z: 12 }, { x: 0, y: 1, z: 0 }, "vertical", sample, 0);
+    expect(Math.abs(far.v - near.v)).toBeCloseTo(36 / sample.height);
+    expect(Math.abs(far.u - near.u)).toBeCloseTo(12 / sample.width);
+  });
+
+  it("shifts neighboring pieces and keeps drawers horizontal", () => {
+    const sample = WOOD_PANEL_SAMPLE_IN;
+    const left = woodGrainUv({ x: 4, y: 10, z: 0 }, { x: 0, y: 0, z: 1 }, "vertical", sample, 0.1);
+    const right = woodGrainUv({ x: 4, y: 10, z: 0 }, { x: 0, y: 0, z: 1 }, "vertical", sample, 0.8);
+    expect(left.u).not.toBeCloseTo(right.u, 2);
+    expect(woodMeshGrain({ cabinetDrawerFront: true })).toBe("horizontal");
+    expect(woodMeshGrain({ falseDrawerFront: true })).toBe("horizontal");
+    expect(woodMeshGrain({ grainPiece: "rail" })).toBe("horizontal");
+    expect(woodMeshGrain({ baseToeKick: true })).toBe("horizontal");
+    expect(woodMeshGrain({ refrigeratorEndPanel: true })).toBe("vertical");
+    expect(woodMeshGrain({ selectedStyleSideSkin: true })).toBe("vertical");
   });
 });
