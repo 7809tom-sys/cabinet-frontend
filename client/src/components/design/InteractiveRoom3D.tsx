@@ -96,6 +96,7 @@ import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindo
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
+import { centerPanelGrainCanvas, woodPanelGrainRepeat, woodPanelPreviewUv } from "@/lib/woodPanelGrain";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -421,8 +422,8 @@ export function woodDoorPhotoMaterialColor(): string {
 
 export function applyWoodDoorPhotoFidelity(material: THREE.MeshStandardMaterial): void {
   // The room lights and ACES tone map turn a wood photograph dark and brown.
-  // The photograph already contains its grain and bevel, so the face shows that
-  // picture directly. Paint with no photo never calls this.
+  // The face shows the assigned grain crop directly, at the photo's brightness.
+  // Paint with no photo never calls this.
   material.color.set("#ffffff");
   material.toneMapped = false;
   material.envMapIntensity = 0;
@@ -436,6 +437,77 @@ export function applyWoodDoorPhotoFidelity(material: THREE.MeshStandardMaterial)
   material.customProgramCacheKey = () => "wood-door-photo";
   material.userData = { ...material.userData, woodPhotoFidelity: true };
   material.needsUpdate = true;
+}
+
+/** A center-panel sample, repeated to the piece's real inches. */
+export function pieceGrainTexture(
+  source: THREE.Texture,
+  widthIn: number,
+  heightIn: number,
+  grain: "vertical" | "horizontal",
+): THREE.Texture {
+  const repeat = woodPanelGrainRepeat(widthIn, heightIn, grain);
+  const map = source.clone();
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.repeat.set(repeat.repeatX, repeat.repeatY);
+  map.center.set(0.5, 0.5);
+  map.rotation = repeat.rotation;
+  map.needsUpdate = true;
+  return map;
+}
+
+/**
+ * Replace a framed door photograph with grain from its flat center panel.
+ * Stiles and the panel keep vertical grain. Rails turn it horizontal.
+ * Each piece repeats that sample by its real size, so a drawer is not a
+ * squashed copy of the whole door. Painted materials are not marked and are skipped.
+ */
+export function applyLoadedWoodPanelGrain(
+  root: THREE.Object3D,
+  image: CanvasImageSource & { width: number; height: number },
+  options?: { drawersOnly?: boolean },
+): boolean {
+  const canvas = centerPanelGrainCanvas(image);
+  if (!canvas) return false;
+  const grain = new THREE.CanvasTexture(canvas);
+  grain.colorSpace = THREE.SRGBColorSpace;
+  grain.wrapS = THREE.RepeatWrapping;
+  grain.wrapT = THREE.RepeatWrapping;
+  let applied = false;
+  root.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+    const material = mesh.material as THREE.MeshStandardMaterial;
+    if (!material?.userData?.centerPanelGrain || typeof material.clone !== "function") return;
+    const drawer = Boolean(mesh.userData?.cabinetDrawerFront);
+    if (options?.drawersOnly && !drawer) return;
+    if (!options?.drawersOnly && drawer && mesh.userData?.drawerGrain) return;
+    const params = (mesh.geometry as THREE.BoxGeometry).parameters;
+    let widthIn = typeof params?.width === "number" ? params.width * 12 : 0;
+    let heightIn = typeof params?.height === "number" ? params.height * 12 : 0;
+    if (widthIn < 0.5 || heightIn < 0.5) {
+      mesh.geometry.computeBoundingBox();
+      const size = new THREE.Vector3();
+      mesh.geometry.boundingBox?.getSize(size);
+      widthIn = Math.max(widthIn, size.x * 12);
+      heightIn = Math.max(heightIn, size.y * 12);
+    }
+    const horizontal = mesh.userData?.grainPiece === "rail";
+    const map = pieceGrainTexture(grain, widthIn || 12, heightIn || 12, horizontal ? "horizontal" : "vertical");
+    const next = material.clone();
+    next.map = map;
+    next.userData = {
+      ...material.userData,
+      centerPanelGrain: true,
+      woodPanelGrain: horizontal ? "horizontal" : "vertical",
+    };
+    applyWoodDoorPhotoFidelity(next);
+    mesh.material = next;
+    applied = true;
+  });
+  grain.dispose();
+  return applied;
 }
 
 /**
@@ -3091,8 +3163,8 @@ export function applyThreeDStructuralFinishMaterials(
   // approved accepted render or the record's own door image), every structural
   // surface is shaded from that same appearance, exactly as the fronts are —
   // `#ffffff` tint over the shared sample, so no second solid colour appears.
-  // A neutral crop offset keeps the framed-door photo off flat box/side faces;
-  // the fronts keep the full photo.
+  // A center-panel crop keeps the framed-door photo off flat box/side faces.
+  // Wood fronts use that same panel grain, not the full photograph.
   const structuralTexture = sampleTexture ? threeDStructuralSampleTexture(sampleTexture) : null;
   for (const material of materials) {
     material.color.set(structuralTexture ? "#ffffff" : finishColor);
@@ -6139,6 +6211,9 @@ export function addCabinet(
 	  // No door photo, no grain tile, and no per-piece wood-grain crop. Stained wood
 	  // keeps its grain. `doorSampleUrl` is already cleared for a painted style above.
 	  const useDoorTexture = !renderSolidFace && threeDUsesDoorSampleTexture(doorSampleUrl);
+	  // Assigned just below, once the curated-grain check exists. The texture
+	  // callback can run before that assignment, so this starts false.
+	  let woodDoorPhotograph = false;
 	  const usesCuratedCabinetGrain = !renderSolidFace && isCuratedCabinetGrainSample(doorSampleUrl);
 	  // Assigned once the texture exists. The loader callback runs after the
 	  // face meshes are built, which is when box skins receive the sample.
@@ -6152,6 +6227,11 @@ export function addCabinet(
       rememberDoorPanelHex(loaded);
       applyPlainStructuralFinish?.(color, loaded);
       stampCabinetWoodGrain();
+      // The full door photo includes its own frame. Once the pixels are here,
+      // every framed piece switches to grain from the flat center panel.
+      if (loaded.image) {
+        setTimeout(() => applyLoadedWoodPanelGrain(cabinet, loaded.image as CanvasImageSource & { width: number; height: number }), 0);
+      }
       onDoorTextureState?.("loaded");
     }, undefined, () => {
       // A failed sample falls back to the resolved solid finish everywhere.
@@ -6246,7 +6326,11 @@ export function addCabinet(
   });
   const usesCuratedDrawerGrain = !renderSolidFace && isCuratedCabinetGrainSample(drawerSampleUrl);
   const drawerTexture = useDrawerTexture && drawerSampleUrl
-    ? new THREE.TextureLoader().load(drawerSampleUrl)
+    ? new THREE.TextureLoader().load(drawerSampleUrl, (loaded) => {
+      if (loaded.image) {
+        setTimeout(() => applyLoadedWoodPanelGrain(cabinet, loaded.image as CanvasImageSource & { width: number; height: number }, { drawersOnly: true }), 0);
+      }
+    })
     : null;
   if (drawerTexture) {
     const dlcDrawerGrain = surfaceTextures?.faceCrop
@@ -6344,6 +6428,21 @@ export function addCabinet(
       const source = mesh.material as THREE.MeshPhysicalMaterial;
       if (!source || typeof source.clone !== "function") return;
       const material = source.clone();
+      // A wood drawer or false front never receives the tall door photograph.
+      // That photo, squeezed into a short rectangle, is the stacked stripes.
+      // The drawer's own picture, cropped to its center panel, or the door's
+      // center grain when there is no drawer picture.
+      if (woodDoorPhotograph) {
+        // Keep the door's center-panel grain. The drawer photograph is another
+        // framed front; putting it on this short rectangle is the stacked stripe,
+        // and its panel crop is a pale sideways patch.
+        material.map = source.map;
+        material.userData = { ...source.userData, centerPanelGrain: true };
+        matchWoodPhotoBrightness(material);
+        mesh.material = material;
+        textureMaterials.push(material);
+        return;
+      }
       material.map = drawerTexture;
       material.color.set(dlcPhotoTint);
       if (dlcPhotoComp) material.toneMapped = false;
@@ -6428,14 +6527,29 @@ export function addCabinet(
   // A catalog wood photo is not a DL studio crop. Cancel the room lights without
   // the pale-paint cut and without multiplying by the catalog hex, or oak renders
   // as dark walnut. Painted faces never reach this: they have no photo map.
-  const woodDoorPhotograph = !paintedFinish
+  woodDoorPhotograph = !paintedFinish
     && !usesCuratedCabinetGrain
     && !isFrameFreeGrainTexture(doorSampleUrl)
     && surfaceTextures?.faceCrop?.grainSubstituted !== true;
+  // The full door photograph includes stiles, rails and a bevel. The 3D frame
+  // is already those boards, so the face texture is only the flat center panel.
+  const centerPanelPreview = (source: THREE.Texture | null | undefined) => {
+    if (!source || !woodDoorPhotograph) return source ?? null;
+    const uv = woodPanelPreviewUv();
+    const map = source.clone();
+    map.wrapS = THREE.ClampToEdgeWrapping;
+    map.wrapT = THREE.ClampToEdgeWrapping;
+    map.repeat.set(uv.repeatX, uv.repeatY);
+    map.offset.set(uv.offsetX, uv.offsetY);
+    map.needsUpdate = true;
+    return map;
+  };
   const matchWoodPhotoBrightness = (material: THREE.MeshStandardMaterial | null | undefined) => {
     if (!woodDoorPhotograph || !material?.map) return;
+    material.userData = { ...material.userData, centerPanelGrain: true };
     applyWoodDoorPhotoFidelity(material);
   };
+  if (woodDoorPhotograph && doorTexture) faceMaterial.map = centerPanelPreview(doorTexture);
   matchWoodPhotoBrightness(faceMaterial);
   const structuralFinish = threeDStructuralFinish(color, Boolean(doorTexture));
   let plainStructuralColor = structuralFinish.color;
@@ -6474,7 +6588,19 @@ export function addCabinet(
   const applyStructuralFinish = (finishColor: string, _sampleTexture: THREE.Texture | null = null) => {
     applyStructuralFinishBase(finishColor, _sampleTexture);
     applyDlcGrain();
-    for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) matchWoodPhotoBrightness(material);
+    for (const material of [...structuralFinishMaterials, ...flatExposedFinishMaterials]) {
+      matchWoodPhotoBrightness(material);
+      // The 0.42 crop can still include the door's bevel. Wood photos use the
+      // flat center panel, the same window as the fronts.
+      if (woodDoorPhotograph && material.map) {
+        const uv = woodPanelPreviewUv();
+        material.map.wrapS = THREE.ClampToEdgeWrapping;
+        material.map.wrapT = THREE.ClampToEdgeWrapping;
+        material.map.repeat.set(uv.repeatX, uv.repeatY);
+        material.map.offset.set(uv.offsetX, uv.offsetY);
+        material.map.needsUpdate = true;
+      }
+    }
   };
   const applyStructuralFinishBase = (finishColor: string, sampleTexture: THREE.Texture | null = null) => {
     // ONE authoritative door appearance for every visible surface of a cabinet.
@@ -6550,7 +6676,7 @@ export function addCabinet(
       applyStructuralFinish(color, doorTexture);
     });
   }
-	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
+	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: woodDoorPhotograph ? centerPanelPreview(doorTexture) : doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
   if (!dlcPhotoComp && doorTexture) applyGrainTemplateTint(trimMaterial);
   markPhotoFaceToneMapOff(trimMaterial);
   matchWoodPhotoBrightness(trimMaterial);
@@ -6577,6 +6703,23 @@ export function addCabinet(
 	    });
 	  }
 	  const frameMaterialFor = (piece: "rail" | "stile" | "panel") => {
+	    // A photographed wood door keeps the 3D frame and textures it with center
+	    // grain only. Rails run that grain horizontally. Stiles stay vertical.
+	    if (woodDoorPhotograph && doorTexture && piece === "rail") {
+	      const map = centerPanelPreview(doorTexture);
+	      if (map) {
+	        map.center.set(0.5, 0.5);
+	        map.rotation = Math.PI / 2;
+	        map.needsUpdate = true;
+	      }
+	      const material = new THREE.MeshPhysicalMaterial({ color: faceColor, map, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
+	      if (!dlcPhotoComp) applyGrainTemplateTint(material);
+	      markPhotoFaceToneMapOff(material);
+	      material.userData = { ...material.userData, centerPanelGrain: true, grainPiece: piece };
+	      matchWoodPhotoBrightness(material);
+	      textureMaterials.push(material);
+	      return material;
+	    }
 	    // The catalog profile can explicitly request traditional frame grain: rails
 	    // run horizontally, stiles and center panels vertically. A cloned material
 	    // keeps this UV orientation local to the physical board rather than rotating

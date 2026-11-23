@@ -237,8 +237,9 @@ describe("live Shaker Classic Cream renders as flat paint", () => {
       const material = mesh.material as THREE.MeshStandardMaterial;
       if (!material.map) return;
       mappedFronts += 1;
-      expect(Math.abs(material.map.repeat.x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(material.map.repeat.y)).toBeLessThanOrEqual(1);
+      expect(material.userData.centerPanelGrain).toBe(true);
+      expect(material.map.repeat.x).toBeLessThan(1);
+      expect(material.map.offset.x).toBeGreaterThan(0);
       expect(material.map.wrapS).toBe(THREE.ClampToEdgeWrapping);
     });
     expect(fronts).toBeGreaterThan(0);
