@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 /**
- * Oxford Toffee (Warm Toffee, Madison) is a wood-tone shaker. The catalog hex
- * #A07850 is darker and more orange than the door photo. Fronts keep that photo,
- * once per door, including both leaves of a lazy-Susan corner.
+ * Oxford Toffee (Warm Toffee, Madison) is a wood-tone shaker. The 3D frame is
+ * the only frame. The door photograph's own stiles and rails stay out of the
+ * texture. Grain comes from the flat center panel.
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, doorProfileKind } from "./InteractiveRoom3D";
+import { addCabinet, doorProfileKind, pieceGrainTexture } from "./InteractiveRoom3D";
 import { designerCatalogDoorProfile } from "@/lib/doorStyleAppearance";
 import { isRaisedPanelStyle } from "@shared/raisedPanelDoorBlueprint";
+import { woodPanelPreviewUv } from "@/lib/woodPanelGrain";
 
 const TOFFEE = {
   id: 330030,
@@ -86,8 +87,9 @@ describe("Oxford Toffee wood photo", () => {
     expect(designerCatalogDoorProfile(TOFFEE as never)?.paintedFinish).toBe(false);
   });
 
-  it("maps the door photo once on both lazy-Susan leaves, not the flat tan", () => {
+  it("textures both lazy-Susan leaves with the center panel, not the framed photo or the flat tan", () => {
     const { root } = build("LSB36", "base", 36, 34.5, 24);
+    const uv = woodPanelPreviewUv();
     const leaves = ["back-leg", "side-leg"].map((leg) => {
       let found: THREE.MeshStandardMaterial | null = null;
       root.traverse((node) => {
@@ -98,18 +100,33 @@ describe("Oxford Toffee wood photo", () => {
     expect(leaves.every((material) => material?.map)).toBe(true);
     for (const material of leaves) {
       expect(material!.map!.wrapS).toBe(THREE.ClampToEdgeWrapping);
-      expect(material!.map!.wrapT).toBe(THREE.ClampToEdgeWrapping);
-      expect(Math.abs(material!.map!.repeat.x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(material!.map!.repeat.y)).toBeLessThanOrEqual(1);
-      expect(material!.map).toBe(leaves[0]!.map);
+      expect(material!.map!.repeat.x).toBeCloseTo(uv.repeatX);
+      expect(material!.map!.repeat.y).toBeCloseTo(uv.repeatY);
+      expect(material!.map!.offset.x).toBeCloseTo(uv.offsetX);
+      expect(material!.map!.offset.y).toBeCloseTo(uv.offsetY);
+      expect(material!.map!.repeat.x).not.toBeCloseTo(1);
+      expect(material!.userData.centerPanelGrain).toBe(true);
       expect(material!.toneMapped).toBe(false);
       expect(material!.userData.woodPhotoFidelity).toBe(true);
       expect(`#${material!.color.getHexString()}`).toBe("#ffffff");
-      expect(`#${material!.color.getHexString()}`).not.toBe("#a07850");
     }
+    let rails = 0;
+    root.traverse((node) => {
+      if (node.userData?.grainPiece !== "rail") return;
+      const material = materialOf(node);
+      expect(material?.map?.rotation).toBeCloseTo(Math.PI / 2);
+      rails += 1;
+    });
+    expect(rails).toBeGreaterThan(0);
+    let outlines = 0;
+    root.traverse((node) => {
+      if (node.userData?.shakerFrameOutline) outlines += 1;
+    });
+    expect(outlines).toBeGreaterThan(0);
   });
 
-  it("keeps the same clamped door photo on a base, a wall, and a DCW", () => {
+  it("keeps the center-panel crop on a base, a wall, and a DCW", () => {
+    const uv = woodPanelPreviewUv();
     for (const [code, placement, width, height, depth] of [
       ["B24", "base", 24, 34.5, 24],
       ["W2430", "wall", 24, 30, 12],
@@ -123,11 +140,65 @@ describe("Oxford Toffee wood photo", () => {
         if (!material?.map) return;
         fronts += 1;
         expect(material.map.wrapS, code).toBe(THREE.ClampToEdgeWrapping);
-        expect(Math.abs(material.map.repeat.x), code).toBeLessThanOrEqual(1);
-        expect(Math.abs(material.map.repeat.y), code).toBeLessThanOrEqual(1);
+        expect(material.map.repeat.x, code).toBeCloseTo(uv.repeatX);
+        expect(material.map.offset.x, code).toBeCloseTo(uv.offsetX);
+        expect(material.userData.centerPanelGrain, code).toBe(true);
       });
       expect(fronts, code).toBeGreaterThan(0);
     }
+  });
+
+  it("does not squash the door photo onto drawer or false fronts", () => {
+    const uv = woodPanelPreviewUv();
+    const root = new THREE.Group();
+    const profile = designerCatalogDoorProfile(TOFFEE as never);
+    addCabinet(
+      root,
+      {
+        placementUid: "3db",
+        masterCode: "3DB30",
+        description: "3 Drawer Base",
+        placementType: "base",
+        width: 30,
+        depth: 24,
+        height: 34.5,
+        numberOfDoors: 0,
+        numberOfDrawers: 3,
+        category: "Base",
+      } as never,
+      "back",
+      { back: 0 },
+      144,
+      120,
+      "#a07850",
+      "#eeeeee",
+      profile as never,
+      { x: 0, z: 0, rotation: 0 },
+      TOFFEE.doorSampleImageUrl,
+      undefined,
+      { selectedToeKick: true, drawerSampleUrl: TOFFEE.drawerSampleImageUrl, faceCrop: CROP },
+    );
+    let drawers = 0;
+    root.traverse((node) => {
+      if (!node.userData?.cabinetDrawerFront) return;
+      const material = materialOf(node);
+      expect(material?.userData.drawerGrain).toBeUndefined();
+      expect(material?.userData.centerPanelGrain).toBe(true);
+      expect(material?.map).toBeTruthy();
+      expect(material!.map!.repeat.x).toBeCloseTo(uv.repeatX);
+      expect(material!.map!.offset.x).toBeCloseTo(uv.offsetX);
+      expect(material!.map!.repeat.x).not.toBeCloseTo(1);
+      expect(material!.map!.repeat.y).not.toBeCloseTo(1);
+      expect(material!.toneMapped).toBe(false);
+      const piece = pieceGrainTexture(material!.map!, 30, 6, "vertical", 0.2);
+      expect(piece.wrapS).toBe(THREE.ClampToEdgeWrapping);
+      expect(piece.wrapT).toBe(THREE.ClampToEdgeWrapping);
+      expect(piece.repeat.x).toBeLessThanOrEqual(1);
+      expect(piece.repeat.y).toBeLessThanOrEqual(1);
+      expect(piece.repeat.x / piece.repeat.y).toBeCloseTo(30 / 6, 0);
+      drawers += 1;
+    });
+    expect(drawers).toBeGreaterThanOrEqual(3);
   });
 
   it("does not leave the box, sides, or toe kick as the bare catalog hex", () => {
@@ -149,6 +220,9 @@ describe("Oxford Toffee wood photo", () => {
       if (!material?.map) return;
       expect(material.toneMapped).toBe(false);
       expect(material.userData.woodPhotoFidelity).toBe(true);
+      expect(material.userData.centerPanelGrain).toBe(true);
+      expect(material.map.repeat.x).toBeCloseTo(woodPanelPreviewUv().repeatX);
+      expect(material.map.offset.x).toBeCloseTo(woodPanelPreviewUv().offsetX);
       expect(`#${material.color.getHexString()}`).toBe("#ffffff");
     });
   });
