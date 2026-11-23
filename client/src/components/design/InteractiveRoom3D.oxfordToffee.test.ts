@@ -118,6 +118,11 @@ describe("Oxford Toffee wood photo", () => {
       rails += 1;
     });
     expect(rails).toBeGreaterThan(0);
+    let outlines = 0;
+    root.traverse((node) => {
+      if (node.userData?.shakerFrameOutline) outlines += 1;
+    });
+    expect(outlines).toBeGreaterThan(0);
   });
 
   it("keeps the center-panel crop on a base, a wall, and a DCW", () => {
@@ -185,9 +190,12 @@ describe("Oxford Toffee wood photo", () => {
       expect(material!.map!.repeat.x).not.toBeCloseTo(1);
       expect(material!.map!.repeat.y).not.toBeCloseTo(1);
       expect(material!.toneMapped).toBe(false);
-      const piece = pieceGrainTexture(material!.map!, 30, 6, "vertical");
-      expect(piece.wrapS).toBe(THREE.RepeatWrapping);
-      expect(piece.repeat.x).toBeGreaterThan(1);
+      const piece = pieceGrainTexture(material!.map!, 30, 6, "vertical", 0.2);
+      expect(piece.wrapS).toBe(THREE.ClampToEdgeWrapping);
+      expect(piece.wrapT).toBe(THREE.ClampToEdgeWrapping);
+      expect(piece.repeat.x).toBeLessThanOrEqual(1);
+      expect(piece.repeat.y).toBeLessThanOrEqual(1);
+      expect(piece.repeat.x / piece.repeat.y).toBeCloseTo(30 / 6, 0);
       drawers += 1;
     });
     expect(drawers).toBeGreaterThanOrEqual(3);

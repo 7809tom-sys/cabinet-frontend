@@ -96,7 +96,7 @@ import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindo
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
-import { centerPanelGrainCanvas, woodPanelGrainRepeat, woodPanelPreviewUv } from "@/lib/woodPanelGrain";
+import { pieceGrainCanvas, woodPanelPieceUv, woodPanelPreviewUv } from "@/lib/woodPanelGrain";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -420,61 +420,67 @@ export function woodDoorPhotoMaterialColor(): string {
   return dlcPhotoLightCompensation(threeDDesignerRoomCompensationRig(RESTORED_DOOR_LIGHTS), null).hex;
 }
 
+/**
+ * Front-face gain for a wood photograph under the designer room lights.
+ * Tone mapping stays off. This scale keeps a front-facing sample near the
+ * photo's own center while sides and rails still fall off with the light.
+ * Tuned against Oxford Toffee's panel center #9b7e5e.
+ */
+export const WOOD_PHOTO_LIGHT_GAIN = 0.74;
+
 export function applyWoodDoorPhotoFidelity(material: THREE.MeshStandardMaterial): void {
-  // The room lights and ACES tone map turn a wood photograph dark and brown.
-  // The face shows the assigned grain crop directly, at the photo's brightness.
-  // Paint with no photo never calls this.
+  // Lit, not a flat unlit photo. The gain puts a front face back near the
+  // photograph. Paint with no photo never calls this.
   material.color.set("#ffffff");
   material.toneMapped = false;
   material.envMapIntensity = 0;
+  material.roughness = Math.max(material.roughness ?? 0.5, 0.78);
+  material.metalness = 0;
   if ("clearcoat" in material) (material as THREE.MeshPhysicalMaterial).clearcoat = 0;
   material.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <opaque_fragment>",
-      "gl_FragColor = vec4( diffuseColor.rgb, diffuseColor.a );",
+      `gl_FragColor = vec4( outgoingLight * ${WOOD_PHOTO_LIGHT_GAIN.toFixed(3)}, diffuseColor.a );`,
     );
   };
   material.customProgramCacheKey = () => "wood-door-photo";
-  material.userData = { ...material.userData, woodPhotoFidelity: true };
+  material.userData = { ...material.userData, woodPhotoFidelity: true, woodPhotoLightGain: WOOD_PHOTO_LIGHT_GAIN };
   material.needsUpdate = true;
 }
 
-/** A center-panel sample, repeated to the piece's real inches. */
+/** One clamped copy of the center grain, aspect-matched to the piece. Never tiled. */
 export function pieceGrainTexture(
   source: THREE.Texture,
   widthIn: number,
   heightIn: number,
   grain: "vertical" | "horizontal",
+  salt = 0,
 ): THREE.Texture {
-  const repeat = woodPanelGrainRepeat(widthIn, heightIn, grain);
+  const uv = woodPanelPieceUv(widthIn, heightIn, grain, salt);
   const map = source.clone();
-  map.wrapS = THREE.RepeatWrapping;
-  map.wrapT = THREE.RepeatWrapping;
-  map.repeat.set(repeat.repeatX, repeat.repeatY);
-  map.center.set(0.5, 0.5);
-  map.rotation = repeat.rotation;
+  map.wrapS = THREE.ClampToEdgeWrapping;
+  map.wrapT = THREE.ClampToEdgeWrapping;
+  map.repeat.set(uv.repeatX, uv.repeatY);
+  map.offset.set(uv.offsetX, uv.offsetY);
+  map.center.set(uv.offsetX + uv.repeatX / 2, uv.offsetY + uv.repeatY / 2);
+  map.rotation = uv.rotation;
   map.needsUpdate = true;
   return map;
 }
 
 /**
- * Replace a framed door photograph with grain from its flat center panel.
- * Stiles and the panel keep vertical grain. Rails turn it horizontal.
- * Each piece repeats that sample by its real size, so a drawer is not a
- * squashed copy of the whole door. Painted materials are not marked and are skipped.
+ * Replace a framed door photograph with one copy of center-panel grain per piece.
+ * The copy is cropped to the piece's aspect (rails are turned first). It is
+ * clamped, never repeated, so a door cannot show a seam. Painted materials are
+ * not marked and are skipped.
  */
 export function applyLoadedWoodPanelGrain(
   root: THREE.Object3D,
   image: CanvasImageSource & { width: number; height: number },
   options?: { drawersOnly?: boolean },
 ): boolean {
-  const canvas = centerPanelGrainCanvas(image);
-  if (!canvas) return false;
-  const grain = new THREE.CanvasTexture(canvas);
-  grain.colorSpace = THREE.SRGBColorSpace;
-  grain.wrapS = THREE.RepeatWrapping;
-  grain.wrapT = THREE.RepeatWrapping;
   let applied = false;
+  let index = 0;
   root.traverse((node) => {
     const mesh = node as THREE.Mesh;
     if (!mesh.isMesh || Array.isArray(mesh.material)) return;
@@ -494,19 +500,37 @@ export function applyLoadedWoodPanelGrain(
       heightIn = Math.max(heightIn, size.y * 12);
     }
     const horizontal = mesh.userData?.grainPiece === "rail";
-    const map = pieceGrainTexture(grain, widthIn || 12, heightIn || 12, horizontal ? "horizontal" : "vertical");
+    const grain = horizontal ? "horizontal" : "vertical";
+    const salt = (index * 0.37 + widthIn * 0.013 + heightIn * 0.021) % 1;
+    index += 1;
+    const board = pieceGrainCanvas(image, widthIn || 12, heightIn || 12, grain, salt);
+    const map = board
+      ? new THREE.CanvasTexture(board)
+      : material.map
+        ? pieceGrainTexture(material.map, widthIn || 12, heightIn || 12, grain, salt)
+        : null;
+    if (!map) return;
+    if (board) {
+      map.colorSpace = THREE.SRGBColorSpace;
+      map.wrapS = THREE.ClampToEdgeWrapping;
+      map.wrapT = THREE.ClampToEdgeWrapping;
+      map.repeat.set(1, 1);
+      map.offset.set(0, 0);
+      map.rotation = 0;
+    }
+    map.needsUpdate = true;
     const next = material.clone();
     next.map = map;
     next.userData = {
       ...material.userData,
       centerPanelGrain: true,
-      woodPanelGrain: horizontal ? "horizontal" : "vertical",
+      woodPanelGrain: grain,
+      woodPanelGrainSalt: salt,
     };
     applyWoodDoorPhotoFidelity(next);
     mesh.material = next;
     applied = true;
   });
-  grain.dispose();
   return applied;
 }
 
@@ -7088,7 +7112,7 @@ export function addCabinet(
       }
     }
     // Shaker generic image edges on every painted or solid-color shaker front (Tom, Nov 18 2026). One merged line object.
-    if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish)) attachShakerFrameOutline(frameGroup, { faceWidth, faceHeight, rail, stile, color: dlcDoorFinish ?? color, proud: Boolean(dlcDoorFinish) });
+    if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish || woodDoorPhotograph)) attachShakerFrameOutline(frameGroup, { faceWidth, faceHeight, rail, stile, color: woodDoorPhotograph ? "#9b7e5e" : (dlcDoorFinish ?? color), proud: Boolean(dlcDoorFinish) });
     frontGroup.add(frameGroup);
   };
   const addDrawerReveal = (faceWidth: number, faceHeight: number, x: number, y: number, z = THREE_D_DRAWER_REVEAL_DEPTH) => {
