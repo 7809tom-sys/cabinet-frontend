@@ -151,6 +151,21 @@ describe("Edit Door: one door color source selector", () => {
     expect(stored()["1"].source).toBe("original-image");
   });
 
+  it("has no hand-typed Color field; a saved paint brand drives the Hex field and tile, not the old render hex", () => {
+    styles[0] = {
+      ...styles[0],
+      color: "#2d333f",
+      renderHex: "#2d333f",
+      doorColorSource: "hex",
+      doorColorSourceValue: { kind: "paint-brand", brand: "Valspar", code: "4009-3", name: "Gotham Gray", hex: "#353e47" },
+      doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z",
+    };
+    const dialog = openFirst();
+    expect(dialog.querySelector("#ed-color")).toBeNull();
+    expect((screen.getByTestId("door-color-source-hex-input") as HTMLInputElement).value).toBe("#353e47");
+    expect(screen.getByTestId("door-color-source-hex-swatch").getAttribute("aria-label")).toContain("#353e47");
+  });
+
   it("reloads a saved paint brand and still loads an old Sherwin-Williams row", () => {
     styles[0] = {
       ...styles[0],

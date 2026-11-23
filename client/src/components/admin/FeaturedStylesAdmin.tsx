@@ -36,6 +36,7 @@ import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, rea
 import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
+import { doorColorColumnForSave } from "@/components/admin/doorColorColumnForSave";
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
 import { DoorColorSourceFourPreview } from "@/components/admin/DoorColorSourceFourPreview";
 import { buildFourSlots, listingIsAvailable, type DoorColorSourcesListing, type FourSlot } from "@/lib/doorColorSourceSlots";
@@ -836,7 +837,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       aliasName: aliasName.trim() || null,
       ourName: ourName.trim(),
       doorStyle: doorStyle.trim() || null,
-      color: color.trim() || null,
+      // No hand-typed color field any more: a stale/blank hex-like value follows the
+      // door color source's resolved hex; a saved color name is kept.
+      color: doorColorColumnForSave({
+        saved: color,
+        confirmedSource: colorSource.stored?.source === "paint-brand" || colorSource.stored?.source === "hex" || colorSource.stored?.source === "sherwin-williams",
+        resolvedHex: doorColor.appliedHex,
+      }),
       renderHex: /^#[0-9a-f]{6}$/i.test(renderHex.trim()) ? renderHex.trim().toLowerCase() : null,
       doorShape: doorShape || null,
       finish: finish.trim() || null,
@@ -1116,8 +1123,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             </div>
           </div>
 
-          {/* Door style type + Color */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Door style type. The door color source panel below is the only color field. */}
+          <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="ed-doorstyle">Door Style Type</Label>
               <Input
@@ -1127,15 +1134,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                 placeholder="e.g. Shaker"
               />
               <ApprovedDoorStyleChips value={doorStyle} onPick={setDoorStyle} testId="ed-approved-door-styles" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ed-color">Color</Label>
-              <Input
-                id="ed-color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="e.g. White"
-              />
             </div>
           </div>
 
@@ -1190,12 +1188,17 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               }}
             />
             );
+            // A stored paint brand is a confirmed hex too (Valspar 4009-3 #353e47), so the
+            // Hex tile and field follow it instead of falling back to the old render hex.
+            const storedPickedHex = colorSource.stored?.source === "hex" || colorSource.stored?.source === "paint-brand"
+              ? colorSource.stored.hex
+              : null;
             const pendingHex = colorSource.pendingHex
-              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : "");
+              ?? storedPickedHex ?? "";
             // A tile with no picture stays empty (striped placeholder + warning dot):
             // the Hex tile only paints once a hex has been picked or confirmed.
             const hexSwatch = normalizeHex(colorSource.pendingHex)
-              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : null)
+              ?? storedPickedHex
               ?? normalizeHex(renderHex)
               ?? normalizeHex(style.renderHex);
             const sherwinHex = colorSource.pendingSherwin?.hex
