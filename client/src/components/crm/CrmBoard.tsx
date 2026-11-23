@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
+import { CRM_DESIGN_STAMP_LABELS, designSavedTitle, formatDesignSavedDate } from "@/lib/crmDesignStamps";
 import { crmBoardQueryInput, dealCustomerInput } from "@/lib/affiliateSiteScope";
 import { designOpenPath } from "@/lib/designOwnerScope";
 import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
@@ -118,6 +119,9 @@ interface DealRow {
   imageGeneratedCount?: number | null;
   lastImageGeneratedAt?: string | Date | null;
   saleRefundedAt?: string | Date | null;
+  // Stamped automatically by the server when a linked design is saved. Read-only.
+  firstDesignSavedAt?: string | Date | null;
+  lastDesignSavedAt?: string | Date | null;
 }
 
 type CrmInvoicePrefill = {
@@ -512,6 +516,11 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       )}
       {deal.contactEmail && <div className="text-[11px] text-muted-foreground truncate">{deal.contactEmail}</div>}
       {deal.contactPhone && <div className="text-[11px] text-muted-foreground">{deal.contactPhone}</div>}
+      {deal.firstDesignSavedAt && (
+        <div className="text-[10px] text-muted-foreground" data-testid="crm-card-first-design-saved" title={designSavedTitle(deal.firstDesignSavedAt)}>
+          {CRM_DESIGN_STAMP_LABELS.first[lang]} {formatDesignSavedDate(deal.firstDesignSavedAt, lang)}
+        </div>
+      )}
       {summary && <CustomerActivityLine text={summary.text} href={summary.href} nested />}
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs font-semibold text-foreground">{money(deal.estimatedValue)}</span>
@@ -851,6 +860,17 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
             </SheetHeader>
             <div className="space-y-4 mt-4">
               <CrmDueBanner nextFollowUpAt={deal.nextFollowUpAt} />
+              {/* Automatic dates: set by the server on design save, never edited here. */}
+              <dl className="grid grid-cols-2 gap-2 rounded-md border border-border p-2 text-xs" data-testid="crm-design-saved-dates">
+                <div>
+                  <dt className="text-muted-foreground">{CRM_DESIGN_STAMP_LABELS.first[lang]}</dt>
+                  <dd className="font-medium" title={designSavedTitle(deal.firstDesignSavedAt)}>{formatDesignSavedDate(deal.firstDesignSavedAt, lang)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{CRM_DESIGN_STAMP_LABELS.last[lang]}</dt>
+                  <dd className="font-medium" title={designSavedTitle(deal.lastDesignSavedAt)}>{formatDesignSavedDate(deal.lastDesignSavedAt, lang)}</dd>
+                </div>
+              </dl>
               <CustomerGeneratedImages customerId={deal.id} customerKind="crm" title="Generated images" />
               <Button type="button" variant="outline" onClick={() => onCompose?.({
                 dealId: deal.id,

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { CRM_PRIORITIES, CRM_PRIORITY_LABELS, CRM_STAGES, CRM_STAGE_LABELS, type CrmPriority, type CrmStage } from "@shared/crm";
 import { CRM_STAGE_COLORS, crmDueState, type MondayDeal } from "@shared/crmMailbox";
+import { CRM_DESIGN_STAMP_LABELS, designSavedTitle, formatDesignSavedDate, type CrmDesignStampFields } from "@/lib/crmDesignStamps";
 
 type Lang = "en" | "es";
 
-export type TableDeal = MondayDeal & {
+export type TableDeal = MondayDeal & CrmDesignStampFields & {
   ownerName?: string | null;
   lastActivityAt?: Date | string | null;
 };
@@ -38,7 +39,7 @@ export function CrmTableView({
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white" data-testid="crm-table-view">
-      <table className="w-full min-w-[920px] text-sm">
+      <table className="w-full min-w-[1120px] text-sm">
         <thead className="bg-[#1a2b4a] text-left text-xs uppercase tracking-wide text-white">
           <tr>
             <th className="px-3 py-2">Deal</th>
@@ -49,11 +50,13 @@ export function CrmTableView({
             <th className="px-3 py-2">Value</th>
             <th className="px-3 py-2">Priority</th>
             <th className="px-3 py-2">Last activity</th>
+            <th className="px-3 py-2">{CRM_DESIGN_STAMP_LABELS.first[lang]}</th>
+            <th className="px-3 py-2">{CRM_DESIGN_STAMP_LABELS.last[lang]}</th>
           </tr>
         </thead>
         <tbody>
           {deals.length === 0 ? (
-            <tr><td colSpan={showAffiliate ? 8 : 7} className="px-3 py-8 text-center text-slate-500">No deals match this view.</td></tr>
+            <tr><td colSpan={showAffiliate ? 10 : 9} className="px-3 py-8 text-center text-slate-500">No deals match this view.</td></tr>
           ) : deals.map((deal) => (
             <CrmTableRow key={deal.id} deal={deal} lang={lang} showAffiliate={showAffiliate} affiliateNames={affiliateNames} onOpen={onOpen} onPatch={onPatch} />
           ))}
@@ -137,6 +140,9 @@ function CrmTableRow({
         </select>
       </td>
       <td className="px-3 py-2 text-xs text-slate-500">{deal.lastActivityAt ? new Date(deal.lastActivityAt).toLocaleString() : deal.updatedAt ? new Date(deal.updatedAt).toLocaleDateString() : "—"}</td>
+      {/* Read-only: stamped by the server when a linked design is saved. */}
+      <td className="px-3 py-2 text-xs text-slate-500" data-testid="crm-first-design-saved" title={designSavedTitle(deal.firstDesignSavedAt)}>{formatDesignSavedDate(deal.firstDesignSavedAt, lang)}</td>
+      <td className="px-3 py-2 text-xs text-slate-500" data-testid="crm-last-design-saved" title={designSavedTitle(deal.lastDesignSavedAt)}>{formatDesignSavedDate(deal.lastDesignSavedAt, lang)}</td>
     </tr>
   );
 }
