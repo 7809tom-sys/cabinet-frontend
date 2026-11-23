@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { trpc } from "@/lib/trpc";
 import type { CartItem } from "@/contexts/CartContext";
+import { ShippingRulesBreakdown } from "@/components/shipping/ShippingRulesBreakdown";
+import { composeCheckoutShipping, formatKnownShippingWithPending, quoteShippingByRules } from "@shared/shippingRules";
 
 export type DeliveryAddress = { line1: string; line2: string; city: string; state: string; zip: string };
 
@@ -66,6 +68,28 @@ export function DesignDeliveryDialog({ open, onOpenChange, designId, designName,
     retry: false,
   });
   const shippingCents = quote.data?.available ? quote.data.totalCents : null;
+  const shippingRules = useMemo(
+    () => quoteShippingByRules(lines.map((line) => ({
+      productKind: line.productKind ?? null,
+      category: line.category ?? null,
+      name: line.name,
+      qty: line.qty,
+      qtyNote: line.qtyNote,
+    })), { state: address.state, zip: address.zip }),
+    [lines, address.state, address.zip],
+  );
+  const composedShipping = useMemo(
+    () => composeCheckoutShipping({
+      existingCarrierCents: shippingCents ?? 0,
+      rules: shippingRules,
+    }),
+    [shippingCents, shippingRules],
+  );
+  const shippingLabel = !complete
+    ? "Enter full address"
+    : quote.isLoading
+      ? "Quoting…"
+      : formatKnownShippingWithPending(composedShipping.knownShippingCents, composedShipping.pendingLabels);
 
   const set = (k: keyof DeliveryAddress) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setAddress((a) => ({ ...a, [k]: k === "state" ? e.target.value.toUpperCase().slice(0, 2) : e.target.value }));
@@ -94,7 +118,9 @@ export function DesignDeliveryDialog({ open, onOpenChange, designId, designName,
         contactEmail: defaultEmail || null,
         contactPhone: phone.trim() || null,
         designValue: Number(designTotal.toFixed(2)),
-        shippingQuote: shippingCents != null ? shippingCents / 100 : null,
+        shippingQuote: complete && (shippingCents != null || shippingRules.knownRuleShippingCents > 0)
+          ? composedShipping.knownShippingCents / 100
+          : null,
         address: { line1: address.line1, line2: address.line2 || null, city: address.city, state: address.state, zip: address.zip },
       },
       {
@@ -152,14 +178,15 @@ export function DesignDeliveryDialog({ open, onOpenChange, designId, designName,
           <div className="flex justify-between"><span>Kitchen design price</span><span className="font-semibold">{money(designTotal)}</span></div>
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1"><Truck className="h-3.5 w-3.5" /> Shipping</span>
-            <span className="font-semibold">
-              {!complete ? "Enter full address"
-                : quote.isLoading ? "Quoting…"
-                : shippingCents != null ? money(shippingCents / 100)
-                : "Quoted when order is placed"}
-            </span>
+            <span className="font-semibold text-right">{shippingLabel}</span>
           </div>
-          <div className="flex justify-between border-t border-border pt-1"><span>Total</span><span className="font-semibold">{money(designTotal + (shippingCents ?? 0) / 100)}</span></div>
+          {complete && shippingRules.categories.some((row) => row.path !== "existing") && (
+            <ShippingRulesBreakdown rules={shippingRules} composed={composedShipping} />
+          )}
+          <div className="flex justify-between border-t border-border pt-1"><span>Total</span><span className="font-semibold">{money(designTotal + composedShipping.knownShippingCents / 100)}</span></div>
+          {composedShipping.hasPendingEstimate && (
+            <p className="text-xs text-amber-800">Pending shipping is quoted separately and is not included in this total as $0.</p>
+          )}
         </div>
 
         <Button type="button" className="w-full" disabled={!complete || sync.isPending || designId == null} onClick={save} data-testid="save-design-to-crm">

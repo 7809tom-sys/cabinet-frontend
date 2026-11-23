@@ -74,8 +74,9 @@ describe("Cart address-first checkout", () => {
     expect(loadingSource).toContain("Calculating freight...");
   });
 
-  it("explains hardware free shipping only as a qualifying kitchen-order promotion", () => {
-    expect(cartSource).toContain("Hardware ships free when it is ordered with qualifying kitchen cabinets.");
+  it("explains free hardware shipping and Florida slab / pending estimate rules", () => {
+    expect(cartSource).toContain("Hardware (knobs, pulls, hinges, and other hardware) ships free.");
+    expect(cartSource).toContain("Countertops ship at $50 per slab to any Florida address.");
     expect(reviewSource).toContain("hardwareFreightQuote.data?.quoteToken");
     expect(cartSource).not.toContain("hardwareItems.length > 0 && !hardwareFreightQuote.data?.available");
   });

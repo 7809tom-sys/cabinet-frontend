@@ -37,6 +37,14 @@ import { installationEstimateDocumentPath } from "@shared/installationEstimateLi
 import { isHardwareCheckoutLine, isSurfaceCheckoutLine } from "@/lib/cartCheckoutPrefill";
 import { checkoutUnitPriceForLine, isCabinetFreightLine } from "@/lib/orderLinePricing";
 import { affiliateLiveRateFailureMessage, checkoutTotalWithLiveShipping, freightQuoteIsLiveCarrier, liveShippingQuotePanel } from "@/lib/liveShippingQuoteDisplay";
+import { ShippingRulesBreakdown } from "@/components/shipping/ShippingRulesBreakdown";
+import { useShippingQuotePathMutations } from "@/lib/shippingQuotePathApi";
+import {
+  composeCheckoutShipping,
+  formatKnownShippingWithPending,
+  itemUsesExistingCarrierQuote,
+  quoteShippingByRules,
+} from "@shared/shippingRules";
 import { getSiteSignInUrl } from "@/const";
 import { isTemporaryOneDollarFreeShippingOrder, isTemporaryOneDollarCheckoutTestItem } from "@shared/temporaryCheckoutTest";
 import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
@@ -242,6 +250,9 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
   const [deliveryLocationType, setDeliveryLocationType] = useState<"business" | "residential">("business");
   const [liftgateRequired, setLiftgateRequired] = useState(false);
   const [submittedId, setSubmittedId] = useState<number | null>(null);
+  const [estimateSent, setEstimateSent] = useState(false);
+  const [manualQuoteRequested, setManualQuoteRequested] = useState(false);
+  const shippingPathApi = useShippingQuotePathMutations();
   const [submittedRequestNumber, setSubmittedRequestNumber] = useState<string | null>(null);
   const [orderAccessToken, setOrderAccessToken] = useState<string | null>(null);
   const stagingTestMode = typeof window !== "undefined" && isStagingTestHost(window.location.hostname);
@@ -546,6 +557,20 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     || (line.cabinetId != null && freeShippingCabinetIds.has(line.cabinetId))
   );
 
+  const shippingDestination = useMemo(
+    () => ({ state: taxState, zip: zipDebounced }),
+    [taxState, zipDebounced],
+  );
+  const shippingRules = useMemo(
+    () => quoteShippingByRules(pricedLines.map((line) => ({
+      productKind: line.cartProductKind ?? null,
+      category: line.cartCategory ?? null,
+      name: line.description,
+      qty: line.qty,
+    })), shippingDestination),
+    [pricedLines, shippingDestination],
+  );
+
   const freightInput = useMemo(
     () => ({
       // Cart provides this only for an unchanged saved Designer plan. The server
@@ -558,9 +583,16 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         state: taxState,
         zip: zipDebounced,
       },
-      merchandiseSubtotalCents: Math.max(0, Math.round((total - pricedLines.reduce((sum, line) => (
-        isCabinetFreightLine(line) && lineMarkedFreeShipping(line) ? sum + (line.linePrice ?? 0) : sum
-      ), 0)) * 100)),
+      merchandiseSubtotalCents: Math.max(0, Math.round(pricedLines.reduce((sum, line) => {
+        if (isTemporaryOneDollarCheckoutTestItem(line) || lineMarkedFreeShipping(line)) return sum;
+        if (!itemUsesExistingCarrierQuote({
+          productKind: line.cartProductKind ?? null,
+          category: line.cartCategory ?? null,
+          name: line.description,
+          qty: line.qty,
+        }, shippingDestination)) return sum;
+        return sum + (line.linePrice ?? 0);
+      }, 0) * 100)),
       accessorials: {
         residential: deliveryLocationType === "residential",
         liftgate: liftgateRequired,
@@ -571,6 +603,12 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         .filter((line) => (isCabinetFreightLine(line) || isSurfaceCheckoutLine(line)) && !isHardwareCheckoutLine(line))
         .filter((line) => !isTemporaryOneDollarCheckoutTestItem(line))
         .filter((line) => !lineMarkedFreeShipping(line))
+        .filter((line) => itemUsesExistingCarrierQuote({
+          productKind: line.cartProductKind ?? null,
+          category: line.cartCategory ?? null,
+          name: line.description,
+          qty: line.qty,
+        }, shippingDestination))
         .map((line) => ({
           cabinetId: line.cabinetId,
           masterCode: line.masterCode,
@@ -585,7 +623,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
           pelicanProductId: isSurfaceCheckoutLine(line) ? line.cartPelicanProductId ?? null : null,
         })),
     }),
-    [zipDebounced, addressLine1, addressLine2, city, taxState, total, deliveryLocationType, liftgateRequired, carrierPreference, affiliateSlug, pricedLines, selectedStyle?.styleId, kitchenDesignId, freeShippingCabinetIds],
+    [zipDebounced, addressLine1, addressLine2, city, taxState, total, deliveryLocationType, liftgateRequired, carrierPreference, affiliateSlug, pricedLines, selectedStyle?.styleId, kitchenDesignId, freeShippingCabinetIds, shippingDestination],
   );
   const hasOnlyCatalogFreeShippingItems = useMemo(() => {
     const candidates = pricedLines.filter((line) => (
@@ -631,7 +669,16 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     enabled: deliveryMethod === "ship" && hasHardwareLines && zipDebounced.length >= 5 && city.trim().length > 0 && addressLine1.trim().length > 0,
     retry: false,
   });
-  const hardwareFreightCents = hardwareFreightQuote.data?.available ? (hardwareFreightQuote.data.shippingCents ?? 0) : 0;
+  const hardwareFreightCents = 0;
+  const composedShipping = useMemo(
+    () => composeCheckoutShipping({
+      existingCarrierCents: freightCents,
+      rules: shippingRules,
+      manualQuoteRequested,
+    }),
+    [freightCents, shippingRules, manualQuoteRequested],
+  );
+  const knownShippingCents = deliveryMethod === "ship" ? composedShipping.knownShippingCents : 0;
 
   // Sales tax calculation: look up rate for selected state, compute tax amount.
   const taxRateQuery = trpc.location.getTaxRate.useQuery(
@@ -640,7 +687,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
   );
   const taxInfo = taxRateQuery.data ?? null;
   const taxAmount = taxInfo && total > 0 ? Number((total * taxInfo.rate).toFixed(2)) : 0;
-  const grandTotal = total + taxAmount + (deliveryMethod === "ship" ? (freightCents + hardwareFreightCents) / 100 : 0);
+  const grandTotal = total + taxAmount + knownShippingCents / 100;
 
   // Owner-only roll-up: total cost + gross margin across all priced lines.
   const isOwner = user?.role === "admin";
@@ -723,11 +770,57 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     && taxState.length === 2
     && addressLine1.trim().length > 0;
   const liveShippingPanel = liveShippingQuotePanel({
-    hasItems: freightInput.items.length > 0 || hasHardwareLines,
+    hasItems: freightInput.items.length > 0 || hasHardwareLines || shippingRules.categories.length > 0,
     addressReady: shippingAddressReady,
-    fetching: freightEstimate.isFetching || hardwareFreightQuote.isFetching,
-    available: cabinetFreightShown || hardwareFreightCents > 0,
+    fetching: freightInput.items.length > 0 && freightEstimate.isFetching,
+    available: cabinetFreightShown
+      || shippingRules.categories.some((row) => row.path === "fixed" || row.path === "estimate"),
   });
+  const shippingPathPayload = {
+    originatorName: name || undefined,
+    originatorEmail: email,
+    originatorPhone: phone || undefined,
+    deliveryAddress: {
+      line1: addressLine1.trim(),
+      line2: addressLine2.trim() || null,
+      city: city.trim(),
+      state: taxState,
+      zip: zipDebounced || zip.trim(),
+    },
+    pendingCategories: shippingRules.categories.filter((row) => row.pendingLabel).map((row) => row.category),
+    knownShippingCents: knownShippingCents,
+    pendingLabels: composedShipping.pendingLabels,
+    lineSummary: pricedLines.map((line) => `${line.qty} × ${line.description ?? line.masterCode ?? line.rawCode}`).join("\n"),
+    notes: notes.trim() || null,
+  };
+
+  async function requestShippingEstimate() {
+    if (!emailValid || !shippingAddressReady) {
+      toast.error("Enter your email and complete delivery address, then request a shipping estimate.");
+      return;
+    }
+    try {
+      await shippingPathApi.requestEstimate.mutateAsync({ path: "estimate", ...shippingPathPayload });
+      setEstimateSent(true);
+      toast.success("Estimate requested. The team has been emailed, and you can still place or save this order with shipping shown as pending.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not request a shipping estimate.");
+    }
+  }
+
+  async function requestManualShippingQuote() {
+    if (!emailValid || !shippingAddressReady) {
+      toast.error("Enter your email and complete delivery address, then send the invoice for a manual quote.");
+      return;
+    }
+    try {
+      await shippingPathApi.requestManualQuote.mutateAsync({ path: "manual", ...shippingPathPayload });
+      setManualQuoteRequested(true);
+      toast.success("Invoice sent to the team for a manual quote. Payment will not be taken until they quote it.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not send the invoice for a manual quote.");
+    }
+  }
 
   function handleSubmit() {
     if (stagingTestMode) {
@@ -763,12 +856,12 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
       });
       return;
     }
-    const requiresCabinetOrSurfaceQuote = freightInput.items.length > 0 && !hasOnlyTemporaryFreeShippingItems;
-    if (deliveryMethod === "ship" && requiresCabinetOrSurfaceQuote && affiliateSlug && !cabinetFreightShown) {
+    const requiresExistingCarrierQuote = freightInput.items.length > 0 && !hasOnlyTemporaryFreeShippingItems;
+    if (deliveryMethod === "ship" && requiresExistingCarrierQuote && affiliateSlug && !cabinetFreightShown) {
       toast.error(affiliateLiveRateFailureMessage(freightEstimate.error?.message ?? freightEstimate.data?.reason));
       return;
     }
-    if (deliveryMethod === "ship" && requiresCabinetOrSurfaceQuote && !freightEstimate.data?.quoteToken) {
+    if (deliveryMethod === "ship" && requiresExistingCarrierQuote && !freightEstimate.data?.quoteToken) {
       toast.error("A current shipping quote is required before submitting this order.");
       return;
     }
@@ -808,12 +901,15 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
       deliveryMethod,
       deliveryLocationType,
       liftgateRequired: deliveryMethod === "ship" && liftgateRequired,
-      freightQuoteToken: deliveryMethod === "ship" && !hasOnlyTemporaryFreeShippingItems
+      freightQuoteToken: deliveryMethod === "ship" && !hasOnlyTemporaryFreeShippingItems && freightInput.items.length > 0
         ? freightEstimate.data?.quoteToken
         : undefined,
       hardwareFreightQuoteToken: deliveryMethod === "ship" && hasHardwareLines
         ? hardwareFreightQuote.data?.quoteToken ?? undefined
         : undefined,
+      shippingQuotePath: manualQuoteRequested ? "manual" : (estimateSent || shippingRules.hasPendingEstimate ? "estimate" : "fixed"),
+      pendingShippingCategories: shippingRules.categories.filter((row) => row.pendingLabel).map((row) => row.category),
+      knownShippingCents,
       pickupDistributorId: deliveryMethod === "pickup" ? pickupDistributorId : null,
       taxState: taxState || undefined,
       taxRate: taxInfo?.rate,
@@ -833,6 +929,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
           : optionalPositiveFreightId(l.cartStyleId) ?? optionalPositiveFreightId(selectedStyle?.styleId),
         distributorId: isSurfaceCheckoutLine(l) || isHardwareCheckoutLine(l) ? null : optionalPositiveFreightId(l.cartDistributorId),
         productKind: isSurfaceCheckoutLine(l) ? "surface" : isHardwareCheckoutLine(l) ? "hardware" : null,
+        category: l.cartCategory ?? null,
         pelicanProductId: isSurfaceCheckoutLine(l) ? l.cartPelicanProductId ?? null : null,
         vendorProductId: isHardwareCheckoutLine(l) ? l.cartVendorProductId ?? null : null,
         doorStyle: isSurfaceCheckoutLine(l) || isHardwareCheckoutLine(l) ? null : brandedStyleName ?? null,
@@ -857,9 +954,13 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/40">
           <CheckCircle2 className="h-7 w-7 text-emerald-600" />
         </div>
-        <h3 className="font-serif text-2xl font-bold mb-2">Order ready for secure checkout</h3>
+        <h3 className="font-serif text-2xl font-bold mb-2">{manualQuoteRequested ? "Invoice sent for a manual shipping quote" : "Order ready for secure checkout"}</h3>
         <p className="text-muted-foreground max-w-md mx-auto mb-6">
-          Your {itemCount}-item order has been saved. Continue to Stripe to review the final payment total and complete your purchase.
+          {manualQuoteRequested
+            ? "Your order has been saved and sent to the team. Payment will not be taken until they quote shipping."
+            : shippingRules.hasPendingEstimate
+              ? "Your order has been saved. Known shipping is in the total; pending shipping is quoted separately and is not included as $0."
+              : `Your ${itemCount}-item order has been saved. Continue to Stripe to review the final payment total and complete your purchase.`}
         </p>
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button variant="outline" onClick={onReset}>
@@ -883,10 +984,16 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         {/* Hosted payment: all line items and totals are constructed by the
             server from this stored request, then displayed by Stripe. */}
         <div className="mt-8 text-left max-w-lg mx-auto">
-          <PayWithStripe
-            orderRequestId={submittedId}
-            orderNumber={submittedRequestNumber ?? `Order #${submittedId}`}
-          />
+          {manualQuoteRequested ? (
+            <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" data-testid="manual-quote-payment-hold">
+              Payment capture is on hold until the team returns a shipping quote for this invoice.
+            </div>
+          ) : (
+            <PayWithStripe
+              orderRequestId={submittedId}
+              orderNumber={submittedRequestNumber ?? `Order #${submittedId}`}
+            />
+          )}
         </div>
       </div>
     );
@@ -1145,10 +1252,12 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
             {total > 0 ? `$${total.toFixed(2)}` : "—"}
           </p>
         </div>
-        {deliveryMethod === "ship" && (cabinetFreightShown || hardwareFreightCents > 0) && (
-          <div className="flex items-center justify-between text-sm" data-testid="live-shipping-total">
-            <span className="text-muted-foreground">Shipping</span>
-            <span className="font-medium tabular-nums">${((freightCents + hardwareFreightCents) / 100).toFixed(2)}</span>
+        {deliveryMethod === "ship" && (cabinetFreightShown || shippingRules.categories.some((row) => row.path === "fixed" || row.path === "estimate")) && (
+          <div className="space-y-1" data-testid="live-shipping-total">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Shipping</span>
+              <span className="font-medium tabular-nums text-right">{formatKnownShippingWithPending(knownShippingCents, composedShipping.pendingLabels)}</span>
+            </div>
           </div>
         )}
 
@@ -1210,7 +1319,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         {!taxInfo && total > 0 && (
           <div className="flex items-center justify-between border-t border-border pt-3">
             <p className="text-xs text-muted-foreground">Select your state above to see estimated tax</p>
-            <p className="font-serif text-2xl font-bold tabular-nums" data-testid="checkout-total-with-shipping">${checkoutTotalWithLiveShipping({ merchandise: total, tax: 0, shippingCents: deliveryMethod === "ship" ? freightCents + hardwareFreightCents : 0 }).toFixed(2)}</p>
+            <p className="font-serif text-2xl font-bold tabular-nums" data-testid="checkout-total-with-shipping">${checkoutTotalWithLiveShipping({ merchandise: total, tax: 0, shippingCents: knownShippingCents }).toFixed(2)}</p>
           </div>
         )}
       </div>
@@ -1457,15 +1566,30 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
                 </span>
               </span>
             </label>
+            {shippingAddressReady && shippingRules.categories.some((row) => row.path !== "existing") && (
+              <ShippingRulesBreakdown
+                rules={shippingRules}
+                composed={composedShipping}
+                showActions
+                onRequestEstimate={() => void requestShippingEstimate()}
+                onRequestManualQuote={() => void requestManualShippingQuote()}
+                estimateBusy={shippingPathApi.requestEstimate.isPending}
+                manualBusy={shippingPathApi.requestManualQuote.isPending}
+                estimateSent={estimateSent}
+                manualSent={manualQuoteRequested}
+              />
+            )}
             {liveShippingPanel === "need-address" ? (
               <p role="status" className="text-xs text-amber-800">Complete the street address, city, state, and ZIP above to calculate the shipping quote. Your name, email, and phone are required before the order can be submitted.</p>
             ) : liveShippingPanel === "calculating" ? (
               <FreightCalculatingStatus upsRequested={carrierPreference === "ups"} />
+            ) : liveShippingPanel === "quote" && !cabinetFreightShown ? (
+              <p className="text-xs text-muted-foreground">Cabinet freight uses the current carrier quote when this order includes cabinets. Category shipping is shown above.</p>
             ) : liveShippingPanel === "quote" && cabinetFreightShown ? (
               <div className="space-y-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-emerald-950">
                 <div className="flex items-center justify-between gap-3 text-sm font-semibold">
                   <span>Verified shipping total</span>
-                  <span>${(freightEstimate.data.totalCents / 100).toFixed(2)}</span>
+                  <span>{formatKnownShippingWithPending(knownShippingCents, composedShipping.pendingLabels)}</span>
                 </div>
                 {(freightEstimate.data.rateGroups ?? []).map((group) => (
                   <div key={group.key} className="text-xs">

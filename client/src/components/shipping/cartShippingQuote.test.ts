@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cartItemsToShippingQuote, quotesForCartIndexes } from "./cartShippingQuote";
+import { carrierQuoteRequests, cartItemsToShippingQuote, quotesForCartIndexes, shippingItemFromQuoteRequest } from "./cartShippingQuote";
 
 describe("cart shipping quote grouping", () => {
   it("keeps each supplier's lines separate and skips drawing items that have no supplier", () => {
@@ -49,5 +49,18 @@ describe("cart shipping quote grouping", () => {
       },
     ], mapped.cartIndexes, [1]);
     expect(visible.map((quote) => quote.vendorScope)).toEqual(["pelican"]);
+  });
+
+  it("keeps cabinets on the carrier quote and leaves slabs, hardware, and estimate lanes out so no rate is invented", () => {
+    const mapped = cartItemsToShippingQuote([
+      { masterCode: "B24", styleId: 4, qty: 1, unitPrice: 10, distributorId: 9, productKind: null },
+      { masterCode: "SLAB", styleId: 0, qty: 2, unitPrice: 100, productKind: "surface", pelicanProductId: 15, category: "Quartz Slabs (Countertops)", name: "Calacatta" },
+      { masterCode: "PULL", styleId: 0, qty: 3, unitPrice: 8, productKind: "hardware", vendorProductId: 77, category: "Decorative Hardware" },
+      { masterCode: "TILE", styleId: 0, qty: 4, unitPrice: 20, productKind: "surface", pelicanProductId: 16, category: "Tile & Mosaic", name: "Mosaic" },
+    ]);
+    const carrier = carrierQuoteRequests(mapped.requests, { state: "FL", zip: "33101" });
+    expect(carrier.requests.map((item) => item.kind)).toEqual(["cabinet"]);
+    expect(carrier.originalIndexes).toEqual([0]);
+    expect(shippingItemFromQuoteRequest(mapped.requests[1]!).category).toContain("Countertops");
   });
 });

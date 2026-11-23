@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Truck } from "lucide-react";
 import { toast } from "sonner";
 import type { PublicVendorQuote, ShippingQuoteRequestItem } from "./cartShippingQuote";
+import { carrierQuoteRequests, remapVendorQuoteItemIndexes, shippingItemFromQuoteRequest } from "./cartShippingQuote";
+import { ShippingRulesBreakdown } from "./ShippingRulesBreakdown";
+import { composeCheckoutShipping, quoteShippingByRules } from "@shared/shippingRules";
 import { asArray, displayValue, formatCents } from "@/lib/safeDisplay";
 
 function money(cents: unknown) {
@@ -53,17 +56,53 @@ export function ShippingQuoteBox({
   items,
   className = "",
   onQuoted,
+  showPathActions = false,
+  onRequestEstimate,
+  onRequestManualQuote,
+  estimateBusy,
+  manualBusy,
+  estimateSent,
+  manualSent,
 }: {
   items: ShippingQuoteRequestItem[];
   className?: string;
   onQuoted?: (quotes: PublicVendorQuote[]) => void;
+  showPathActions?: boolean;
+  onRequestEstimate?: () => void;
+  onRequestManualQuote?: () => void;
+  estimateBusy?: boolean;
+  manualBusy?: boolean;
+  estimateSent?: boolean;
+  manualSent?: boolean;
 }) {
   const [zip, setZip] = useState("");
   const quote = trpc.shippingQuotes.getShippingQuote.useMutation();
+  const destination = useMemo(() => ({ zip }), [zip]);
+  const zipReady = /^\d{5}$/.test(zip);
+  const rules = useMemo(
+    () => zipReady ? quoteShippingByRules(items.map(shippingItemFromQuoteRequest), destination) : null,
+    [zipReady, items, destination],
+  );
+  const carrier = useMemo(
+    () => zipReady ? carrierQuoteRequests(items, destination) : { requests: [] as ShippingQuoteRequestItem[], originalIndexes: [] as number[] },
+    [zipReady, items, destination],
+  );
+  const ready = zipReady && (carrier.requests.length > 0 || (rules != null && rules.categories.some((row) => row.path !== "existing")));
+
   useEffect(() => {
-    if (quote.data) onQuoted?.(quote.data.vendors);
-  }, [quote.data, onQuoted]);
-  const ready = /^\d{5}$/.test(zip) && items.length > 0;
+    if (!quote.data) return;
+    onQuoted?.(remapVendorQuoteItemIndexes(asArray<PublicVendorQuote>(quote.data.vendors), carrier.originalIndexes));
+  }, [quote.data, onQuoted, carrier.originalIndexes]);
+
+  const requestQuote = () => {
+    if (!zipReady) return;
+    if (carrier.requests.length === 0) {
+      onQuoted?.([]);
+      return;
+    }
+    quote.mutate({ destinationZip: zip, items: carrier.requests });
+  };
+
   return (
     <div className={`rounded-xl border border-border bg-card p-4 ${className}`} data-testid="shipping-quote-box">
       <div className="flex items-center gap-2">
@@ -90,12 +129,27 @@ export function ShippingQuoteBox({
           type="button"
           variant="outline"
           disabled={!ready || quote.isPending}
-          onClick={() => quote.mutate({ destinationZip: zip, items })}
+          onClick={requestQuote}
         >
           {quote.isPending ? "Getting quote…" : "Get shipping quote"}
         </Button>
       </div>
       {quote.error && <p className="mt-2 text-xs text-destructive">{quote.error.message}</p>}
+      {rules && (
+        <div className="mt-3">
+          <ShippingRulesBreakdown
+            rules={rules}
+            composed={composeCheckoutShipping({ existingCarrierCents: 0, rules })}
+            showActions={showPathActions}
+            onRequestEstimate={onRequestEstimate}
+            onRequestManualQuote={onRequestManualQuote}
+            estimateBusy={estimateBusy}
+            manualBusy={manualBusy}
+            estimateSent={estimateSent}
+            manualSent={manualSent}
+          />
+        </div>
+      )}
       {quote.data && <div className="mt-3"><ShippingQuoteResults quotes={asArray<PublicVendorQuote>(quote.data.vendors)} /></div>}
     </div>
   );
