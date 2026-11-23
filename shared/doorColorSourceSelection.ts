@@ -11,6 +11,8 @@
  *   2. approved-ai-image  the accepted AI render for this style.
  *   3. sherwin-williams   a Sherwin-Williams stain or paint chip, once CONFIRMED.
  *   4. hex                a hand-picked hex, once CONFIRMED.
+ *   paint-brand           a colorimeter match (brand, code, name, hex), once CONFIRMED.
+ *                         It paints like a confirmed hex. The four tiles stay as they are.
  *
  * Rule (docs/rules/DOOR_COLOR_SOURCE_RULE.md): image first; any other color only
  * when someone explicitly chooses it. Sherwin-Williams and Hex only count after the
@@ -42,9 +44,30 @@ export const DOOR_COLOR_SOURCE_LABELS: Record<DoorColorSourceOption, string> = {
   hex: "Hex",
 };
 
+/**
+ * Paint brands a Color Muse 3 colorimeter can match. The door editor's paint
+ * brand control offers exactly these six, and no others.
+ */
+export const PAINT_BRANDS = [
+  "Sherwin-Williams",
+  "Behr",
+  "Benjamin Moore",
+  "Valspar",
+  "PPG",
+  "Clark + Kensington",
+] as const;
+export type PaintBrand = (typeof PAINT_BRANDS)[number];
+
+/** The four picture tiles, plus the paint-brand form (not a fifth tile). */
+export type DoorColorSourceActive = DoorColorSourceOption | "paint-brand";
+
+export function isPaintBrand(value: unknown): value is PaintBrand {
+  return typeof value === "string" && (PAINT_BRANDS as readonly string[]).includes(value);
+}
+
 /** Options that only take effect after Confirm. */
-export function needsConfirm(source: DoorColorSourceOption): boolean {
-  return source === "sherwin-williams" || source === "hex";
+export function needsConfirm(source: DoorColorSourceActive): boolean {
+  return source === "sherwin-williams" || source === "hex" || source === "paint-brand";
 }
 
 export type SherwinWilliamsChoice = {
@@ -57,12 +80,34 @@ export type SherwinWilliamsChoice = {
   profileImageUrl: string | null;
 };
 
+/**
+ * A confirmed paint-brand color. `kind` is the marker stored inside the color
+ * source JSON (`doorColorSourceValue`), next to the hex the 3D view paints.
+ */
+export type PaintBrandColor = {
+  kind: "paint-brand";
+  brand: PaintBrand;
+  code: string;
+  name: string;
+  hex: string;
+};
+
 /** What is stored. Only explicit, confirmed choices are ever written. */
 export type DoorColorSourceSelection =
   | { source: "original-image"; chosenAt: string }
   | { source: "approved-ai-image"; chosenAt: string }
   | { source: "sherwin-williams"; confirmed: true; chosenAt: string; color: SherwinWilliamsChoice }
-  | { source: "hex"; confirmed: true; chosenAt: string; hex: string };
+  | { source: "hex"; confirmed: true; chosenAt: string; hex: string }
+  | ({ source: "paint-brand"; confirmed: true; chosenAt: string } & PaintBrandColor);
+
+/**
+ * What `adminUpdateDoorStyle` is sent. A paint brand is a confirmed hex (the
+ * path the live API already accepts, which also sets renderHex) with the brand
+ * record on the same object so it can live in `doorColorSourceValue`.
+ */
+export type DoorColorSourceSaveSelection =
+  | Exclude<DoorColorSourceSelection, { source: "paint-brand" }>
+  | ({ source: "hex"; confirmed: true; chosenAt: string } & PaintBrandColor);
 
 type ReadStorage = Pick<Storage, "getItem">;
 type WriteStorage = Pick<Storage, "getItem" | "setItem">;
@@ -92,6 +137,66 @@ function readAll(storage: ReadStorage | undefined): Record<string, unknown> {
   }
 }
 
+function textField(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Validates a paint-brand record. A bad brand, a blank code or name, or a hex
+ * that is not `#RRGGBB` reads as "nothing chosen".
+ */
+export function parsePaintBrandColor(raw: unknown, chosenAt = ""): ({ source: "paint-brand"; confirmed: true; chosenAt: string } & PaintBrandColor) | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  if (record.kind != null && record.kind !== "paint-brand") return null;
+  if (record.confirmed != null && record.confirmed !== true) return null;
+  const brand = record.brand;
+  const code = textField(record.code);
+  const name = textField(record.name);
+  const hex = normalizeHex(typeof record.hex === "string" ? record.hex : undefined);
+  if (!isPaintBrand(brand) || !code || !name || !hex) return null;
+  const when = textField(record.chosenAt) || chosenAt;
+  return { source: "paint-brand", confirmed: true, chosenAt: when, kind: "paint-brand", brand, code, name, hex };
+}
+
+/** The confirmed paint-brand record, or null when the fields are not valid yet. */
+export function serializePaintBrandColor(input: {
+  brand: unknown;
+  code: unknown;
+  name: unknown;
+  hex: unknown;
+  chosenAt?: string;
+}): ({ source: "paint-brand"; confirmed: true; chosenAt: string } & PaintBrandColor) | null {
+  return parsePaintBrandColor({
+    kind: "paint-brand",
+    confirmed: true,
+    brand: input.brand,
+    code: input.code,
+    name: input.name,
+    hex: input.hex,
+    chosenAt: input.chosenAt ?? "",
+  });
+}
+
+/**
+ * The object written through `adminUpdateDoorStyle.doorColorSourceSelection`.
+ * Paint brand keeps `source: "hex"` so the current API accepts it, and puts
+ * `{ kind, brand, code, name, hex }` on that same object for `doorColorSourceValue`.
+ */
+export function doorColorSourceSelectionForSave(selection: DoorColorSourceSelection): DoorColorSourceSaveSelection {
+  if (selection.source !== "paint-brand") return selection;
+  return {
+    source: "hex",
+    confirmed: true,
+    chosenAt: selection.chosenAt,
+    kind: "paint-brand",
+    brand: selection.brand,
+    code: selection.code,
+    name: selection.name,
+    hex: selection.hex,
+  };
+}
+
 /** Validates one stored record. Anything malformed or unconfirmed reads as "nothing chosen". */
 export function parseDoorColorSourceSelection(raw: unknown): DoorColorSourceSelection | null {
   if (!raw || typeof raw !== "object") return null;
@@ -101,7 +206,14 @@ export function parseDoorColorSourceSelection(raw: unknown): DoorColorSourceSele
     case "original-image":
     case "approved-ai-image":
       return { source: record.source, chosenAt };
+    case "paint-brand":
+      if (record.confirmed !== true) return null;
+      return parsePaintBrandColor({ ...record, kind: "paint-brand" }, chosenAt);
     case "hex": {
+      if (record.kind === "paint-brand") {
+        if (record.confirmed !== true) return null;
+        return parsePaintBrandColor(record, chosenAt);
+      }
       const hex = normalizeHex(record.hex as string | undefined);
       if (record.confirmed !== true || !hex) return null;
       return { source: "hex", confirmed: true, chosenAt, hex };
@@ -194,12 +306,21 @@ export function selectionFromServerFields(
         return parseDoorColorSourceSelection({ source: fields.doorColorSource, chosenAt });
       case "hex": {
         const value = fields.doorColorSourceValue;
+        if (value && typeof value === "object" && !Array.isArray(value) && (value as { kind?: unknown }).kind === "paint-brand") {
+          const paint = parseDoorColorSourceSelection({ source: "paint-brand", confirmed: true, chosenAt, ...value });
+          if (paint) return paint;
+        }
         const hex = typeof value === "string"
           ? value
           : value && typeof value === "object" && !Array.isArray(value)
             ? (value as { hex?: unknown }).hex
             : undefined;
         return parseDoorColorSourceSelection({ source: "hex", confirmed: true, chosenAt, hex });
+      }
+      case "paint-brand": {
+        const value = fields.doorColorSourceValue;
+        const record = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+        return parseDoorColorSourceSelection({ source: "paint-brand", confirmed: true, chosenAt, kind: "paint-brand", ...record });
       }
       case "sherwin-williams":
         return parseDoorColorSourceSelection({
@@ -225,8 +346,19 @@ export function selectionForStyle(
   storage: ReadStorage | undefined = defaultStorage(),
 ): DoorColorSourceSelection | null {
   const fromServer = selectionFromServerFields(style);
+  const cached = readDoorColorSourceSelection(style?.id ?? null, storage);
+  // The live API stores a paint brand as a confirmed hex and drops kind/brand/code/name
+  // until cabinet-backend writes them into doorColorSourceValue. The browser cache
+  // still has the full record; use it when the saved hex is the same one.
+  if (
+    cached?.source === "paint-brand"
+    && fromServer?.source === "hex"
+    && fromServer.hex === cached.hex
+  ) {
+    return { ...cached, chosenAt: fromServer.chosenAt || cached.chosenAt };
+  }
   if (fromServer) return fromServer;
-  return readDoorColorSourceSelection(style?.id ?? null, storage);
+  return cached;
 }
 
 export type AcceptedAiAvailability = {
@@ -298,6 +430,16 @@ export function effectiveDoorColorSource(
   if (!selection) {
     return { source: DEFAULT_DOOR_COLOR_SOURCE, chosen: null, fellBack: false, note: "Nothing chosen: the supplier photo is used." };
   }
+  // A paint brand paints the same way a confirmed hex does. The brand record
+  // stays on the selection; the four tiles keep their existing sources.
+  if (selection.source === "paint-brand") {
+    return {
+      source: "hex",
+      chosen: "hex",
+      fellBack: false,
+      note: `${selection.brand} ${selection.code} ${selection.name} confirmed.`,
+    };
+  }
   if (selection.source === "approved-ai-image" && !hasApprovedAiImage(style)) {
     return {
       source: DEFAULT_DOOR_COLOR_SOURCE,
@@ -310,10 +452,10 @@ export function effectiveDoorColorSource(
   return { source: selection.source, chosen: selection.source, fellBack: false, note: `${label} chosen explicitly.` };
 }
 
-/** The hex an explicit Sherwin-Williams or Hex choice paints, or null for image sources. */
+/** The hex an explicit Sherwin-Williams, Hex, or paint-brand choice paints, or null for image sources. */
 export function selectedDoorHex(selection: DoorColorSourceSelection | null | undefined): string | null {
   if (!selection) return null;
-  if (selection.source === "hex") return selection.hex;
+  if (selection.source === "hex" || selection.source === "paint-brand") return selection.hex;
   if (selection.source === "sherwin-williams") return selection.color.hex;
   return null;
 }
@@ -392,6 +534,9 @@ export function checkedDoorSourceFor(
   if (!style) return null;
   const selection = storage === undefined ? selectionForStyle(style) : selectionForStyle(style, storage);
   if (!selection) return null;
+  // Paint brand is a confirmed hex for the renderer: the image checkmark stays off
+  // so the saved hex, not the supplier photo, decides the door color.
+  if (selection.source === "paint-brand") return "hex";
   if (selection.source === "hex" || selection.source === "sherwin-williams") return selection.source;
   if (selection.source === "approved-ai-image" && hasApprovedAiImage(style)) return "ai-image";
   return "uploaded-sample";
@@ -432,29 +577,58 @@ export function styleWithCheckedDoorImage<T extends CheckedDoorImageInput>(
 
 // ── Selector state (pure, so the door editor and tests share one behavior) ──────
 
+export type PaintBrandDraft = {
+  brand: PaintBrand | "";
+  code: string;
+  name: string;
+  hex: string;
+};
+
 export type DoorColorSourceDraft = {
   /** What is stored for the style: only explicit, confirmed choices. */
   stored: DoorColorSourceSelection | null;
   /** The option highlighted in the selector. Exactly one at a time. */
-  active: DoorColorSourceOption;
+  active: DoorColorSourceActive;
   /** A Hex pick that has not been confirmed yet. */
   pendingHex: string | null;
   /** A Sherwin-Williams pick that has not been confirmed yet. */
   pendingSherwin: SherwinWilliamsChoice | null;
+  /** A paint-brand pick that has not been confirmed yet. */
+  pendingPaint: PaintBrandDraft | null;
   notice: string | null;
 };
 
 export type DoorColorSourceAction =
-  | { type: "choose"; option: DoorColorSourceOption; aiAvailable: boolean; now: string }
+  | { type: "choose"; option: DoorColorSourceActive; aiAvailable: boolean; now: string; hexSeed?: string | null }
   | { type: "pendingHex"; hex: string }
   | { type: "pendingSherwin"; color: SherwinWilliamsChoice | null }
+  | { type: "pendingPaint"; patch: Partial<PaintBrandDraft> }
   | { type: "confirm"; now: string }
   /** Leaving the selector (dialog closed) without confirming turns the toggle back off. */
   | { type: "abandon" }
   | { type: "reset"; stored: DoorColorSourceSelection | null };
 
 export function initialDoorColorSourceDraft(stored: DoorColorSourceSelection | null): DoorColorSourceDraft {
-  return { stored, active: stored?.source ?? DEFAULT_DOOR_COLOR_SOURCE, pendingHex: null, pendingSherwin: null, notice: null };
+  return {
+    stored,
+    active: stored?.source ?? DEFAULT_DOOR_COLOR_SOURCE,
+    pendingHex: null,
+    pendingSherwin: null,
+    pendingPaint: null,
+    notice: null,
+  };
+}
+
+function blankPaintDraft(hex = ""): PaintBrandDraft {
+  return { brand: "", code: "", name: "", hex };
+}
+
+function paintDraftFromState(state: DoorColorSourceDraft): PaintBrandDraft {
+  if (state.pendingPaint) return state.pendingPaint;
+  if (state.stored?.source === "paint-brand") {
+    return { brand: state.stored.brand, code: state.stored.code, name: state.stored.name, hex: state.stored.hex };
+  }
+  return blankPaintDraft();
 }
 
 export function doorColorSourceReducer(state: DoorColorSourceDraft, action: DoorColorSourceAction): DoorColorSourceDraft {
@@ -463,7 +637,7 @@ export function doorColorSourceReducer(state: DoorColorSourceDraft, action: Door
       return initialDoorColorSourceDraft(action.stored);
     case "choose": {
       const option = action.option;
-      const base = { ...state, active: option, pendingHex: null, pendingSherwin: null, notice: null };
+      const base = { ...state, active: option, pendingHex: null, pendingSherwin: null, pendingPaint: null, notice: null };
       if (option === "original-image") {
         return { ...base, stored: { source: "original-image", chosenAt: action.now } };
       }
@@ -478,8 +652,16 @@ export function doorColorSourceReducer(state: DoorColorSourceDraft, action: Door
         }
         return { ...base, stored: { source: "approved-ai-image", chosenAt: action.now } };
       }
-      // Sherwin-Williams or Hex: re-choosing the already confirmed option keeps it.
+      // Re-choosing the already confirmed option keeps it.
       if (state.stored?.source === option) return { ...base, notice: null };
+      if (option === "paint-brand") {
+        return {
+          ...base,
+          pendingPaint: blankPaintDraft(normalizeHex(action.hexSeed) ?? ""),
+          stored: { source: "original-image", chosenAt: action.now },
+          notice: "Enter a paint brand, color code, color name and hex, then press Confirm. Until then the door uses its supplier photo.",
+        };
+      }
       // Until Confirm, the door uses the supplier photo.
       return {
         ...base,
@@ -491,6 +673,10 @@ export function doorColorSourceReducer(state: DoorColorSourceDraft, action: Door
       return state.active === "hex" ? { ...state, pendingHex: action.hex.trim(), notice: null } : state;
     case "pendingSherwin":
       return state.active === "sherwin-williams" ? { ...state, pendingSherwin: action.color, notice: null } : state;
+    case "pendingPaint":
+      return state.active === "paint-brand"
+        ? { ...state, pendingPaint: { ...paintDraftFromState(state), ...action.patch }, notice: null }
+        : state;
     case "confirm": {
       if (state.active === "hex") {
         const hex = normalizeHex(state.pendingHex);
@@ -507,11 +693,19 @@ export function doorColorSourceReducer(state: DoorColorSourceDraft, action: Door
           notice: `Confirmed ${color.label || color.code || color.hex}.`,
         };
       }
+      if (state.active === "paint-brand") {
+        const draft = state.pendingPaint;
+        if (!draft || !isPaintBrand(draft.brand)) return { ...state, notice: "Choose a paint brand before confirming." };
+        if (!draft.code.trim() || !draft.name.trim()) return { ...state, notice: "Enter a color code and a color name before confirming." };
+        const stored = serializePaintBrandColor({ ...draft, chosenAt: action.now });
+        if (!stored) return { ...state, notice: "Enter a 6-digit hex like #f2f0ea before confirming." };
+        return { ...state, stored, pendingPaint: null, notice: `Confirmed ${stored.brand} ${stored.code} ${stored.name}.` };
+      }
       return state;
     }
     case "abandon": {
       if (!needsConfirm(state.active) || state.stored?.source === state.active) return state;
-      return { ...state, active: state.stored?.source ?? DEFAULT_DOOR_COLOR_SOURCE, pendingHex: null, pendingSherwin: null, notice: null };
+      return { ...state, active: state.stored?.source ?? DEFAULT_DOOR_COLOR_SOURCE, pendingHex: null, pendingSherwin: null, pendingPaint: null, notice: null };
     }
     default:
       return state;

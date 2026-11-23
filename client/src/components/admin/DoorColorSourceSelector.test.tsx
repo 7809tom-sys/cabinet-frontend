@@ -12,7 +12,7 @@ import {
 
 afterEach(cleanup);
 
-function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwatch = null, onOpenAiMaker, aiImageUrl, onState }: {
+function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwatch = null, onOpenAiMaker, aiImageUrl, onState, hexSeed }: {
   stored?: DoorColorSourceSelection | null;
   aiAvailable?: boolean;
   sherwinHex?: string | null;
@@ -20,6 +20,7 @@ function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwa
   onOpenAiMaker?: () => void;
   aiImageUrl?: string | null;
   onState?: (state: DoorColorSourceDraft) => void;
+  hexSeed?: string | null;
 }) {
   const [draft, dispatch] = useReducer(doorColorSourceReducer, stored, initialDoorColorSourceDraft);
   onState?.(draft);
@@ -35,6 +36,7 @@ function Harness({ stored = null, aiAvailable = false, sherwinHex = null, hexSwa
       sherwinPicker={<div data-testid="existing-sw-wheels">wheels</div>}
       hexPicker={<input data-testid="hex-in" onChange={(e) => dispatch({ type: "pendingHex", hex: e.target.value })} />}
       onOpenAiMaker={onOpenAiMaker}
+      hexSeed={hexSeed}
       now={() => "2026-11-12T18:45:00.000Z"}
     />
   );
@@ -161,6 +163,51 @@ describe("DoorColorSourceSelector", () => {
     fireEvent.click(screen.getByTestId("door-color-source-approved-ai-image"));
     expect(screen.queryByTestId("door-color-source-ai-present")).toBeNull();
     expect(screen.getByTestId("door-color-source-ai-saved").textContent).toMatch(/not an accepted render yet/);
+  });
+
+  it("paint brand is not a fifth tile and lists exactly the six brands", () => {
+    render(<Harness hexSeed="#e8e4d8" />);
+    expect(tiles()).toHaveLength(4);
+    expect(screen.queryByTestId("paint-brand-select")).toBeNull();
+    fireEvent.click(screen.getByTestId("door-color-source-paint-brand-open"));
+    expect(tiles().filter((el) => el.getAttribute("aria-checked") === "true")).toEqual([]);
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
+    expect(options).toEqual([
+      "Choose a brand",
+      "Sherwin-Williams",
+      "Behr",
+      "Benjamin Moore",
+      "Valspar",
+      "PPG",
+      "Clark + Kensington",
+    ]);
+    expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#e8e4d8");
+    const confirm = screen.getByTestId("door-color-source-paint-brand-confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(screen.getByTestId("paint-brand-select"), { target: { value: "Clark + Kensington" } });
+    fireEvent.change(screen.getByTestId("paint-brand-code"), { target: { value: "CK 001" } });
+    fireEvent.change(screen.getByTestId("paint-brand-name"), { target: { value: "Swiss Coffee" } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Paint brand · Clark \+ Kensington CK 001 Swiss Coffee · #e8e4d8/);
+  });
+
+  it("reloads a saved paint brand into the brand, code, name and hex fields", () => {
+    render(<Harness stored={{
+      source: "paint-brand",
+      confirmed: true,
+      chosenAt: "2026-11-22T18:00:00.000Z",
+      kind: "paint-brand",
+      brand: "Behr",
+      code: "MQ3-07",
+      name: "Ultra Pure White",
+      hex: "#f4f1ea",
+    }} />);
+    expect((screen.getByTestId("paint-brand-select") as HTMLSelectElement).value).toBe("Behr");
+    expect((screen.getByTestId("paint-brand-code") as HTMLInputElement).value).toBe("MQ3-07");
+    expect((screen.getByTestId("paint-brand-name") as HTMLInputElement).value).toBe("Ultra Pure White");
+    expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#f4f1ea");
+    expect(screen.getByTestId("door-color-source-sherwin-williams").getAttribute("aria-checked")).toBe("false");
   });
 
   it("still says the render is used when it is accepted", () => {

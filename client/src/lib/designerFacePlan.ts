@@ -180,7 +180,9 @@ export function selectedDoorColorFacePlan(
     ? { ...selection.color }
     : selection.source === "hex"
       ? { finish: PAINT_FINISH, code: "", label: selection.hex, hex: selection.hex, woodSpecies: null, grainDirection: "none", profileImageUrl: null }
-      : null;
+      : selection.source === "paint-brand"
+        ? { finish: PAINT_FINISH, code: selection.code, label: `${selection.brand} ${selection.name}`, hex: selection.hex, woodSpecies: null, grainDirection: "none", profileImageUrl: null }
+        : null;
   if (!finish) return resolveCabinetFaceImages(photoStyle, placement);
   const colored = styleForDoorColorSource({ ...style, id: style.id ?? null }, selection);
   return wizardDoorFacePlan({ ...colored, id: key as number }, placement, singleFinishStorage(key, finish))
