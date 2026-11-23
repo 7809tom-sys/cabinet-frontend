@@ -160,6 +160,7 @@ describe("3D door handle placement", () => {
       height: 90,
       numberOfDoors: 2,
       numberOfDrawers: 0,
+      doorOrientation: "stacked",
     });
     const leaves = pantry.fronts.filter((node) => node.userData.pantryDoorSet).sort((a, b) => a.position.y - b.position.y);
     const leafPulls = pantry.pulls.filter((node) => node.userData.cabinetPull === "door").sort((a, b) => a.position.y - b.position.y);

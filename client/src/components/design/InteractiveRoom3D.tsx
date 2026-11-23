@@ -6872,6 +6872,10 @@ export function addCabinet(
     && !isRefrigeratorEndPanel
     && !isWallOpenShelf
     && !isCurvedOpenShelf
+    // A wood photograph already builds one physical shaker frame on every
+    // door and drawer. A second carcass frame behind those fronts draws
+    // another rail and stile across the same face.
+    && !(woodDoorPhotograph && threeDUsesPhysicalShakerRails(doorProfileKind(doorProfile?.doorStyle, doorProfile?.doorPanelType), Boolean(doorTexture)))
     && !["diagonal-corner", "triangle-corner", "l-corner", "corner-drawer", "end-return", "base-angle-end", "wall-angle-end", "blind-corner", "range-hood-front", "curved-open-shelf"].includes(specialty.kind);
   if (usesConstructedFaceFrame) {
     const frameMaterial = new THREE.MeshStandardMaterial({ color: plainStructuralColor, roughness: 0.46, metalness: 0.01 });
@@ -7074,7 +7078,7 @@ export function addCabinet(
     // edge-on. On a pale door only the top and left inner edges catch a shadow, so
     // the recess reads as half a notch. A closed shoulder on all four sides keeps
     // the step visible. Driftwood's separate shadow strips stay finish-gated below.
-    if (!raisedProfile && !forceGlassFrame) {
+    if (!raisedProfile && !forceGlassFrame && !woodDoorPhotograph) {
       const openingW = Math.max(0, faceWidth - stile * 2);
       const openingH = Math.max(0, faceHeight - rail * 2);
       const railDepthForNotch = dlcDoorFinish ? DLC_FRAME_DETAIL.railDepth : DLC_FRAME_DETAIL.standardRailDepth;
@@ -7137,8 +7141,20 @@ export function addCabinet(
         frameGroup.add(mesh);
       }
     }
-    // Shaker generic image edges on every painted or solid-color shaker front (Tom, Nov 18 2026). One merged line object.
-    if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish || woodDoorPhotograph)) attachShakerFrameOutline(frameGroup, { faceWidth, faceHeight, rail, stile, color: woodDoorPhotograph ? "#9b7e5e" : (dlcDoorFinish ?? color), proud: Boolean(dlcDoorFinish) });
+    // Painted faces keep the outer and opening lines. A wood photograph already
+    // has a physical rail, so only the single opening line is drawn. The outer
+    // line sat on the rail's own edge and read as a second rail.
+    if (!raisedProfile && !forceGlassFrame && (dlcDoorFinish || paintedFinish || woodDoorPhotograph)) {
+      attachShakerFrameOutline(frameGroup, {
+        faceWidth,
+        faceHeight,
+        rail,
+        stile,
+        color: woodDoorPhotograph ? "#9b7e5e" : (dlcDoorFinish ?? color),
+        proud: Boolean(dlcDoorFinish),
+        ...(woodDoorPhotograph ? { outer: false, opening: true } : {}),
+      });
+    }
     frontGroup.add(frameGroup);
   };
   const addDrawerReveal = (faceWidth: number, faceHeight: number, x: number, y: number, z = THREE_D_DRAWER_REVEAL_DEPTH) => {
@@ -7810,7 +7826,7 @@ export function addCabinet(
       addOvenCutout();
       addDrawers();
     }
-  } else if (isTall && !pantryLayout && /pantry/i.test(`${sku.masterCode} ${sku.description ?? ""}`)) {
+  } else if (isTall && !pantryLayout && /pantry/i.test(`${sku.masterCode} ${sku.description ?? ""}`) && (sku.doorOrientation === "stacked" || doorCount >= 4)) {
     // A two-door pantry is one tall lower door plus one upper door. Wider pantry
     // models, or records explicitly configured with four doors, retain paired
     // leaves in both the upper and lower openings.

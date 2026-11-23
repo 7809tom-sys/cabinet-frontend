@@ -177,6 +177,9 @@ export type ShakerFrameOutlineInput = {
   color: string;
   /** True when the rails use the proud shaker generic image depth (solid-color faces). */
   proud: boolean;
+  /** Override which rectangles are drawn. Painted faces keep both. */
+  outer?: boolean;
+  opening?: boolean;
 };
 
 /**
@@ -192,8 +195,8 @@ export function attachShakerFrameOutline(frameGroup: THREE.Group, input: ShakerF
     rail: input.rail,
     stile: input.stile,
     z: shakerFrameFrontZ(input.proud),
-    outer: style.outer,
-    opening: style.opening,
+    outer: input.outer ?? style.outer,
+    opening: input.opening ?? style.opening,
   });
   if (positions.length === 0) return null;
   const geometry = new THREE.BufferGeometry();
