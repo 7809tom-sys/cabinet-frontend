@@ -102,6 +102,10 @@ describe("Oxford Toffee wood photo", () => {
       expect(Math.abs(material!.map!.repeat.x)).toBeLessThanOrEqual(1);
       expect(Math.abs(material!.map!.repeat.y)).toBeLessThanOrEqual(1);
       expect(material!.map).toBe(leaves[0]!.map);
+      expect(material!.toneMapped).toBe(false);
+      expect(material!.userData.woodPhotoFidelity).toBe(true);
+      expect(`#${material!.color.getHexString()}`).toBe("#ffffff");
+      expect(`#${material!.color.getHexString()}`).not.toBe("#a07850");
     }
   });
 
@@ -139,5 +143,13 @@ describe("Oxford Toffee wood photo", () => {
     expect(structural.length).toBeGreaterThan(0);
     expect(structural.every((tag) => tag === "photo" || tag !== "#a07850")).toBe(true);
     expect(structural.some((tag) => tag === "photo")).toBe(true);
+    root.traverse((node) => {
+      if (!node.userData?.selectedFinishStructuralSurface && !node.userData?.baseToeKick) return;
+      const material = materialOf(node);
+      if (!material?.map) return;
+      expect(material.toneMapped).toBe(false);
+      expect(material.userData.woodPhotoFidelity).toBe(true);
+      expect(`#${material.color.getHexString()}`).toBe("#ffffff");
+    });
   });
 });
