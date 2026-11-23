@@ -143,6 +143,31 @@ describe("Edit Door: one door color source selector", () => {
     expect(stored()["1"].source).toBe("original-image");
   });
 
+  it("reloads a saved paint brand and still loads an old Sherwin-Williams row", () => {
+    styles[0] = {
+      ...styles[0],
+      doorColorSource: "hex",
+      doorColorSourceValue: { kind: "paint-brand", brand: "Benjamin Moore", code: "OC-23", name: "Classic Gray", hex: "#b7b7ad" },
+      doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z",
+    };
+    openFirst();
+    expect((screen.getByTestId("paint-brand-select") as HTMLSelectElement).value).toBe("Benjamin Moore");
+    expect((screen.getByTestId("paint-brand-code") as HTMLInputElement).value).toBe("OC-23");
+    expect((screen.getByTestId("paint-brand-name") as HTMLInputElement).value).toBe("Classic Gray");
+    expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#b7b7ad");
+    cleanup();
+    styles[0] = {
+      ...firstStyle,
+      doorColorSource: "sherwin-williams",
+      doorColorSourceValue: { finish: "paint", code: "SW7008", label: "Alabaster", hex: "#edeae0", woodSpecies: null, grainDirection: "none", profileImageUrl: null },
+      doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z",
+    };
+    openFirst();
+    expect(screen.getByTestId("door-color-source-sherwin-williams").getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("door-color-source-effective").textContent).toMatch(/Sherwin-Williams · Alabaster · #edeae0/);
+    expect(screen.queryByTestId("paint-brand-select")).toBeNull();
+  });
+
   it("hydrates the selector from server fields when localStorage is empty", () => {
     styles[0] = {
       ...styles[0],
@@ -229,6 +254,39 @@ describe("Edit Door: a confirmed color pick is saved at once (fix/door-style-col
     openFirst();
     fireEvent.click(screen.getByTestId("door-color-source-sherwin-williams"));
     expect(calls).toEqual([]);
+  });
+
+  it("Confirm on a paint brand saves the hex as the render color and keeps brand, code and name", () => {
+    openFirst();
+    fireEvent.click(screen.getByTestId("door-color-source-paint-brand-open"));
+    expect(calls).toEqual([]);
+    fireEvent.change(screen.getByTestId("paint-brand-select"), { target: { value: "Sherwin-Williams" } });
+    fireEvent.change(screen.getByTestId("paint-brand-code"), { target: { value: "SW 7012" } });
+    fireEvent.change(screen.getByTestId("paint-brand-name"), { target: { value: "Alabaster" } });
+    fireEvent.change(screen.getByTestId("paint-brand-hex"), { target: { value: "#F2F0EA" } });
+    fireEvent.click(screen.getByTestId("door-color-source-paint-brand-confirm"));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      id: 1,
+      renderHex: "#f2f0ea",
+      doorColorSourceSelection: {
+        source: "hex",
+        confirmed: true,
+        kind: "paint-brand",
+        brand: "Sherwin-Williams",
+        code: "SW 7012",
+        name: "Alabaster",
+        hex: "#f2f0ea",
+      },
+    });
+    expect(stored()["1"]).toMatchObject({
+      source: "paint-brand",
+      kind: "paint-brand",
+      brand: "Sherwin-Williams",
+      code: "SW 7012",
+      name: "Alabaster",
+      hex: "#f2f0ea",
+    });
   });
 
   it("choosing the Original image tile saves that choice", () => {

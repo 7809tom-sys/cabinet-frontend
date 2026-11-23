@@ -2,13 +2,17 @@ import type { Dispatch, ReactNode } from "react";
 import {
   DOOR_COLOR_SOURCES,
   DOOR_COLOR_SOURCE_LABELS,
+  PAINT_BRANDS,
   awaitingConfirm,
   effectiveDoorColorSource,
   needsConfirm,
   normalizeHex,
+  serializePaintBrandColor,
   type DoorColorSourceAction,
   type DoorColorSourceDraft,
   type DoorColorSourceOption,
+  type PaintBrand,
+  type PaintBrandDraft,
 } from "@shared/doorColorSourceSelection";
 
 const OPTION_HINTS: Record<DoorColorSourceOption, string> = {
@@ -44,6 +48,8 @@ export type DoorColorSourceSelectorProps = {
   hexPicker?: ReactNode;
   /** Opens the existing AI render tool. It is never started from here. */
   onOpenAiMaker?: () => void;
+  /** Current render hex, used to prefill the paint-brand hex field. */
+  hexSeed?: string | null;
   /** True when the caller already draws the surrounding card (the door color panel). */
   bare?: boolean;
   now?: () => string;
@@ -73,6 +79,7 @@ export function DoorColorSourceSelector({
   sherwinPicker,
   hexPicker,
   onOpenAiMaker,
+  hexSeed,
   bare = false,
   now = () => new Date().toISOString(),
 }: DoorColorSourceSelectorProps) {
@@ -85,6 +92,13 @@ export function DoorColorSourceSelector({
     return false;
   };
   const confirm = () => dispatch({ type: "confirm", now: now() });
+  const paintActive = draft.active === "paint-brand";
+  const paintDraft: PaintBrandDraft = draft.pendingPaint
+    ?? (draft.stored?.source === "paint-brand"
+      ? { brand: draft.stored.brand, code: draft.stored.code, name: draft.stored.name, hex: draft.stored.hex }
+      : { brand: "", code: "", name: "", hex: "" });
+  const paintReady = Boolean(draft.pendingPaint && serializePaintBrandColor({ ...draft.pendingPaint, chosenAt: now() }));
+  const paintSwatch = normalizeHex(paintDraft.hex) ?? normalizeHex(hexSeed);
 
   const tileVisual = (option: DoorColorSourceOption): TileVisual => {
     if (option === "original-image") {
@@ -194,9 +208,10 @@ export function DoorColorSourceSelector({
       </div>
 
       <p data-testid="door-color-source-effective" className="text-xs">
-        Door uses: <span className="font-semibold">{DOOR_COLOR_SOURCE_LABELS[effective.source]}</span>
+        Door uses: <span className="font-semibold">{draft.stored?.source === "paint-brand" ? "Paint brand" : DOOR_COLOR_SOURCE_LABELS[effective.source]}</span>
         {draft.stored?.source === "hex" ? ` · ${draft.stored.hex}` : ""}
         {draft.stored?.source === "sherwin-williams" ? ` · ${draft.stored.color.label || draft.stored.color.code} · ${draft.stored.color.hex}` : ""}
+        {draft.stored?.source === "paint-brand" ? ` · ${draft.stored.brand} ${draft.stored.code} ${draft.stored.name} · ${draft.stored.hex}` : ""}
         {waiting ? " (waiting for Confirm)" : ""}
       </p>
       {draft.notice && (
@@ -266,6 +281,84 @@ export function DoorColorSourceSelector({
           </button>
         </div>
       )}
+
+      <div data-testid="door-color-source-paint-brand" className={"space-y-2 rounded-md border bg-white p-2 " + (paintActive ? "border-[#2563eb]" : "border-border")}>
+        <button
+          type="button"
+          data-testid="door-color-source-paint-brand-open"
+          aria-pressed={paintActive}
+          onClick={() => dispatch({ type: "choose", option: "paint-brand", aiAvailable, now: now(), hexSeed })}
+          className="text-left text-[11px] font-semibold text-[#1a2744]"
+        >
+          Paint brand
+          {draft.stored?.source === "paint-brand" ? " ✓" : ""}
+        </button>
+        <p className="text-xs text-muted-foreground">
+          Match from a colorimeter. Sherwin-Williams, Behr, Benjamin Moore, Valspar, PPG, or Clark + Kensington. Needs Confirm. The hex is what the 3D view paints.
+        </p>
+        {paintActive && (
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold" htmlFor="paint-brand-select">Paint brand</label>
+            <select
+              id="paint-brand-select"
+              data-testid="paint-brand-select"
+              value={paintDraft.brand}
+              onChange={(event) => dispatch({ type: "pendingPaint", patch: { brand: event.target.value as PaintBrand | "" } })}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            >
+              <option value="">Choose a brand</option>
+              {PAINT_BRANDS.map((brand) => (
+                <option key={brand} value={brand}>{brand}</option>
+              ))}
+            </select>
+            <label className="block text-xs font-semibold" htmlFor="paint-brand-code">Color code</label>
+            <input
+              id="paint-brand-code"
+              data-testid="paint-brand-code"
+              value={paintDraft.code}
+              placeholder="SW 7012"
+              onChange={(event) => dispatch({ type: "pendingPaint", patch: { code: event.target.value } })}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            />
+            <label className="block text-xs font-semibold" htmlFor="paint-brand-name">Color name</label>
+            <input
+              id="paint-brand-name"
+              data-testid="paint-brand-name"
+              value={paintDraft.name}
+              placeholder="Alabaster"
+              onChange={(event) => dispatch({ type: "pendingPaint", patch: { name: event.target.value } })}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+            />
+            <label className="block text-xs font-semibold" htmlFor="paint-brand-hex">Hex</label>
+            <div className="flex items-center gap-2">
+              <input
+                id="paint-brand-hex"
+                data-testid="paint-brand-hex"
+                value={paintDraft.hex}
+                placeholder="#RRGGBB"
+                onChange={(event) => dispatch({ type: "pendingPaint", patch: { hex: event.target.value } })}
+                className="h-9 w-full rounded-md border border-input bg-background px-2 font-mono text-sm"
+              />
+              <input
+                aria-label="Pick paint hex"
+                type="color"
+                value={paintSwatch ?? "#f2f0ea"}
+                onChange={(event) => dispatch({ type: "pendingPaint", patch: { hex: event.target.value } })}
+              />
+            </div>
+            <button
+              type="button"
+              data-testid="door-color-source-paint-brand-confirm"
+              disabled={!paintReady}
+              onClick={confirm}
+              title="That's the one"
+              className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:opacity-50"
+            >
+              Confirm
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

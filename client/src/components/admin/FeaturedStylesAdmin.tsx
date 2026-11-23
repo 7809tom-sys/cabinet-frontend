@@ -48,9 +48,11 @@ import {
   aiTilePicture,
   hasAcceptedAiRender,
   hasApprovedAiImage,
+  doorColorSourceSelectionForSave,
   initialDoorColorSourceDraft,
   normalizeHex,
   parseDoorColorSourceSelection,
+  selectedDoorHex,
   selectionForStyle,
   styleForDoorColorSource,
   writeDoorColorSourceSelection,
@@ -660,13 +662,16 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     writeDoorColorSourceSelection(style.id, stored);
     // A confirmed hex or Sherwin-Williams chip is also the style's render hex, saved with the
     // selection, so the cabinet finish and the door face stay on one color.
-    const chosenHex = stored?.source === "hex" ? stored.hex : stored?.source === "sherwin-williams" ? stored.color.hex : null;
+    const chosenHex = selectedDoorHex(stored);
     if (chosenHex) setRenderHex(chosenHex);
     // Persist at once through the existing adminUpdateDoorStyle input (null clears). A tile
     // click that is still waiting for Confirm is never sent: it only turns the saved
     // choice off locally, and Confirm (or Save) is what writes.
     const persist = !hydrating && shouldPersistColorSource(colorSource);
-    const selectionField = { doorColorSourceSelection: stored, ...(chosenHex ? { renderHex: chosenHex } : {}) };
+    const selectionField = {
+      doorColorSourceSelection: stored ? doorColorSourceSelectionForSave(stored) : stored,
+      ...(chosenHex ? { renderHex: chosenHex } : {}),
+    };
     if (stored?.source === "sherwin-williams") {
       writeWizardDoorFinish(style.id, stored.color as WizardDoorFinish);
       if (pendingSherwinPatch.current) applyWizardPatch(pendingSherwinPatch.current, persist ? selectionField : {});
@@ -772,9 +777,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       ? Boolean(normalizeHex(colorSource.pendingHex))
       : colorSource.active === "sherwin-williams" && colorSource.pendingSherwin
         ? Boolean(colorSource.pendingSherwin)
-        : false;
+        : colorSource.active === "paint-brand" && colorSource.pendingPaint
+          ? Boolean(colorSource.pendingPaint.brand || colorSource.pendingPaint.code.trim() || colorSource.pendingPaint.name.trim() || colorSource.pendingPaint.hex.trim())
+          : false;
     if (pendingColorPick && awaitingConfirm(colorSource)) {
-      toast.error(`Press Confirm on the ${colorSource.active === "hex" ? "Hex" : "Sherwin-Williams"} tile before saving. Until then the door keeps its supplier photo.`);
+      const which = colorSource.active === "hex" ? "the Hex tile" : colorSource.active === "paint-brand" ? "Paint brand" : "the Sherwin-Williams tile";
+      toast.error(`Press Confirm on ${which} before saving. Until then the door keeps its supplier photo.`);
       return;
     }
     const skinErr = doorSkinError(doorSkin);
@@ -846,7 +854,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       styleSourceNote: styleSourceNote.trim() || null,
       // Confirmed selector choice only. Omitted when nothing is chosen, so an
       // unset row stays NULL (current color order). localStorage remains a cache.
-      doorColorSourceSelection: colorSource.stored ?? undefined,
+      doorColorSourceSelection: colorSource.stored ? doorColorSourceSelectionForSave(colorSource.stored) : undefined,
     } as Parameters<typeof update.mutate>[0];
 
     const requested = specBatchRef.current?.selection() ?? null;
@@ -1217,6 +1225,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                   hexSwatch={hexSwatch}
                   sherwinPicker={null}
                   hexPicker={hexPicker}
+                  hexSeed={normalizeHex(renderHex)}
                   onOpenAiMaker={() => openStyleAudit(style.id, style.ourName ?? "")}
                 />
                 {colorSourceSaveError && (

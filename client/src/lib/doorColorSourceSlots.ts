@@ -165,15 +165,16 @@ export function buildFourSlots(input: FourSlotInput): FourSlot[] {
       };
     }
 
+    const paint = stored?.source === "paint-brand" ? stored : null;
     const fromStored = stored?.source === "hex" ? stored : null;
-    const fromRow = fromStored ? null : hexSelection(rowFor(listing, source)?.value, now);
-    const selection = fromStored ?? fromRow;
-    const hex = selection?.source === "hex" ? selection.hex : null;
+    const fromRow = fromStored || paint ? null : hexSelection(rowFor(listing, source)?.value, now);
+    const selection = fromStored ?? paint ?? fromRow;
+    const hex = selection && (selection.source === "hex" || selection.source === "paint-brand") ? selection.hex : null;
     return {
       source, label, checked,
       imageUrl: null,
       hex: hex ? normalizeHex(hex) : null,
-      caption: hex ? hex : "No hex color confirmed",
+      caption: paint ? `${paint.brand} ${paint.code} ${paint.name} · ${paint.hex}` : hex ? hex : "No hex color confirmed",
       selection: selection ?? null,
       checkable: Boolean(selection),
       reason: selection ? null : "Type or pick a hex color and confirm it first, then it can be used.",
