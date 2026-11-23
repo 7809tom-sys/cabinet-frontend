@@ -142,6 +142,9 @@ export default function Cart() {
       styleId: item.styleId,
       qty: item.qty,
       unitPrice: liveUnitPrice(item),
+      category: item.category,
+      name: item.name,
+      qtyNote: item.qtyNote,
     }))),
     // liveUnitPrice closes over the latest price map; the merchandise subtotal stays separate.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -495,8 +498,9 @@ export default function Cart() {
                 <p className="mt-1">Items marked free shipping are $0. The quote covers only the remaining merchandise.</p>
               )}
               {hardwareItems.length > 0 && (
-                <p className="mt-1">Hardware ships free when it is ordered with qualifying kitchen cabinets.</p>
+                <p className="mt-1">Hardware (knobs, pulls, hinges, and other hardware) ships free.</p>
               )}
+              <p className="mt-1">Countertops ship at $50 per slab to any Florida address. Outside Florida, and for backsplash UPS or flooring shipping, request an estimate — those amounts stay pending and are never guessed.</p>
             </div>
           )}
           {currentAffiliateSlug ? (

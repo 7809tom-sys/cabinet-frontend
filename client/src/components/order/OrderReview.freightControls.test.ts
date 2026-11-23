@@ -58,13 +58,13 @@ describe("OrderReview freight accessorial controls", () => {
     expect(source).toContain("freightEstimate.data.rateGroups");
     expect(source).toContain("group.parcelReviewWarnings?.length");
     expect(source).toContain("Carrier handling review:");
-    expect(source).toContain("freightQuoteToken: deliveryMethod === \"ship\" && !hasOnlyTemporaryFreeShippingItems");
+    expect(source).toContain("freightQuoteToken: deliveryMethod === \"ship\" && !hasOnlyTemporaryFreeShippingItems && freightInput.items.length > 0");
     expect(source).toContain("freightEstimate.data?.quoteToken");
     expect(source).not.toContain("hardwareFreightQuoteToken ??");
     expect(source).toContain("setSubmittedRequestNumber(res.requestNumber)");
     expect(source).toContain("<PayWithStripe");
     expect(source).toContain("orderRequestId={submittedId}");
-    expect(source).toContain("total + taxAmount + (deliveryMethod === \"ship\" ? (freightCents + hardwareFreightCents) / 100 : 0)");
+    expect(source).toContain("const grandTotal = total + taxAmount + knownShippingCents / 100;");
   });
 
   it("refreshes a stale or mismatched signed quote instead of submitting it", () => {
