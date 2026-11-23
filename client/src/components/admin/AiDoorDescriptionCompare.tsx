@@ -19,6 +19,7 @@
  * placeholder door outline: an empty column shows its prompt controls and an
  * empty field.
  */
+import { promptWithDoorGroundTruth } from "@shared/doorAiGroundTruth";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -70,6 +71,8 @@ import {
 
 export type AiDoorCompareStyle = {
   id: number;
+  ourName?: string | null;
+  distributorName?: string | null;
   doorStyle?: string | null;
   color?: string | null;
   renderHex?: string | null;
@@ -270,7 +273,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
   }
 
   async function copyPrompt(model: AiDoorModel) {
-    const prompt = AI_DOOR_PROMPTS[model];
+    const prompt = promptWithDoorGroundTruth(AI_DOOR_PROMPTS[model], style);
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(prompt);
@@ -302,7 +305,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
     }));
     const result = await describe.generate(model, aiDoorDescribeInput({
       model,
-      prompt: AI_DOOR_PROMPTS[model],
+      prompt: promptWithDoorGroundTruth(AI_DOOR_PROMPTS[model], style),
       imageUrl: sampleUrl ?? null,
       doorName: [style.doorStyle, style.finish].map((part) => part ?? "").join(" ").trim() || null,
       styleId: style.id,
@@ -551,7 +554,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
               {copyState[model] === "failed" && (
                 <textarea
                   readOnly
-                  value={AI_DOOR_PROMPTS[model]}
+                  value={promptWithDoorGroundTruth(AI_DOOR_PROMPTS[model], style)}
                   rows={3}
                   className="w-full rounded border bg-muted/30 px-2 py-1 text-[10px]"
                   data-testid={`ai-door-prompt-fallback-${model}`}
