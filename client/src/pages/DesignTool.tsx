@@ -26206,24 +26206,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 
       <Dialog open={layoutStarterOpen} onOpenChange={setLayoutStarterOpen}>
         <DialogContent
-          className="max-h-[90vh] max-w-5xl overflow-y-auto p-0"
+          className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[calc(100%-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl"
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
         >
-	          <DialogHeader className="border-b px-5 py-4">
-	            <DialogTitle className="font-serif text-xl">Start with a room layout</DialogTitle>
-	            <DialogDescription>{roomType === "closet"
+	          <DialogHeader className="shrink-0 border-b px-4 py-2 text-left">
+	            <DialogTitle className="font-serif text-lg">Start with a room layout</DialogTitle>
+	            <DialogDescription className="text-xs leading-4">{roomType === "closet"
 	              ? "Start with an editable reach-in bedroom closet and a generic bi-fold room opening, or use the room shapes below. Measure your actual finished opening before ordering doors."
 	              : "Choose an existing room shape or build every connected wall continuously from exact measurements. Your advanced wall draft stays here until you explicitly clear it or apply it."}
 	            </DialogDescription>
 	          </DialogHeader>
-	          <div className="space-y-5 p-5">
+	          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-3 py-2 sm:px-4">
 	            <RoomLayoutPopupPicker
 	              autoDesign={{ onClick: () => { setLayoutStarterOpen(false); setTimeout(openAutoDesign, 120); }, enabled: autoDesignControl.enabled, title: autoDesignControl.title, note: autoDesignBlockedNote, anchorNote: autoDesignAnchorNote }}
 	              bathroom={(
-	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
-	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
-	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
+	            <section data-testid="bathroom-room-template" className="rounded-lg border border-sky-300/70 bg-sky-50/60 p-2">
+	              <div className="mb-0.5 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
+	              <p className="mb-2 text-xs leading-4 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
 	              <button
 	                type="button"
 	                data-testid="bathroom-template-empty-room"
@@ -26239,10 +26239,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	            </section>
 	              )}
 	              closet={(
-	            <section data-testid="closet-room-templates" className="rounded-xl border border-[#c8a972]/60 bg-[#faf7f0] p-4">
-	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bedroom closet · one-click room templates</div>
-	              <p className="mb-3 text-xs text-stone-600">Room width × interior depth. Bi-fold dimensions are nominal planning openings, not an orderable door or a rough-opening specification.</p>
-	              <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+	            <section data-testid="closet-room-templates" className="rounded-lg border border-[#c8a972]/60 bg-[#faf7f0] p-2">
+	              <div className="mb-0.5 text-sm font-semibold text-[#192432]">Bedroom closet · one-click room templates</div>
+	              <p className="mb-2 text-xs leading-4 text-stone-600">Room width × interior depth. Bi-fold dimensions are nominal planning openings, not an orderable door or a rough-opening specification.</p>
+	              <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-5">
 	                {([...REACH_IN_CLOSET_PRESETS, ...WALK_IN_CLOSET_PRESETS] as const).map((preset) => (
 	                  <button
 	                    key={preset.id}
@@ -26270,10 +26270,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                        toast.success(`${preset.label} applied. Measure your actual closet and door opening before ordering.`);
 	                      });
 	                    }}
-	                    className="rounded-lg border border-[#c8a972]/60 bg-white p-3 text-left shadow-sm transition-colors hover:border-[#a87f33] hover:bg-[#fffaf0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
+	                    className="rounded-md border border-[#c8a972]/60 bg-white px-2 py-1.5 text-left transition-colors hover:border-[#a87f33] hover:bg-[#fffaf0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
 	                  >
-	                    <span className="block text-sm font-semibold text-[#192432]">{preset.label}</span>
-	                    <span className="mt-1 block text-xs leading-5 text-stone-600">{preset.description}</span>
+	                    <span className="block text-sm font-semibold leading-4 text-[#192432]">{preset.label}</span>
+	                    <span className="mt-0.5 block text-[11px] leading-4 text-stone-600">{preset.description}</span>
 	                  </button>
 	                ))}
 	              </div>
