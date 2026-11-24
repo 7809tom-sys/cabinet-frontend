@@ -78,6 +78,17 @@ export function withPelicanSinkCatalogDescription<T extends { pelicanCode?: stri
 }
 
 /**
+ * Customer-facing fixture line on bathroom catalog titles.
+ * Those titles start with the catalog brand "StoneCreek".
+ * Returns an empty string when a title has no brand token.
+ */
+export function bathroomFixtureCatalogVendorLabel(): string {
+  const title = pelicanSinkCatalogName("PL-1647 White") ?? "";
+  const token = title.split(/\s+/)[0] ?? "";
+  return token.replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
+/**
  * Pelican's model name for a vanity basin, replacing the imported "Farmhouse
  * Apron-Front" wording that the source does not support.
  *
