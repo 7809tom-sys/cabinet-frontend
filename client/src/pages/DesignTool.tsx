@@ -24109,6 +24109,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          onOpenSinkPicker={() => openAutoDesignSinkPicker("replace")}
 	          selectedSinkName={autoDesignSinkPicks[0]?.name ?? null}
 	          onOpenRangePicker={() => setAutoDesignRangeOpen(true)}
+	          childPickerOpen={autoDesignRangeOpen || autoDesignTallOpen || autoDesignSinkPrompt != null}
 	          selectedRangeLabel={autoDesignRangePick ? `${autoDesignRangePick.label} (${autoDesignRangePick.widthIn}″)` : null}
 	          onOpenTallPicker={() => setAutoDesignTallOpen(true)}
 	          selectedTallSummary={autoDesignTallPicks.length > 0
