@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  bathroomFixtureCatalogVendorLabel,
   pelicanSinkCatalogDescription,
   pelicanSinkCatalogFactLine,
   pelicanSinkCatalogName,
@@ -63,6 +64,7 @@ describe("pelicanSinkCatalogDescription", () => {
 
   it("uses the Sandbar series for the Sandbar basins and the published size, not a farmhouse footprint", () => {
     expect(pelicanSinkCatalogName("PL-1647 White")).toBe("StoneCreek Sandbar Series Porcelain Undermount Sink — White");
+    expect(bathroomFixtureCatalogVendorLabel()).toBe("Stone Creek");
     expect(pelicanSinkSeriesLabel("PL-1647 White")).toBe("Sandbar Series");
     expect(pelicanSinkCatalogFactLine("PL-3099 Bone"))
       .toBe('Pearl Series · Undermount basin · 20 ⅞" × 15 ⅝"');

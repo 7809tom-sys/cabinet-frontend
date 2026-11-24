@@ -107,6 +107,7 @@ import { TabletPreviewOverlay, type TabletPreviewMode } from "@/components/desig
 import { isPelicanBathroomFixtureProfileVerified, verifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { alcoveTubFit, isAlcoveTubFurniture } from "@/lib/alcoveTubBay";
 import { BATHROOM_STARTER_TEMPLATE, bathroomFixtureChecklist, bathroomFixtureFreePlacement, bathroomTubFillerPlacement, bathroomPlanningGuidance, makeBathroomStarterTemplate, placeBathroomTubSelection, rotateBathroomFurniture } from "@/lib/bathroomPlanning";
+import { bathroomFixtureCatalogVendorLabel } from "@/lib/pelicanSinkCatalogDescriptions";
 import { fixtureFloorCabinets, resolveFurnitureMove } from "@/lib/floorOccupancy";
 import { withFloorObstacles } from "@/lib/floorOccupancyState";
 import { VanitySinkFacts } from "@/components/design/VanityFixtureFacts";
@@ -13547,7 +13548,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setMeasureMode(false);
     setLayoutStarterOpen(false);
     setMobilePanel(null);
-    toast.success("Blank bathroom room ready. Add cabinets or source-priced Pelican fixtures from Bathroom Fixtures.");
+    toast.success(`Blank bathroom room ready. Add cabinets or source-priced ${bathroomFixtureCatalogVendorLabel()} fixtures from Bathroom Fixtures.`);
   }, [annotations.length, applyRoom, furniture.length, island, layoutLocked, openings.length, placed.length, ponyWalls.length, sinks.length]);
 
   const openBathroomFixtureChecklistPicker = useCallback((stepId?: string) => {
