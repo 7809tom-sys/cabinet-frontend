@@ -63,7 +63,7 @@ export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout, FARMHOUSE_SINK_APRON_PROUD_IN } from "@/lib/farmhouseSinkBaseFace";
-import { applyApronFrontCountertopNotches } from "@/lib/farmSinkCountertopNotch";
+import { applyApronFrontCountertopNotches, apronFrontRimDepthIn } from "@/lib/farmSinkCountertopNotch";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShellVertices, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
@@ -11274,13 +11274,24 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       new RoundedBoxGeometry(segment.width, rimHeight, segment.depth, 3, Math.min(0.028, segment.width * 0.18, segment.depth * 0.18)),
       steel,
     );
+    const roomFacingRimSide = sink.wallSide === "bottom"
+      ? "back"
+      : sink.wallSide === "left"
+        ? "right"
+        : sink.wallSide === "right"
+          ? "left"
+          : "front";
+    const exposedApronFrontRim = sink.apronFront === true && segment.side === roomFacingRimSide;
+    const rimCenterY = !sink.apronFront
+      ? countertopTop + 0.018
+      : (exposedApronFrontRim ? countertopTop : farmhouseUndermountTopY(countertopTop)) - rimHeight / 2;
     rimSegment.position.set(
       centerX + segment.x,
-      sink.apronFront ? farmhouseUndermountTopY(countertopTop) - rimHeight / 2 : countertopTop + 0.018,
+      rimCenterY,
       centerZ + segment.z,
     );
     rimSegment.renderOrder = 24;
-    rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, undermountedFarmhouseRim: sink.apronFront === true, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
+    rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, undermountedFarmhouseRim: sink.apronFront === true && !exposedApronFrontRim, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
     addFixtureNode(rimSegment);
   });
   const openingWidth = Math.max(0.04, openingMaxX - openingMinX);
@@ -11390,7 +11401,8 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   });
   if (sink.apronFront) {
     const exteriorHeight = Math.max((sink.exteriorHeight ?? (sink.bowlHeight ?? 10)) * INCH, bowlHeight + 0.025, 0.18);
-    const apronThickness = Math.min(0.12, depth * 0.2);
+    const frontRimFt = apronFrontRimDepthIn(sink) * INCH;
+    const apronThickness = Math.min(Math.min(0.12, depth * 0.2), Math.max(0.04, frontRimFt > 0 ? frontRimFt : depth * 0.2));
     const side = sink.wallSide ?? "top";
     const isSourceMeasuredStainlessApron = sink.pelicanProfileId === "pelican-pl-ha135-r0-retrofit-stainless-farmhouse";
     const apronMaterial = isGunmetalBlack
@@ -11420,7 +11432,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     const sidewaysDirection = side === "left" ? 1 : side === "right" ? -1 : 0;
     apron.position.set(
       centerX + sidewaysDirection * edgeInset,
-      farmhouseUndermountTopY(countertopTop) - exteriorHeight / 2,
+      countertopTop - exteriorHeight / 2,
       centerZ + direction * edgeInset,
     );
     apron.userData = { sinkApronFront: true, sinkApronMaterial: isGunmetalBlack ? "gunmetal-black" : isSourceMeasuredStainlessApron ? "stainless-steel" : "fireclay", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };

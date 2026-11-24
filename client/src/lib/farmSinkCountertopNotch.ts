@@ -1,12 +1,13 @@
 /**
- * Apron-front (farm) sink countertop.
+ * Apron-front (farm) sink countertop notch.
  *
- * A farm sink is undermounted. The counter slab stays whole over the rim and
- * the bowl opening is cut in the 3D view, the same way an undermount bowl is.
- * The apron hangs below the counter's front edge. The old notch bit the entire
- * front of the slab away, which left the rim sitting on the counter like a
- * drop-in. Undermount and drop-in sinks are unchanged.
+ * The counter runs along the sides and the back of a farm sink and stops at
+ * the bowl. The front of the slab is notched for the sink's width, from the
+ * bowl's front edge out through the finished counter front, so the apron can
+ * rise flush with the counter and form the front of the sink. The side and
+ * back rims stay covered. Undermount, drop-in, and vanity sinks are not notched.
  */
+import { farmhouseSinkApronPastCarcassIn } from "@/lib/farmhouseSinkBaseFace";
 
 export type ApronNotchPoint = { x: number; y: number };
 
@@ -18,6 +19,10 @@ export type ApronNotchSink = {
   width: number;
   depth: number;
   wallSide?: string | null;
+  /** Bowl size along the sink's depth, before a left/right plan swap. */
+  bowlDepth?: number | null;
+  /** Sink depth before a left/right plan swap. The into-the-room span. */
+  sourceDepth?: number | null;
 };
 
 export type ApronNotchSurface = {
@@ -37,17 +42,56 @@ export type ApronNotchSurface = {
 type Rect = { x: number; y: number; width: number; depth: number };
 
 const EPS = 1e-4;
+/** A standard base counter overhangs the 24" box by 1.5". */
+const STANDARD_FRONT_OVERHANG_IN = 1.5;
+/**
+ * How far the bite continues past the sink's front face. The first part meets
+ * the counter that hangs past the apron. The extra inch only crosses the slab
+ * edge so the outline opens; it does not move the edge that meets the bowl.
+ */
+const NOTCH_OPENS_THROUGH_FRONT_IN = 1;
 
 export function isApronFrontSink(sink: ApronNotchSink): boolean {
   return sink.apronFront === true || sink.type === "farmhouse";
 }
 
+/** Distance from the sink's room-facing face back to the bowl, in inches. */
+export function apronFrontRimDepthIn(sink: ApronNotchSink): number {
+  const intoRoom = sink.wallSide === "left" || sink.wallSide === "right" ? sink.width : sink.depth;
+  if (!(intoRoom > EPS)) return 0;
+  const sourceDepth = sink.sourceDepth ?? intoRoom;
+  const bowl = sink.bowlDepth ?? Math.max(0, sourceDepth - 3);
+  const bowlIntoRoom = Math.min(intoRoom, Math.max(0, bowl));
+  return Math.max(0, (intoRoom - bowlIntoRoom) / 2);
+}
+
+function notchPastFrontIn(): number {
+  return Math.max(0, STANDARD_FRONT_OVERHANG_IN - farmhouseSinkApronPastCarcassIn()) + NOTCH_OPENS_THROUGH_FRONT_IN;
+}
+
 /**
- * No plan notch. The counter covers the farm sink's rim. The bowl cutout is
- * drawn with the sink, not by deleting the front of the slab.
+ * World rectangle removed from the counter: exactly the sink's width, from the
+ * bowl's front edge out through the finished counter front. Nothing behind the
+ * bowl is removed.
  */
-export function apronFrontNotchRect(_sink: ApronNotchSink): Rect | null {
-  return null;
+export function apronFrontNotchRect(sink: ApronNotchSink): Rect | null {
+  if (!isApronFrontSink(sink)) return null;
+  if (!(sink.width > EPS) || !(sink.depth > EPS)) return null;
+  const rim = apronFrontRimDepthIn(sink);
+  const pastFront = notchPastFrontIn();
+  if (!(rim + pastFront > EPS)) return null;
+  switch (sink.wallSide) {
+    case "bottom":
+      return { x: sink.x, y: sink.y - pastFront, width: sink.width, depth: rim + pastFront };
+    case "left":
+      return { x: sink.x + sink.width - rim, y: sink.y, width: rim + pastFront, depth: sink.depth };
+    case "right":
+      return { x: sink.x - pastFront, y: sink.y, width: rim + pastFront, depth: sink.depth };
+    case "top":
+      return { x: sink.x, y: sink.y + sink.depth - rim, width: sink.width, depth: rim + pastFront };
+    default:
+      return null;
+  }
 }
 
 function polygonArea(points: readonly ApronNotchPoint[]): number {
