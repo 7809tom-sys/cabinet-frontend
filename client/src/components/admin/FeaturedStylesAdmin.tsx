@@ -4,7 +4,7 @@ import { PLATFORM_DEFAULT_DOOR_STYLE } from "@shared/platformDoorDefaults";
 import {
   Star, Search, GripVertical, ArrowUp, ArrowDown, X,
   AlertTriangle, CheckCircle2, Pencil, RotateCcw, Upload, Loader2, ImageIcon, EyeOff, Eye,
-	  Trash2, Plus, Package, Building2, DollarSign, MapPin, Ruler, ClipboardCheck,
+	  Trash2, Plus, Package, Building2, DollarSign, MapPin, Ruler, ClipboardCheck, Lock, LockOpen,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { readFileAsDataUrl, useMediaLibraryUpload } from "@/lib/walzcraftProfileUpload";
@@ -36,6 +36,7 @@ import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, rea
 import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
 import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
+import { doorColorColumnForSave } from "@/components/admin/doorColorColumnForSave";
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
 import { DoorColorSourceFourPreview } from "@/components/admin/DoorColorSourceFourPreview";
 import { buildFourSlots, listingIsAvailable, type DoorColorSourcesListing, type FourSlot } from "@/lib/doorColorSourceSlots";
@@ -564,6 +565,14 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
   }, colorSource.stored);
   // The resolver sees only the explicitly chosen source (supplier photo by default).
   const doorColor = resolveDoorColor({ ...colorSourceStyle });
+  // Color lock: once a confirmed color (paint brand, hex or Sherwin-Williams) is on the style the
+  // panel is read-only until "Unlock to edit". Session-only: nothing is stored, and a new Confirm,
+  // closing, or switching styles locks it again. Never changes a saved value or how a render resolves.
+  const [colorUnlocked, setColorUnlocked] = useState(false);
+  const colorLocked = Boolean(selectedDoorHex(colorSource.stored)) && !colorUnlocked;
+  useEffect(() => {
+    if (selectedDoorHex(colorSource.stored)) setColorUnlocked(false);
+  }, [colorSource.stored]);
   const woodGrainSwatch = isWoodGrain ? (approvedTilesFor(style.id)[0]?.dataUrl ?? style.doorSampleImageUrl ?? walzDoor?.photo ?? null) : null;
   const [bakeAfterSave, setBakeAfterSave] = useState(true);
   const walzFormValues: ProfileFormValues = {
@@ -590,6 +599,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     setOurName(s.ourName);
     setDoorStyle(s.doorStyle ?? "");
     setColor(s.color ?? "");
+    setColorUnlocked(false);
     setRenderHex(s.renderHex ?? "");
     setDoorShape(s.doorShape ?? "");
     setFinish(s.finish ?? "");
@@ -836,7 +846,13 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
       aliasName: aliasName.trim() || null,
       ourName: ourName.trim(),
       doorStyle: doorStyle.trim() || null,
-      color: color.trim() || null,
+      // No hand-typed color field any more: a stale/blank hex-like value follows the
+      // door color source's resolved hex; a saved color name is kept.
+      color: doorColorColumnForSave({
+        saved: color,
+        confirmedSource: colorSource.stored?.source === "paint-brand" || colorSource.stored?.source === "hex" || colorSource.stored?.source === "sherwin-williams",
+        resolvedHex: doorColor.appliedHex,
+      }),
       renderHex: /^#[0-9a-f]{6}$/i.test(renderHex.trim()) ? renderHex.trim().toLowerCase() : null,
       doorShape: doorShape || null,
       finish: finish.trim() || null,
@@ -1116,8 +1132,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
             </div>
           </div>
 
-          {/* Door style type + Color */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Door style type. The door color source panel below is the only color field. */}
+          <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="ed-doorstyle">Door Style Type</Label>
               <Input
@@ -1127,15 +1143,6 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                 placeholder="e.g. Shaker"
               />
               <ApprovedDoorStyleChips value={doorStyle} onPick={setDoorStyle} testId="ed-approved-door-styles" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ed-color">Color</Label>
-              <Input
-                id="ed-color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                placeholder="e.g. White"
-              />
             </div>
           </div>
 
@@ -1168,10 +1175,12 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               others={catalogStyles.map((item) => ({ id: item.id, distributorId: item.distributorId, ourName: item.ourName, styleCode: item.styleCode }))}
               awaitingConfirm={Boolean(colorSource.pendingSherwin)}
               onApply={(patch: MatchSavePatch) => {
+                if (colorLocked) return;
                 // Held until Confirm in the door color source selector.
                 pendingSherwinPatch.current = patch;
               }}
               onSaveFinish={(finishRecord: WizardDoorFinish) => {
+                if (colorLocked) return;
                 if (colorSource.active !== "sherwin-williams") {
                   dispatchColorSource({ type: "choose", option: "sherwin-williams", aiAvailable, now: new Date().toISOString() });
                 }
@@ -1190,22 +1199,48 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               }}
             />
             );
+            // A stored paint brand is a confirmed hex too (Valspar 4009-3 #353e47), so the
+            // Hex tile and field follow it instead of falling back to the old render hex.
+            const storedPickedHex = colorSource.stored?.source === "hex" || colorSource.stored?.source === "paint-brand"
+              ? colorSource.stored.hex
+              : null;
             const pendingHex = colorSource.pendingHex
-              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : "");
+              ?? storedPickedHex ?? "";
             // A tile with no picture stays empty (striped placeholder + warning dot):
             // the Hex tile only paints once a hex has been picked or confirmed.
             const hexSwatch = normalizeHex(colorSource.pendingHex)
-              ?? (colorSource.stored?.source === "hex" ? colorSource.stored.hex : null)
+              ?? storedPickedHex
               ?? normalizeHex(renderHex)
               ?? normalizeHex(style.renderHex);
             const sherwinHex = colorSource.pendingSherwin?.hex
               ?? (colorSource.stored?.source === "sherwin-williams" ? colorSource.stored.color.hex : null);
             const hexPicker = (
               <div className="space-y-1.5">
+                <div data-testid="door-color-lock" data-locked={colorLocked ? "true" : "false"} className="flex flex-wrap items-center gap-2 text-xs">
+                  {colorLocked ? (
+                    <>
+                      <Lock className="h-3.5 w-3.5 text-amber-700" aria-hidden="true" />
+                      <span className="font-semibold text-amber-800">Color locked</span>
+                      <button
+                        type="button"
+                        data-testid="door-color-unlock"
+                        onClick={() => { if (window.confirm("Change the locked color?")) setColorUnlocked(true); }}
+                        className="rounded border border-amber-600 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+                      >
+                        Unlock to edit
+                      </button>
+                    </>
+                  ) : selectedDoorHex(colorSource.stored) ? (
+                    <>
+                      <LockOpen className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+                      <span className="text-muted-foreground">Unlocked for this edit. Confirm a color to lock it again.</span>
+                    </>
+                  ) : null}
+                </div>
                 <Label htmlFor="ed-color-source-hex">Hex</Label>
                 <div className="flex items-center gap-2">
-                  <Input id="ed-color-source-hex" data-testid="door-color-source-hex-input" value={pendingHex} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} placeholder={renderHex || "#2a211c"} />
-                  <input aria-label="Pick hex" type="color" value={/^#[0-9a-f]{6}$/i.test(pendingHex) ? pendingHex : (/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea")} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} />
+                  <Input id="ed-color-source-hex" data-testid="door-color-source-hex-input" disabled={colorLocked} value={pendingHex} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} placeholder={renderHex || "#2a211c"} />
+                  <input aria-label="Pick hex" type="color" disabled={colorLocked} value={/^#[0-9a-f]{6}$/i.test(pendingHex) ? pendingHex : (/^#[0-9a-f]{6}$/i.test(renderHex) ? renderHex : "#f2f0ea")} onChange={(event) => dispatchColorSource({ type: "pendingHex", hex: event.target.value })} />
                 </div>
                 {/* One picker, moved under the Hex tile (Tom, Nov 12 2026). */}
                 <SampleEyedropper
@@ -1213,7 +1248,8 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     { url: doorSampleImageUrl || style.doorSampleImageUrl || "", label: "Sample door" },
                     ...(walzDoor?.photo ? [{ url: walzDoor.photo, label: `${walzDoor.distributor ?? "Distributor"} brochure` }] : []),
                   ]}
-                  onPick={(hex) => dispatchColorSource({ type: "pendingHex", hex })}
+                  onPick={(hex) => { if (!colorLocked) dispatchColorSource({ type: "pendingHex", hex }); }}
+                  locked={colorLocked}
                   editedDoor={thumb(style)}
                 />
                 <p className="text-xs text-muted-foreground">Resolved for render: {doorColor.appliedHex}</p>
@@ -1224,6 +1260,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                 <section data-testid="door-color-panel" className="space-y-3 rounded-lg border-2 border-[#d4a75a] bg-[#fffaf1] px-3 py-3">
                 <DoorColorSourceSelector
                   bare
+                  locked={colorLocked}
                   draft={colorSource}
                   dispatch={dispatchColorSource}
                   aiAvailable={aiAvailable}
@@ -1276,6 +1313,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                     <DoorColorSourceFourPreview
                       slots={slots}
                       saving={update.isPending}
+                      locked={colorLocked}
                       allSlotsSaved={listingIsAvailable(sourcesListing.listing)}
                       doorProfile={doorProfile}
                       style={{
@@ -1343,7 +1381,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
                       <button
                         type="button"
                         data-testid="door-color-source-sherwin-confirm-wizard"
-                        disabled={!colorSource.pendingSherwin}
+                        disabled={colorLocked || !colorSource.pendingSherwin}
                         onClick={() => dispatchColorSource({ type: "confirm", now: new Date().toISOString() })}
                         className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:opacity-50"
                       >
@@ -2983,7 +3021,7 @@ export function openStyleAudit(styleId: number, styleName: string) {
   window.dispatchEvent(new CustomEvent(ADMIN_TAB_EVENT, { detail: { tab: "door-rendering-audit" } }));
 }
 
-function SampleEyedropper({ images, onPick, editedDoor }: { images: { url: string; label: string }[]; onPick: (hex: string) => void; editedDoor?: string | null }) {
+function SampleEyedropper({ images, onPick, editedDoor, locked = false }: { images: { url: string; label: string }[]; onPick: (hex: string) => void; editedDoor?: string | null; locked?: boolean }) {
   const [note, setNote] = useState("Click either door picture to pick the hex.");
   return (
     <div data-testid="render-color-picker" className="space-y-1">
@@ -2998,15 +3036,15 @@ function SampleEyedropper({ images, onPick, editedDoor }: { images: { url: strin
           )}
         </figure>
         {images.map((img, i) => (
-          <PickCanvas key={i} testId={i === 0 ? "edit-dialog-sample-photo" : "edit-dialog-brochure-photo"} {...img} onPick={(hex) => { onPick(hex); setNote(`Picked ${hex} from ${img.label} for the Hex color.`); }} onNote={setNote} />
+          <PickCanvas key={i} testId={i === 0 ? "edit-dialog-sample-photo" : "edit-dialog-brochure-photo"} {...img} locked={locked} onPick={(hex) => { onPick(hex); setNote(`Picked ${hex} from ${img.label} for the Hex color.`); }} onNote={setNote} />
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">{note}</p>
+      <p className="text-xs text-muted-foreground">{locked ? "Color locked. Unlock to edit before picking from the door pictures." : note}</p>
     </div>
   );
 }
 
-function PickCanvas({ url, label, testId, onPick, onNote }: { url: string; label: string; testId: string; onPick: (hex: string) => void; onNote: (n: string) => void }) {
+function PickCanvas({ url, label, testId, onPick, onNote, locked = false }: { url: string; label: string; testId: string; onPick: (hex: string) => void; onNote: (n: string) => void; locked?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -3030,8 +3068,10 @@ function PickCanvas({ url, label, testId, onPick, onNote }: { url: string; label
         <canvas
           ref={canvasRef}
           aria-label={`${label} — click to pick render color`}
-          className="h-40 w-28 cursor-crosshair rounded border border-[#244338]/20 bg-white"
+          aria-disabled={locked}
+          className={"h-40 w-28 rounded border border-[#244338]/20 bg-white " + (locked ? "cursor-not-allowed opacity-60" : "cursor-crosshair")}
           onClick={(event) => {
+            if (locked) return;
             const canvas = canvasRef.current;
             const context = canvas?.getContext("2d");
             if (!canvas || !context) return;
