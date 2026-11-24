@@ -38,7 +38,7 @@ describe("Sink bottom grid add-on", () => {
     expect(designTool).toContain("Add a bottom grid?");
     expect(designTool).toContain("No grid — sink only");
     // Picking nothing still adds the sink; the standard faucet completes it.
-    expect(designTool).toContain("Skip — add the standard Pelican faucet");
+    expect(designTool).toContain("Skip — add the standard StoneCreek faucet");
   });
 
   it("starts with no grid chosen and lets the shopper remove one", () => {

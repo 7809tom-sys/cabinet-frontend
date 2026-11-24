@@ -1980,7 +1980,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         if (!verifiedPelicanSinkProfile(item.pelicanCode)) {
           toggleSurface(item);
           if (!selectedSurfaces.some((surface) => surface.id === item.id)) {
-            toast.info(`${item.name} is on the materials list. Pelican publishes no measured bowl for this model, so it is not drawn in 3D.`);
+            toast.info(`${item.name} is on the materials list. StoneCreek publishes no measured bowl for this model, so it is not drawn in 3D.`);
           }
           return;
         }
@@ -2033,7 +2033,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           return;
         }
         if (isBathroomVanitySinkRow(item)) {
-          toast.error(`${item.name} needs a vanity sink base that does not already have a Pelican basin.`);
+          toast.error(`${item.name} needs a vanity sink base that does not already have a StoneCreek basin.`);
           return;
         }
         const profile = verifiedPelicanSinkProfile(item.pelicanCode);
@@ -2081,7 +2081,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         if (!verifiedPelicanFaucetProfile(item.pelicanCode)) {
           toggleSurface(item);
           if (!selectedSurfaces.some((surface) => surface.id === item.id)) {
-            toast.info(`${item.name} is on the materials list. Pelican publishes no measured faucet dimensions for this model, so it is not drawn in 3D.`);
+            toast.info(`${item.name} is on the materials list. StoneCreek publishes no measured faucet dimensions for this model, so it is not drawn in 3D.`);
           }
           return;
         }
@@ -2150,7 +2150,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     const draft = makePelicanBathroomFixture(item, 0, 0);
     const definition = draft ? FURNITURE_CATALOG.find((entry) => entry.id === draft.defId) : null;
     if (!draft || !definition) {
-      toast.error("This Pelican model needs a complete exterior technical sheet before it can be placed in 3D.");
+      toast.error("This StoneCreek model needs a complete exterior technical sheet before it can be placed in 3D.");
       return;
     }
     const tubFillerProfile = verifiedPelicanBathroomFixtureProfile(draft.pelicanCode);
@@ -13259,7 +13259,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   const toggleSinkFaucet = useCallback((uid: string) => {
     const sink = sinks.find((candidate) => candidate.uid === uid);
     if (!sink?.pelicanFaucetProfileId) {
-      toast.info("Choose a source-verified Pelican faucet from the sink-base selector before displaying one in 3D.");
+      toast.info("Choose a source-verified StoneCreek faucet from the sink-base selector before displaying one in 3D.");
       return;
     }
     setSinks((prev) => prev.map((s) => (s.uid === uid ? { ...s, faucet: !s.faucet } : s)));
@@ -13526,7 +13526,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setMeasureMode(false);
     setLayoutStarterOpen(false);
     setMobilePanel(null);
-    toast.success("Blank bathroom room ready. Add cabinets or source-priced Pelican fixtures from Bathroom Fixtures.");
+    toast.success("Blank bathroom room ready. Add cabinets or source-priced StoneCreek fixtures from Bathroom Fixtures.");
   }, [annotations.length, applyRoom, furniture.length, island, layoutLocked, openings.length, placed.length, ponyWalls.length, sinks.length]);
 
   const openBathroomFixtureChecklistPicker = useCallback((stepId?: string) => {
@@ -18153,15 +18153,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             variant="outline"
             size="sm"
             data-testid="designer-pelican-trigger"
-            aria-label="Select Pelican surfaces and fixtures"
+            aria-label="Select StoneCreek surfaces and fixtures"
             title={selectedSurfaces.length > 0
-              ? `Pelican surfaces & fixtures (${selectedSurfaces.length} in this design)`
-              : "Choose Pelican quartz, flooring, tile, sinks, faucets and bath fixtures: one card per model with a finish dropdown, like the hardware picker"}
+              ? `StoneCreek surfaces & fixtures (${selectedSurfaces.length} in this design)`
+              : "Choose StoneCreek quartz, flooring, tile, sinks, faucets and bath fixtures: one card per model with a finish dropdown, like the hardware picker"}
             onClick={openPelicanCatalog}
             className="min-h-8 shrink-0 gap-1.5 border-[#a87f33] text-[#7a5c24] hover:bg-[#a87f33]/10"
           >
             <Waves className="h-3.5 w-3.5 shrink-0" />
-            <span className="designer-toolbar-pelican-label">Pelican</span>
+            <span className="designer-toolbar-pelican-label">StoneCreek</span>
             {selectedSurfaces.length > 0 && (
               <span className="rounded-full bg-[#a87f33] px-1.5 text-[10px] font-bold leading-4 text-white" aria-hidden="true">{selectedSurfaces.length}</span>
             )}
@@ -21377,7 +21377,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           </div>
           <div className="p-2 border-t border-border text-[10px] text-muted-foreground text-center">
 	            {usesBathroomFixturePalette
-	              ? "Tap a Pelican bathroom fixture to add it to Materials; source-measured toilets, bidets, and tubs also place in Floor Plan and 3D."
+	              ? "Tap a StoneCreek bathroom fixture to add it to Materials; source-measured toilets, bidets, and tubs also place in Floor Plan and 3D."
 	              : paletteType === "accessory" || paletteType === "panel"
 	              ? t("dt_pl_foot_accessory")
 	              : t("dt_pl_foot_default")}
@@ -23799,7 +23799,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       onSelect={(item) => {
                         const owner = selectedCab && isSinkBaseCabinet(selectedCab) ? selectedCab : null;
                         if (!owner) {
-                          toast.info("Select a compatible sink base cabinet before choosing a Pelican sink.");
+                          toast.info("Select a compatible sink base cabinet before choosing a StoneCreek sink.");
                           return;
                         }
                         // The same placement path the sink step uses: it decides the
@@ -23878,9 +23878,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             {roomType !== "closet" && (
               <MobileBarButton
                 icon={<Waves className="h-5 w-5" />}
-                label="Pelican"
+                label="StoneCreek"
                 testId="mobile-pelican-trigger"
-                ariaLabel="Open Pelican Surfaces and Fixtures"
+                ariaLabel="Open StoneCreek Surfaces and Fixtures"
                 active={surfacesOpen}
                 onClick={openPelicanCatalog}
               />
@@ -24215,14 +24215,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	            }
 	            if (bathroomProfile.planningOnly) {
 	              toggleSurface(item);
-	              toast.info(`${item.name} is on the materials list. Pelican's sheet for this model is planning-only, so it is not dropped into the floor plan.`);
+	              toast.info(`${item.name} is on the materials list. StoneCreek's sheet for this model is planning-only, so it is not dropped into the floor plan.`);
 	              return;
 	            }
 	            placePelicanBathroomFixture(item);
 	            return;
 	          }
 	          toggleSurface(item);
-	          if (!already) toast.info(`${item.name} is on the materials list. This Pelican item has no separate 3D body to place in the room.`);
+	          if (!already) toast.info(`${item.name} is on the materials list. This StoneCreek item has no separate 3D body to place in the room.`);
 	        }}
 	        backsplashHeightMode={backsplashHeightMode}
         onBacksplashHeightModeChange={setBacksplashHeightMode}
@@ -24718,11 +24718,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           const isWallMountedFaucet = verifiedFaucetProfile?.installation === "wall-mounted-8-inch-center";
           const faucetWallMountHeightAboveCountertopIn = Number(faucetWallMountHeightText);
           if (!sinkProduct) {
-            toast.error(`Choose a source-verified Pelican ${isBathroomVanity ? "vanity sink" : "sink"} before adding it to this ${isBathroomVanity ? "bathroom" : "kitchen"} plan.`);
+            toast.error(`Choose a source-verified StoneCreek ${isBathroomVanity ? "vanity sink" : "sink"} before adding it to this ${isBathroomVanity ? "bathroom" : "kitchen"} plan.`);
             return;
           }
           if (faucetProduct && !verifiedFaucetProfile) {
-            toast.error(`Choose a source-verified Pelican ${isBathroomVanity ? "vanity faucet" : "faucet"} before adding it to this ${isBathroomVanity ? "bathroom" : "kitchen"} plan.`);
+            toast.error(`Choose a source-verified StoneCreek ${isBathroomVanity ? "vanity faucet" : "faucet"} before adding it to this ${isBathroomVanity ? "bathroom" : "kitchen"} plan.`);
             return;
           }
           if (isWallMountedFaucet && (!Number.isFinite(faucetWallMountHeightAboveCountertopIn) || faucetWallMountHeightAboveCountertopIn <= 0 || faucetWallMountHeightAboveCountertopIn > (room.ceilingHeight ?? 96) - STD.COUNTERTOP_HEIGHT)) {
@@ -24730,7 +24730,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             return;
           }
           if (!cab) {
-            toast.error("Select a sink base cabinet before choosing a Pelican sink.");
+            toast.error("Select a sink base cabinet before choosing a StoneCreek sink.");
             setRangeTopStep("sink");
             return;
           }
@@ -24782,7 +24782,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           setPendingWallMountedFaucet(null);
           setFaucetWallMountHeightText("");
           const gridNote = bottomGridProduct ? ` · ${bottomGridProduct.pelicanCode} grid added to the cart` : "";
-          const faucetNote = faucetProduct ? "" : " · the standard Pelican faucet is drawn to complete it and is not added to the cart";
+          const faucetNote = faucetProduct ? "" : " · the standard StoneCreek faucet is drawn to complete it and is not added to the cart";
           toast.success(`${faucetProduct ? `${isBathroomVanity ? "Vanity sink" : "Sink"} & ${isBathroomVanity ? "vanity faucet" : "faucet"} added` : `${isBathroomVanity ? "Vanity sink" : "Sink"} added`}${faucetNote}${gridNote}`);
         };
         // One close path for every dismissal — X, Escape, backdrop, and the
@@ -24813,7 +24813,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                     <PopupDragGrip className="mt-0.5" />
                     <div>
                       <h2 className="text-lg font-semibold text-foreground">{isBathroomVanity ? "Choose a vanity sink" : "What goes on top?"}</h2>
-                      <p className="text-sm text-muted-foreground mt-1">{isBathroomVanity ? "Choose a Pelican porcelain vanity sink and matching vanity faucet." : "Choose what will be installed on this sink base cabinet."}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{isBathroomVanity ? "Choose a StoneCreek porcelain vanity sink and matching vanity faucet." : "Choose what will be installed on this sink base cabinet."}</p>
                     </div>
                   </div>
                   <div className={`grid gap-3 ${isBathroomVanity ? "grid-cols-1" : "grid-cols-2"}`}>
@@ -24838,7 +24838,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </div>
                       <div className="text-center">
                         <div className="text-sm font-semibold">{isBathroomVanity ? "Vanity sink" : "Sink"}</div>
-                        <div className="text-xs text-muted-foreground">{isBathroomVanity ? "Pelican porcelain bathroom basin" : "Kitchen / Bar / Farm"}</div>
+                        <div className="text-xs text-muted-foreground">{isBathroomVanity ? "StoneCreek porcelain bathroom basin" : "Kitchen / Bar / Farm"}</div>
                       </div>
                     </button>
                   </div>
@@ -24853,7 +24853,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                     </button>
                     <h2 className="text-lg font-semibold text-foreground">Choose a {isBathroomVanity ? "Vanity Sink" : "Sink"}</h2>
                   </div>
-                  <p className="text-sm text-muted-foreground -mt-2">{isBathroomVanity ? `Showing every Pelican vanity basin and integrated vanity top that fits this ${sinkBaseOpeningWidth}″ vanity: undermount, drop-in, vessel, and integrated.` : `Showing only ${sinkBaseKind === "farmhouse" ? "farmhouse / apron-front" : "standard"} Pelican sinks that fit this base.`}</p>
+                  <p className="text-sm text-muted-foreground -mt-2">{isBathroomVanity ? `Showing every StoneCreek vanity basin and integrated vanity top that fits this ${sinkBaseOpeningWidth}″ vanity: undermount, drop-in, vessel, and integrated.` : `Showing only ${sinkBaseKind === "farmhouse" ? "farmhouse / apron-front" : "standard"} StoneCreek sinks that fit this base.`}</p>
                   {filteredSinks.length === 0 ? (
                     <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => { setPendingSinkProduct(null); setRangeTopStep("faucet"); }}>Continue without a sink product</button>
                   ) : (
@@ -24898,7 +24898,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       <span className="font-medium line-clamp-1">{pendingSinkProduct.name}</span>
                     </div>
                   )}
-                  <p className="text-sm text-muted-foreground -mt-2">Pick a matching Pelican {isBathroomVanity ? "vanity faucet" : "faucet"}, or skip to finish.</p>
+                  <p className="text-sm text-muted-foreground -mt-2">Pick a matching StoneCreek {isBathroomVanity ? "vanity faucet" : "faucet"}, or skip to finish.</p>
                   {isBathroomVanity && bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode) && (
                     <p data-testid="vanity-faucet-match-note" className="rounded-md bg-muted/50 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
                       {bathroomVanityFaucetMatchNote(pendingSinkProduct?.pelicanCode)}
@@ -24913,12 +24913,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       <label className="block text-xs font-medium text-foreground">Documented wall-mount datum above finished countertop (in.)
                         <input type="number" min="0.125" step="0.125" value={faucetWallMountHeightText} onChange={(event) => setFaucetWallMountHeightText(event.target.value)} placeholder="Enter project measurement" className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm" />
                       </label>
-                      <p className="text-[11px] leading-snug text-muted-foreground">Pelican publishes this fixture's dimensions and 8-inch centers, not an installed elevation. The measurement is saved with this sink and moves with its base.</p>
+                      <p className="text-[11px] leading-snug text-muted-foreground">StoneCreek publishes this fixture's dimensions and 8-inch centers, not an installed elevation. The measurement is saved with this sink and moves with its base.</p>
                       <button type="button" className="w-full rounded-md bg-[#1a2744] px-3 py-2 text-sm font-semibold text-white hover:bg-[#243456]" onClick={() => applySink(pendingSinkProduct, pendingWallMountedFaucet)}>Add measured wall-mounted faucet</button>
                       <button type="button" className="w-full text-xs text-muted-foreground underline" onClick={() => { setPendingWallMountedFaucet(null); setFaucetWallMountHeightText(""); }}>Choose another faucet</button>
                     </div>
                   ) : filteredFaucets.length === 0 && !faucetProductsLoading ? (
-                    <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => applySink(pendingSinkProduct, null)}>Use the standard Pelican faucet</button>
+                    <button className="w-full text-xs text-muted-foreground border border-dashed rounded-lg py-3" onClick={() => applySink(pendingSinkProduct, null)}>Use the standard StoneCreek faucet</button>
                   ) : (
                     <PelicanFaucetPicker
                       faucets={filteredFaucets}
@@ -24948,7 +24948,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                         <Skeleton className="mt-2 h-16 w-full rounded-lg" />
                       ) : pendingSinkBottomGrids.length === 0 ? (
                         <p data-testid="sink-bottom-grid-none" className="mt-2 rounded-lg border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground">
-                          Pelican lists no bottom grid for this sink model, so none is offered. The sink is added without one.
+                          StoneCreek lists no bottom grid for this sink model, so none is offered. The sink is added without one.
                         </p>
                       ) : (
                         <div className="mt-2 space-y-1.5">
@@ -24989,7 +24989,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       )}
                     </section>
                   )}
-                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip — add the standard Pelican faucet</button>
+                  <button className="text-xs text-muted-foreground underline self-center" onClick={() => applySink(pendingSinkProduct, null)}>Skip — add the standard StoneCreek faucet</button>
                 </>
               )}
               {/* Step 1 of Range Top: choose the type (Gas / Electric / Smooth Top) */}
@@ -26167,7 +26167,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              bathroom={(
 	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
 	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
-	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
+	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced StoneCreek fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
 	              <button
 	                type="button"
 	                data-testid="bathroom-template-empty-room"

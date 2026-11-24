@@ -241,7 +241,7 @@ describe("DesignTool island scene and glass catalog wiring", () => {
 		  });
 
 		  it("requires a selected compatible sink base before the compact Pelican sink picker can place a fixture", () => {
-    expect(source).toContain("Select a compatible sink base cabinet before choosing a Pelican sink.");
+    expect(source).toContain("Select a compatible sink base cabinet before choosing a StoneCreek sink.");
     // The compatibility rule lives in one module the picker also filters with, so
     // the compact picker and the sink step cannot disagree about what fits.
     expect(source).toContain("filter={(item) => sinkRowFitsBase(item, selectedCab, roomType)}");

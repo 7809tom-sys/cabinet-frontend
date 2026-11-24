@@ -27,6 +27,6 @@ describe("Designer lists the whole Pelican catalog", () => {
   it("keeps an unmeasured catalog item on the materials list without inventing a 3D body", () => {
     expect(designTool).toContain("if (!verifiedPelicanSinkProfile(item.pelicanCode))");
     expect(designTool).toContain("if (!verifiedPelicanFaucetProfile(item.pelicanCode))");
-    expect(designTool).toContain("Pelican publishes no measured bowl for this model");
+    expect(designTool).toContain("StoneCreek publishes no measured bowl for this model");
   });
 });
