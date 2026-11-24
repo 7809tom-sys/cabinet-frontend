@@ -236,9 +236,13 @@ function isValid(
     const { startE, endE } = shiftedSpan(s, off);
     if (startE < runStartE - EPS_E) return false;
     if (endE > runEndE + EPS_E) return false;
-    if (startE < prevEnd - EPS_E) return false;
+    // Positions are whole eighths, so blocks that touch share an edge exactly.
+    // No overlap tolerance here: the old 1/8 in. "touching" slack let two
+    // blocks shift into each other by exactly 1/8 in. (a range and a sink base
+    // each wiggled a different amount ended up 1/8 in. inside each other).
+    if (startE < prevEnd) return false;
     for (const b of blockedE) {
-      if (startE < b.endE - EPS_E && endE > b.startE + EPS_E) return false;
+      if (startE < b.endE && endE > b.startE) return false;
     }
     prevEnd = endE;
   }

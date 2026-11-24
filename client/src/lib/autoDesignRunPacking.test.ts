@@ -136,3 +136,62 @@ describe("planRun", () => {
     );
   });
 });
+
+describe("planRun never overlaps two blocks (Tom, Nov 23 2026: range and sink base 1/8 in. into each other)", () => {
+  it("leaves the opening rather than sliding a block 1/8 in. into its neighbor", () => {
+    // Range 0-30 cannot move; the sink base 30-66 may wiggle 1/4 in. The 35 7/8 in.
+    // left after it only closes with a 36 in. base if the sink base slides 1/8 in.
+    // into the range, which the planner used to accept as "touching".
+    const spec: RunSpec = {
+      runStart: 0,
+      runEnd: 101.875,
+      blocked: [],
+      blocks: [
+        { id: "range", start: 0, end: 30, ranges: null, role: "range", coversStart: true, coversEnd: true },
+        { id: "sink", start: 30, end: 66, ranges: [{ lo: -0.25, hi: 0.25 }], role: "sink", coversStart: true, coversEnd: true },
+      ],
+      widths: [36],
+      fillerMaxIn: 0,
+      panelIn: 0,
+      landingPairs: [],
+    };
+    const plan = planRun(spec);
+    expect(30 + plan.offsets.sink).toBeGreaterThanOrEqual(30);
+  });
+
+  it("does not let a block slide 1/8 in. into a blocked span either", () => {
+    const spec: RunSpec = {
+      runStart: 0,
+      runEnd: 101.875,
+      blocked: [{ start: 0, end: 30 }],
+      blocks: [
+        { id: "sink", start: 30, end: 66, ranges: [{ lo: -0.25, hi: 0.25 }], role: "sink", coversStart: true, coversEnd: true },
+      ],
+      widths: [36],
+      fillerMaxIn: 0,
+      panelIn: 0,
+      landingPairs: [],
+    };
+    const plan = planRun(spec);
+    expect(30 + plan.offsets.sink).toBeGreaterThanOrEqual(30);
+  });
+
+  it("still lets two blocks touch exactly", () => {
+    const spec: RunSpec = {
+      runStart: 0,
+      runEnd: 102,
+      blocked: [],
+      blocks: [
+        { id: "range", start: 0, end: 30, ranges: null, role: "range", coversStart: true, coversEnd: true },
+        { id: "sink", start: 30.125, end: 66.125, ranges: [{ lo: -0.25, hi: 0.25 }], role: "sink", coversStart: true, coversEnd: true },
+      ],
+      widths: [36],
+      fillerMaxIn: 0,
+      panelIn: 0,
+      landingPairs: [],
+    };
+    const plan = planRun(spec);
+    expect(30.125 + plan.offsets.sink).toBe(30);
+    expect(plan.gaps.reduce((acc, g) => acc + g.openIn, 0)).toBe(0);
+  });
+});
