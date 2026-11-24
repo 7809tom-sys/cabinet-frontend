@@ -7,6 +7,7 @@ import {
 	  Trash2, Plus, Package, Building2, DollarSign, MapPin, Ruler, ClipboardCheck, Lock, LockOpen,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { WarehouseOpenControls } from "./WarehouseOpenControls";
 import { readFileAsDataUrl, useMediaLibraryUpload } from "@/lib/walzcraftProfileUpload";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -1112,8 +1113,9 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               Use vendor zips
             </Button>
             <p className="text-xs text-muted-foreground">
-              Add every verified warehouse ZIP for this Door Style. Live freight uses the saved origin nearest to the delivery ZIP; these private origins override the general distributor/global fallback for this style. Leave the list empty to inherit the vendor cabinet warehouse coverage. Inherited ZIPs are not copied onto this style.
+              Add every verified warehouse ZIP for this Door Style. Live freight uses the saved origin nearest to the delivery ZIP; these private origins override the general distributor/global fallback for this style. Leave the list empty to inherit the vendor cabinet warehouse coverage. Inherited ZIPs are not copied onto this style. A closed warehouse is never chosen, even when its ZIP is still listed.
             </p>
+            <WarehouseOpenControls distributorId={style.distributorId} />
             <div className="space-y-1.5 pt-1">
               <Label htmlFor="ed-flat-freight">Plan B flat freight fee (optional)</Label>
               <div className="flex items-center gap-2">

@@ -17,6 +17,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { Truck, Mail, MapPin } from "lucide-react";
+import { WarehouseOpenControls } from "./WarehouseOpenControls";
 
 type FulfillmentMode = "email" | "netsuite_email" | "netsuite_api";
 type ShippingRuleMode = "live" | "fixed" | "threshold";
@@ -254,6 +255,7 @@ export default function DistributorFulfillmentEditor({ glassOnly = false }: { gl
                       <Input value={warehouseAddress} onChange={(event) => setWarehouseAddress(event.target.value)} placeholder="123 Warehouse Rd, Dallas, TX 75001" maxLength={512} />
                     </div>
                   </div>
+                  <WarehouseOpenControls distributorId={Number(selectedId)} />
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div className="space-y-1.5">
                       <Label>Shipping rule</Label>
