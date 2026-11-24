@@ -1,6 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { GlassPolicyBadge } from "@/components/GlassPolicyBadge";
 import { trpc } from "@/lib/trpc";
+import {
+  applyZipLookup,
+  checkoutZip5,
+  emptyZipFillMemory,
+  rememberManualCity,
+  rememberManualState,
+} from "./zipLocalityFill";
 import { catalogGlobalSearchTerm } from "@/lib/catalogSearchQuery";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { readReferralCode, readAffiliateSlug, setReferralCode as persistReferralCode } from "@/hooks/useReferral";
@@ -110,6 +117,8 @@ interface Props {
   kitchenDesignId?: number;
   /** Optional cart selection to request a verified UPS parcel quote only. */
   carrierPreference?: "ups";
+  /** ZIP already entered for the cart's shipping quote. */
+  initialZip?: string | null;
 }
 
 // Extract the dimension digits from a raw code so the Fix picker can pre-search
@@ -225,7 +234,7 @@ function ConfidenceBadge({ line }: { line: ReviewLine }) {
   );
 }
 
-export function OrderReview({ lines, source, onLinesChange, onReset, initialStyleId, initialTier, kitchenDesignId, carrierPreference }: Props) {
+export function OrderReview({ lines, source, onLinesChange, onReset, initialStyleId, initialTier, kitchenDesignId, carrierPreference, initialZip }: Props) {
   const { t } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const accountTier = (user as { pricingTier?: string } | null)?.pricingTier;
@@ -241,7 +250,10 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
   const [addressLine1, setAddressLine1] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const [city, setCity] = useState("");
-  const [zip, setZip] = useState("");
+  const [zip, setZip] = useState(() => {
+    const value = (initialZip ?? "").trim();
+    return /^\d{5}(?:-\d{4})?$/.test(value) ? value : "";
+  });
   const [notes, setNotes] = useState("");
   // Fulfillment: default ship; switched to pickup only when the customer picks a
   // nearby distributor's pickup location (offered when ZIP is within radius).
@@ -309,6 +321,34 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
     { enabled: zipDebounced.length >= 5, retry: false }
   );
   const pickupOptions = pickupQuery.data?.options ?? [];
+  // Same debounce as pickup. A 5-digit ZIP or ZIP+4 fills city and state.
+  // A hand edit sticks until the 5-digit ZIP itself changes.
+  const zip5 = checkoutZip5(zipDebounced);
+  const zipLookup = trpc.freight.lookupZip.useQuery(
+    { zip: zip5 ?? "" },
+    { enabled: zip5 != null, retry: false },
+  );
+  const zipFillMemory = useRef(emptyZipFillMemory());
+  function editCity(value: string) {
+    zipFillMemory.current = rememberManualCity(zipFillMemory.current, zip5);
+    setCity(value);
+  }
+  function editTaxState(value: string) {
+    zipFillMemory.current = rememberManualState(zipFillMemory.current, zip5);
+    setTaxState(value);
+  }
+  useEffect(() => {
+    const next = applyZipLookup({
+      city,
+      state: taxState,
+      memory: zipFillMemory.current,
+      zip5,
+      lookup: zip5 == null ? undefined : zipLookup.data,
+    });
+    zipFillMemory.current = next.memory;
+    if (next.city !== city) setCity(next.city);
+    if (next.state !== taxState) setTaxState(next.state);
+  }, [city, taxState, zip5, zipLookup.data]);
   // If the ZIP changes and the chosen pickup distributor is no longer eligible,
   // fall back to shipping so we never submit a stale pickup selection.
   useEffect(() => {
@@ -1274,7 +1314,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
               <Label htmlFor="tax-state" className="text-xs text-muted-foreground mb-1 block">
                 Sales Tax State <span className="font-normal">(optional — for estimate)</span>
               </Label>
-              <Select value={taxState} onValueChange={setTaxState}>
+              <Select value={taxState} onValueChange={editTaxState}>
                 <SelectTrigger id="tax-state" className="h-8 text-sm">
                   <SelectValue placeholder="Select state…" />
                 </SelectTrigger>
@@ -1290,7 +1330,7 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
             {taxState && (
               <button
                 type="button"
-                onClick={() => setTaxState("")}
+                onClick={() => editTaxState("")}
                 className="text-xs text-muted-foreground hover:text-foreground mt-5"
               >
                 Clear
@@ -1419,11 +1459,11 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ord-city">City <span className="text-destructive">*</span></Label>
-            <Input id="ord-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" autoComplete="address-level2" />
+            <Input id="ord-city" value={city} onChange={(e) => editCity(e.target.value)} placeholder="City" autoComplete="address-level2" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="ord-state">State <span className="text-destructive">*</span></Label>
-            <Select value={taxState} onValueChange={setTaxState}>
+            <Select value={taxState} onValueChange={editTaxState}>
               <SelectTrigger id="ord-state" className="h-9"><SelectValue placeholder="Select state" /></SelectTrigger>
               <SelectContent className="max-h-60">
                 {US_STATE_TAX_RATES.map((s) => <SelectItem key={s.code} value={s.code}>{s.name}</SelectItem>)}
