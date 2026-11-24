@@ -214,3 +214,37 @@
 .designer-immersive-root [data-testid="three-d-floating-actions"] {
   padding-left: env(safe-area-inset-left, 0px);
 }
+
+/* Top toolbar only. Every control is half an inch tall (96 CSS px per inch).
+   Widths, labels, order, and icons stay as they are. The right-side canvas
+   column and the phone bottom bar are separate elements and are not affected. */
+.designer-top-toolbar button,
+.designer-top-toolbar [data-testid="color-style-quick-picker"],
+.designer-top-toolbar [data-testid="primary-floor-plan-3d-switch"],
+.designer-top-toolbar a[data-testid="designer-edit-door-style"] {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  box-sizing: border-box;
+  align-items: center;
+}
+
+.designer-top-toolbar [data-testid="primary-floor-plan-3d-switch"] {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  padding: 0 !important;
+}
+
+.designer-top-toolbar [data-testid="primary-floor-plan-3d-switch"] button {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+}
+
+.designer-top-toolbar [data-testid="mobile-dishwasher-side-control"] {
+  height: 48px !important;
+  min-height: 48px !important;
+  max-height: 48px !important;
+  align-items: center;
+}
