@@ -96,7 +96,7 @@ import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindo
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
-import { pieceGrainCanvas, woodPanelPieceUv, woodPanelPreviewUv } from "@/lib/woodPanelGrain";
+import { largeFaceGrainCanvas, largeFacePositionUvs, largeWoodFaceGrain, pieceGrainCanvas, WOOD_LARGE_FACE_ANISOTROPY, woodPanelPieceUv, woodPanelPreviewUv, woodPanelSampleInches } from "@/lib/woodPanelGrain";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -448,6 +448,24 @@ export function applyWoodDoorPhotoFidelity(material: THREE.MeshStandardMaterial)
   material.needsUpdate = true;
 }
 
+/**
+ * Put a front slab on the back plane of its rail. A slab whose front sits in
+ * the rail's thickness draws a second edge on the rail.
+ */
+export function recessedWoodFrontZ(frameZ: number, frontThickness: number, railDepth = DLC_FRAME_DETAIL.standardRailDepth): number {
+  return frameZ - railDepth / 2 - frontThickness / 2;
+}
+
+/**
+ * The constructed top rail sits above the door rail on a floor cabinet and
+ * reads as a second strip. A wall cabinet keeps both rails: they close the
+ * joint where a stacker meets the cabinet below. Painted cabinets keep every rail.
+ */
+export function hideDuplicateFaceFrameRail(edge: "top" | "bottom" | "left" | "right", placement: string, woodDoorPhotograph: boolean): boolean {
+  if (!woodDoorPhotograph) return false;
+  return edge === "top" && placement !== "wall";
+}
+
 /** One clamped copy of the center grain, aspect-matched to the piece. Never tiled. */
 export function pieceGrainTexture(
   source: THREE.Texture,
@@ -468,17 +486,62 @@ export function pieceGrainTexture(
   return map;
 }
 
+function configureLargeFaceGrainMap(map: THREE.Texture): THREE.Texture {
+  map.colorSpace = THREE.SRGBColorSpace;
+  // Across the grain is one crop. Along the grain the canvas is already a
+  // mirrored pair, so a repeat meets the same pixels and does not draw a line.
+  map.wrapS = THREE.ClampToEdgeWrapping;
+  map.wrapT = THREE.RepeatWrapping;
+  map.magFilter = THREE.LinearFilter;
+  map.minFilter = THREE.LinearMipmapLinearFilter;
+  map.generateMipmaps = true;
+  map.anisotropy = Math.max(map.anisotropy || 1, WOOD_LARGE_FACE_ANISOTROPY);
+  map.repeat.set(1, 1);
+  map.offset.set(0, 0);
+  map.rotation = 0;
+  map.center.set(0, 0);
+  map.needsUpdate = true;
+  return map;
+}
+
+/** Real-inch UVs for one large face. Door pieces never call this. */
+export function applyLargeFaceWoodUv(
+  geometry: THREE.BufferGeometry,
+  grain: "vertical" | "along-length",
+  sample: { width: number; height: number },
+  salt = 0,
+): THREE.BufferGeometry {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const position = source.getAttribute("position");
+  if (!position) return source;
+  const points: Array<{ x: number; y: number; z: number }> = [];
+  for (let index = 0; index < position.count; index += 1) {
+    points.push({ x: position.getX(index) * 12, y: position.getY(index) * 12, z: position.getZ(index) * 12 });
+  }
+  const mapped = largeFacePositionUvs(points, grain, sample, salt);
+  const uv = new THREE.Float32BufferAttribute(mapped.length * 2, 2);
+  mapped.forEach((point, index) => uv.setXY(index, point.u, point.v));
+  source.setAttribute("uv", uv);
+  uv.needsUpdate = true;
+  source.userData = { ...source.userData, largeFaceWoodUv: true, woodPanelSampleIn: sample, woodPanelGrain: grain };
+  return source;
+}
+
 /**
  * Replace a framed door photograph with one copy of center-panel grain per piece.
  * The copy is cropped to the piece's aspect (rails are turned first). It is
- * clamped, never repeated, so a door cannot show a seam. Painted materials are
- * not marked and are skipped.
+ * clamped, never repeated, so a door cannot show a seam. Large faces (sides,
+ * ends, tops, fillers, toe kicks) instead use one fixed real-inch scale.
+ * Painted materials are not marked and are skipped.
  */
 export function applyLoadedWoodPanelGrain(
   root: THREE.Object3D,
   image: CanvasImageSource & { width: number; height: number },
   options?: { drawersOnly?: boolean },
 ): boolean {
+  const sample = woodPanelSampleInches(image.width, image.height);
+  const largeBoard = largeFaceGrainCanvas(image);
+  const largeMap = largeBoard ? configureLargeFaceGrainMap(new THREE.CanvasTexture(largeBoard)) : null;
   let applied = false;
   let index = 0;
   root.traverse((node) => {
@@ -486,6 +549,28 @@ export function applyLoadedWoodPanelGrain(
     if (!mesh.isMesh || Array.isArray(mesh.material)) return;
     const material = mesh.material as THREE.MeshStandardMaterial;
     if (!material?.userData?.centerPanelGrain || typeof material.clone !== "function") return;
+    const largeGrain = largeWoodFaceGrain(mesh.userData as Record<string, unknown>);
+    if (largeGrain && largeMap && !options?.drawersOnly) {
+      const salt = (index * 0.37 + mesh.position.x * 1.7 + mesh.position.y * 0.9 + mesh.position.z * 1.3) % 1;
+      index += 1;
+      const previousGeometry = mesh.geometry;
+      mesh.geometry = applyLargeFaceWoodUv(previousGeometry, largeGrain, sample, salt);
+      if (previousGeometry !== mesh.geometry) previousGeometry.dispose();
+      const next = material.clone();
+      next.map = largeMap;
+      next.userData = {
+        ...material.userData,
+        centerPanelGrain: true,
+        largeFaceWoodUv: true,
+        woodPanelGrain: largeGrain,
+        woodPanelSampleIn: sample,
+        woodPanelGrainSalt: salt,
+      };
+      applyWoodDoorPhotoFidelity(next);
+      mesh.material = next;
+      applied = true;
+      return;
+    }
     const drawer = Boolean(mesh.userData?.cabinetDrawerFront);
     if (options?.drawersOnly && !drawer) return;
     if (!options?.drawersOnly && drawer && mesh.userData?.drawerGrain) return;
@@ -6197,7 +6282,7 @@ export function addCabinet(
 		    body.userData = {
 		...(isRefrigeratorAppliance
         ? { refrigeratorNeutralShell: true, neutralApplianceSidesAndTop: true }
-        : { selectedStyleSideSkin: true }),
+        : { selectedStyleSideSkin: true, carcassShell: true }),
 	      ...(specialty.kind === "blind-corner" ? { specialtyProfile: "blind-corner", blindCornerBody: true } : {}),
       ...(isFrontFlushFillerBoard ? { installedFillerFrontAligned: true, installedFillerVisibleDepthIn: installedFillerBoardDepth / INCH, fullDepthReservedForCountertop: true } : {}),
       ...(usesBaseFillerFaceElevation ? { baseFillerFace: true, fillerFaceBottomIn: THREE_D_TOE_KICK, fillerFaceHeightIn: heightIn } : {}),
@@ -6856,15 +6941,22 @@ export function addCabinet(
     frameGroup.position.z = faceDepth - frameDepth * 0.65;
     frameGroup.userData = { cabinetFaceFrame: true, constructedCarcassDetail: true, faceFrameWidthIn: frameWidth / INCH };
     const framePieces = [
-      [bodyWidth, frameWidth, 0, bodyHeight / 2 - frameWidth / 2],
-      [bodyWidth, frameWidth, 0, -bodyHeight / 2 + frameWidth / 2],
-      [frameWidth, Math.max(0.02, bodyHeight - frameWidth * 2), -bodyWidth / 2 + frameWidth / 2, 0],
-      [frameWidth, Math.max(0.02, bodyHeight - frameWidth * 2), bodyWidth / 2 - frameWidth / 2, 0],
+      [bodyWidth, frameWidth, 0, bodyHeight / 2 - frameWidth / 2, "top"],
+      [bodyWidth, frameWidth, 0, -bodyHeight / 2 + frameWidth / 2, "bottom"],
+      [frameWidth, Math.max(0.02, bodyHeight - frameWidth * 2), -bodyWidth / 2 + frameWidth / 2, 0, "left"],
+      [frameWidth, Math.max(0.02, bodyHeight - frameWidth * 2), bodyWidth / 2 - frameWidth / 2, 0, "right"],
     ] as const;
-    for (const [pieceWidth, pieceHeight, x, y] of framePieces) {
+    for (const [pieceWidth, pieceHeight, x, y, edge] of framePieces) {
       const frame = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, frameDepth), frameMaterial);
       frame.position.set(x, y, 0);
-      frame.userData = { cabinetFaceFrame: true, constructedCarcassDetail: true };
+      const duplicate = hideDuplicateFaceFrameRail(edge, placement, woodDoorPhotograph);
+      frame.visible = !duplicate;
+      frame.userData = {
+        cabinetFaceFrame: true,
+        constructedCarcassDetail: true,
+        faceFrameEdge: edge,
+        ...(duplicate ? { duplicateFrontRailHidden: true } : {}),
+      };
       frameGroup.add(frame);
     }
     cabinet.add(frameGroup);
@@ -7704,7 +7796,7 @@ export function addCabinet(
       const doorWidth = (bodyWidth - 0.08) / ovenLayout.doorCount;
       for (let i = 0; i < ovenLayout.doorCount; i++) {
         const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.03, Math.max(0.08, height - 0.025), 0.052), faceMaterial);
-        door.position.set(-bodyWidth / 2 + 0.04 + doorWidth * (i + 0.5), zoneTop - height / 2, 0.035);
+        door.position.set(-bodyWidth / 2 + 0.04 + doorWidth * (i + 0.5), zoneTop - height / 2, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
         door.userData = { cabinetFront: true, ovenCabinetDoor: true, flushPhysicalFace: true };
         frontGroup.add(door);
         addShakerFrame(doorWidth - 0.03, Math.max(0.08, height - 0.025), door.position.x, door.position.y, 0.066);
@@ -7727,7 +7819,7 @@ export function addCabinet(
         const drawerWidth = (bodyWidth - 0.08) / row.count;
         for (let column = 0; column < row.count; column++) {
           const drawer = new THREE.Mesh(new THREE.BoxGeometry(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), 0.052), faceMaterial);
-          drawer.position.set(-bodyWidth / 2 + 0.04 + drawerWidth * (column + 0.5), zoneTop - row.height / 2, 0.035);
+          drawer.position.set(-bodyWidth / 2 + 0.04 + drawerWidth * (column + 0.5), zoneTop - row.height / 2, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
           drawer.userData = { cabinetFront: true, cabinetDrawerFront: true, ovenCabinetDrawer: true, flushPhysicalFace: true };
           frontGroup.add(drawer);
           addDrawerReveal(drawerWidth - 0.025, Math.max(0.08, row.height - 0.025), drawer.position.x, drawer.position.y);
@@ -7795,7 +7887,7 @@ export function addCabinet(
       const doorWidth = (bodyWidth - 0.08) / doorsPerRow;
       for (let i = 0; i < doorsPerRow; i++) {
         const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.03, Math.max(0.08, height - 0.025), 0.052), faceMaterial);
-        door.position.set(-bodyWidth / 2 + 0.04 + doorWidth * (i + 0.5), centerY, 0.035);
+        door.position.set(-bodyWidth / 2 + 0.04 + doorWidth * (i + 0.5), centerY, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
         door.userData = { cabinetFront: true, pantryDoorSet: row, pantryDoorsPerRow: doorsPerRow, flushPhysicalFace: true };
         frontGroup.add(door);
         addShakerFrame(doorWidth - 0.03, Math.max(0.08, height - 0.025), door.position.x, door.position.y, 0.066);
@@ -8841,6 +8933,12 @@ export function addCabinet(
     // edge overlays expose the internal construction seam as a false line that
     // projects into the room. The two door frames remain the visible seam.
     if (specialty.kind === "l-corner" || specialty.kind === "corner-drawer" || specialty.kind === "end-return" || specialty.kind === "base-angle-end") continue;
+    // A wood carcass already has the door rail and the face frame. The box's
+    // own front edge is a second line under the counter and at a stacker joint.
+    if (woodDoorPhotograph && bodyMesh.userData?.carcassShell) {
+      bodyMesh.userData = { ...bodyMesh.userData, carcassFrontEdgeOmitted: true };
+      continue;
+    }
     // An open shelf is a finished box whose front edges are flush with the
     // opening. Overlaying every panel's edges drew a dark dashed border around
     // the opening that reads as a face frame (the reported WEOS defect), so the
@@ -8851,6 +8949,7 @@ export function addCabinet(
       new THREE.LineBasicMaterial({ color: "#332d25", transparent: true, opacity: 0.34 }),
     );
     edges.position.copy(bodyMesh.position);
+    edges.userData = { carcassEdgeLines: true };
     cabinet.add(edges);
   }
   const placementIdentity: ThreeDCabinetHit = {
