@@ -151,6 +151,93 @@ describe("Edit Door: one door color source selector", () => {
     expect(stored()["1"].source).toBe("original-image");
   });
 
+  it("has no hand-typed Color field; a saved paint brand drives the Hex field and tile, not the old render hex", () => {
+    styles[0] = {
+      ...styles[0],
+      color: "#2d333f",
+      renderHex: "#2d333f",
+      doorColorSource: "hex",
+      doorColorSourceValue: { kind: "paint-brand", brand: "Valspar", code: "4009-3", name: "Gotham Gray", hex: "#353e47" },
+      doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z",
+    };
+    const dialog = openFirst();
+    expect(dialog.querySelector("#ed-color")).toBeNull();
+    expect((screen.getByTestId("door-color-source-hex-input") as HTMLInputElement).value).toBe("#353e47");
+    expect(screen.getByTestId("door-color-source-hex-swatch").getAttribute("aria-label")).toContain("#353e47");
+  });
+
+  describe("color lock", () => {
+    const savedPaint = () => {
+      styles[0] = {
+        ...styles[0],
+        doorSampleImageUrl: "https://example.test/door.jpg",
+        doorColorSource: "hex",
+        doorColorSourceValue: { kind: "paint-brand", brand: "Valspar", code: "4009-3", name: "Gotham Gray", hex: "#353e47" },
+        doorColorSourceUpdatedAt: "2026-11-22T18:00:00.000Z",
+      };
+    };
+    const lockedIds = ["door-color-source-hex-input", "paint-brand-select", "paint-brand-code", "paint-brand-name", "paint-brand-hex"];
+
+    it("opens locked with a saved paint brand: inputs, picker, tiles and Confirm are disabled", () => {
+      savedPaint();
+      const dialog = openFirst();
+      expect(screen.getByText("Color locked")).toBeTruthy();
+      for (const id of lockedIds) expect((screen.getByTestId(id) as HTMLInputElement).disabled).toBe(true);
+      expect((dialog.querySelector('input[aria-label="Pick hex"]') as HTMLInputElement).disabled).toBe(true);
+      expect((dialog.querySelector('input[aria-label="Pick paint hex"]') as HTMLInputElement).disabled).toBe(true);
+      for (const o of ["original-image", "approved-ai-image", "sherwin-williams", "hex"]) {
+        expect((screen.getByTestId(`door-color-source-${o}`) as HTMLButtonElement).disabled).toBe(true);
+      }
+      expect((screen.getByTestId("door-color-source-paint-brand-confirm") as HTMLButtonElement).disabled).toBe(true);
+      expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).value).toBe("#353e47");
+    });
+
+    it("clicking a door picture does nothing while locked", () => {
+      savedPaint();
+      openFirst();
+      const canvas = screen.getByLabelText(/Sample door — click to pick render color/);
+      expect(canvas.getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(canvas, { clientX: 5, clientY: 5 });
+      expect((screen.getByTestId("door-color-source-hex-input") as HTMLInputElement).value).toBe("#353e47");
+      expect(screen.getByText(/Color locked\. Unlock to edit before picking/)).toBeTruthy();
+    });
+
+    it("Unlock to edit asks first, then enables the controls; declining keeps it locked", () => {
+      savedPaint();
+      openFirst();
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+      fireEvent.click(screen.getByTestId("door-color-unlock"));
+      expect(confirmSpy).toHaveBeenCalledWith("Change the locked color?");
+      expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).disabled).toBe(true);
+      confirmSpy.mockReturnValue(true);
+      fireEvent.click(screen.getByTestId("door-color-unlock"));
+      for (const id of lockedIds) expect((screen.getByTestId(id) as HTMLInputElement).disabled).toBe(false);
+      expect((screen.getByTestId("door-color-source-hex") as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.queryByText("Color locked")).toBeNull();
+      confirmSpy.mockRestore();
+    });
+
+    it("re-locks when the editor is closed and reopened", () => {
+      savedPaint();
+      openFirst();
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      fireEvent.click(screen.getByTestId("door-color-unlock"));
+      expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).disabled).toBe(false);
+      cleanup();
+      openFirst();
+      expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).disabled).toBe(true);
+    });
+
+    it("first-time entry is unlocked when no color is saved yet", () => {
+      const dialog = openFirst();
+      expect(screen.queryByText("Color locked")).toBeNull();
+      expect(dialog.querySelector('[data-testid="door-color-unlock"]')).toBeNull();
+      expect((screen.getByTestId("door-color-source-hex-input") as HTMLInputElement).disabled).toBe(false);
+      expect((screen.getByTestId("paint-brand-hex") as HTMLInputElement).disabled).toBe(false);
+      expect((screen.getByTestId("door-color-source-hex") as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
   it("reloads a saved paint brand and still loads an old Sherwin-Williams row", () => {
     styles[0] = {
       ...styles[0],
@@ -204,7 +291,8 @@ describe("Edit Door: one door color source selector", () => {
       expect(dialog.querySelector('[data-testid="door-color-source-hex-input"]')).toBeTruthy();
       expect(dialog.querySelector('[aria-label="Pick hex"]')).toBeTruthy();
       expect(dialog.querySelectorAll('[data-testid="render-color-picker"]').length).toBe(1);
-      expect(dialog.textContent).toMatch(/Click either door picture to pick the hex/);
+      // A saved confirmed color opens locked, and the picture hint says so.
+      expect(dialog.textContent).toMatch(/Click either door picture to pick the hex|Color locked\. Unlock to edit before picking/);
     }
   });
 
@@ -332,6 +420,9 @@ describe("Edit Door: a confirmed color pick is saved at once (fix/door-style-col
   it("choosing the Original image tile saves that choice", () => {
     styles[0] = { ...styles[0], doorColorSource: "hex", doorColorSourceValue: { hex: "#224466" }, doorColorSourceUpdatedAt: "2026-11-12T19:00:00.000Z" };
     openFirst();
+    // A saved hex opens locked; unlock for this edit before replacing it.
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByTestId("door-color-unlock"));
     fireEvent.click(screen.getByTestId("door-color-source-original-image"));
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ id: 1, doorColorSourceSelection: { source: "original-image" } });

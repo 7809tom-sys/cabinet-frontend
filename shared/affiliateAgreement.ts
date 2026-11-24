@@ -23,7 +23,7 @@ export function buildAffiliateAgreementText(version: string = AFFILIATE_AGREEMEN
     `Version: ${affiliateAgreementVersionLabel(version)}`,
     "",
     "1. Independent operator",
-    "You are an independent operator. You are not an employee of Cabinet Dealz. You are responsible for your own taxes. You have no authority to bind Cabinet Dealz, to sign contracts for Cabinet Dealz, or to speak for Cabinet Dealz.",
+    "You are an independent operator. You are not an employee of Cabinet Dealz. You are responsible for your own taxes. You have no authority to bind Cabinet Dealz, to sign contracts for Cabinet Dealz, or to speak for Cabinet Dealz. An affiliate is a contractor who also owns a branded Cabinet Dealz website, and is expected to sell more than a typical contractor.",
     "",
     "2. Payment on completion of an order",
     "You get paid on completion of an order. In this program, completion means the order status is confirmed. An order that is not confirmed does not earn commission.",

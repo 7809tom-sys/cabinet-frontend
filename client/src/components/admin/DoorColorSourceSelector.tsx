@@ -55,6 +55,8 @@ export type DoorColorSourceSelectorProps = {
   hexSeed?: string | null;
   /** True when the caller already draws the surrounding card (the door color panel). */
   bare?: boolean;
+  /** A saved confirmed color is locked: every control that could change it is read-only until unlocked. */
+  locked?: boolean;
   now?: () => string;
 };
 
@@ -85,6 +87,7 @@ export function DoorColorSourceSelector({
   onOpenAiMaker,
   hexSeed,
   bare = false,
+  locked = false,
   now = () => new Date().toISOString(),
 }: DoorColorSourceSelectorProps) {
   const effective = effectiveDoorColorSource(draft.stored, aiAvailable ? { approvedVersionId: 1, approvedReferenceImageUrl: aiImageUrl || "accepted" } : null);
@@ -142,6 +145,7 @@ export function DoorColorSourceSelector({
               type="button"
               role="radio"
               aria-checked={selected}
+              disabled={locked}
               data-testid={`door-color-source-${option}`}
               data-state={selected ? "on" : "off"}
               aria-label={DOOR_COLOR_SOURCE_LABELS[option]}
@@ -259,7 +263,7 @@ export function DoorColorSourceSelector({
           <button
             type="button"
             data-testid="door-color-source-sherwin-williams-confirm"
-            disabled={!canConfirm("sherwin-williams")}
+            disabled={locked || !canConfirm("sherwin-williams")}
             onClick={() => confirm("sherwin-williams")}
             title="That's the one"
             className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:opacity-50"
@@ -274,7 +278,7 @@ export function DoorColorSourceSelector({
         <button
           type="button"
           data-testid="door-color-source-hex-confirm"
-          disabled={!hexReady}
+          disabled={locked || !hexReady}
           onClick={() => confirm("hex")}
           title="That's the one"
           className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:opacity-50"
@@ -296,6 +300,7 @@ export function DoorColorSourceSelector({
           <select
             id="paint-brand-select"
             data-testid="paint-brand-select"
+            disabled={locked}
             value={paintDraft.brand}
             onChange={(event) => dispatch({ type: "pendingPaint", patch: { brand: event.target.value as PaintBrand | "" } })}
             className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
@@ -309,6 +314,7 @@ export function DoorColorSourceSelector({
           <input
             id="paint-brand-code"
             data-testid="paint-brand-code"
+            disabled={locked}
             value={paintDraft.code}
             maxLength={PAINT_BRAND_CODE_MAX}
             placeholder="SW 7012"
@@ -319,6 +325,7 @@ export function DoorColorSourceSelector({
           <input
             id="paint-brand-name"
             data-testid="paint-brand-name"
+            disabled={locked}
             value={paintDraft.name}
             maxLength={PAINT_BRAND_NAME_MAX}
             placeholder="Alabaster"
@@ -330,6 +337,7 @@ export function DoorColorSourceSelector({
             <input
               id="paint-brand-hex"
               data-testid="paint-brand-hex"
+              disabled={locked}
               value={paintDraft.hex}
               placeholder="#RRGGBB"
               onChange={(event) => dispatch({ type: "pendingPaint", patch: { hex: event.target.value } })}
@@ -337,6 +345,7 @@ export function DoorColorSourceSelector({
             />
             <input
               aria-label="Pick paint hex"
+              disabled={locked}
               type="color"
               value={paintSwatch ?? "#f2f0ea"}
               onChange={(event) => dispatch({ type: "pendingPaint", patch: { hex: event.target.value } })}
@@ -345,7 +354,7 @@ export function DoorColorSourceSelector({
           <button
             type="button"
             data-testid="door-color-source-paint-brand-confirm"
-            disabled={!paintReady}
+            disabled={locked || !paintReady}
             onClick={() => confirm("paint-brand")}
             title="That's the one"
             className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground disabled:opacity-50"

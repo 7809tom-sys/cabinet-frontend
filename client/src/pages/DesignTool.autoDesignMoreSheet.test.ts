@@ -14,48 +14,43 @@ function moreSheetSource(): string {
   return pageSource.slice(start, end);
 }
 
-describe("Auto-Design in the More sheet (tablet and phone)", () => {
-  it("adds an Auto-Design row for every kitchen designer", () => {
+describe("Auto-Design moved into the room layout popup (tablet and phone)", () => {
+  it("no longer has its own More sheet row, but the tablet-workspace sheet still opens the Room layout popup", () => {
     const sheet = moreSheetSource();
-    expect(sheet).toContain('data-testid="more-sheet-auto-design"');
-    const rowAt = sheet.indexOf('data-testid="more-sheet-auto-design"');
-    const guardAt = sheet.lastIndexOf("{autoDesignAvailable && (", rowAt);
-    expect(guardAt).toBeGreaterThan(-1);
-    expect(sheet.slice(guardAt, rowAt)).not.toContain(")}");
+    expect(sheet).not.toContain("more-sheet-auto-design");
+    expect(sheet).not.toContain("openAutoDesign");
+    expect(sheet).toContain("setLayoutStarterOpen(true)");
   });
 
-  it("opens the same dialog, closing the sheet first, and keeps the empty-plan rule", () => {
-    const sheet = moreSheetSource();
-    const rowAt = sheet.indexOf('data-testid="more-sheet-auto-design"');
-    const row = sheet.slice(Math.max(0, rowAt - 200), rowAt + 1600);
-    expect(row).toContain("setTimeout(openAutoDesign, 120)");
-    expect(row).toContain("setMoreSheetOpen(false)");
-    expect(row).toContain("!autoDesignControl.enabled");
-    // The row prints the one shared disabled reason instead of its own copy, so
-    // the sheet, the desktop toolbar, and the phone top actions cannot drift.
-    expect(row).toContain("autoDesignBlockedNote");
-    // And it prints the shared refrigerator-anchor hint: a placed refrigerator is
-    // a fixed anchor, never a reason the control is off.
-    expect(row).toContain("autoDesignAnchorNote");
+  it("keeps the phone/portrait top-actions button, the only route below 1024px", () => {
+    expect(pageSource).toContain('data-testid="mobile-auto-design-auto-build"');
+    expect(pageSource).toContain("onClick={openAutoDesign}");
+  });
+
+  it("the popup opens the same dialog, closing itself first, with the same shared gate and notes", () => {
+    const at = pageSource.indexOf("<RoomLayoutPopupPicker");
+    expect(at).toBeGreaterThan(0);
+    const wiring = pageSource.slice(at, at + 500);
+    expect(wiring).toContain("setLayoutStarterOpen(false)");
+    expect(wiring).toContain("setTimeout(openAutoDesign, 120)");
+    expect(wiring).toContain("enabled: autoDesignControl.enabled");
+    expect(wiring).toContain("note: autoDesignBlockedNote");
+    expect(wiring).toContain("anchorNote: autoDesignAnchorNote");
     expect(availabilitySource).toContain('AUTO_DESIGN_EMPTY_PLAN_NOTE = "Needs an empty plan"');
     expect(availabilitySource).toContain("AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE");
-    expect(row).toContain("Auto-Design");
   });
 
-  it("keeps the desktop toolbar button and dialogs on the same kitchen-only gate", () => {
-    expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
-    // The admin/affiliate audience gate is gone; the room gate is all that is left.
+  it("keeps the dialogs on the same kitchen-only gate and the old toolbar buttons gone", () => {
+    expect(pageSource).not.toContain('data-testid="admin-auto-design-auto-build"');
     expect(pageSource).not.toContain("autoDesignAudienceAllowed");
     expect(pageSource).toContain('const autoDesignAvailable = roomType === "kitchen";');
     expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
     expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
-    // The corner chooser is part of Auto-Design and sits behind the same audience
-    // gate. It must be rendered there (PR #114 removed it once), never ungated.
     expect(pageSource).toMatch(/\{autoDesignAvailable && autoDesignCornerStage && \(\s*<AutoDesignCornerDialog/);
   });
 
-  it("does not expose the row outside the audience guard anywhere else in the sheet", () => {
-    const sheet = moreSheetSource();
-    expect(sheet.split("openAutoDesign").length - 1).toBe(1);
+  it("only the fullscreen (canvas-only) rail and 3D button still open Auto-Design directly", () => {
+    expect(pageSource).toContain("onAutoDesign={autoDesignAvailable && canvasOnly ? openAutoDesign : undefined}");
+    expect(pageSource).toContain("floatingAutoDesignAction={canvasOnly ? threeDFloatingAutoDesignAction : undefined}");
   });
 });

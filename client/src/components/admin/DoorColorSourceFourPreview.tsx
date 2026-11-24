@@ -47,6 +47,8 @@ export type DoorColorSourceFourPreviewProps = {
   allSlotsSaved: boolean;
   /** True while the choice is being written. */
   saving?: boolean;
+  /** A saved confirmed color is locked: no slot can be checked, filled or confirmed. */
+  locked?: boolean;
   /** An empty Hex tile: confirm this hex. The caller fills, checks and saves it. */
   onPickHex?: (hex: string) => void;
   /** An empty Sherwin-Williams tile: open the Sherwin-Williams picker. */
@@ -85,6 +87,7 @@ export function DoorColorSourceFourPreview({
   doorProfile,
   allSlotsSaved,
   saving = false,
+  locked = false,
   onPickHex,
   onRequestSherwin,
   pendingSherwin = null,
@@ -253,7 +256,7 @@ export function DoorColorSourceFourPreview({
                   aria-checked={slot.checked}
                   aria-label={`Use ${slot.label} for 3D`}
                   data-testid={`four-source-check-${slot.source}`}
-                  disabled={!slot.checkable || saving}
+                  disabled={!slot.checkable || saving || locked}
                   onClick={() => {
                     if (!slot.checked) onChoose(slot);
                   }}
@@ -312,6 +315,7 @@ export function DoorColorSourceFourPreview({
                 <div className="flex flex-wrap items-center gap-1">
                   <input
                     data-testid="four-source-hex-input"
+                    disabled={locked}
                     aria-label="Hex color for this door"
                     value={hexDraft}
                     onChange={(event) => setHexDraft(event.target.value)}
@@ -320,6 +324,7 @@ export function DoorColorSourceFourPreview({
                   />
                   <input
                     aria-label="Pick hex"
+                    disabled={locked}
                     type="color"
                     value={draftHex ?? "#f2f0ea"}
                     onChange={(event) => setHexDraft(event.target.value)}
@@ -328,7 +333,7 @@ export function DoorColorSourceFourPreview({
                   <button
                     type="button"
                     data-testid="four-source-hex-use"
-                    disabled={!draftHex || saving}
+                    disabled={!draftHex || saving || locked}
                     onClick={() => {
                       if (!draftHex) return;
                       onPickHex(draftHex);
@@ -346,7 +351,7 @@ export function DoorColorSourceFourPreview({
                   <button
                     type="button"
                     data-testid="four-source-sherwin-confirm"
-                    disabled={saving}
+                    disabled={saving || locked}
                     onClick={onConfirmSherwin}
                     className="rounded-md border border-emerald-600 px-2 py-1 text-[11px] font-semibold text-emerald-700 disabled:cursor-not-allowed disabled:border-border disabled:text-muted-foreground"
                   >
@@ -356,6 +361,7 @@ export function DoorColorSourceFourPreview({
                   <button
                     type="button"
                     data-testid="four-source-sherwin-pick"
+                    disabled={locked}
                     onClick={onRequestSherwin}
                     className="rounded-md border border-[#1a2744] px-2 py-1 text-[11px] font-semibold text-[#1a2744]"
                   >

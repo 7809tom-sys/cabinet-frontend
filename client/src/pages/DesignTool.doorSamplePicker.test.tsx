@@ -165,7 +165,11 @@ describe("designer start shows catalog door sample photos", () => {
       }),
     );
     await launchDesigner();
-    fireEvent.click(screen.getByTestId("admin-auto-design-auto-build"));
+    fireEvent.click(screen.getAllByLabelText("Room layout")[0]);
+    await act(async () => {});
+    fireEvent.click(await screen.findByTestId("room-layout-popup-kitchen"));
+    await act(async () => {});
+    fireEvent.click(await screen.findByTestId("room-layout-popup-auto-design"));
     await act(async () => {});
     const step = await screen.findByTestId("fresh-room-catalog-setup");
     await screen.findByLabelText("Gray Slab door thumbnail");

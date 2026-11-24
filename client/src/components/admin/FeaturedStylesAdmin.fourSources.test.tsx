@@ -126,6 +126,11 @@ describe("Edit Door: four color sources side by side", () => {
     styles[0] = { ...styles[0], doorColorSource: "hex", doorColorSourceValue: { hex: "#224466" }, doorColorSourceUpdatedAt: "2026-11-12T19:00:00.000Z" };
     openFirst();
     expect(screen.getByTestId("four-source-check-hex").getAttribute("aria-checked")).toBe("true");
+    // The saved hex opens locked, so checking another slot needs an unlock first.
+    fireEvent.click(screen.getByTestId("four-source-check-original-image"));
+    expect(calls).toHaveLength(0);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByTestId("door-color-unlock"));
     fireEvent.click(screen.getByTestId("four-source-check-original-image"));
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ doorColorSourceSelection: { source: "original-image" } });

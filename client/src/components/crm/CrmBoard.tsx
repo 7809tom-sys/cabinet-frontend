@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
+import { CRM_DESIGN_STAMP_LABELS, designSavedTitle, formatDesignSavedDate } from "@/lib/crmDesignStamps";
 import { crmBoardQueryInput, dealCustomerInput } from "@/lib/affiliateSiteScope";
 import { designOpenPath } from "@/lib/designOwnerScope";
 import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
@@ -49,6 +50,8 @@ import { CrmTableView, type TableDeal } from "@/components/crm/monday/CrmTableVi
 import { CrmPipelineTotals } from "@/components/crm/monday/CrmPipelineTotals";
 import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/CrmEmailWorkspace";
 import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
+import { CustomerListImportAdminDialog } from "@/components/crm/outreach/CustomerListImportAdminDialog";
+import { OutreachPanel } from "@/components/crm/outreach/OutreachPanel";
 
 type CustomerSummary = { text: string; href: string; customerKey: string };
 
@@ -118,6 +121,9 @@ interface DealRow {
   imageGeneratedCount?: number | null;
   lastImageGeneratedAt?: string | Date | null;
   saleRefundedAt?: string | Date | null;
+  // Stamped automatically by the server when a linked design is saved. Read-only.
+  firstDesignSavedAt?: string | Date | null;
+  lastDesignSavedAt?: string | Date | null;
 }
 
 type CrmInvoicePrefill = {
@@ -186,7 +192,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [crmView, setCrmView] = useState<"board" | "table" | "email">("board");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach">("board");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
@@ -317,6 +323,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
           </Select>
           <ImportLeadsDialog lang={lang} affiliateId={scopedAffiliateId} />
           <CustomerListImportDialog lang={lang} affiliateId={affiliateId} />
+          {isMasterView && <CustomerListImportAdminDialog />}
           <NewDealDialog lang={lang} affiliateId={affiliateId} />
         </div>
       </div>
@@ -326,14 +333,14 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(["board", "table", "email"] as const).map((view) => (
+        {(isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)).map((view) => (
           <button
             key={view}
             type="button"
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : "Email"}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : "Outreach"}
           </button>
         ))}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
@@ -411,6 +418,8 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
           onOpen={setOpenDealId}
           onPatch={(id, patch) => inlineUpdate.mutate({ id, ...patch })}
         />
+      ) : crmView === "outreach" && isMasterView ? (
+        <OutreachPanel />
       ) : crmView === "email" ? (
         <CrmEmailWorkspace audience={boardScope === "affiliate" ? "affiliate" : "admin"} showConnections={isMasterView} prefill={emailPrefill} />
       ) : (
@@ -512,6 +521,11 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       )}
       {deal.contactEmail && <div className="text-[11px] text-muted-foreground truncate">{deal.contactEmail}</div>}
       {deal.contactPhone && <div className="text-[11px] text-muted-foreground">{deal.contactPhone}</div>}
+      {deal.firstDesignSavedAt && (
+        <div className="text-[10px] text-muted-foreground" data-testid="crm-card-first-design-saved" title={designSavedTitle(deal.firstDesignSavedAt)}>
+          {CRM_DESIGN_STAMP_LABELS.first[lang]} {formatDesignSavedDate(deal.firstDesignSavedAt, lang)}
+        </div>
+      )}
       {summary && <CustomerActivityLine text={summary.text} href={summary.href} nested />}
       <div className="flex items-center justify-between mt-2">
         <span className="text-xs font-semibold text-foreground">{money(deal.estimatedValue)}</span>
@@ -851,6 +865,17 @@ function DealDrawer({ dealId, lang, summary, onClose, onCompose }: { dealId: num
             </SheetHeader>
             <div className="space-y-4 mt-4">
               <CrmDueBanner nextFollowUpAt={deal.nextFollowUpAt} />
+              {/* Automatic dates: set by the server on design save, never edited here. */}
+              <dl className="grid grid-cols-2 gap-2 rounded-md border border-border p-2 text-xs" data-testid="crm-design-saved-dates">
+                <div>
+                  <dt className="text-muted-foreground">{CRM_DESIGN_STAMP_LABELS.first[lang]}</dt>
+                  <dd className="font-medium" title={designSavedTitle(deal.firstDesignSavedAt)}>{formatDesignSavedDate(deal.firstDesignSavedAt, lang)}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">{CRM_DESIGN_STAMP_LABELS.last[lang]}</dt>
+                  <dd className="font-medium" title={designSavedTitle(deal.lastDesignSavedAt)}>{formatDesignSavedDate(deal.lastDesignSavedAt, lang)}</dd>
+                </div>
+              </dl>
               <CustomerGeneratedImages customerId={deal.id} customerKind="crm" title="Generated images" />
               <Button type="button" variant="outline" onClick={() => onCompose?.({
                 dealId: deal.id,

@@ -65,6 +65,7 @@ import EmailSettingsAdmin from "@/components/admin/EmailSettingsAdmin";
 import BrandingSettingsAdmin from "@/components/admin/BrandingSettingsAdmin";
 import NotificationSettingsAdmin from "@/components/admin/NotificationSettingsAdmin";
 import ApiStatusAdmin from "@/components/admin/ApiStatusAdmin";
+import BackupsAdmin from "@/components/admin/BackupsAdmin";
 import QuickBooksAdmin from "@/components/admin/QuickBooksAdmin";
 import IncomingOrdersAdmin from "@/components/admin/IncomingOrdersAdmin";
 import MasterOrders from "@/components/admin/MasterOrders";
@@ -189,6 +190,7 @@ const GROUPS = [
       { value: "gemini-image-provider", label: "AI Image Provider" },
       { value: "elevenlabs-operations", label: "ElevenLabs Audio" },
       { value: "manual-ai-renders", label: "Manual AI Renders" },
+      { value: "backups", label: "Backups" },
       { value: "team-notes", label: "Team Notes" },
       { value: "legal-pages", label: "Warranties & Legal" },
     ],
@@ -701,6 +703,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="gemini-image-provider" className="mt-6"><AdminTabErrorBoundary tabName="AI Image Provider"><GeminiImageProviderAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="elevenlabs-operations" className="mt-6"><AdminTabErrorBoundary tabName="ElevenLabs Audio"><ElevenLabsOperationsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="manual-ai-renders" className="mt-6"><AdminTabErrorBoundary tabName="Manual AI Renders"><ManualAiRenderQueueAdmin /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="backups" className="mt-6"><AdminTabErrorBoundary tabName="Backups"><BackupsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="team-notes" className="mt-6"><AdminTabErrorBoundary tabName="Team Notes"><AdminStickyNotes /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="legal-pages" className="mt-6"><AdminTabErrorBoundary tabName="Warranties & Legal"><LegalPagesOperationsAdmin /></AdminTabErrorBoundary></TabsContent>
 
