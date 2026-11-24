@@ -7,13 +7,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Boxes, Check, Droplets, Flame } from "lucide-react";
 import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
-import { autoDesignDefaultCenters, type AutoDesignDefaultMeasurement } from "@/lib/autoDesignDefaultCenters";
+import { autoDesignDefaultCenters, autoDesignWallUsableSpan, type AutoDesignDefaultMeasurement } from "@/lib/autoDesignDefaultCenters";
+import { centeredSinkRangePair, sinkBaseFitOptions, AUTO_DESIGN_SINK_BASE_WIDTHS, type Interval } from "@/lib/autoDesignWallPairAndSinkFit";
 import { AutoDesignIntakeSection } from "./AutoDesignIntakeSection";
 import { emptyAutoDesignIntake, hasPreference, intakeMissing, type AutoDesignIntake } from "@/lib/autoDesignFifteenRules";
 import { Checkbox } from "@/components/ui/checkbox";
 import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
 import { DEFAULT_OVER_RANGE_ANSWER } from "@/lib/overRangeCompanion";
-import type { RoomData } from "@/lib/design";
+import type { RoomData, WallOpening } from "@/lib/design";
 import type {
   DishwasherSideChoice,
   AutoDesignInputs,
@@ -70,6 +71,8 @@ type Props = {
    * graying the button out (Tom, owner voice, Nov 24 2026, 12:36 PM CT).
    */
   blockedNotice?: { message: string; actions?: { id: string; label: string; onClick: () => void }[] } | null;
+  /** Room openings, so Wall 2 auto-placement keeps the range off windows and both off doors. */
+  openings?: readonly WallOpening[];
 };
 type PointField = "sink" | "stove" | "dishwasher" | "refrigerator";
 type SinkBaseWidth = 30 | 33 | 36 | 42;
@@ -99,7 +102,7 @@ const defaultFieldValue = (measurement: AutoDesignDefaultMeasurement | null, fal
   ? { wallLabel: measurement.wallLabel, centerOffsetIn: String(measurement.centerOffsetIn) }
   : fallback);
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false, blockedNotice = null }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false, blockedNotice = null, openings = [] }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -179,13 +182,57 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     return autoDesignWallWidthRows(room, originCorner, runDirection).filter((row) => allowed.has(row.label));
   }, [layoutWallLabels, originCorner, room, runDirection]);
   const wallWidthText = (label: WallLabel) => wallWidths.find((row) => row.label === label)?.text ?? label;
+  const usableSpan = (label: WallLabel) => autoDesignWallUsableSpan({ room, layoutType, originCorner, runDirection, wallCount }, label);
+  /** Openings on one wall in measurement space, split into doors (block every base) and windows. */
+  const openingSpans = (label: WallLabel): { doors: Interval[]; windows: Interval[] } => {
+    const span = usableSpan(label);
+    const doors: Interval[] = [];
+    const windows: Interval[] = [];
+    if (!span?.engineWallId) return { doors, windows };
+    for (const opening of openings) {
+      if (opening.side !== span.engineWallId) continue;
+      const a = span.toMeasurement(opening.offset);
+      const b = span.toMeasurement(opening.offset + opening.width);
+      const interval = { start: Math.min(a, b), end: Math.max(a, b) };
+      (opening.kind === "window" ? windows : doors).push(interval);
+    }
+    return { doors, windows };
+  };
+  /**
+   * Tom (owner voice, Nov 24 2026, 12:27 PM CT): choosing Wall 2 for the sink or
+   * the range places both on Wall 2, centered as a pair; the customer can then
+   * readjust either center. Other walls keep their existing behavior.
+   */
+  const placeSinkAndRangeOnWall = (label: WallLabel): boolean => {
+    const span = usableSpan(label);
+    if (!span) return false;
+    const { doors, windows } = openingSpans(label);
+    const pair = centeredSinkRangePair({
+      lo: span.lo,
+      hi: span.hi,
+      sinkBaseWidthIn: sinkBaseWidth,
+      dishwasherSide: noDishwasher ? "none" : dishwasherSide,
+      includeStove: !omitted.stove,
+      blockedForRange: [...windows, ...doors],
+      blockedForSink: doors,
+    });
+    if (!pair) return false;
+    setEdited((current) => ({ ...current, sink: true, ...(pair.stoveCenterIn != null ? { stove: true } : {}) }));
+    setValues((current) => ({
+      ...current,
+      sink: { wallLabel: label, centerOffsetIn: String(pair.sinkCenterIn) },
+      ...(pair.stoveCenterIn != null ? { stove: { wallLabel: label, centerOffsetIn: String(pair.stoveCenterIn) } } : {}),
+    }));
+    return true;
+  };
   const selectWallOrOmit = (field: PointField, value: string) => {
     if (field !== "sink" && value === `omit-${field}`) {
       setOmitted((current) => ({ ...current, [field]: true }));
       return;
     }
-    setValue(field, { wallLabel: value as WallLabel });
     if (field !== "sink") setOmitted((current) => ({ ...current, [field]: false }));
+    if ((field === "sink" || field === "stove") && value === "Wall 2" && placeSinkAndRangeOnWall("Wall 2")) return;
+    setValue(field, { wallLabel: value as WallLabel });
   };
   const measurement = (field: PointField) => ({
     wallLabel: values[field].wallLabel,
@@ -232,6 +279,51 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
       return next;
     });
   }, [startingCenters, edited]);
+  /**
+   * Tom (owner voice, Nov 24 2026, 12:28 PM CT): a 36 in sink base is offered only
+   * when it qualifies at the sink spot (corner cabinet room, the other appliances
+   * on that wall and doorways reserved); when it qualifies, smaller sink bases are
+   * not offered. Otherwise 36 in is disabled with a reason and the largest width
+   * that fits is offered.
+   */
+  const sinkFit = useMemo(() => {
+    const label = values.sink.wallLabel;
+    const span = autoDesignWallUsableSpan({ room, layoutType, originCorner, runDirection, wallCount }, label);
+    if (!span) return null;
+    // Only customer-placed appliances are fixed obstacles; untouched starting centers are
+    // repacked around the sink base, so counting them would make the pick flip back and forth.
+    const obstacles: Interval[] = [];
+    if (edited.stove && !omitted.stove && values.stove.wallLabel === label && values.stove.centerOffsetIn.trim()) {
+      const c = Number(values.stove.centerOffsetIn);
+      if (Number.isFinite(c)) obstacles.push({ start: c - 15, end: c + 15 });
+    }
+    if (edited.refrigerator && !omitted.refrigerator && values.refrigerator.wallLabel === label && values.refrigerator.centerOffsetIn.trim()) {
+      const c = Number(values.refrigerator.centerOffsetIn);
+      const half = refrigeratorWidth / 2 + 1.5;
+      if (Number.isFinite(c)) obstacles.push({ start: c - half, end: c + half });
+    }
+    if (span.engineWallId) {
+      for (const opening of openings) {
+        if (opening.side !== span.engineWallId || opening.kind === "window") continue;
+        const a = span.toMeasurement(opening.offset);
+        const b = span.toMeasurement(opening.offset + opening.width);
+        obstacles.push({ start: Math.min(a, b), end: Math.max(a, b) });
+      }
+    }
+    const typedCenter = edited.sink && values.sink.centerOffsetIn.trim() ? Number(values.sink.centerOffsetIn) : null;
+    return sinkBaseFitOptions({
+      lo: span.lo,
+      hi: span.hi,
+      sinkCenterIn: typedCenter != null && Number.isFinite(typedCenter) ? typedCenter : null,
+      dishwasherSide: noDishwasher ? "none" : dishwasherSide,
+      obstacles,
+    });
+  }, [dishwasherSide, edited.refrigerator, edited.sink, edited.stove, layoutType, noDishwasher, omitted.refrigerator, omitted.stove, openings, originCorner, refrigeratorWidth, room, runDirection, values.refrigerator, values.sink, values.stove, wallCount]);
+  useEffect(() => {
+    if (!sinkFit || sinkFit.recommended == null) return;
+    if (sinkFit.offered.includes(sinkBaseWidth)) return;
+    setSinkBaseWidth(sinkFit.recommended as SinkBaseWidth);
+  }, [sinkBaseWidth, sinkFit]);
   const submit = () => {
     setSubmitError(null);
     const missing = intakeMissing(intake);
@@ -431,8 +523,19 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
               <Label htmlFor="auto-design-sink-base-size">Sink base size</Label>
               <Select value={String(sinkBaseWidth)} onValueChange={(value) => setSinkBaseWidth(Number(value) as SinkBaseWidth)}>
                 <SelectTrigger id="auto-design-sink-base-size" aria-label="Sink base size"><SelectValue /></SelectTrigger>
-                <SelectContent>{([30, 33, 36, 42] as const).map((width) => <SelectItem key={width} value={String(width)}>SB{width} · {width}″</SelectItem>)}</SelectContent>
+                <SelectContent>{AUTO_DESIGN_SINK_BASE_WIDTHS
+                  .filter((width) => !sinkFit || sinkFit.offered.includes(width) || sinkFit.disabled.some((entry) => entry.width === width))
+                  .map((width) => (
+                    <SelectItem key={width} value={String(width)} disabled={Boolean(sinkFit && !sinkFit.offered.includes(width))} data-testid={`auto-design-sink-base-option-${width}`}>
+                      SB{width} · {width}″
+                    </SelectItem>
+                  ))}</SelectContent>
               </Select>
+              {sinkFit && !sinkFit.qualifies36 && sinkFit.disabled.find((entry) => entry.width === 36) && (
+                <p className="text-xs font-medium text-amber-800" data-testid="auto-design-sink-base-36-reason">
+                  {sinkFit.disabled.find((entry) => entry.width === 36)!.reason}
+                </p>
+              )}
               <p className="text-xs text-muted-foreground">Builds the selected, source-priced sink base—not a generic sink appliance.</p>
             </div>
             <div className="space-y-1.5">

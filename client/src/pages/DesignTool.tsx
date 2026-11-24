@@ -24239,6 +24239,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	        <AutoDesignDialog
 	          open={autoDesignOpen}
 	          blockedNotice={autoDesignBlockedNotice}
+	          openings={openings}
 	          onOpenChange={setAutoDesignOpen}
 	          onWallGuideChange={setAutoDesignWallGuideSelection}
 	          onLoadSixWallTrainingRoom={isAdmin ? loadAutoDesignSixWallTrainingRoom : undefined}

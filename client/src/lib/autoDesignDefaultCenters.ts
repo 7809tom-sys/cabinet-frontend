@@ -449,3 +449,23 @@ export function autoDesignDefaultCenters(input: AutoDesignDefaultCentersInput): 
   }
   return result;
 }
+
+/**
+ * Usable span of one layout wall in measurement space (inches from the wall's
+ * labeled start), with the corner-cabinet room (AUTO_DESIGN_DEFAULT_CORNER_CLEAR_IN)
+ * already taken off each end that meets another run of the layout. Null when the
+ * wall is not part of the chosen layout or the room has no such wall.
+ */
+export function autoDesignWallUsableSpan(
+  input: Pick<AutoDesignDefaultCentersInput, "room" | "layoutType" | "originCorner" | "runDirection" | "wallCount">,
+  label: WallLabel,
+): { lo: number; hi: number; length: number; engineWallId: string | null; toMeasurement: (physicalAlong: number) => number } | null {
+  const room = input.room ?? DEFAULT_ROOM;
+  const labels = layoutWallLabels(input.layoutType, input.wallCount ?? 4);
+  if (!labels.includes(label)) return null;
+  const full = { ...input, sinkBaseWidthIn: 36, dishwasherSide: "none" as const, includeStove: false, includeRefrigerator: false, refrigeratorWidthIn: 36 };
+  const space = wallSpaces(full, room, labels, AUTO_DESIGN_DEFAULT_CORNER_CLEAR_IN).find((entry) => entry.label === label);
+  if (!space) return null;
+  const ref = wallLabelToEngineWallId(label, room, input.originCorner, input.runDirection);
+  return { lo: space.lo.at, hi: space.hi.at, length: space.length, engineWallId: ref?.engineWallId ?? null, toMeasurement: space.toMeasurement };
+}
