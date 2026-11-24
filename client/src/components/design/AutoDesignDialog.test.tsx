@@ -276,3 +276,41 @@ describe("AutoDesignDialog", () => {
     }));
   });
 });
+
+describe("AutoDesignDialog child pickers", () => {
+  const outside = () => {
+    const el = document.createElement("button");
+    document.body.appendChild(el);
+    return el;
+  };
+
+  it("stays open when focus or a click lands outside while a child picker is open", async () => {
+    const onOpenChange = vi.fn();
+    render(<AutoDesignDialog open childPickerOpen onOpenChange={onOpenChange} onBuild={() => ({ ok: true })} />);
+    const el = outside();
+    await new Promise((r) => setTimeout(r, 20));
+    el.focus();
+    el.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    el.remove();
+  });
+
+  it("still closes on an outside click when no child picker is open", async () => {
+    const onOpenChange = vi.fn();
+    render(<AutoDesignDialog open onOpenChange={onOpenChange} onBuild={() => ({ ok: true })} />);
+    const el = outside();
+    await new Promise((r) => setTimeout(r, 20));
+    el.focus();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    el.remove();
+  });
+
+  it("still closes from its own Cancel button", () => {
+    const onOpenChange = vi.fn();
+    render(<AutoDesignDialog open childPickerOpen onOpenChange={onOpenChange} onBuild={() => ({ ok: true })} />);
+    fireEvent.click(screen.getByText("Cancel"));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});

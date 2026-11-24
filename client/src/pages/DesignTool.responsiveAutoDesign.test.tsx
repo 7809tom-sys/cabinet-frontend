@@ -215,31 +215,42 @@ async function renderDesigner(width: number) {
   return view;
 }
 
-/** The visible Auto-Design trigger for this width, from any of the three surfaces. */
-function triggerAt(width: number): HTMLElement {
-  const candidates = [
-    screen.queryByTestId("admin-auto-design-auto-build"),
-    screen.queryByTestId("mobile-auto-design-auto-build"),
-  ];
-  const visible = candidates.find((element) => visibleAt(element, width));
-  expect(visible, `an Auto-Design trigger must be visible at ${width}px`).toBeTruthy();
-  return visible as HTMLElement;
+/**
+ * Auto-Design opens from the Kitchen section of the "Start with a room layout"
+ * popup wherever that popup is reachable from an existing plan: the toolbar
+ * "Room layout" button on desktop, and More > Room layout on a tablet workspace
+ * (1024px+). Below 1024px (phone, iPad portrait) the popup has no entry on an
+ * existing plan, so the top-actions Auto-Design button stays as the only route.
+ */
+async function openLayoutPopup(width: number) {
+  const toolbarButton = screen.queryAllByLabelText("Room layout").find((element) => visibleAt(element, width));
+  if (toolbarButton) {
+    fireEvent.click(toolbarButton);
+  } else {
+    fireEvent.click(screen.getByTestId("compact-workspace-more-trigger"));
+    await act(async () => {});
+    fireEvent.click(within(await screen.findByRole("dialog")).getByText("Room layout"));
+  }
+  await act(async () => {});
+  return screen.findByTestId("room-layout-popup-picker");
 }
 
-/** The visible dishwasher-side picker for this width, from any of the three surfaces. */
-function dishwasherPickerAt(width: number): HTMLSelectElement {
-  const candidates = [
-    ...screen.queryAllByLabelText("Dishwasher side"),
-  ].filter((element) => visibleAt(element, width));
-  expect(candidates.length, `exactly one dishwasher-side picker at ${width}px`).toBe(1);
-  return candidates[0] as HTMLSelectElement;
+/** The Auto-Design opener for this width: popup Kitchen button at 1024px+, top-actions button below. */
+async function triggerAt(width: number): Promise<HTMLButtonElement> {
+  if (width < 1024) {
+    const button = screen.getByTestId("mobile-auto-design-auto-build");
+    expect(visibleAt(button, width)).toBe(true);
+    return button as HTMLButtonElement;
+  }
+  await openLayoutPopup(width);
+  fireEvent.click(screen.getByTestId("room-layout-popup-kitchen"));
+  await act(async () => {});
+  return (await screen.findByTestId("room-layout-popup-auto-design")) as HTMLButtonElement;
 }
 
-function noteAt(width: number): HTMLElement | null {
-  const candidates = screen.queryAllByTestId(/auto-design-(refrigerator-anchor|blocked)-note/).filter((element) => visibleAt(element, width));
-  if (candidates.length === 0) return null;
-  expect(candidates.length).toBe(1);
-  return candidates[0] as HTMLElement;
+function noteText(width: number): string {
+  if (width < 1024) return screen.getByTestId("mobile-auto-design-controls").textContent ?? "";
+  return screen.getByTestId("room-layout-popup-auto-design-wrap").textContent ?? "";
 }
 
 beforeEach(() => {
@@ -260,115 +271,68 @@ async function expectAutoDesignVendorStep() {
   expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
 }
 
-describe("Auto-Design is identical on phone, tablet, and desktop", () => {
+describe("Auto-Design after the toolbar cleanup, on phone, tablet, and desktop", () => {
+  it("opens the popup collapsed and shows an enabled Auto-Design in Kitchen at 1280px", async () => {
+    await renderDesigner(1280);
+    await openLayoutPopup(1280);
+    expect(screen.getByTestId("room-layout-popup-kitchen").getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("room-layout-popup-auto-design")).toBeNull();
+    fireEvent.click(screen.getByTestId("room-layout-popup-kitchen"));
+    const trigger = (await screen.findByTestId("room-layout-popup-auto-design")) as HTMLButtonElement;
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute("aria-label")).toBe("Auto-Design");
+    expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen from four fixed fixture anchors");
+  });
+
   for (const width of [375, 768, 1280]) {
-    it(`exposes one trigger, one dishwasher-side picker, and an enabled plan-free state at ${width}px`, async () => {
+    it(`the old desktop toolbar button, desktop dishwasher picker, More-sheet row and 3D button are gone at ${width}px`, async () => {
       await renderDesigner(width);
-
-      const trigger = triggerAt(width);
-      expect((trigger as HTMLButtonElement).disabled).toBe(false);
-      expect(trigger.getAttribute("aria-label")).toBe("Auto-Design");
-      expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen from four fixed fixture anchors");
-
-      const picker = dishwasherPickerAt(width);
-      expect(picker.value).toBe("right");
-      expect(Array.from(picker.options).map((option) => option.textContent)).toEqual([
-        "Left of sink",
-        "Right of sink",
-        "No dishwasher",
-      ]);
-
-      // No refrigerator in the layout means no anchor note and no blocked note anywhere.
-      expect(noteAt(width)).toBeNull();
-
-      // The More-sheet row stays in place too; it lives inside a closed sheet
-      // here and is exercised by its own test below.
+      for (const id of ["admin-auto-design-auto-build", "dishwasher-side-control", "three-d-floating-auto-design", "more-sheet-auto-design"]) {
+        expect(screen.queryByTestId(id), id).toBeNull();
+      }
+      if (width < 1024) {
+        fireEvent.click(screen.getByTitle("More options"));
+        await act(async () => {});
+        await screen.findByRole("dialog");
+        expect(screen.queryByTestId("more-sheet-auto-design")).toBeNull();
+      }
     });
 
-    it(`keeps the trigger ENABLED and explains the refrigerator as a fixed anchor at ${width}px`, async () => {
+    it(`keeps the trigger ENABLED and shows the refrigerator anchor note at ${width}px`, async () => {
       seedDraft([refrigerator]);
       await renderDesigner(width);
-
-      const expected = autoDesignControlState({
-        audienceAllowed: true,
-        layoutLocked: false,
-        placedCount: 0,
-        refrigeratorAnchor: true,
-      });
-      const trigger = triggerAt(width) as HTMLButtonElement;
-      // The bug this pins: a placed refrigerator used to gray the control out.
-      expect(expected.enabled).toBe(true);
+      const trigger = await triggerAt(width);
       expect(trigger.disabled).toBe(false);
       expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen around your refrigerator");
-
-      // The visible sentence names the refrigerator as the anchor the build
-      // designs around; it is never a reason to stand down.
-      const note = noteAt(width);
-      expect(note, `the refrigerator anchor note must be visible at ${width}px`).toBeTruthy();
-      expect(note!.textContent).toBe(AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE);
-      expect(note!.textContent).not.toMatch(/isn't available/i);
-
-      // The dishwasher-side choice stays available beside it.
-      expect(dishwasherPickerAt(width).value).toBe("right");
+      expect(noteText(width)).toContain(AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE);
     });
 
     it(`keeps a hand-placed cabinet blocking the trigger with the same visible reason at ${width}px`, async () => {
       seedDraft([baseCabinet]);
       await renderDesigner(width);
-
-      const trigger = triggerAt(width) as HTMLButtonElement;
+      const trigger = await triggerAt(width);
       expect(trigger.disabled).toBe(true);
       expect(trigger.getAttribute("title")).toBe("Start Auto-Design from an empty Designer");
-
-      // The reason is on screen, not just in a title tooltip a phone cannot show.
-      const note = noteAt(width);
-      expect(note, `the empty-plan reason must be visible at ${width}px`).toBeTruthy();
-      expect(note!.textContent).toBe(AUTO_DESIGN_EMPTY_PLAN_NOTE);
-      expect(AUTO_DESIGN_EMPTY_PLAN_NOTE).not.toBe(AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE);
+      expect(noteText(width)).toContain(AUTO_DESIGN_EMPTY_PLAN_NOTE);
     });
   }
 
-  it("keeps the phone and tablet trio on its own wrapping row so 375px cannot overflow sideways", async () => {
-    await renderDesigner(375);
-
-    const cluster = screen.getByTestId("mobile-designer-top-actions");
-    expect(cluster.className).toContain("flex-wrap");
-    expect(cluster.className).toContain("min-w-0");
-    expect(cluster.className).toContain("max-w-full");
-    expect(visibleAt(cluster, 375)).toBe(true);
-
-    const controls = screen.getByTestId("mobile-auto-design-controls");
-    expect(controls).toBe(cluster.querySelector('[data-testid="mobile-auto-design-controls"]'));
-    expect(visibleAt(controls, 768)).toBe(true);
-    expect(visibleAt(controls, 1280)).toBe(false);
-    // A full-basis wrapping row with min-w-0/truncate controls cannot push the
-    // toolbar wider than the viewport at 375px, and `md:basis-auto` lets the same
-    // trio share the icon row once there is room at 768px.
-    expect(controls.className).toContain("basis-full");
-    expect(controls.className).toContain("md:basis-auto");
-    expect(controls.className).toContain("min-w-0");
-    expect(controls.className).toContain("flex-wrap");
-    expect(controls.className).toContain("justify-end");
-    expect(within(controls).getByTestId("mobile-auto-design-auto-build").className).toContain("min-w-0");
-    const picker = within(controls).getByLabelText("Dishwasher side");
-    expect(picker.className).toContain("max-w-");
-    expect(screen.getByTestId("mobile-designer-top-actions").className).not.toContain("overflow-x-scroll");
-  });
-
-  it("keeps the desktop toolbar trio out of the phone and tablet toolbar", async () => {
-    await renderDesigner(1280);
-    expect(visibleAt(screen.getByTestId("admin-auto-design-auto-build"), 1280)).toBe(true);
-    expect(visibleAt(screen.getByTestId("admin-auto-design-auto-build"), 1023)).toBe(false);
-    expect(visibleAt(screen.getByTestId("mobile-auto-design-auto-build"), 1280)).toBe(false);
-    expect(visibleAt(screen.getByTestId("mobile-auto-design-auto-build"), 375)).toBe(true);
-  });
-
-  it("still shows the More-sheet row and keeps it on the same gate", async () => {
-    await renderDesigner(375);
+  it("below 1024px the Room layout popup has no entry on an existing plan, so the top-actions button must stay", async () => {
+    await renderDesigner(768);
+    expect(screen.queryAllByLabelText("Room layout").filter((element) => visibleAt(element, 768))).toHaveLength(0);
     fireEvent.click(screen.getByTitle("More options"));
     await act(async () => {});
-    const row = await screen.findByTestId("more-sheet-auto-design");
-    expect((row as HTMLButtonElement).disabled).toBe(false);
+    expect(within(await screen.findByRole("dialog")).queryByText("Room layout")).toBeNull();
+    expect(visibleAt(screen.getByTestId("mobile-auto-design-auto-build"), 768)).toBe(true);
+  });
+
+  it("the popup Auto-Design button closes the popup and opens the same measured-build dialog", async () => {
+    await renderDesigner(1280);
+    fireEvent.click(await triggerAt(1280));
+    await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
+    // The vendor / door-style step comes first; Continue (covered with mocked
+    // vendor lines in DesignTool.autoDesignVendorStep.test.tsx) opens the dialog.
+    await expectAutoDesignVendorStep();
   });
 });
 
@@ -383,7 +347,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
       placedCount: 0,
       refrigeratorAnchor: false,
     });
-    const trigger = triggerAt(1280) as HTMLButtonElement;
+    const trigger = await triggerAt(1280);
     expect(expected.enabled).toBe(true);
     expect(trigger.disabled).toBe(false);
     expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen from four fixed fixture anchors");
@@ -397,7 +361,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     seedDraft([sinkBase]);
     await renderDesigner(375);
 
-    const trigger = triggerAt(375) as HTMLButtonElement;
+    const trigger = await triggerAt(375);
     expect(trigger.disabled).toBe(false);
     fireEvent.click(trigger);
     await act(async () => {});
@@ -408,7 +372,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     seedDraft([sinkBase, baseCabinet]);
     await renderDesigner(1280);
 
-    const trigger = triggerAt(1280) as HTMLButtonElement;
+    const trigger = await triggerAt(1280);
     expect(trigger.disabled).toBe(true);
     fireEvent.click(trigger);
     await act(async () => {});
@@ -419,7 +383,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     seedDraft([refrigerator]);
     await renderDesigner(1280);
 
-    const trigger = triggerAt(1280) as HTMLButtonElement;
+    const trigger = await triggerAt(1280);
     expect(trigger.disabled).toBe(false);
     fireEvent.click(trigger);
     await act(async () => {});

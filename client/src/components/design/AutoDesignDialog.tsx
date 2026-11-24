@@ -55,6 +55,13 @@ type Props = {
   /** Opens the range pop-up. The pick is auto-placed at the measured range center. */
   onOpenRangePicker?: () => void;
   selectedRangeLabel?: string | null;
+  /**
+   * True while the range, tall-cabinet or sink pop-up is open over this one. Those pop-ups
+   * are separate dialogs, so Radix treats focus or a click inside them as "outside" this
+   * non-modal dialog and would close it. While one is open, outside dismissal is blocked
+   * so the person can keep choosing the other appliances.
+   */
+  childPickerOpen?: boolean;
 };
 type PointField = "sink" | "stove" | "dishwasher" | "refrigerator";
 type SinkBaseWidth = 30 | 33 | 36 | 42;
@@ -81,7 +88,7 @@ const omissionLabels: Record<(typeof applianceFields)[number], string> = {
 };
 type FieldValue = { wallLabel: WallLabel; centerOffsetIn: string };
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -198,9 +205,13 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     if (!result.ok) setSubmitError(result.message);
   };
 
+  const keepOpenForChildPicker = (event: { preventDefault: () => void }) => {
+    if (childPickerOpen) event.preventDefault();
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      <DialogContent hideOverlay className="max-h-[90vh] w-[calc(100vw-2rem)] sm:max-w-2xl 2xl:!left-auto 2xl:!right-4 2xl:!w-[28rem] 2xl:!translate-x-0 overflow-y-auto overflow-x-hidden" data-testid="auto-design-auto-build-dialog">
+      <DialogContent hideOverlay onInteractOutside={keepOpenForChildPicker} onPointerDownOutside={keepOpenForChildPicker} onFocusOutside={keepOpenForChildPicker} className="max-h-[90vh] w-[calc(100vw-2rem)] sm:max-w-2xl 2xl:!left-auto 2xl:!right-4 2xl:!w-[28rem] 2xl:!translate-x-0 overflow-y-auto overflow-x-hidden" data-testid="auto-design-auto-build-dialog">
 	        <DialogHeader>
 	          <DialogTitle>Auto-Design</DialogTitle>
 	          <DialogDescription>

@@ -390,6 +390,7 @@ import { CornerView, type CornerId } from "@/components/design/CornerView";
 import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
+import { RoomLayoutPopupPicker } from "@/components/design/RoomLayoutPopupPicker";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
 import { AutoDesignAccessDialog } from "@/components/design/AutoDesignAccessDialog";
 import { useAutoDesignAccess } from "@/hooks/useAutoDesignAccess";
@@ -17743,7 +17744,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	      immersive={canvasOnly}
 	      onToggleImmersive={toggleCanvasOnly}
 	      floatingQuickActions={threeDFloatingQuickActions}
-	      floatingAutoDesignAction={threeDFloatingAutoDesignAction}
+	      floatingAutoDesignAction={canvasOnly ? threeDFloatingAutoDesignAction : undefined}
 	      scene={resolvedInteractive3dScene}
 	      placed={deferredCountertopGeometry.threeDPlaced}
 	      onGeometryRendered={() => setPaintedCountertopGeometry(deferredCountertopGeometry)}
@@ -18245,52 +18246,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           >
             Tablet preview
           </Button>
-        )}
-        {/* Auto-Design trigger, dishwasher-side picker, and the visible reason
-            while the control is disabled, for the 1024px+ toolbar. The
-            phone/tablet top-actions cluster below renders the same trio from the
-            same `autoDesignControl`, so no width loses a feature or its disabled
-            reason. A refrigerator on the plan is never a reason: it is the fixed
-            anchor the build designs around, and `autoDesignAnchorNote` says so. */}
-        {autoDesignAvailable && (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="hidden lg:inline-flex shrink-0 border-[#d4a75a] text-[#765416] hover:bg-[#fff8e8] disabled:opacity-60"
-              onClick={openAutoDesign}
-              disabled={!autoDesignControl.enabled}
-              data-testid="admin-auto-design-auto-build"
-              data-auto-design-surface="desktop"
-              title={autoDesignControl.title}
-              aria-label="Auto-Design"
-            >
-              <Ruler className="mr-1.5 h-3.5 w-3.5" /> Auto-Design
-            </Button>
-            <label className="hidden items-center gap-1 text-[11px] text-[#765416] lg:inline-flex" data-testid="dishwasher-side-control" data-auto-design-surface="desktop">
-              Dishwasher side
-              <select
-                aria-label="Dishwasher side"
-                className="h-8 rounded-md border border-[#d4a75a] bg-white px-1 text-[11px] text-[#1a2744]"
-                value={dishwasherSidePreference ?? resolveDishwasherSide({ preference: null, originCorner: "left" })}
-                onChange={(event) => setDishwasherSidePreference(parseDishwasherSideChoice(event.target.value))}
-              >
-                <option value="left">Left of sink</option>
-                <option value="right">Right of sink</option>
-                <option value="none">No dishwasher</option>
-              </select>
-            </label>
-            {autoDesignBlockedNote && (
-              <span data-testid="auto-design-blocked-note" data-auto-design-surface="desktop" className="hidden max-w-[14rem] text-[11px] leading-snug text-muted-foreground lg:inline">
-                {autoDesignBlockedNote}
-              </span>
-            )}
-            {autoDesignAnchorNote && (
-              <span data-testid="auto-design-refrigerator-anchor-note" data-auto-design-surface="desktop" className="hidden max-w-[14rem] text-[11px] leading-snug text-[#765416] lg:inline">
-                {autoDesignAnchorNote}
-              </span>
-            )}
-          </>
         )}
         <div className={`${isCompactWorkspace ? "hidden" : "hidden lg:flex"} shrink-0 items-center gap-1`}>
           <Button
@@ -18939,27 +18894,6 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                    <span className="flex-1 text-left">Peninsula Wizard</span>
 	                    <Badge variant="secondary" className="text-[10px]">fast layout</Badge>
 	                  </button>
-                  {autoDesignAvailable && (
-                    <button
-                      data-testid="more-sheet-auto-design"
-                      disabled={!autoDesignControl.enabled}
-                      onClick={() => { setMoreSheetOpen(false); setTimeout(openAutoDesign, 120); }}
-                      title={autoDesignControl.title}
-                      className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted disabled:opacity-50 transition-colors"
-                    >
-                      <Ruler className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="flex-1 text-left">
-                        Auto-Design
-                        {autoDesignBlockedNote && (
-                          <span className="block text-[11px] font-normal text-muted-foreground">{autoDesignBlockedNote}</span>
-                        )}
-                        {autoDesignAnchorNote && (
-                          <span data-testid="more-sheet-auto-design-anchor-note" className="block text-[11px] font-normal text-[#765416]">{autoDesignAnchorNote}</span>
-                        )}
-                      </span>
-                      <Badge variant="secondary" className="text-[10px]">measured</Badge>
-                    </button>
-                  )}
 	                  <button disabled={layoutLocked} onClick={autoFillActiveWall} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm hover:bg-muted disabled:opacity-50 transition-colors">
                     <Wand2 className="h-4 w-4 text-muted-foreground shrink-0" />
                     <span className="flex-1 text-left">{t("dt_sh_autofill_active")}</span>
@@ -21460,7 +21394,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	            // Canvas-only mode hides the toolbar, the phone top actions and the
 	            // More sheet, so this rail is the only way into Auto-Design on a
 	            // tablet in fullscreen. Same opener, same shared enabled rule.
-	            onAutoDesign={autoDesignAvailable ? openAutoDesign : undefined}
+	            onAutoDesign={autoDesignAvailable && canvasOnly ? openAutoDesign : undefined}
 	            autoDesignDisabled={!autoDesignControl.enabled}
 	            autoDesignDisabledReason={autoDesignControl.title || undefined}
 	          />
@@ -24130,6 +24064,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          onOpenSinkPicker={() => openAutoDesignSinkPicker("replace")}
 	          selectedSinkName={autoDesignSinkPicks[0]?.name ?? null}
 	          onOpenRangePicker={() => setAutoDesignRangeOpen(true)}
+	          childPickerOpen={autoDesignRangeOpen || autoDesignTallOpen || autoDesignSinkPrompt != null}
 	          selectedRangeLabel={autoDesignRangePick ? `${autoDesignRangePick.label} (${autoDesignRangePick.widthIn}″)` : null}
 	          onOpenTallPicker={() => setAutoDesignTallOpen(true)}
 	          selectedTallSummary={autoDesignTallPicks.length > 0
@@ -26214,6 +26149,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	            </DialogDescription>
 	          </DialogHeader>
 	          <div className="space-y-5 p-5">
+	            <RoomLayoutPopupPicker
+	              autoDesign={{ onClick: () => { setLayoutStarterOpen(false); setTimeout(openAutoDesign, 120); }, enabled: autoDesignControl.enabled, title: autoDesignControl.title, note: autoDesignBlockedNote, anchorNote: autoDesignAnchorNote }}
+	              bathroom={(
 	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
 	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
 	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
@@ -26230,6 +26168,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              {(placed.length > 0 || openings.length > 0 || Boolean(island) || sinks.length > 0 || furniture.length > 0 || ponyWalls.length > 0 || annotations.length > 0) && <p className="mt-2 text-xs font-medium text-amber-800">Templates start a blank room. Save this design and start a new one before choosing a template; existing work will not be moved or erased.</p>}
 	              {layoutLocked && <p className="mt-2 text-xs font-medium text-amber-800">Unlock the room layout before choosing a template.</p>}
 	            </section>
+	              )}
+	              closet={(
 	            <section data-testid="closet-room-templates" className="rounded-xl border border-[#c8a972]/60 bg-[#faf7f0] p-4">
 	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bedroom closet · one-click room templates</div>
 	              <p className="mb-3 text-xs text-stone-600">Room width × interior depth. Bi-fold dimensions are nominal planning openings, not an orderable door or a rough-opening specification.</p>
@@ -26269,6 +26209,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              {(placed.length > 0 || openings.length > 0 || Boolean(island) || sinks.length > 0 || furniture.length > 0 || ponyWalls.length > 0 || annotations.length > 0) && <p className="mt-2 text-xs font-medium text-amber-800">Templates start a blank room. Save this design and start a new one before choosing a template; existing work will not be moved or erased.</p>}
 	              {layoutLocked && <p className="mt-2 text-xs font-medium text-amber-800">Unlock the room layout before choosing a template.</p>}
 	            </section>
+	              )}
+	              kitchen={(
 	            <RoomLayoutStarter
               selectedStyleId={styleId}
               selectedDistributorId={selectedStyleDistributorId}
@@ -26287,6 +26229,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               }}
 	              onLayoutSelected={handleRoomLayoutSelected}
 	              onBeginnerRoomApplied={() => setBeginnerFirstCabinetGuideOpen(false)}
+	            />
+	              )}
 	            />
           </div>
         </DialogContent>

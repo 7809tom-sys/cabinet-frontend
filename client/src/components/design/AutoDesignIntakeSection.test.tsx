@@ -64,6 +64,16 @@ describe("AutoDesignIntakeSection", () => {
     expect(last.canMove.rangeHookup).toBe(false);
   });
 
+  it("renders the fridge water line question and No sets canMove.fridgeWater false", () => {
+    const onChange = vi.fn();
+    const { container } = render(<Harness onChange={onChange} />);
+    expect(container.textContent).toContain("Sink plumbing");
+    expect(container.textContent).toContain("Ice maker / fridge water line");
+    fireEvent.click(screen.getByTestId("intake-move-fridgeWater-no"));
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][0] as AutoDesignIntake;
+    expect(last.canMove.fridgeWater).toBe(false);
+  });
+
   it("contains no free-text inputs or textareas", () => {
     const onChange = vi.fn();
     const { container } = render(<Harness onChange={onChange} />);

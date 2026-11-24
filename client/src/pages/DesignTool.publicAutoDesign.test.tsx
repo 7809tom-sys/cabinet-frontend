@@ -248,17 +248,25 @@ async function renderDesigner(width: number) {
   return view;
 }
 
-function triggerAt(width: number): HTMLElement {
-  const candidates = [
-    screen.queryByTestId("admin-auto-design-auto-build"),
-    screen.queryByTestId("mobile-auto-design-auto-build"),
-  ];
-  const visible = candidates.find((element) => visibleAt(element, width));
-  expect(
-    visible,
-    `a public Auto-Design trigger must be visible at ${width}px`,
-  ).toBeTruthy();
-  return visible as HTMLElement;
+/** Popup Kitchen button at 1024px+; the top-actions button stays below 1024px. */
+async function triggerAt(width: number): Promise<HTMLElement> {
+  if (width < 1024) {
+    const button = screen.getByTestId("mobile-auto-design-auto-build");
+    expect(visibleAt(button, width)).toBe(true);
+    return button;
+  }
+  const toolbarButton = screen.queryAllByLabelText("Room layout").find((element) => visibleAt(element, width));
+  if (toolbarButton) {
+    fireEvent.click(toolbarButton);
+  } else {
+    fireEvent.click(screen.getByTestId("compact-workspace-more-trigger"));
+    await act(async () => {});
+    fireEvent.click(within(await screen.findByRole("dialog")).getByText("Room layout"));
+  }
+  await act(async () => {});
+  fireEvent.click(await screen.findByTestId("room-layout-popup-kitchen"));
+  await act(async () => {});
+  return screen.findByTestId("room-layout-popup-auto-design");
 }
 
 /**
@@ -285,15 +293,9 @@ describe("Auto-Design is public", () => {
       await renderDesigner(width);
       await signInAsVisitor();
 
-      const trigger = triggerAt(width);
+      const trigger = await triggerAt(width);
       expect((trigger as HTMLButtonElement).disabled).toBe(false);
       expect(trigger.getAttribute("aria-label")).toBe("Auto-Design");
-
-      // The dishwasher-side choice came with it: the whole trio is public.
-      const pickers = screen
-        .queryAllByLabelText("Dishwasher side")
-        .filter((element) => visibleAt(element, width));
-      expect(pickers).toHaveLength(1);
     });
   }
 
@@ -311,7 +313,7 @@ describe("Auto-Design is public", () => {
     await renderDesigner(1280);
     await signInAsVisitor();
 
-    fireEvent.click(triggerAt(1280));
+    fireEvent.click(await triggerAt(1280));
     await act(async () => {});
     await expectAutoDesignVendorStep();
   });
@@ -357,9 +359,7 @@ describe("Auto-Design is reachable from the floating column (fullscreen)", () =>
           .getByTestId("designer-toolbar")
           .getAttribute("data-canvas-only-hidden"),
       ).toBe("true");
-      expect(
-        visibleAt(screen.getByTestId("admin-auto-design-auto-build"), 1280),
-      ).toBe(false);
+      expect(screen.queryByTestId("admin-auto-design-auto-build")).toBeNull();
       // …and the floating column is the remaining way in, exactly as the owner asked.
       const column = screen.getByTestId("three-d-floating-column");
       expect(visibleAt(column, 1280)).toBe(true);

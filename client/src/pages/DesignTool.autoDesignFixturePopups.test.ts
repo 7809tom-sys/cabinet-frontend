@@ -45,4 +45,8 @@ describe("auto-designer fixture pop-ups", () => {
     expect(source).toContain("onOpenRangePicker={() => setAutoDesignRangeOpen(true)}");
     expect(source).toContain("stoveMasterCode: autoDesignRangePick?.masterCode ?? undefined");
   });
+
+  it("keeps the Auto-Design pop-up open while the range, tall or sink pop-up is open", () => {
+    expect(source).toContain("childPickerOpen={autoDesignRangeOpen || autoDesignTallOpen || autoDesignSinkPrompt != null}");
+  });
 });
