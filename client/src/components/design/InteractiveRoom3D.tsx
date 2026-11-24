@@ -457,13 +457,100 @@ export function recessedWoodFrontZ(frameZ: number, frontThickness: number, railD
 }
 
 /**
- * The constructed top rail sits above the door rail on a floor cabinet and
- * reads as a second strip. A wall cabinet keeps both rails: they close the
- * joint where a stacker meets the cabinet below. Painted cabinets keep every rail.
+ * The constructed face-frame rail draws a second line just under the door's
+ * top edge, and its ends read as ticks in the stile gaps and on the side.
+ * Wall cabinets also drop the bottom rail; the door grows to the cabinet edge
+ * instead, so a stacker still meets the cabinet below. Painted cabinets keep
+ * every rail.
  */
 export function hideDuplicateFaceFrameRail(edge: "top" | "bottom" | "left" | "right", placement: string, woodDoorPhotograph: boolean): boolean {
   if (!woodDoorPhotograph) return false;
-  return edge === "top" && placement !== "wall";
+  // Top rail: the second line under every door top. Stiles: their tops are the
+  // short ticks in the gaps. Wall bottom rail: the extra band at a stacker.
+  // The shaker door frame stays. Painted cabinets keep this carcass frame.
+  if (edge === "top" || edge === "left" || edge === "right") return true;
+  return edge === "bottom" && placement === "wall";
+}
+
+/** How far a wood front may grow to reach the cabinet edge. A real door split is larger. */
+export const WOOD_FRONT_EDGE_EXTEND_MAX = 0.12;
+
+/** Signed growth toward `target`. Zero when the edge is already there or the gap is a real split. */
+export function woodOuterEdgeDelta(current: number, target: number): number {
+  const delta = target - current;
+  const gap = Math.abs(delta);
+  if (gap < 0.008 || gap > WOOD_FRONT_EDGE_EXTEND_MAX) return 0;
+  return delta;
+}
+
+function growFrontBox(mesh: THREE.Mesh, delta: number) {
+  const params = (mesh.geometry as THREE.BoxGeometry).parameters;
+  if (!params || typeof params.height !== "number" || typeof params.width !== "number") return;
+  const next = new THREE.BoxGeometry(params.width, params.height + Math.abs(delta), params.depth ?? 0.02);
+  mesh.geometry.dispose();
+  mesh.geometry = next;
+  mesh.position.y += delta / 2;
+}
+
+/**
+ * Grow the outer rail, the stiles, and the door slab to the cabinet edge.
+ * The inner recess stays where it is. Only the edge within a small reveal moves.
+ */
+export function extendWoodFrontFrame(frame: THREE.Object3D, delta: number, edge: "top" | "bottom") {
+  if (!delta) return;
+  const rails = frame.children.filter((child) => (child as THREE.Mesh).isMesh && child.userData?.grainPiece === "rail") as THREE.Mesh[];
+  const rail = edge === "top"
+    ? rails.reduce((best, item) => (item.position.y > best.position.y ? item : best), rails[0])
+    : rails.reduce((best, item) => (item.position.y < best.position.y ? item : best), rails[0]);
+  if (!rail) return;
+  const faceHalf = Math.abs(rail.position.y) + (rail.geometry as THREE.BoxGeometry).parameters.height / 2;
+  growFrontBox(rail, delta);
+  for (const child of frame.children) {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || child.userData?.grainPiece !== "stile") continue;
+    growFrontBox(mesh, delta);
+  }
+  for (const child of frame.children) {
+    if (!child.userData?.shakerFrameOutline) continue;
+    const lines = child as THREE.LineSegments;
+    const position = lines.geometry.getAttribute("position");
+    if (!position) continue;
+    for (let index = 0; index < position.count; index += 1) {
+      const y = position.getY(index);
+      const outer = edge === "top" ? y > faceHalf - 0.02 : y < -faceHalf + 0.02;
+      if (outer) position.setY(index, y + delta);
+    }
+    position.needsUpdate = true;
+  }
+  const parent = frame.parent;
+  if (!parent) return;
+  for (const child of parent.children) {
+    const mesh = child as THREE.Mesh;
+    if (child === frame || !mesh.isMesh) continue;
+    if (Math.abs(child.position.x - frame.position.x) > 0.03 || Math.abs(child.position.y - frame.position.y) > 0.03) continue;
+    if (!child.userData?.cabinetFront && !child.userData?.cabinetFaceShadowGap) continue;
+    growFrontBox(mesh, delta);
+  }
+  frame.userData = { ...frame.userData, woodFrontExtended: edge, woodFrontExtendDelta: delta };
+}
+
+export function extendWoodFrontsToCabinetEdges(frontGroup: THREE.Object3D, bodyHeight: number, extendBottom: boolean) {
+  const topTarget = bodyHeight / 2 - 0.001;
+  const bottomTarget = -bodyHeight / 2 + 0.001;
+  const frames = frontGroup.children.filter((child) => child.userData?.physicalRails);
+  for (const frame of frames) {
+    const rails = frame.children.filter((child) => child.userData?.grainPiece === "rail") as THREE.Mesh[];
+    if (!rails.length) continue;
+    const topRail = rails.reduce((best, item) => (item.position.y > best.position.y ? item : best));
+    const bottomRail = rails.reduce((best, item) => (item.position.y < best.position.y ? item : best));
+    const top = frame.position.y + topRail.position.y + (topRail.geometry as THREE.BoxGeometry).parameters.height / 2;
+    const bottom = frame.position.y + bottomRail.position.y - (bottomRail.geometry as THREE.BoxGeometry).parameters.height / 2;
+    const topDelta = woodOuterEdgeDelta(top, topTarget);
+    if (topDelta) extendWoodFrontFrame(frame, topDelta, "top");
+    if (!extendBottom) continue;
+    const bottomDelta = woodOuterEdgeDelta(bottom, bottomTarget);
+    if (bottomDelta) extendWoodFrontFrame(frame, bottomDelta, "bottom");
+  }
 }
 
 /** One clamped copy of the center grain, aspect-matched to the piece. Never tiled. */
@@ -2611,10 +2698,10 @@ export function addThreeDSidePanelsToFloor(
 export const THREE_D_CABINET_FRONT_OUTER_REVEAL_IN = 1 / 16;
 export const THREE_D_CABINET_FRONT_CENTER_GAP_IN = 1 / 8;
 
-export function threeDCabinetFrontColumnLayout(bodyWidth: number, count: number) {
+export function threeDCabinetFrontColumnLayout(bodyWidth: number, count: number, flush = false) {
   const columnCount = Math.max(1, Math.round(count));
-  const outerReveal = THREE_D_CABINET_FRONT_OUTER_REVEAL_IN * INCH;
-  const centerGap = THREE_D_CABINET_FRONT_CENTER_GAP_IN * INCH;
+  const outerReveal = (flush ? 0 : THREE_D_CABINET_FRONT_OUTER_REVEAL_IN) * INCH;
+  const centerGap = (flush ? 0 : THREE_D_CABINET_FRONT_CENTER_GAP_IN) * INCH;
   const availableWidth = Math.max(
     0.08,
     bodyWidth - outerReveal * 2 - centerGap * Math.max(0, columnCount - 1),
@@ -6940,11 +7027,17 @@ export function addCabinet(
     const frameGroup = new THREE.Group();
     frameGroup.position.z = faceDepth - frameDepth * 0.65;
     frameGroup.userData = { cabinetFaceFrame: true, constructedCarcassDetail: true, faceFrameWidthIn: frameWidth / INCH };
+    const hideTopRail = hideDuplicateFaceFrameRail("top", placement, woodDoorPhotograph);
+    const hideBottomRail = hideDuplicateFaceFrameRail("bottom", placement, woodDoorPhotograph);
+    const stileTopCut = hideTopRail ? 0 : frameWidth;
+    const stileBottomCut = hideBottomRail ? 0 : frameWidth;
+    const stileHeight = Math.max(0.02, bodyHeight - stileTopCut - stileBottomCut);
+    const stileCenterY = (stileBottomCut - stileTopCut) / 2;
     const framePieces = [
       [bodyWidth, frameWidth, 0, bodyHeight / 2 - frameWidth / 2, "top"],
       [bodyWidth, frameWidth, 0, -bodyHeight / 2 + frameWidth / 2, "bottom"],
-      [frameWidth, Math.max(0.02, bodyHeight - frameWidth * 2), -bodyWidth / 2 + frameWidth / 2, 0, "left"],
-      [frameWidth, Math.max(0.02, bodyHeight - frameWidth * 2), bodyWidth / 2 - frameWidth / 2, 0, "right"],
+      [frameWidth, stileHeight, -bodyWidth / 2 + frameWidth / 2, stileCenterY, "left"],
+      [frameWidth, stileHeight, bodyWidth / 2 - frameWidth / 2, stileCenterY, "right"],
     ] as const;
     for (const [pieceWidth, pieceHeight, x, y, edge] of framePieces) {
       const frame = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, frameDepth), frameMaterial);
@@ -7884,14 +7977,17 @@ export function addCabinet(
     const upperDoorHeight = Math.max(0.2, bodyHeight - lowerDoorHeight - 0.1);
     const doorsPerRow = threeDTallPantryDoorsPerRow(sku);
     const addPantryRow = (height: number, centerY: number, row: "lower" | "upper") => {
-      const doorWidth = (bodyWidth - 0.08) / doorsPerRow;
+      const sideInset = woodDoorPhotograph ? 0 : 0.04;
+      const leafGap = woodDoorPhotograph ? 0 : 0.03;
+      const doorWidth = (bodyWidth - sideInset * 2) / doorsPerRow;
       for (let i = 0; i < doorsPerRow; i++) {
-        const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth - 0.03, Math.max(0.08, height - 0.025), 0.052), faceMaterial);
-        door.position.set(-bodyWidth / 2 + 0.04 + doorWidth * (i + 0.5), centerY, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
+        const leafWidth = doorWidth - leafGap;
+        const door = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, Math.max(0.08, height - 0.025), 0.052), faceMaterial);
+        door.position.set(-bodyWidth / 2 + sideInset + doorWidth * (i + 0.5), centerY, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
         door.userData = { cabinetFront: true, pantryDoorSet: row, pantryDoorsPerRow: doorsPerRow, flushPhysicalFace: true };
         frontGroup.add(door);
-        addShakerFrame(doorWidth - 0.03, Math.max(0.08, height - 0.025), door.position.x, door.position.y, 0.066);
-        addFaceShadow(doorWidth - 0.03, Math.max(0.08, height - 0.025), door.position.x, door.position.y);
+        addShakerFrame(leafWidth, Math.max(0.08, height - 0.025), door.position.x, door.position.y, 0.066);
+        addFaceShadow(leafWidth, Math.max(0.08, height - 0.025), door.position.x, door.position.y);
         addPull(doorWidth - 0.03, Math.max(0.08, height - 0.025), door.position.x, door.position.y, false, 0.086, row, doorsPerRow === 1 ? singleDoorHinge : null);
       }
     };
@@ -8530,7 +8626,7 @@ export function addCabinet(
     const farmhouseDoorBottomY = -bodyHeight / 2 + 0.04;
     const farmhouseDoorHeight = Math.max(0.2, farmhouseDoorTopY - farmhouseDoorBottomY);
     const farmhouseDoorCenterY = farmhouseDoorBottomY + farmhouseDoorHeight / 2;
-    const farmhouseDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, farmhouseFace.doorCount);
+    const farmhouseDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, farmhouseFace.doorCount, woodDoorPhotograph);
     for (let index = 0; index < farmhouseFace.doorCount; index++) {
       const door = new THREE.Mesh(
         new THREE.BoxGeometry(farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, 0.045),
@@ -8716,7 +8812,7 @@ export function addCabinet(
 	      frontGroup.add(shelf);
 	    }
 	  }
-	  const standardDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, doorCount);
+	  const standardDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, doorCount, woodDoorPhotograph);
 	  for (let i = 0; i < doorCount; i++) {
 	    const doorWidth = standardDoorColumns.columnWidth;
 	    const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, 0.045), sku.glassDoor ? glassDoorMaterial : faceMaterial);
@@ -8737,7 +8833,7 @@ export function addCabinet(
 	  }
 	  // Preserve the measured 1/8-inch door gap, but add enough contrast for the
 	  // two-door wall face to remain legible at the normal 3D camera distance.
-	  if (placement === "wall" && doorCount > 1) {
+	  if (placement === "wall" && doorCount > 1 && standardDoorColumns.centerGap > 0.002) {
 	    for (let i = 1; i < standardDoorColumns.columnCount; i++) {
 	      const seam = new THREE.Mesh(
 	        new THREE.BoxGeometry(standardDoorColumns.centerGap, doorHeight, 0.012),
@@ -8769,7 +8865,7 @@ export function addCabinet(
     : drawersAtBottom ? -bodyHeight / 2 + 0.04 : bodyHeight / 2 - 0.04;
 		  for (const row of drawerRows) {
 		    const rowHeight = Math.max(0.08, row.height - 0.025);
-		    const drawerColumns = threeDCabinetFrontColumnLayout(bodyWidth, row.count);
+		    const drawerColumns = threeDCabinetFrontColumnLayout(bodyWidth, row.count, woodDoorPhotograph);
 	    const drawerWidth = drawerColumns.columnWidth;
 	    for (let column = 0; column < row.count; column++) {
 	      const drawer = new THREE.Mesh(new THREE.BoxGeometry(drawerWidth, rowHeight, 0.048), faceMaterial);
@@ -8908,6 +9004,7 @@ export function addCabinet(
     wallSolidFace: isWall && !doorSampleUrl,
     grainRotation: 0,
   };
+  if (woodDoorPhotograph) extendWoodFrontsToCabinetEdges(frontGroup, bodyHeight, isWall);
   cabinet.add(frontGroup);
   // Doors and drawers already reference the shared sample. Box skins receive it
   // again when the image finishes loading, and that callback stamps them too.

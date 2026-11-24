@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, applyLargeFaceWoodUv, hideDuplicateFaceFrameRail, recessedWoodFrontZ } from "./InteractiveRoom3D";
+import { addCabinet, applyLargeFaceWoodUv, hideDuplicateFaceFrameRail, recessedWoodFrontZ, woodOuterEdgeDelta } from "./InteractiveRoom3D";
 import { DLC_FRAME_DETAIL } from "@shared/dlcFr26Textures";
 
 const WOOD = {
@@ -98,11 +98,16 @@ describe("large wood faces and single rail edges", () => {
   it("hides only the duplicate face-frame rails on a wood cabinet", () => {
     expect(hideDuplicateFaceFrameRail("top", "base", true)).toBe(true);
     expect(hideDuplicateFaceFrameRail("top", "tall", true)).toBe(true);
-    expect(hideDuplicateFaceFrameRail("top", "wall", true)).toBe(false);
+    expect(hideDuplicateFaceFrameRail("top", "wall", true)).toBe(true);
+    expect(hideDuplicateFaceFrameRail("bottom", "wall", true)).toBe(true);
     expect(hideDuplicateFaceFrameRail("bottom", "base", true)).toBe(false);
-    expect(hideDuplicateFaceFrameRail("bottom", "wall", true)).toBe(false);
-    expect(hideDuplicateFaceFrameRail("left", "wall", true)).toBe(false);
+    expect(hideDuplicateFaceFrameRail("left", "wall", true)).toBe(true);
+    expect(hideDuplicateFaceFrameRail("right", "base", true)).toBe(true);
+    expect(hideDuplicateFaceFrameRail("left", "base", false)).toBe(false);
     expect(hideDuplicateFaceFrameRail("top", "base", false)).toBe(false);
+    expect(woodOuterEdgeDelta(1.2, 1.248)).toBeCloseTo(0.048, 3);
+    expect(woodOuterEdgeDelta(1.2, 1.2)).toBe(0);
+    expect(woodOuterEdgeDelta(0.2, 1.25)).toBe(0);
   });
 
   it("drops the carcass edge line and the face-frame rail that stacks on the door", () => {
@@ -204,8 +209,8 @@ describe("large wood faces and single rail edges", () => {
     expect(tall.u).toBeLessThanOrEqual(1);
   });
 
-  it("keeps the wall face-frame rails that close a stacker joint", () => {
-    const lower = build(WOOD, {
+  it("removes the face-frame top rail and grows the wall door to the cabinet edge", () => {
+    const root = build(WOOD, {
       placementUid: "w3030",
       masterCode: "W3030",
       description: "30x30 Wall",
@@ -217,14 +222,58 @@ describe("large wood faces and single rail edges", () => {
       numberOfDrawers: 0,
       category: "Wall",
     }, 54);
-    let visibleRails = 0;
-    lower.traverse((node) => {
-      if (node.userData?.cabinetFaceFrame && node.userData?.faceFrameEdge) {
-        expect(node.visible).toBe(true);
-        expect(node.userData.duplicateFrontRailHidden).toBeUndefined();
-        visibleRails += 1;
-      }
+    const hidden: string[] = [];
+    const stiles: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      if (node.userData?.duplicateFrontRailHidden) hidden.push(String(node.userData.faceFrameEdge));
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && node.userData?.faceFrameEdge && (node.userData.faceFrameEdge === "left" || node.userData.faceFrameEdge === "right")) stiles.push(mesh);
     });
-    expect(visibleRails).toBe(4);
+    expect(hidden.sort()).toEqual(["bottom", "left", "right", "top"]);
+    expect(stiles).toHaveLength(2);
+    for (const stile of stiles) expect(stile.visible).toBe(false);
+    const tops: number[] = [];
+    root.traverse((node) => {
+      if (!node.userData?.woodFrontExtended) return;
+      const rails = node.children.filter((child) => child.userData?.grainPiece === "rail") as THREE.Mesh[];
+      const topRail = rails.reduce((best, item) => (item.position.y > best.position.y ? item : best));
+      tops.push(node.position.y + topRail.position.y + (topRail.geometry as THREE.BoxGeometry).parameters.height / 2);
+    });
+    expect(tops.length).toBeGreaterThan(0);
+    for (const top of tops) expect(top * 12).toBeGreaterThan(14.5);
+    const leaves: THREE.Mesh[] = [];
+    let seams = 0;
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && mesh.userData?.cabinetFront && !mesh.userData?.physicalRail && !mesh.userData?.shakerNotch) leaves.push(mesh);
+      if (node.userData?.cabinetDoorSeam) seams += 1;
+    });
+    expect(seams).toBe(0);
+    const ordered = leaves.sort((a, b) => a.position.x - b.position.x);
+    expect(ordered).toHaveLength(2);
+    const rightOf = (door: THREE.Mesh) => door.position.x + (door.geometry as THREE.BoxGeometry).parameters.width / 2;
+    const leftOf = (door: THREE.Mesh) => door.position.x - (door.geometry as THREE.BoxGeometry).parameters.width / 2;
+    expect(leftOf(ordered[1]!) - rightOf(ordered[0]!)).toBeLessThan(0.01);
+  });
+
+  it("keeps the pantry door split while the upper door reaches the top", () => {
+    const root = build(WOOD, PANTRY);
+    const doors: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && mesh.userData?.pantryDoorSet) doors.push(mesh);
+    });
+    const upper = doors.find((door) => door.userData.pantryDoorSet === "upper")!;
+    const lower = doors.find((door) => door.userData.pantryDoorSet === "lower")!;
+    const topOf = (door: THREE.Mesh) => door.position.y + (door.geometry as THREE.BoxGeometry).parameters.height / 2;
+    const bottomOf = (door: THREE.Mesh) => door.position.y - (door.geometry as THREE.BoxGeometry).parameters.height / 2;
+    let shellTop = 0;
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && mesh.userData?.carcassShell) shellTop = (mesh.geometry as THREE.BoxGeometry).parameters.height / 2;
+    });
+    expect(topOf(upper)).toBeGreaterThan(shellTop - 0.02);
+    expect(topOf(lower)).toBeLessThan(bottomOf(upper));
+    expect((bottomOf(upper) - topOf(lower)) * 12).toBeGreaterThan(0.15);
   });
 });
