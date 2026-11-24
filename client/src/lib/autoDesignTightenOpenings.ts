@@ -24,6 +24,7 @@ import type { DesignerReviewFinding } from "./designerReviewFindings";
 import { isDishwasherItem } from "./dishwasherPanelRule";
 import { isRequiredBlindCornerFillerGroupId } from "./blindCornerRequiredFiller";
 import { isFullHeightRunPiece } from "./autoDesignCloseRemainingGaps";
+import { kitchenRuleNumber } from "./kitchenRuleParameters";
 import {
   WALL_OPENING_CLEARANCE_IN,
   appendCollisionFreePlacements,
@@ -227,6 +228,42 @@ export function tightenRunOpenings(input: {
           && (layerOf(item) === layer || (layer === "wall" && isFullHeightRunPiece(item))))
         .sort((left, right) => wallRunOffset(left, wallId, input.room) - wallRunOffset(right, wallId, input.room));
 
+      /**
+       * A neighbor may slide to an appliance face only when nothing else on this
+       * layer sits in the span it would move into, and a sink base (a measured
+       * anchor) only within the anchor wiggle cap. Otherwise it stays put; a sink
+       * base that stays is named on the report, never overlapped silently.
+       */
+      const canSlide = (item: PlacedCabinet, desiredStart: number, appliance: PlacedCabinet): boolean => {
+        const currentStart = wallRunOffset(item, wallId, input.room);
+        const itemWidth = wallRunSpan(item, wallId, input.room);
+        const blocker = onWall().find((other) => {
+          if (other.uid === item.uid || other.uid === appliance.uid) return false;
+          if (other.stackedOnCabinetUid === item.uid || item.stackedOnCabinetUid === other.uid) return false;
+          const otherStart = wallRunOffset(other, wallId, input.room);
+          const otherEnd = otherStart + wallRunSpan(other, wallId, input.room);
+          const overlapNow = Math.min(currentStart + itemWidth, otherEnd) - Math.max(currentStart, otherStart);
+          const overlapAfter = Math.min(desiredStart + itemWidth, otherEnd) - Math.max(desiredStart, otherStart);
+          return overlapAfter > EPS && overlapAfter > overlapNow + EPS;
+        });
+        const sinkBase = isSinkBaseCabinet(item);
+        const cap = Math.max(0, kitchenRuleNumber("anchor_wiggle_cap_in"));
+        const overCap = sinkBase && Math.abs(desiredStart - currentStart) > cap + EPS;
+        if (!blocker && !overCap) return true;
+        if (sinkBase) {
+          findings.push({
+            ruleId: "tighten-run-openings",
+            code: "sink-base-kept-in-place",
+            severity: "warning",
+            title: `${item.masterCode} stayed where it was measured beside ${appliance.masterCode}`,
+            detail: blocker
+              ? `Butting it to ${appliance.masterCode} would put it on top of ${blocker.masterCode}, so it was not moved. Check the space between them.`
+              : `Butting it to ${appliance.masterCode} needs a ${formatFillerInches(Math.abs(desiredStart - currentStart))} slide, more than the ${formatFillerInches(cap)} a measured sink base may move, so it was not moved. Check the space between them.`,
+          });
+        }
+        return false;
+      };
+
       // First: snap each appliance's neighbors to its exact faces so the opening
       // equals the appliance's nominal width. Neighbors move; the appliance does not.
       for (const appliance of onWall().filter((item) => isOpeningOnLayer(item, layer))) {
@@ -247,20 +284,26 @@ export function tightenRunOpenings(input: {
         if (Math.abs(bodyWidth - width) > 0.05) {
           notes.push(`${appliance.masterCode} opening is ${formatFillerInches(bodyWidth)} (its placed body), not a padded ${formatFillerInches(width)} rough opening.`);
         }
-        const left = onWall()
-          .filter((item) => item.uid !== appliance.uid && !isOpeningAppliance(item))
+        // The piece directly beside the appliance. Another appliance counts: a
+        // dishwasher against the range is that range's neighbor, so the search
+        // never reaches past it to the sink base and slides that onto the
+        // dishwasher (Tom, Nov 23 2026).
+        const leftNearest = onWall()
+          .filter((item) => item.uid !== appliance.uid)
           .filter((item) => {
             const itemEnd = wallRunOffset(item, wallId, input.room) + wallRunSpan(item, wallId, input.room);
             return itemEnd <= start + TIGHTEN_FLUSH_IN + 1.6 && itemEnd >= start - 48;
           })
           .sort((a, b) => wallRunOffset(b, wallId, input.room) - wallRunOffset(a, wallId, input.room))[0];
-        const right = onWall()
-          .filter((item) => item.uid !== appliance.uid && !isOpeningAppliance(item))
+        const rightNearest = onWall()
+          .filter((item) => item.uid !== appliance.uid)
           .filter((item) => {
             const itemStart = wallRunOffset(item, wallId, input.room);
             return itemStart >= openingEnd - TIGHTEN_FLUSH_IN - 1.6 && itemStart <= openingEnd + 48;
           })
           .sort((a, b) => wallRunOffset(a, wallId, input.room) - wallRunOffset(b, wallId, input.room))[0];
+        const left = leftNearest && !isOpeningAppliance(leftNearest) ? leftNearest : undefined;
+        const right = rightNearest && !isOpeningAppliance(rightNearest) ? rightNearest : undefined;
         if (left && (!isFixedOnRun(left) || isFillerItem(left) || isRefrigeratorEndPanel(left))) {
           const leftStart = wallRunOffset(left, wallId, input.room);
           const leftWidth = wallRunSpan(left, wallId, input.room);
@@ -275,7 +318,8 @@ export function tightenRunOpenings(input: {
           } else if (!isFixedOnRun(left) || isRefrigeratorEndPanel(left)) {
             const desired = start - leftWidth - (isRefrigeratorEndPanel(left) ? leftBridgeGap : 0);
             const current = leftStart;
-            if (Math.abs(current - desired) > EPS && Math.abs(current - desired) <= 48 + EPS) {
+            if (Math.abs(current - desired) > EPS && Math.abs(current - desired) <= 48 + EPS
+              && canSlide(left, desired, appliance)) {
               const moved = relocate(left, desired, wallId, input.room);
               if (moved) {
                 commit(moved);
@@ -295,7 +339,8 @@ export function tightenRunOpenings(input: {
               commit(grown);
               notes.push(`${right.masterCode} was grown to butt ${appliance.masterCode} so the opening is exactly ${formatFillerInches(bodyWidth)}.`);
             }
-          } else if ((!isFixedOnRun(right) || isRefrigeratorEndPanel(right)) && Math.abs(current - (openingEnd + (isRefrigeratorEndPanel(right) ? rightBridgeGap : 0))) > EPS && Math.abs(current - openingEnd) <= 48 + EPS) {
+          } else if ((!isFixedOnRun(right) || isRefrigeratorEndPanel(right)) && Math.abs(current - (openingEnd + (isRefrigeratorEndPanel(right) ? rightBridgeGap : 0))) > EPS && Math.abs(current - openingEnd) <= 48 + EPS
+            && canSlide(right, openingEnd + (isRefrigeratorEndPanel(right) ? rightBridgeGap : 0), appliance)) {
             const moved = relocate(right, openingEnd + (isRefrigeratorEndPanel(right) ? rightBridgeGap : 0), wallId, input.room);
             if (moved) {
               commit(moved);
