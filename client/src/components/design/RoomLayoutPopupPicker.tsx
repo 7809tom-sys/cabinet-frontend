@@ -17,7 +17,7 @@ interface Props {
   /** The existing closet template section, unchanged. */
   closet: ReactNode;
   /** Same opener and same enabled/title state the designer's Auto-Design buttons use. */
-  autoDesign?: { onClick: () => void; enabled: boolean; title?: string; note?: string | null };
+  autoDesign?: { onClick: () => void; enabled: boolean; title?: string; note?: string | null; anchorNote?: string | null };
 }
 
 /**
@@ -72,6 +72,7 @@ export function RoomLayoutPopupPicker({ bathroom, kitchen, closet, autoDesign }:
                 <Ruler className="h-4 w-4" aria-hidden="true" /> Auto-Design
               </button>
               <p className="mt-2 text-xs leading-5 text-[#765416]">Answer a few questions about your kitchen and Auto-Design lays out a first draft you can adjust.</p>
+              {autoDesign.anchorNote && <p data-testid="room-layout-popup-auto-design-anchor-note" className="mt-1 text-xs text-[#765416]">{autoDesign.anchorNote}</p>}
               {!autoDesign.enabled && autoDesign.note && <p className="mt-1 text-xs font-medium text-amber-800">{autoDesign.note}</p>}
             </div>
           )}
