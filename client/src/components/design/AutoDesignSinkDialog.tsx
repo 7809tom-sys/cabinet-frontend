@@ -111,14 +111,14 @@ export function AutoDesignSinkDialog({
               </Button>
             ))}
           </div>
-          {loading && <p className="text-sm text-muted-foreground" data-testid="auto-design-sink-loading">Loading sinks from the Pelican catalog…</p>}
+          {loading && <p className="text-sm text-muted-foreground" data-testid="auto-design-sink-loading">Loading sinks from the catalog…</p>}
           {!loading && catalogUnavailable && (
             <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950" data-testid="auto-design-sink-unavailable">
               The sink catalog did not return any products. Keep the default to leave the generic basin in the measured base.
             </p>
           )}
           {!loading && !catalogUnavailable && visible.length === 0 && (
-            <p className="text-sm text-muted-foreground" data-testid="auto-design-sink-empty">No Pelican sinks matched this filter.</p>
+            <p className="text-sm text-muted-foreground" data-testid="auto-design-sink-empty">No sinks matched this filter.</p>
           )}
           {visible.length > 0 && (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" data-testid="auto-design-sink-grid">

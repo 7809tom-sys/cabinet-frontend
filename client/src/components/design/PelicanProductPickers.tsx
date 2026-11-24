@@ -141,12 +141,18 @@ export function PelicanCountertopPicker({
   onSelect,
   onBrowseAll,
   affiliateSlug,
+  defaultExpanded = false,
 }: {
   selectedSurfaces: SelectedSurface[];
   onSelect: (item: SelectedSurface) => void;
   onBrowseAll: () => void;
   /** Storefront scope, so an affiliate Designer prices its own retail. */
   affiliateSlug?: string | null;
+  /**
+   * Open on the photo cards instead of the compact row. The countertop pop-up
+   * uses this so choosing a countertop starts from the slab photos.
+   */
+  defaultExpanded?: boolean;
 }) {
   // Slabs are sold as separate SKUs per size ("3cm" and "3cm Super Jumbo", Left
   // and Right cuts), so request the whole palette and fold it into color cards.
@@ -154,7 +160,7 @@ export function PelicanCountertopPicker({
   const items = (data ?? []) as RecItem[];
   const configurations = useMemo(() => groupPelicanConfigurations(items), [items]);
   const selectedIds = useMemo(() => new Set(selectedSurfaces.map((s) => s.id)), [selectedSurfaces]);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const selectedSummary = selectedSurfaces.length === 0
     ? "Choose a countertop"
     : selectedSurfaces.length === 1
@@ -187,9 +193,9 @@ export function PelicanCountertopPicker({
         </button>
       </div>
       {expanded && (
-        <div id="countertop-material-options" className="border-t border-[#d9c196]/70 p-2.5">
+        <div id="countertop-material-options" className="max-h-[min(60vh,520px)] overflow-y-auto overscroll-contain border-t border-[#d9c196]/70 p-2.5">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Pelican Quartz Slabs</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">StoneCreek Quartz Slabs</span>
             <span className="text-[10px] text-muted-foreground">Pick a slab size, then use it</span>
           </div>
           {isLoading ? (
@@ -279,7 +285,7 @@ export function PelicanSinkPicker({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Verified Pelican Sinks
+          Verified StoneCreek Sinks
         </span>
         <button
           type="button"
@@ -370,7 +376,7 @@ export function PelicanFaucetPicker({
     <section data-testid="pelican-faucet-picker" className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Pelican {kind === "vanity" ? "Vanity" : "Kitchen"} Faucets
+          StoneCreek {kind === "vanity" ? "Vanity" : "Kitchen"} Faucets
         </span>
         {!isLoading && configurations.length > 6 && (
           <button
@@ -389,14 +395,14 @@ export function PelicanFaucetPicker({
         </div>
       ) : configurations.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-3 py-3 text-center text-[11px] text-muted-foreground">
-          No source-priced, measured Pelican {label} are available for this fixture workflow.
+          No source-priced, measured {label} are available for this fixture workflow.
         </div>
       ) : (
         <>
           <p className="text-[10px] leading-snug text-muted-foreground">
             {kind === "vanity"
-              ? "Every Pelican vanity faucet is listed — single hole, 4″ centerset, and 8″ widespread. Choose a finish, then use it to attach that exact Pelican finish, image, price, and measured fixture profile."
-              : "Choose a finish, then use it to attach that exact Pelican finish, image, price, and measured fixture profile."}
+              ? "Every vanity faucet is listed — single hole, 4″ centerset, and 8″ widespread. Choose a finish, then use it to attach that exact finish, image, price, and measured fixture profile."
+              : "Choose a finish, then use it to attach that exact finish, image, price, and measured fixture profile."}
           </p>
           <div className="grid grid-cols-2 gap-2">
             {visibleConfigurations.map((configuration) => (

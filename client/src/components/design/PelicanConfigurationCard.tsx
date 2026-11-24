@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Check, Waves } from "lucide-react";
+import { Check } from "lucide-react";
 import { formatPrice } from "@/lib/pelican";
 import {
   pelicanDisplayVariant,
@@ -12,6 +12,7 @@ import { pelicanToiletCatalogPhoto } from "@/lib/pelicanToiletCatalogPhotos";
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { pelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
 import { PelicanFinishDot, PelicanVariantSelect } from "./PelicanVariantSelect";
+import { customerFacingProductName, ProductPhoto } from "./ProductPhotoGrid";
 
 /**
  * One Pelican model as a card, the same way the Hardware picker shows one
@@ -52,6 +53,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
     ?? null;
   const wording = isSelected ? "Selected" : actionLabel ?? pelicanUseLabel(configuration.optionLabel);
   const multiple = configuration.variants.length > 1;
+  const displayLabel = customerFacingProductName(configuration.label);
 
   return (
     <div
@@ -60,24 +62,30 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
         anySelected ? "border-[#a87f33] bg-[#a87f33]/5 ring-1 ring-[#a87f33]/40" : "border-border"
       }`}
     >
-      <div className={`relative aspect-[4/3] w-full ${configuration.family === "quartz" ? "bg-muted" : "bg-white"}`}>
-        {image ? (
-          <img
-            src={image}
-            alt={`${configuration.label}${multiple ? ` in ${variant.label}` : ""}`}
-            loading="lazy"
-            className={`h-full w-full ${configuration.family === "quartz" ? "object-cover" : "object-contain p-1.5"}`}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-muted-foreground/40"><Waves className="h-5 w-5" /></div>
-        )}
+      {/* The photo is a tap target too, the same as a door style tile. It runs
+          the same action as the button below, so nothing about the choice changes. */}
+      <button
+        type="button"
+        data-testid={`${testIdPrefix}-photo-${item.id}`}
+        // A pointer shortcut for the button below: kept out of the tab order
+        // and the accessibility tree so assistive tech hears one action.
+        tabIndex={-1}
+        aria-hidden="true"
+        onClick={() => onUse(item, configuration)}
+        className={`relative block aspect-[4/3] w-full touch-manipulation transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#d4a75a] ${configuration.family === "quartz" ? "bg-muted" : "bg-white"}`}
+      >
+        <ProductPhoto
+          imageUrl={image}
+          name={`${displayLabel}${multiple ? ` in ${variant.label}` : ""}`}
+          fit={configuration.family === "quartz" ? "cover" : "contain"}
+        />
         {anySelected && (
           <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#a87f33] text-white"><Check className="h-3 w-3" /></span>
         )}
-      </div>
+      </button>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 p-1.5">
-        <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{configuration.eyebrow}</p>
-        <p className="line-clamp-2 min-h-[1.9rem] text-[11px] font-semibold leading-snug text-foreground">{configuration.label}</p>
+        <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{customerFacingProductName(configuration.eyebrow)}</p>
+        <p className="line-clamp-2 min-h-[1.9rem] text-[11px] font-semibold leading-snug text-foreground">{displayLabel}</p>
         {multiple ? (
           <PelicanVariantSelect configuration={configuration} value={variant} onChange={setChosenId} compact />
         ) : (

@@ -14,6 +14,7 @@ import {
   type AutoDesignFaucetProduct,
 } from "@/lib/autoDesignFaucet";
 import { formatPrice } from "@/lib/pelican";
+import { ProductPhotoGrid, ProductPhotoTile } from "./ProductPhotoGrid";
 
 export type FixturePick = { sinkId: number | null; faucetId: number | null };
 
@@ -22,63 +23,6 @@ const MAX_VISIBLE = 12;
 function priceLine(sellPrice: number | null | undefined): string {
   if (sellPrice === null || sellPrice === undefined) return "Price unavailable";
   return formatPrice(sellPrice);
-}
-
-function ProductThumb({ imageUrl, alt }: { imageUrl?: string | null; alt: string }) {
-  if (!imageUrl) {
-    return (
-      <div
-        aria-hidden="true"
-        className="h-10 w-10 shrink-0 rounded border border-[#e5e1d8] bg-[#f6f3ed]"
-      />
-    );
-  }
-  return (
-    <img
-      src={imageUrl}
-      alt={alt}
-      className="h-10 w-10 shrink-0 rounded border border-[#e5e1d8] bg-[#fffdf9] object-contain"
-    />
-  );
-}
-
-type ProductButtonProps = {
-  testId: string;
-  selected: boolean;
-  onSelect: () => void;
-  imageUrl?: string | null;
-  name: string;
-  price: string;
-};
-
-function ProductButton({
-  testId,
-  selected,
-  onSelect,
-  imageUrl,
-  name,
-  price,
-}: ProductButtonProps) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      aria-pressed={selected}
-      onClick={onSelect}
-      className={
-        "flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors " +
-        (selected
-          ? "border-[#244338] bg-[#f6f3ed]"
-          : "border-[#e5e1d8] bg-[#fffdf9] hover:bg-[#f6f3ed]")
-      }
-    >
-      <ProductThumb imageUrl={imageUrl} alt={name} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-[#244338]">{name}</span>
-        <span className="block text-xs text-neutral-600">{price}</span>
-      </span>
-    </button>
-  );
 }
 
 export function DesignerFixturePickPopup(props: {
@@ -127,16 +71,16 @@ export function DesignerFixturePickPopup(props: {
     >
       <DialogContent
         data-testid="designer-fixture-pick-popup"
-        className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+        className="max-h-[85vh] overflow-y-auto sm:max-w-3xl"
       >
         <DialogHeader>
           <DialogTitle>Pick your faucet and sink</DialogTitle>
           <DialogDescription>
-            Pick them now so the layout is planned around them. You can skip this and pick later.
+            Tap a photo to pick it. Pick them now so the layout is planned around them. You can skip this and pick later.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6">
           <section aria-label="Sink">
             <h3 className="mb-2 text-sm font-semibold text-[#244338]">Sink</h3>
             {loading ? (
@@ -145,17 +89,20 @@ export function DesignerFixturePickPopup(props: {
               <p className="text-sm text-neutral-600">No sinks in the catalog yet.</p>
             ) : (
               <div className="flex flex-col gap-2">
+                <ProductPhotoGrid testId="fixture-sink-grid" className="grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
                 {visibleSinks.map((sink) => (
-                  <ProductButton
+                  <ProductPhotoTile
                     key={sink.id}
                     testId={`fixture-sink-${sink.id}`}
                     selected={sinkId === sink.id}
                     onSelect={() => setSinkId((prev) => (prev === sink.id ? null : sink.id))}
                     imageUrl={sink.imageUrl}
                     name={sink.name}
+                    code={sink.pelicanCode}
                     price={priceLine(sink.sellPrice)}
                   />
                 ))}
+                </ProductPhotoGrid>
                 {sinkProducts.length > MAX_VISIBLE && (
                   <Button
                     type="button"
@@ -181,8 +128,9 @@ export function DesignerFixturePickPopup(props: {
               </p>
             ) : (
               <div className="flex flex-col gap-2">
+                <ProductPhotoGrid testId="fixture-faucet-grid" className="grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
                 {visibleFaucets.map((faucet) => (
-                  <ProductButton
+                  <ProductPhotoTile
                     key={faucet.id}
                     testId={`fixture-faucet-${faucet.id}`}
                     selected={faucetId === faucet.id}
@@ -191,9 +139,11 @@ export function DesignerFixturePickPopup(props: {
                     }
                     imageUrl={faucet.imageUrl}
                     name={faucet.name}
+                    code={faucet.pelicanCode}
                     price={priceLine(faucet.sellPrice)}
                   />
                 ))}
+                </ProductPhotoGrid>
                 {deckFaucets.length > MAX_VISIBLE && (
                   <Button
                     type="button"

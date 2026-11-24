@@ -23745,7 +23745,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                         setCountertop(false); setSinks([]); setSelectedSinkUid(null); toast.success("Countertop removed");
                       }}><X className="h-3 w-3" /> Remove</button>
                     </div>
-                    <PelicanCountertopPicker selectedSurfaces={selectedSurfaces} affiliateSlug={affiliateSlug} onSelect={(item) => addRecommendedSurface(item, "countertop")} onBrowseAll={() => { setBathroomCatalogMode("surfaces"); setSurfacesOpen(true); }} />
+                    <PelicanCountertopPicker defaultExpanded selectedSurfaces={selectedSurfaces} affiliateSlug={affiliateSlug} onSelect={(item) => addRecommendedSurface(item, "countertop")} onBrowseAll={() => { setBathroomCatalogMode("surfaces"); setSurfacesOpen(true); }} />
                     <p className="text-xs font-semibold text-foreground">{t("dt_bs_edge_profile")}</p>
                     <div className="grid grid-cols-4 gap-1.5">
                       {EDGE_PROFILES.map((ep) => (

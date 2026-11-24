@@ -7,6 +7,7 @@ import {
   groupFaucetsByBrand,
   type AutoDesignFaucetProduct,
 } from "@/lib/autoDesignFaucet";
+import { customerFacingBrand, ProductPhotoGrid, ProductPhotoTile } from "./ProductPhotoGrid";
 
 type Props = {
   open: boolean;
@@ -51,7 +52,7 @@ export function AutoDesignFaucetDialog({
         <DialogHeader>
           <DialogTitle>Choose a faucet</DialogTitle>
           <DialogDescription>
-            Auto-Design placed a faucet on the countertop behind {sinkLabel}, centered on the sink. Pick a catalog faucet to replace the default, or keep it.
+            Auto-Design placed a faucet on the countertop behind {sinkLabel}, centered on the sink. Tap a faucet photo to replace the default, or keep it.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
@@ -66,7 +67,7 @@ export function AutoDesignFaucetDialog({
                   data-testid={`auto-design-faucet-brand-${name}`}
                   onClick={() => setBrand(name)}
                 >
-                  {name}
+                  {name === "All" ? name : customerFacingBrand(name)}
                 </Button>
               ))}
             </div>
@@ -82,35 +83,22 @@ export function AutoDesignFaucetDialog({
           )}
           {visible.map((group) => (
             <section key={group.brand} data-testid={`auto-design-faucet-group-${group.brand}`} className="grid gap-2">
-              <h3 className="text-sm font-semibold">{group.brand}</h3>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {group.products.map((product) => {
-                  const finish = catalogFaucetFinish(product);
-                  const active = product.id === selectedId;
-                  return (
-                    <button
-                      key={product.id}
-                      type="button"
-                      data-testid={`auto-design-faucet-option-${product.id}`}
-                      onClick={() => setSelectedId(product.id)}
-                      className={`flex gap-3 rounded-lg border p-2 text-left ${active ? "border-[#1a2744] bg-slate-50" : "border-border hover:bg-muted/40"}`}
-                    >
-                      {product.imageUrl ? (
-                        <img src={product.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded object-contain bg-white" />
-                      ) : (
-                        <span className="grid h-16 w-16 shrink-0 place-items-center rounded bg-muted text-[10px] text-muted-foreground">No image</span>
-                      )}
-                      <span className="min-w-0">
-                        <span className="block text-sm font-medium leading-snug">{product.name}</span>
-                        {finish && <span className="mt-1 block text-xs text-muted-foreground">{finish}</span>}
-                        <span className="mt-1 block text-xs font-semibold">
-                          {product.sellPrice != null ? formatPrice(product.sellPrice) : "Price unavailable"}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <h3 className="text-sm font-semibold">{customerFacingBrand(group.brand)}</h3>
+              <ProductPhotoGrid testId={`auto-design-faucet-grid-${group.brand}`} className="grid-cols-2 sm:grid-cols-3">
+                {group.products.map((product) => (
+                  <ProductPhotoTile
+                    key={product.id}
+                    testId={`auto-design-faucet-option-${product.id}`}
+                    selected={product.id === selectedId}
+                    onSelect={() => setSelectedId(product.id)}
+                    imageUrl={product.imageUrl}
+                    name={product.name}
+                    code={product.pelicanCode}
+                    detail={catalogFaucetFinish(product)}
+                    price={product.sellPrice != null ? formatPrice(product.sellPrice) : "Price unavailable"}
+                  />
+                ))}
+              </ProductPhotoGrid>
             </section>
           ))}
         </div>
