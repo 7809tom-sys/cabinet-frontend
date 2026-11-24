@@ -389,6 +389,7 @@ import { CornerView, type CornerId } from "@/components/design/CornerView";
 import { IslandElevationView } from "@/components/design/IslandElevationView";
 import { CsvImportDialog } from "@/components/design/CsvImportDialog";
 import { PlanImageImportDialog, type ReviewedPlan } from "@/components/design/PlanImageImportDialog";
+import { RoomLayoutPopupPicker } from "@/components/design/RoomLayoutPopupPicker";
 import { AutoDesignDialog, type AutoDesignSubmitResult } from "@/components/design/AutoDesignDialog";
 import { AutoDesignAccessDialog } from "@/components/design/AutoDesignAccessDialog";
 import { useAutoDesignAccess } from "@/hooks/useAutoDesignAccess";
@@ -26193,6 +26194,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	            </DialogDescription>
 	          </DialogHeader>
 	          <div className="space-y-5 p-5">
+	            <RoomLayoutPopupPicker
+	              autoDesign={{ onClick: () => { setLayoutStarterOpen(false); setTimeout(openAutoDesign, 120); }, enabled: autoDesignControl.enabled, title: autoDesignControl.title, note: autoDesignBlockedNote }}
+	              bathroom={(
 	            <section data-testid="bathroom-room-template" className="rounded-xl border border-sky-300/70 bg-sky-50/60 p-4">
 	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
 	              <p className="mb-3 text-xs leading-5 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
@@ -26209,6 +26213,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              {(placed.length > 0 || openings.length > 0 || Boolean(island) || sinks.length > 0 || furniture.length > 0 || ponyWalls.length > 0 || annotations.length > 0) && <p className="mt-2 text-xs font-medium text-amber-800">Templates start a blank room. Save this design and start a new one before choosing a template; existing work will not be moved or erased.</p>}
 	              {layoutLocked && <p className="mt-2 text-xs font-medium text-amber-800">Unlock the room layout before choosing a template.</p>}
 	            </section>
+	              )}
+	              closet={(
 	            <section data-testid="closet-room-templates" className="rounded-xl border border-[#c8a972]/60 bg-[#faf7f0] p-4">
 	              <div className="mb-1 text-sm font-semibold text-[#192432]">Bedroom closet · one-click room templates</div>
 	              <p className="mb-3 text-xs text-stone-600">Room width × interior depth. Bi-fold dimensions are nominal planning openings, not an orderable door or a rough-opening specification.</p>
@@ -26248,6 +26254,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              {(placed.length > 0 || openings.length > 0 || Boolean(island) || sinks.length > 0 || furniture.length > 0 || ponyWalls.length > 0 || annotations.length > 0) && <p className="mt-2 text-xs font-medium text-amber-800">Templates start a blank room. Save this design and start a new one before choosing a template; existing work will not be moved or erased.</p>}
 	              {layoutLocked && <p className="mt-2 text-xs font-medium text-amber-800">Unlock the room layout before choosing a template.</p>}
 	            </section>
+	              )}
+	              kitchen={(
 	            <RoomLayoutStarter
               selectedStyleId={styleId}
               selectedDistributorId={selectedStyleDistributorId}
@@ -26266,6 +26274,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               }}
 	              onLayoutSelected={handleRoomLayoutSelected}
 	              onBeginnerRoomApplied={() => setBeginnerFirstCabinetGuideOpen(false)}
+	            />
+	              )}
 	            />
           </div>
         </DialogContent>
