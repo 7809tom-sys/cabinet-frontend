@@ -7,8 +7,9 @@
  * can be chosen official; the other two are kept as reference.
  *
  * Nothing runs automatically. The panel mounts collapsed; opening it reads the
- * saved drafts and nothing else. No model is called until the operator presses
- * Generate in that column, and no call is made on mount, on open, or on typing.
+ * saved drafts and the door's server aiColumns (server text and image win) and
+ * nothing else. No model is called until the operator presses Generate in that
+ * column, and no call is made on mount, on open, or on typing.
  *
  * Generate runs server-side only: the button sends the prompt and the door
  * photo's URL to `doorStyles.describeWithAi` on the API server, which holds the
@@ -20,7 +21,7 @@
  * empty field.
  */
 import { promptWithDoorGroundTruth } from "@shared/doorAiGroundTruth";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type Ref } from "react";
 import { Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -68,6 +69,17 @@ import {
   aiDoorPipelineLabel,
   type AiDoorGeneratedImage,
 } from "@shared/aiDoorImage";
+import {
+  AI_DOOR_SAVED_IMAGE_FAILED_NOTE,
+  aiDoorColumnPayloadKey,
+  aiDoorColumnSaveErrorMessage,
+  aiDoorColumnSaveInput,
+  columnImageNeedsSave,
+  seedAiDoorColumns,
+  type AiDoorColumns,
+  type SaveAiColumnInput,
+} from "@shared/aiDoorColumns";
+import { useSaveAiColumn, type AiDoorColumnFlushResult } from "@/lib/aiDoorColumnClient";
 
 export type AiDoorCompareStyle = {
   id: number;
@@ -86,6 +98,18 @@ export type AiDoorCompareStyle = {
   insideEdgeProfile?: string | null;
   finishSheen?: "matte" | "satin" | "gloss" | null;
   grainDirection?: string | null;
+  /**
+   * GPT / Claude / Gemini columns from `doorStyles.listForAdmin` (`aiColumns`).
+   * Null when the row has none. Server values win over the browser draft.
+   */
+  aiColumns?: AiDoorColumns | null;
+};
+
+export type { AiDoorColumnFlushResult };
+
+/** Save Changes calls this so a column generated in the visit is written even if its request is still settling. */
+export type AiDoorColumnFlushHandle = {
+  flushColumns: () => Promise<AiDoorColumnFlushResult>;
 };
 
 export type AiDoorDescriptionCompareProps = {
@@ -245,7 +269,22 @@ function DoorPreview({ params, colorSeed }: {
  * Mounting this component is the "request" — no parsing, no preview work, and no
  * storage read happens before the operator opens the tool and pastes text.
  */
-export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, onProfileSaved }: AiDoorDescriptionCompareProps) {
+function columnGeneratedState(
+  images: Partial<Record<AiDoorModel, AiDoorGeneratedImage>>,
+): GenerateState {
+  const next: GenerateState = {};
+  for (const model of AI_DOOR_MODELS) {
+    const image = images[model];
+    if (!image) continue;
+    next[model] = { status: "idle", message: null, image, imageMessage: null };
+  }
+  return next;
+}
+
+function AiDoorDescriptionCompareInner(
+  { style, sampleUrl, onChooseOfficial, onProfileSaved }: AiDoorDescriptionCompareProps,
+  ref: Ref<AiDoorColumnFlushHandle>,
+) {
   const [open, setOpen] = useState(false);
   const [stored, setStored] = useState<StoredAiDoorComparison>({ fields: {}, chosen: null, reference: {} });
   const [fields, setFields] = useState<Partial<Record<AiDoorModel, string>>>({});
@@ -255,7 +294,29 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
   const [busy, setBusy] = useState(false);
   /** Bumped on every choice so the Designer-facing draft is re-read. */
   const [choiceVersion, setChoiceVersion] = useState(0);
+  const [columnSaveError, setColumnSaveError] = useState<string | null>(null);
+  /** Image URL that failed to load, per column. A new URL clears it. */
+  const [failedImageUrls, setFailedImageUrls] = useState<Partial<Record<AiDoorModel, string>>>({});
+  const [sampledHex, setSampledHex] = useState<Partial<Record<AiDoorModel, string>>>({});
   const describe = useAiDoorDescribe();
+  const saveAiColumn = useSaveAiColumn();
+  const openedRef = useRef(false);
+  const dirtyRef = useRef<Partial<Record<AiDoorModel, true>>>({});
+  const savedImageUrlRef = useRef<Partial<Record<AiDoorModel, string>>>({});
+  const savedHexRef = useRef<Partial<Record<AiDoorModel, string>>>({});
+  const fieldsRef = useRef(fields);
+  fieldsRef.current = fields;
+  const generatedRef = useRef(generated);
+  generatedRef.current = generated;
+  const sampledHexRef = useRef(sampledHex);
+  sampledHexRef.current = sampledHex;
+  const saveColumnRef = useRef(saveAiColumn);
+  saveColumnRef.current = saveAiColumn;
+  const savedPayloadRef = useRef<Partial<Record<AiDoorModel, string>>>({});
+  const savingPayloadRef = useRef<Partial<Record<AiDoorModel, string>>>({});
+  const persistColumnRef = useRef<
+    (model: AiDoorModel, overrides?: Partial<Pick<SaveAiColumnInput, "text" | "imageUrl" | "model" | "renderHex">>, force?: boolean) => Promise<AiDoorColumnFlushResult>
+  >(async () => ({ ok: true }));
 
   const parsed = useMemo(
     () => (open ? parseAiDoorComparison(fields, style) : null),
@@ -264,9 +325,24 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
 
   function startComparison() {
     const loaded = readAiDoorComparison(style.id);
-    setStored(loaded);
-    setFields(loaded.fields);
-    setGenerated({});
+    const seeded = seedAiDoorColumns(style.aiColumns, loaded);
+    openedRef.current = true;
+    dirtyRef.current = {};
+    const urls: Partial<Record<AiDoorModel, string>> = {};
+    const hexes: Partial<Record<AiDoorModel, string>> = {};
+    for (const model of AI_DOOR_MODELS) {
+      urls[model] = seeded.images[model]?.url ?? "";
+      hexes[model] = seeded.renderHexByColumn[model] ?? "";
+    }
+    savedImageUrlRef.current = urls;
+    savedHexRef.current = hexes;
+    fieldsRef.current = seeded.fields;
+    setStored({ fields: seeded.fields, chosen: seeded.chosen, reference: seeded.reference });
+    setFields(seeded.fields);
+    setGenerated(columnGeneratedState(seeded.images));
+    setSampledHex(seeded.renderHexByColumn);
+    setFailedImageUrls({});
+    setColumnSaveError(null);
     setChoiceVersion((current) => current + 1);
     setSavedNote(null);
     setOpen(true);
@@ -286,8 +362,12 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
 
   function updateField(model: AiDoorModel, value: string) {
     // Text goes into local state only. Editing a field never re-chooses an
-    // official description and never writes to storage on its own.
-    setFields((current) => ({ ...current, [model]: value }));
+    // official description and never writes to storage on its own. Save Changes
+    // flushes whatever is on screen, so the edit is marked for that flush.
+    dirtyRef.current[model] = true;
+    const next = { ...fieldsRef.current, [model]: value };
+    fieldsRef.current = next;
+    setFields(next);
   }
 
   /**
@@ -313,6 +393,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
       colorDescription: null,
     }));
     if (result.description) updateField(model, result.description);
+    const imageUrl = result.image?.url?.trim() || null;
+    if (result.description || imageUrl) dirtyRef.current[model] = true;
+    if (imageUrl) setFailedImageUrls((current) => {
+      if (current[model] !== imageUrl) return current;
+      const next = { ...current };
+      delete next[model];
+      return next;
+    });
     setGenerated((current) => ({
       ...current,
       [model]: {
@@ -322,6 +410,14 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
         imageMessage: result.imageMessage,
       },
     }));
+    if (result.description || imageUrl) {
+      void persistColumnRef.current(model, {
+        text: result.description ?? fieldsRef.current[model] ?? null,
+        imageUrl,
+        model: result.image?.providerModel ?? model,
+        renderHex: sampledHexRef.current[model] ?? null,
+      });
+    }
   }
 
   // Persist the official choice on the style itself. Browser storage alone made
@@ -339,7 +435,6 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
     onError: (error) => setSavedNote(error.message),
   });
 
-  const [sampledHex, setSampledHex] = useState<Record<string, string>>({});
   // A picture that lands after the choice is saved again, so the row never ends up
   // with a model and text but no image.
   useEffect(() => {
@@ -364,6 +459,83 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
     }
     return () => { cancelled = true; };
   }, [generated, sampledHex]);
+
+  /**
+   * Write one column. Generate calls this when its result arrives. The effect
+   * below calls it again when a picture URL shows up after that save. Save
+   * Changes forces a write of every column this visit changed.
+   */
+  async function persistColumn(
+    model: AiDoorModel,
+    overrides?: Partial<Pick<SaveAiColumnInput, "text" | "imageUrl" | "model" | "renderHex">>,
+    force = false,
+  ): Promise<AiDoorColumnFlushResult> {
+    const state = generatedRef.current[model];
+    const image = state?.image ?? null;
+    const input = aiDoorColumnSaveInput(style.id, model, {
+      text: overrides && "text" in overrides ? overrides.text : fieldsRef.current[model],
+      imageUrl: overrides && "imageUrl" in overrides ? overrides.imageUrl : image?.url,
+      model: overrides && "model" in overrides ? overrides.model : image?.providerModel ?? model,
+      renderHex: overrides && "renderHex" in overrides ? overrides.renderHex : sampledHexRef.current[model],
+    });
+    if (!input) return { ok: true };
+    const key = aiDoorColumnPayloadKey(input);
+    if (!force && (savedPayloadRef.current[model] === key || savingPayloadRef.current[model] === key)) {
+      return { ok: true };
+    }
+    savingPayloadRef.current[model] = key;
+    try {
+      await saveColumnRef.current.mutateAsync(input);
+      savedPayloadRef.current[model] = key;
+      savedImageUrlRef.current[model] = input.imageUrl ?? "";
+      savedHexRef.current[model] = input.renderHex ?? "";
+      if (savingPayloadRef.current[model] === key) delete savingPayloadRef.current[model];
+      setColumnSaveError(null);
+      return { ok: true };
+    } catch (error) {
+      if (savingPayloadRef.current[model] === key) delete savingPayloadRef.current[model];
+      const message = aiDoorColumnSaveErrorMessage(error);
+      setColumnSaveError(message);
+      return { ok: false, message };
+    }
+  }
+  persistColumnRef.current = persistColumn;
+
+  // A picture that lands in the column after the text was saved (or a sampled
+  // hex for a column this visit already changed) is written too. Opening a
+  // stored picture does not write: its URL is already in savedImageUrlRef.
+  useEffect(() => {
+    if (!open) return;
+    for (const model of AI_DOOR_MODELS) {
+      const state = generated[model];
+      if (!columnImageNeedsSave({
+        status: state?.status ?? null,
+        imageUrl: state?.image?.url ?? null,
+        renderHex: sampledHex[model] ?? null,
+        savedImageUrl: savedImageUrlRef.current[model] ?? null,
+        savedRenderHex: savedHexRef.current[model] ?? null,
+        dirty: Boolean(dirtyRef.current[model]),
+      })) continue;
+      void persistColumnRef.current(model);
+    }
+  }, [open, generated, sampledHex]);
+
+  useImperativeHandle(ref, () => ({
+    flushColumns: async () => {
+      if (!openedRef.current) return { ok: true };
+      let failure: string | null = null;
+      for (const model of AI_DOOR_MODELS) {
+        if (!dirtyRef.current[model]) continue;
+        const result = await persistColumnRef.current(model, undefined, true);
+        if (!result.ok && !failure) failure = result.message;
+      }
+      if (failure) {
+        setColumnSaveError(failure);
+        return { ok: false as const, message: failure };
+      }
+      return { ok: true as const };
+    },
+  }), []);
 
   // Which columns have a provider key on this server. Booleans only - the
   // procedure never returns a key. Tom, Nov 13 2026: the panel said nothing about
@@ -496,6 +668,16 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
         </div>
       )}
 
+      {columnSaveError && (
+        <p
+          role="alert"
+          className="mt-2 rounded border border-red-300 bg-red-50 px-2 py-1.5 text-[11px] font-medium text-red-800"
+          data-testid="ai-door-column-save-error"
+        >
+          {columnSaveError}
+        </p>
+      )}
+
       <div className="mt-3 grid gap-3 md:grid-cols-3">
         {AI_DOOR_MODELS.map((model) => {
           const result = parsed?.[model];
@@ -508,6 +690,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
           };
           const isLoading = state.status === "loading";
           const image = state.image;
+          const imageFailed = Boolean(image && failedImageUrls[model] === image.url);
           const text = (fields[model] ?? "").trim();
           const hasText = text.length > 0;
           return (
@@ -583,7 +766,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
               {/* The result: the door picture Generate drew. Nothing is shown as a
                   result until there is a real image, so a saved photo or a vector
                   sketch can never be mistaken for one. */}
-              {image && (
+              {image && !imageFailed && (
                 <figure className="space-y-1" data-testid={`ai-door-image-${model}`}>
                   <div className="relative">
                     <img
@@ -591,6 +774,12 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
                       alt={`Generated picture of this ${style.doorStyle ?? "cabinet"} door`}
                       className="h-40 w-full rounded-md border object-cover"
                       data-testid={`ai-door-image-src-${model}`}
+                      onError={() => {
+                        const url = image.url;
+                        setFailedImageUrls((current) => (
+                          current[model] === url ? current : { ...current, [model]: url }
+                        ));
+                      }}
                     />
                     <SourceBadge source={aiDoorGeneratedImageSource(image.url)} />
                   </div>
@@ -598,6 +787,11 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
                     {aiDoorImageCaption(model, image)}
                   </figcaption>
                 </figure>
+              )}
+              {imageFailed && (
+                <p role="alert" className="text-[10px] font-medium text-red-700" data-testid={`ai-door-saved-image-failed-${model}`}>
+                  {AI_DOOR_SAVED_IMAGE_FAILED_NOTE}
+                </p>
               )}
 
               {state.imageMessage && (
@@ -685,5 +879,7 @@ export function AiDoorDescriptionCompare({ style, sampleUrl, onChooseOfficial, o
     </div>
   );
 }
+
+export const AiDoorDescriptionCompare = forwardRef(AiDoorDescriptionCompareInner);
 
 export default AiDoorDescriptionCompare;

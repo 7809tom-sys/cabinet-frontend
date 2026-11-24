@@ -15,6 +15,7 @@
  * - the plain-text color description saves.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /** The Generate mutation is replaced per test; nothing here reaches the network. */
@@ -24,6 +25,15 @@ const describeMock = vi.hoisted(() => ({
   available: true,
 }));
 
+const columnSaveMock = vi.hoisted(() => ({
+  mutateAsync: vi.fn(async () => ({ ok: true as const, aiColumns: null })),
+  mutate: vi.fn(),
+}));
+
+const profileSaveMock = vi.hoisted(() => ({
+  mutate: vi.fn(),
+}));
+
 vi.mock("@/lib/trpc", () => ({
   trpc: {
     aiDoorDescription: {
@@ -31,8 +41,15 @@ vi.mock("@/lib/trpc", () => ({
       providerStatus: { useQuery: () => ({ data: { gpt: true, claude: false, gemini: true, keys: { gpt: "OPENAI_API_KEY", claude: "ANTHROPIC_API_KEY", gemini: "GEMINI_API_KEY" } } }) },
     },
     doorStyles: {
-      // #412 writes the chosen AI profile; the panel tests do not exercise it.
-      saveAiProfile: { useMutation: () => ({ mutate: () => undefined }) },
+      // #412 writes the chosen AI profile. saveAiColumn writes each column's picture.
+      saveAiProfile: { useMutation: () => ({ mutate: profileSaveMock.mutate }) },
+      saveAiColumn: {
+        useMutation: () => ({
+          mutate: columnSaveMock.mutate,
+          mutateAsync: columnSaveMock.mutateAsync,
+          isPending: false,
+        }),
+      },
     },
   },
 }));
@@ -57,13 +74,15 @@ vi.mock("@/lib/aiDoorDescribeClient", () => ({
   }),
 }));
 
-import { AiDoorDescriptionCompare } from "./AiDoorDescriptionCompare";
+import { AiDoorDescriptionCompare, type AiDoorColumnFlushHandle } from "./AiDoorDescriptionCompare";
+import { AI_DOOR_COLUMNS_MIGRATION_FILE, AI_DOOR_SAVED_IMAGE_FAILED_NOTE } from "@shared/aiDoorColumns";
 import { DoorColorDescriptionField } from "./DoorColorDescriptionField";
 import {
   AI_DOOR_COMPARISON_STORAGE_KEY,
   DOOR_COLOR_DESCRIPTION_STORAGE_KEY,
   readAiDoorComparison,
   readDoorColorDescription,
+  saveAiDoorComparison,
 } from "@shared/aiDoorDescriptionStore";
 import {
   AI_DOOR_CHOSEN_PROFILE_STORAGE_KEY,
@@ -127,6 +146,10 @@ beforeEach(() => {
   describeMock.mutateAsync.mockReset();
   describeMock.isPending = false;
   describeMock.available = true;
+  columnSaveMock.mutateAsync.mockReset();
+  columnSaveMock.mutateAsync.mockResolvedValue({ ok: true, aiColumns: null });
+  columnSaveMock.mutate.mockReset();
+  profileSaveMock.mutate.mockReset();
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
 });
 
@@ -169,6 +192,7 @@ describe("nothing runs on editor open", () => {
 describe("the three columns render", () => {
   it("names which columns have a server key, so a silent column has a reason", () => {
     render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
     expect(screen.getByTestId("ai-door-provider-status")).toBeTruthy();
     expect(screen.getByTestId("ai-door-provider-gpt").textContent).toContain("OK");
     expect(screen.getByTestId("ai-door-provider-claude").textContent).toContain("No key");
@@ -643,6 +667,185 @@ describe("choosing a description as official", () => {
     fireEvent.click(screen.getByTestId("ai-door-save-comparison"));
     fireEvent.click(screen.getByTestId("ai-door-choose-gpt"));
     expect(describeMock.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+const STORED_GPT = {
+  imageUrl: "/manus-storage/door-style-images/ai-generated/gpt-stored.png",
+  model: "gpt-image-2",
+  text: RAISED_TEXT,
+  renderHex: "#aabbcc",
+  generatedAt: "2026-11-24T12:00:00.000Z",
+};
+
+describe("server columns survive a reopen", () => {
+  it("shows the stored image instead of the sketch, and the server text wins over localStorage", () => {
+    saveAiDoorComparison(STYLE.id, {
+      fields: { gpt: "Browser draft that should lose.", claude: "Browser Claude only." },
+      chosen: null,
+      reference: {},
+    });
+    render(<AiDoorDescriptionCompare style={{ ...STYLE, aiColumns: { gpt: STORED_GPT, claude: { imageUrl: null, model: null, text: SHAKER_TEXT, renderHex: null, generatedAt: "" } } }} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+
+    expect((screen.getByTestId("ai-door-field-gpt") as HTMLTextAreaElement).value).toBe(RAISED_TEXT);
+    expect((screen.getByTestId("ai-door-image-src-gpt") as HTMLImageElement).getAttribute("src")).toBe(STORED_GPT.imageUrl);
+    expect(screen.queryByTestId("ai-door-sketch-gpt")).toBeNull();
+    // Claude has server text and no image, so the sketch is the honest fallback.
+    expect((screen.getByTestId("ai-door-field-claude") as HTMLTextAreaElement).value).toBe(SHAKER_TEXT);
+    expect(screen.queryByTestId("ai-door-image-claude")).toBeNull();
+    expect(screen.getByTestId("ai-door-sketch-claude").textContent).toContain("It is not a photo of this door");
+    // Gemini had nothing on the server, so the browser draft is not invented for it.
+    expect((screen.getByTestId("ai-door-field-gemini") as HTMLTextAreaElement).value).toBe("");
+    expect(screen.queryByTestId("ai-door-sketch-gemini")).toBeNull();
+  });
+
+  it("keeps a browser draft when the server has no column for it", () => {
+    saveAiDoorComparison(STYLE.id, {
+      fields: { gemini: "Pasted Gemini description." },
+      chosen: null,
+      reference: {},
+    });
+    render(<AiDoorDescriptionCompare style={{ ...STYLE, aiColumns: null }} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    expect((screen.getByTestId("ai-door-field-gemini") as HTMLTextAreaElement).value).toBe("Pasted Gemini description.");
+    expect(screen.getByTestId("ai-door-sketch-gemini")).toBeTruthy();
+    expect(screen.queryByTestId("ai-door-image-gemini")).toBeNull();
+  });
+
+  it("says when a stored image URL fails to load, and does not replace it with the sketch", () => {
+    render(<AiDoorDescriptionCompare style={{ ...STYLE, aiColumns: { gpt: STORED_GPT } }} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.error(screen.getByTestId("ai-door-image-src-gpt"));
+    expect(screen.getByTestId("ai-door-saved-image-failed-gpt").textContent).toBe(AI_DOOR_SAVED_IMAGE_FAILED_NOTE);
+    expect(screen.queryByTestId("ai-door-sketch-gpt")).toBeNull();
+    expect(screen.queryByTestId("ai-door-image-gpt")).toBeNull();
+  });
+});
+
+describe("each column is saved on the door style", () => {
+  it("calls saveAiColumn when Generate returns a picture, including the text it was drawn from", async () => {
+    describeMock.mutateAsync.mockResolvedValue({
+      description: RAISED_TEXT,
+      image: {
+        url: "/manus-storage/door-style-images/ai-generated/gpt-new.png",
+        painter: "openai",
+        providerModel: "gpt-image-2",
+        fromDescription: "gpt",
+      },
+      imageMessage: null,
+      message: null,
+      notConnected: false,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+
+    await waitFor(() => expect(columnSaveMock.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      doorStyleId: STYLE.id,
+      column: "gpt",
+      imageUrl: "/manus-storage/door-style-images/ai-generated/gpt-new.png",
+      text: RAISED_TEXT,
+      model: "gpt-image-2",
+    })));
+    expect(screen.queryByTestId("ai-door-sketch-gpt")).toBeNull();
+  });
+
+  it("saves a picture that arrives after the description", async () => {
+    describeMock.mutateAsync
+      .mockResolvedValueOnce({ description: RAISED_TEXT, image: null, imageMessage: null, message: null, notConnected: false })
+      .mockResolvedValueOnce({
+        description: RAISED_TEXT,
+        image: {
+          url: "/manus-storage/door-style-images/ai-generated/gpt-late.png",
+          painter: "openai",
+          providerModel: "gpt-image-2",
+          fromDescription: "gpt",
+        },
+        imageMessage: null,
+        message: null,
+        notConnected: false,
+      });
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+    await waitFor(() => expect(columnSaveMock.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      column: "gpt",
+      text: RAISED_TEXT,
+      imageUrl: null,
+    })));
+
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+    await waitFor(() => expect(columnSaveMock.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      column: "gpt",
+      imageUrl: "/manus-storage/door-style-images/ai-generated/gpt-late.png",
+      text: RAISED_TEXT,
+    })));
+    expect((screen.getByTestId("ai-door-image-src-gpt") as HTMLImageElement).getAttribute("src")).toContain("gpt-late.png");
+  });
+
+  it("shows the 0281 missing-columns error and does not throw", async () => {
+    columnSaveMock.mutateAsync.mockRejectedValue({
+      message: `Run ${AI_DOOR_COLUMNS_MIGRATION_FILE}`,
+      data: { code: "PRECONDITION_FAILED" },
+    });
+    describeMock.mutateAsync.mockResolvedValue({
+      description: "A generated door.",
+      image: { url: "/manus-storage/gpt.png", painter: "openai", providerModel: "gpt-image-2", fromDescription: "gpt" },
+      imageMessage: null,
+      message: null,
+      notConnected: false,
+    });
+    render(<AiDoorDescriptionCompare style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.click(screen.getByTestId("ai-door-generate-gpt"));
+    await waitFor(() => expect(screen.getByTestId("ai-door-column-save-error").textContent).toContain(AI_DOOR_COLUMNS_MIGRATION_FILE));
+    expect(screen.getByTestId("ai-door-column-save-error").textContent).toContain("PRECONDITION_FAILED");
+    expect(screen.getByTestId("ai-door-image-src-gpt")).toBeTruthy();
+  });
+
+  it("flushes the visit's columns on Save Changes and still chooses an official profile", async () => {
+    const ref = createRef<AiDoorColumnFlushHandle>();
+    const onChooseOfficial = vi.fn();
+    render(<AiDoorDescriptionCompare ref={ref} style={{ ...STYLE, aiColumns: { gpt: STORED_GPT } }} onChooseOfficial={onChooseOfficial} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    expect(await ref.current?.flushColumns()).toEqual({ ok: true });
+    expect(columnSaveMock.mutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId("ai-door-field-gpt"), { target: { value: `${RAISED_TEXT}\nEdited in this visit.` } });
+    const flushed = await ref.current?.flushColumns();
+    expect(flushed).toEqual({ ok: true });
+    expect(columnSaveMock.mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      doorStyleId: STYLE.id,
+      column: "gpt",
+      imageUrl: STORED_GPT.imageUrl,
+      text: `${RAISED_TEXT}\nEdited in this visit.`,
+      renderHex: "#aabbcc",
+    }));
+
+    fireEvent.click(screen.getByTestId("ai-door-choose-gpt"));
+    expect(onChooseOfficial).toHaveBeenCalledTimes(1);
+    expect(profileSaveMock.mutate).toHaveBeenCalledWith(expect.objectContaining({
+      id: STYLE.id,
+      model: "gpt",
+      imageUrl: STORED_GPT.imageUrl,
+      renderHex: "#aabbcc",
+    }));
+  });
+
+  it("reports a 0281 failure from Save Changes without throwing", async () => {
+    columnSaveMock.mutateAsync.mockRejectedValue({
+      message: `Run ${AI_DOOR_COLUMNS_MIGRATION_FILE}`,
+      data: { code: "PRECONDITION_FAILED" },
+    });
+    const ref = createRef<AiDoorColumnFlushHandle>();
+    render(<AiDoorDescriptionCompare ref={ref} style={STYLE} />);
+    fireEvent.click(screen.getByTestId("ai-door-compare-start"));
+    fireEvent.change(screen.getByTestId("ai-door-field-claude"), { target: { value: SHAKER_TEXT } });
+    const flushed = await ref.current?.flushColumns();
+    expect(flushed?.ok).toBe(false);
+    if (flushed && !flushed.ok) expect(flushed.message).toContain(AI_DOOR_COLUMNS_MIGRATION_FILE);
+    await waitFor(() => expect(screen.getByTestId("ai-door-column-save-error").textContent).toContain(AI_DOOR_COLUMNS_MIGRATION_FILE));
   });
 });
 

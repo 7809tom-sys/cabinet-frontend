@@ -34,7 +34,7 @@ import type { AutoRoomScene } from "@/lib/autoRoomScene";
 import { MediaPicker } from "./MediaPicker";
 import { WalzCraftMatchForStyle, WalzCraftManualDoorPicker, resolveWalzDoor, readManualDoorId, writeManualDoorId } from "@/components/walzcraft/WalzCraftMatchCard";
 import { DoorEditorWalzAudit } from "@/components/admin/DoorEditorWalzAudit";
-import { AiDoorDescriptionCompare } from "@/components/admin/AiDoorDescriptionCompare";
+import { AiDoorDescriptionCompare, type AiDoorColumnFlushHandle } from "@/components/admin/AiDoorDescriptionCompare";
 import { DoorColorDescriptionField } from "@/components/admin/DoorColorDescriptionField";
 import { doorColorColumnForSave } from "@/components/admin/doorColorColumnForSave";
 import { DoorColorSourceSelector } from "@/components/admin/DoorColorSourceSelector";
@@ -62,6 +62,7 @@ import {
 } from "@shared/doorColorSourceSelection";
 import { writeWizardDoorFinish, type WizardDoorFinish } from "@shared/walzcraftDesignerPickup";
 import { officialRecordAsStylePatch, type AiDoorOfficialRecord } from "@shared/aiDoorDescription";
+import type { AiDoorColumns } from "@shared/aiDoorColumns";
 import type { MatchSavePatch } from "@shared/wizardDoorMatch";
 import { WoodGrainColorDisplay, DoorSkinField } from "@/components/walzcraft/ColorFinishExtras";
 import { readDoorSkin, saveDoorSkin, doorSkinError, type DoorSkin } from "@shared/doorSkin";
@@ -157,6 +158,11 @@ interface AdminStyle {
   aiProfileModel?: string | null;
   aiProfileText?: string | null;
   aiProfileImageUrl?: string | null;
+  /**
+   * GPT, Claude, and Gemini column pictures from listForAdmin.
+   * Shape `{ gpt?: Col, claude?: Col, gemini?: Col }`. Null when the row has none.
+   */
+  aiColumns?: AiDoorColumns | null;
   autoRoomScene?: AutoRoomScene | null;
   isFeatured: boolean;
   featuredRank: number;
@@ -730,6 +736,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
     }
   };
   const specBatchRef = useRef<ApplySpecsHandle>(null);
+  const aiColumnsRef = useRef<AiDoorColumnFlushHandle>(null);
   const saveLock = useRef(false);
   const [savePhase, setSavePhase] = useState<"idle" | "confirming" | "saving">("idle");
 
@@ -921,12 +928,20 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
         const notice = specBatchToast(result.saved, result.failed);
         if (notice.kind === "success") toast.success(notice.message);
         else toast.error(notice.message);
-      } else {
-        toast.success("Style updated");
       }
       saveGlazing(style.id, glazing);
       saveDoorSkin(style.id, doorSkin);
       saveDoorColorDescription(style.id, colorDescription);
+      // Columns generated or edited in this visit. A missing aiColumns migration
+      // is reported in the panel; the dialog stays open so that note remains.
+      const columnSave = await aiColumnsRef.current?.flushColumns();
+      if (columnSave && !columnSave.ok) {
+        toast.error(columnSave.message);
+        return;
+      }
+      if (!(accepted && accepted.styleIds.length > 0)) {
+        toast.success("Style updated");
+      }
       if (bakeAfterSave) {
         // Reuse the existing Designer "Final preview" room-scene flow (InteractiveRoom3D openPhotoRenderDialog);
         // it keeps its own confirmations and never starts the Gemini path automatically.
@@ -1589,6 +1604,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
 
           {/* AI door-description comparison (door editor only; nothing runs until started) */}
           <AiDoorDescriptionCompare
+            ref={aiColumnsRef}
             style={{
               id: style.id,
               doorStyle,
@@ -1604,6 +1620,7 @@ function EditDialog({ style, catalogStyles, open, onClose, onSaved }: EditDialog
               insideEdgeProfile,
               finishSheen,
               grainDirection,
+              aiColumns: style.aiColumns ?? null,
             }}
             sampleUrl={doorSampleImageUrl || style.doorSampleImageUrl || null}
             onChooseOfficial={handleChooseOfficialDescription}

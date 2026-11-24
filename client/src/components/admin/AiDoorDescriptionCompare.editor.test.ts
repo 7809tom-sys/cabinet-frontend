@@ -190,11 +190,15 @@ describe("choosing a description redraws the actual door", () => {
   });
 
   it("leaves color precedence where it was", () => {
-    // A choice never carries a hex: the preview and the 3D door keep resolving
-    // color the same way, an accepted render first.
+    // The Designer draft still carries no hex. renderHex travels only with the
+    // saved AI profile and the per-column save, beside the picture.
     expect(compareSource).toContain("previewFaceHex");
-    expect(compareSource).not.toContain("renderHex:");
     expect(compareSource).not.toContain("setRenderHex");
+    const profileBlock = compareSource.slice(
+      compareSource.indexOf("const profile = chosenProfileFromRecord"),
+      compareSource.indexOf("announceChosenDoorProfile"),
+    );
+    expect(profileBlock).not.toContain("renderHex");
   });
 });
 

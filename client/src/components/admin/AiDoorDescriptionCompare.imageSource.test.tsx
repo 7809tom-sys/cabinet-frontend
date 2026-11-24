@@ -8,6 +8,18 @@ import {
   aiDoorSampleSource,
 } from "@/lib/aiDoorImageSource";
 
+vi.mock("@/lib/trpc", () => ({
+  trpc: {
+    aiDoorDescription: {
+      providerStatus: { useQuery: () => ({ data: undefined }) },
+    },
+    doorStyles: {
+      saveAiProfile: { useMutation: () => ({ mutate: () => undefined }) },
+      saveAiColumn: { useMutation: () => ({ mutate: () => undefined, mutateAsync: async () => ({ ok: true, aiColumns: null }), isPending: false }) },
+    },
+  },
+}));
+
 vi.mock("@/lib/aiDoorDescribeClient", () => ({
   AI_DOOR_GENERATE_UNAVAILABLE_MESSAGE: "Generate needs the API server's AI door procedure, which is not deployed yet. Copy the prompt instead.",
   aiDoorDescribeProcedureAvailable: () => true,
