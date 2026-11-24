@@ -185,19 +185,19 @@ async function autoDesignTrigger(width: number): Promise<HTMLButtonElement> {
   return (await screen.findByTestId("room-layout-popup-auto-design")) as HTMLButtonElement;
 }
 
-async function openStep(width: number) {
+async function clickTrigger(width: number) {
   const trigger = await autoDesignTrigger(width);
   expect(trigger.disabled).toBe(false);
   fireEvent.click(trigger);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+}
+
+/** Auto-Design's own door-only step, shown only when the plan has no door style yet. */
+async function openDoorStep(width: number) {
+  await clickTrigger(width);
   const step = await screen.findByTestId("fresh-room-catalog-setup");
   expect(step.getAttribute("data-purpose")).toBe("auto-design");
   return step;
-}
-
-function continueButton(step: HTMLElement) {
-  // By text: Radix Select can leave the dialog aria-hidden in jsdom after it closes.
-  return within(step).getByText("Continue to Auto-Design").closest("button") as HTMLButtonElement;
 }
 
 function lastBasePoolInput(): { styleId?: number } | undefined {
@@ -216,105 +216,67 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("Auto-Design asks for the vendor and door style/color first", () => {
+// Tom (owner voice, Nov 24 2026, 12:26-12:27 PM CT): Auto-Design never shows the
+// cabinet vendor and color selector or the catalog selector; after the door style
+// is picked the Auto-Design questions come up directly.
+describe("Auto-Design skips the vendor and color selector", () => {
   for (const width of [375, 768, 1024, 1280]) {
-    it(`opens the vendor step with the current choice preselected, then Auto-Design, at ${width}px`, { timeout: 60_000 }, async () => {
+    it(`opens the Auto-Design questions directly when a door style is already chosen, at ${width}px`, { timeout: 60_000 }, async () => {
       seedDraft(21);
       await renderDesigner(width);
-
-      const step = await openStep(width);
-      // Not the Auto-Design questions yet.
-      expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
-      // The vendor list and the door-style grid are both in the step.
-      expect(within(step).getByRole("combobox", { name: "Choose cabinet distributor" }).textContent).toContain("Line Two");
-      const options = within(step).getAllByTestId("fresh-room-door-style-option");
-      const selected = options.filter((option) => option.getAttribute("aria-pressed") === "true");
-      expect(selected).toHaveLength(1);
-      expect(selected[0].textContent).toContain("Gray Slab");
-      // The popup stays inside the viewport. The vendor list, door grid, and
-      // preview scroll; Continue and Cancel stay pinned.
-      expect(step.className).toContain("overflow-hidden");
-      expect(step.className).toContain("max-h-[min(92dvh,900px)]");
-      expect(step.querySelector(".overflow-y-auto")).toBeTruthy();
-      expect(options[0].parentElement?.className).toContain("grid-cols-2");
-      expect(within(step).getByRole("button", { name: "Cancel" })).toBeTruthy();
-
-      // One click to continue with the preselected line.
-      const go = continueButton(step);
-      expect(go.disabled).toBe(false);
-      fireEvent.click(go);
+      await clickTrigger(width);
       await flushTimers();
       expect(screen.queryByTestId("fresh-room-catalog-setup")).toBeNull();
+      expect(screen.queryByText("Choose your cabinet vendor and color")).toBeNull();
+      expect(screen.queryByText("Continue to cabinet catalog")).toBeNull();
       expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
       expect(lastBasePoolInput()?.styleId).toBe(21);
     });
   }
 
-  it("Cancel closes the step without opening Auto-Design", { timeout: 60_000 }, async () => {
+  it("opens the questions directly every time Auto-Design is chosen", { timeout: 60_000 }, async () => {
     seedDraft(21);
     await renderDesigner(1280);
-    const step = await openStep(1280);
-    expect(within(step).queryByRole("button", { name: "Not now" })).toBeNull();
-    fireEvent.click(within(step).getByRole("button", { name: "Cancel" }));
-    await flushTimers();
-    expect(screen.queryByTestId("fresh-room-catalog-setup")).toBeNull();
-    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
-
-    // Escape is the same Cancel.
-    const again = await openStep(1280);
-    fireEvent.keyDown(again, { key: "Escape" });
-    await flushTimers();
-    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
-  });
-
-  it("shows the step every time Auto-Design is chosen", { timeout: 60_000 }, async () => {
-    seedDraft(21);
-    await renderDesigner(1280);
-    let step = await openStep(1280);
-    fireEvent.click(continueButton(step));
-    await flushTimers();
+    await clickTrigger(1280);
     expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
     fireEvent.keyDown(screen.getByTestId("auto-design-auto-build-dialog"), { key: "Escape" });
     await flushTimers();
     expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
 
-    step = await openStep(1280);
-    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
-    expect(continueButton(step).disabled).toBe(false);
+    await clickTrigger(1280);
+    expect(screen.queryByTestId("fresh-room-catalog-setup")).toBeNull();
+    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
   });
 
-  it("builds with a vendor and door style chosen in the step", { timeout: 60_000 }, async () => {
-    seedDraft(21);
+  it("with no door style asks for the door only, then goes straight to the questions", { timeout: 60_000 }, async () => {
+    seedDraft(null);
     await renderDesigner(1280);
-    const step = await openStep(1280);
-
-    // Switching vendor clears the other line's door, so Continue waits for a new one.
-    fireEvent.keyDown(within(step).getByRole("combobox", { name: "Choose cabinet distributor" }), { key: "ArrowDown" });
-    await act(async () => {});
-    fireEvent.click(await screen.findByRole("option", { name: "Line One" }));
-    await act(async () => {});
-    expect(continueButton(step).disabled).toBe(true);
+    const step = await openDoorStep(1280);
+    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
+    // No vendor picker, no catalog continue: the vendor comes from the catalog automatically.
+    expect(within(step).queryByRole("combobox", { name: "Choose cabinet distributor" })).toBeNull();
+    expect(within(step).queryByTestId("fresh-room-distributor-step")).toBeNull();
+    expect(within(step).queryByText("Choose your cabinet vendor and color")).toBeNull();
+    expect(within(step).queryByText("Continue to Auto-Design")).toBeNull();
+    expect(within(step).queryByText("Continue to cabinet catalog")).toBeNull();
     const names = within(step).getAllByTestId("fresh-room-door-style-option").map((option) => option.getAttribute("aria-label"));
     expect(names.sort()).toEqual(["Espresso Shaker door thumbnail", "White Shaker door thumbnail"]);
 
     fireEvent.click(within(step).getByLabelText("White Shaker door thumbnail"));
-    await act(async () => {});
-    expect(continueButton(step).disabled).toBe(false);
-    fireEvent.click(continueButton(step));
     await flushTimers();
+    await flushTimers();
+    expect(screen.queryByTestId("fresh-room-catalog-setup")).toBeNull();
     expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
     expect(lastBasePoolInput()?.styleId).toBe(11);
   });
 
-  it("waits for a vendor and door style on a plan that has none", { timeout: 60_000 }, async () => {
+  it("Cancel closes the door step without opening Auto-Design", { timeout: 60_000 }, async () => {
     seedDraft(null);
     await renderDesigner(375);
-    const step = await openStep(375);
-    // A plan with no vendor still shows the first catalog line's door photos.
-    // Continue stays off until a door style is picked.
-    expect(within(step).queryByText("Choose a distributor first")).toBeNull();
-    expect(within(step).getByRole("combobox", { name: "Choose cabinet distributor" }).textContent).toContain("Line One");
-    expect(within(step).getAllByTestId("fresh-room-door-style-option").length).toBeGreaterThan(0);
-    expect(continueButton(step).disabled).toBe(true);
+    const step = await openDoorStep(375);
+    fireEvent.click(within(step).getByRole("button", { name: "Cancel" }));
+    await flushTimers();
+    expect(screen.queryByTestId("fresh-room-catalog-setup")).toBeNull();
+    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
   });
 });

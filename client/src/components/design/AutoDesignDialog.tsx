@@ -63,6 +63,13 @@ type Props = {
    * so the person can keep choosing the other appliances.
    */
   childPickerOpen?: boolean;
+  /**
+   * Why a build cannot run right now (non-kitchen room, locked layout, hand-placed
+   * cabinets), with the action that clears it. The always-visible toolbar opener
+   * opens this popup in any state, so the reason is explained here instead of
+   * graying the button out (Tom, owner voice, Nov 24 2026, 12:36 PM CT).
+   */
+  blockedNotice?: { message: string; actions?: { id: string; label: string; onClick: () => void }[] } | null;
 };
 type PointField = "sink" | "stove" | "dishwasher" | "refrigerator";
 type SinkBaseWidth = 30 | 33 | 36 | 42;
@@ -92,7 +99,7 @@ const defaultFieldValue = (measurement: AutoDesignDefaultMeasurement | null, fal
   ? { wallLabel: measurement.wallLabel, centerOffsetIn: String(measurement.centerOffsetIn) }
   : fallback);
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false, blockedNotice = null }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -274,6 +281,20 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
 	          </DialogDescription>
 	        </DialogHeader>
 	        <div className="grid gap-4">
+	          {blockedNotice && (
+	            <div role="status" data-testid="auto-design-blocked-notice" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+	              <p>{blockedNotice.message}</p>
+	              {(blockedNotice.actions ?? []).length > 0 && (
+	                <div className="mt-2 flex flex-wrap gap-2">
+	                  {(blockedNotice.actions ?? []).map((action) => (
+	                    <Button key={action.id} type="button" size="sm" variant="outline" data-testid={`auto-design-blocked-action-${action.id}`} onClick={action.onClick}>
+	                      {action.label}
+	                    </Button>
+	                  ))}
+	                </div>
+	              )}
+	            </div>
+	          )}
 	          <AutoDesignIntakeSection intake={intake} onChange={setIntake} />
 	          {onLoadSixWallTrainingRoom && (
 	            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/70 p-3">

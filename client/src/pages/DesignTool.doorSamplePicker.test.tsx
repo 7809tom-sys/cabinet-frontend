@@ -155,7 +155,8 @@ describe("designer start shows catalog door sample photos", () => {
     expect(within(step).getByText("Not now", { hidden: true })).toBeTruthy();
   });
 
-  it("Auto-Design uses the same photo grid, then opens the measured questions", { timeout: 60_000 }, async () => {
+  it("Auto-Design skips the vendor/color photo step when a door style is chosen and opens the measured questions", { timeout: 60_000 }, async () => {
+    // Tom (owner voice, Nov 24 2026, 12:26-12:27 PM CT): no vendor/color or catalog selector in the Auto-Design flow.
     window.localStorage.setItem(
       "cabinet-dealz:designer-draft:v2:owner:visitor@example.com",
       JSON.stringify({
@@ -170,18 +171,8 @@ describe("designer start shows catalog door sample photos", () => {
     fireEvent.click(await screen.findByTestId("room-layout-popup-kitchen"));
     await act(async () => {});
     fireEvent.click(await screen.findByTestId("room-layout-popup-auto-design"));
-    await act(async () => {});
-    const step = await screen.findByTestId("fresh-room-catalog-setup");
-    await screen.findByLabelText("Gray Slab door thumbnail");
-    expect(step.getAttribute("data-purpose")).toBe("auto-design");
-    expect(step.textContent).toContain("Before Auto-Design draws your kitchen");
-    expect(within(step).getByRole("combobox", { name: "Choose cabinet distributor" }).textContent).toContain("Line Two");
-    expect(photoSrcs(step)).toEqual([GRAY_DOOR]);
-    expect(within(step).getByLabelText("Gray Slab door thumbnail").getAttribute("aria-pressed")).toBe("true");
-    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
-
-    fireEvent.click(within(step).getByRole("button", { name: "Continue to Auto-Design" }));
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
+    expect(screen.queryByTestId("fresh-room-catalog-setup")).toBeNull();
     expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
   });
 });

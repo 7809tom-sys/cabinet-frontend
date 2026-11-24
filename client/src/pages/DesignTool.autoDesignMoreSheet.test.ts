@@ -40,11 +40,14 @@ describe("Auto-Design moved into the room layout popup (tablet and phone)", () =
     expect(availabilitySource).toContain("AUTO_DESIGN_REFRIGERATOR_ANCHOR_NOTE");
   });
 
-  it("keeps the dialogs on the same kitchen-only gate and the old toolbar buttons gone", () => {
-    expect(pageSource).not.toContain('data-testid="admin-auto-design-auto-build"');
+  it("keeps the dialogs on the same kitchen-only gate; one always-on toolbar button, no More row", () => {
+    // Tom (owner voice, Nov 24 2026, 12:36 PM CT): one always-visible toolbar Auto-Design button.
+    expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
+    expect(pageSource).not.toContain('data-testid="more-sheet-auto-design"');
     expect(pageSource).not.toContain("autoDesignAudienceAllowed");
     expect(pageSource).toContain('const autoDesignAvailable = roomType === "kitchen";');
-    expect(pageSource).toMatch(/\{autoDesignAvailable && \(\s*<AutoDesignDialog/);
+    // The toolbar opener can open the popup in any room; it then explains the block inside.
+    expect(pageSource).toMatch(/\{\(autoDesignAvailable \|\| autoDesignOpen\) && \(\s*<AutoDesignDialog/);
     expect(pageSource).toContain("seatAutoDesignCornerFromCatalog");
     expect(pageSource).toMatch(/\{autoDesignAvailable && autoDesignCornerStage && \(\s*<AutoDesignCornerDialog/);
   });

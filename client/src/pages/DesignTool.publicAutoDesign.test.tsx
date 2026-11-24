@@ -299,12 +299,13 @@ describe("Auto-Design is public", () => {
     });
   }
 
-  it("hides Auto-Design outside a kitchen for the same visitor", async () => {
+  it("outside a kitchen keeps only the always-on toolbar Auto-Design button", async () => {
     window.history.replaceState(null, "", "/designer?room=bathroom");
     await renderDesigner(1280);
     await signInAsVisitor();
 
-    expect(screen.queryByTestId("admin-auto-design-auto-build")).toBeNull();
+    // Tom (owner voice, Nov 24 2026, 12:36 PM CT): the toolbar button is always visible.
+    expect(screen.getByTestId("admin-auto-design-auto-build")).toBeTruthy();
     expect(screen.queryByTestId("mobile-auto-design-auto-build")).toBeNull();
     expect(screen.queryByTestId("three-d-floating-auto-design")).toBeNull();
   });
@@ -359,7 +360,7 @@ describe("Auto-Design is reachable from the floating column (fullscreen)", () =>
           .getByTestId("designer-toolbar")
           .getAttribute("data-canvas-only-hidden"),
       ).toBe("true");
-      expect(screen.queryByTestId("admin-auto-design-auto-build")).toBeNull();
+      expect(visibleAt(screen.queryByTestId("admin-auto-design-auto-build"), 1280)).toBe(false);
       // …and the floating column is the remaining way in, exactly as the owner asked.
       const column = screen.getByTestId("three-d-floating-column");
       expect(visibleAt(column, 1280)).toBe(true);

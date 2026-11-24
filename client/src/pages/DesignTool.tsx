@@ -1065,6 +1065,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     createPhoneMeasureSession.mutate();
   }, [createPhoneMeasureSession, user]);
   const [layoutStarterOpen, setLayoutStarterOpen] = useState(false);
+  /** Yes/No "let Auto-Design lay out this kitchen?" shown right after Apply Wall (Tom, owner voice, Nov 24 2026, 12:35 PM CT, final). */
+  const [applyWallAutoDesignPromptOpen, setApplyWallAutoDesignPromptOpen] = useState(false);
   // The advanced wall sequence is a deliberate in-progress design artifact.
   // Keep it in the Designer so closing the modal/sheet, clicking elsewhere, or
   // switching responsive layouts never silently discards entered measurements.
@@ -1506,20 +1508,51 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	 * base is a fixture choice, not hand-placed cabinet work, so it must not leave
 	 * the button enabled while the opener still refuses to open.
 	 */
+	/** Set by the always-visible toolbar opener so its door step still reaches the popup. */
+	const autoDesignForceOpenRef = useRef(false);
 	const openAutoDesign = useCallback(() => {
 	  // Opening it does not move anything already on the plan.
 	  if (!autoDesignControlEnabledRef.current) return;
-	  // Vendor and door style/color first. Confirming opens the existing questions.
+	  autoDesignForceOpenRef.current = false;
 	  chainRoomLayoutAfterStyleRef.current = false;
+	  // Tom (owner voice, Nov 24 2026, 12:26-12:27 PM CT): Auto-Design never shows the
+	  // cabinet vendor and color selector or the catalog selector. With a door style
+	  // already chosen, the Auto-Design questions open directly.
+	  if (styleIdRef.current != null) {
+	    openAutoDesignQuestionsRef.current();
+	    return;
+	  }
+	  // No door style yet: Auto-Design asks for the door only (its vendor is picked
+	  // automatically, see `styleStepVendor`), and the pick goes straight to the questions.
 	  setCabinetStylePopupPurpose("auto-design");
 	  setCatalogSetupOpen(true);
 	}, []);
 	const openAutoDesignQuestions = useCallback(() => {
-	  if (!autoDesignControlEnabledRef.current) return;
+	  const forced = autoDesignForceOpenRef.current;
+	  autoDesignForceOpenRef.current = false;
+	  if (!autoDesignControlEnabledRef.current && !forced) return;
 	  // The colored numbered wall guide is meaningful only in the 2D Floor Plan.
 	  // This does not modify the plan; it simply opens the measured-kitchen workflow.
 	  setViewMode("plan");
 	  setAutoDesignOpen(true);
+	}, []);
+	const openAutoDesignQuestionsRef = useRef(openAutoDesignQuestions);
+	openAutoDesignQuestionsRef.current = openAutoDesignQuestions;
+	/**
+	 * The always-visible toolbar opener (Tom, owner voice, Nov 24 2026, 12:36 PM CT).
+	 * It opens Auto-Design whatever the plan state; a locked layout, hand-placed
+	 * cabinets, or a non-kitchen room are explained inside the popup. Like every
+	 * Auto-Design opener it never shows the vendor/color or catalog selector.
+	 */
+	const openAutoDesignAlways = useCallback(() => {
+	  chainRoomLayoutAfterStyleRef.current = false;
+	  autoDesignForceOpenRef.current = true;
+	  if (styleIdRef.current != null) {
+	    openAutoDesignQuestionsRef.current();
+	    return;
+	  }
+	  setCabinetStylePopupPurpose("auto-design");
+	  setCatalogSetupOpen(true);
 	}, []);
 	useEffect(() => {
 	  if (!autoDesignOpen) setAutoDesignWallGuideSelection(null);
@@ -2393,6 +2426,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
    */
   const autoDesignBlockedNote = autoDesignControl.blockedNote;
   const autoDesignAnchorNote = autoDesignControl.refrigeratorAnchorNote;
+  /** What the always-visible toolbar opener explains inside the popup when a build cannot run yet. */
+  const autoDesignBlockedNotice = useMemo(() => {
+    if (!autoDesignAvailable) {
+      return {
+        message: "Auto-Design builds a measured kitchen. Switch this design to Kitchen to build it.",
+        actions: [{ id: "switch-kitchen", label: "Switch to Kitchen", onClick: () => setRoomType("kitchen") }],
+      };
+    }
+    if (layoutLocked) {
+      return {
+        message: "The room layout is locked. Unlock it so Auto-Design can build.",
+        actions: [{ id: "unlock-layout", label: "Unlock layout", onClick: () => setLayoutLocked(false) }],
+      };
+    }
+    if (autoDesignBlockingPlacements.length > 0) {
+      const count = autoDesignBlockingPlacements.length;
+      return {
+        message: `This plan already has ${count} hand-placed cabinet${count === 1 ? "" : "s"}. Auto-Design builds on an empty plan: remove them or start a new design, then build.`,
+      };
+    }
+    return null;
+  }, [autoDesignAvailable, autoDesignBlockingPlacements.length, layoutLocked]);
   /** The refrigerator the next build adopts as a fixed anchor, if any. */
   const autoDesignAnchoredRefrigeratorRef = useRef<PlacedCabinet | null>(null);
   const rememberAutoDesignSink = useCallback((sink: SinkFixture, openingOverride?: readonly WallOpening[]): SinkFixture => {
@@ -13601,14 +13656,34 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setLayoutStarterOpen(false);
     setMobilePanel(null);
     setSelectedLayoutPresetId(null);
-    // Same next step as choosing a room layout: pick the vendor and door
-    // style/color before any cabinet can be placed on the new walls.
-    if (styleId == null) window.setTimeout(() => setCatalogSetupOpen(true), 0);
+    // Kitchen: Apply Wall first, then a Yes/No prompt asks whether Auto-Design
+    // should lay it out (Tom, owner voice, Nov 24 2026, 12:35 PM CT, final). Applying
+    // the walls closes the room layout popup, which since 64bda9b held the only
+    // desktop Auto-Design button, so a finished diagram used to leave no way in.
+    if (autoDesignAvailable) {
+      window.setTimeout(() => setApplyWallAutoDesignPromptOpen(true), 0);
+    } else if (styleId == null) {
+      // Same next step as choosing a room layout: pick the vendor and door
+      // style/color before any cabinet can be placed on the new walls.
+      window.setTimeout(() => setCatalogSetupOpen(true), 0);
+    }
     toast.success("Walls applied to design", {
-      description: `${outline.customWalls.length} connected wall${outline.customWalls.length === 1 ? " is" : "s are"} now on your floor plan. Select any wall and begin placing cabinets.`,
+      description: autoDesignAvailable
+        ? `${outline.customWalls.length} connected wall${outline.customWalls.length === 1 ? " is" : "s are"} now on your floor plan.`
+        : `${outline.customWalls.length} connected wall${outline.customWalls.length === 1 ? " is" : "s are"} now on your floor plan. Select any wall and begin placing cabinets.`,
       duration: 6000,
     });
-  }, [applyRoom, continuousWallBlockedReason, room, setPlacementTarget, styleId]);
+  }, [applyRoom, autoDesignAvailable, continuousWallBlockedReason, room, setPlacementTarget, styleId]);
+  const answerApplyWallAutoDesignPrompt = useCallback((yes: boolean) => {
+    setApplyWallAutoDesignPromptOpen(false);
+    if (yes) {
+      // Straight into the Auto-Design questions: never the vendor/catalog selector.
+      window.setTimeout(openAutoDesignAlways, 0);
+      return;
+    }
+    // No: the customer designs by hand. Same next step as before this prompt existed.
+    if (styleIdRef.current == null) window.setTimeout(() => setCatalogSetupOpen(true), 0);
+  }, [openAutoDesignAlways]);
 
   const physicalWallSpans = useMemo(
     () => physicalWallMeasurements((phoneMeasureStatus.data?.walls ?? []) as PhysicalRoomMeasurement[]),
@@ -15711,6 +15786,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     }
     commitPlanStyleSwitch(slot, newStyleId, requiresDistributorOverride);
   }, [doorStyles, lockedDistributorId, styleA, styleB, styleId, designStyleId, placed, commitPlanStyleSwitch]);
+  /**
+   * Auto-Design's own door pick (Tom, owner voice, Nov 24 2026, 12:26-12:27 PM CT):
+   * picking the door is the last step before the Auto-Design questions. No vendor
+   * picker, no "Continue to cabinet catalog", no palette or catalog panel opens.
+   */
+  const pickAutoDesignDoorStyle = useCallback((nextStyleId: number) => {
+    setSlotStyle("A", nextStyleId);
+    styleIdRef.current = nextStyleId;
+    chainRoomLayoutAfterStyleRef.current = false;
+    setCatalogSetupOpen(false);
+    window.setTimeout(openAutoDesignQuestions, 0);
+  }, [openAutoDesignQuestions, setSlotStyle]);
 
   // Snap the currently-selected cabinet flush to the chosen outer wall or a
   // selected peninsula run. A peninsula must retain its own wall ID, offset,
@@ -18282,6 +18369,47 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             Tablet preview
           </Button>
         )}
+        {/* The one always-visible Auto-Design button for the 1024px+ toolbar
+            (Tom, owner voice, Nov 24 2026, 12:36 PM CT: put Auto-Design in the
+            toolbar/options area so it is always visible). It is not tied to the
+            room type, a locked layout, or hand-placed cabinets, so it stays after a
+            blueprint is built and walls are deleted. Anything that blocks a build
+            is explained inside the Auto-Design popup instead of graying this out.
+            A refrigerator on the plan is the fixed anchor the build designs around. */}
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden lg:inline-flex shrink-0 border-[#d4a75a] text-[#765416] hover:bg-[#fff8e8]"
+            onClick={openAutoDesignAlways}
+            data-testid="admin-auto-design-auto-build"
+            data-auto-design-surface="desktop"
+            title="Open Auto-Design"
+            aria-label="Auto-Design"
+          >
+            <Ruler className="mr-1.5 h-3.5 w-3.5" /> Auto-Design
+          </Button>
+          {autoDesignAvailable && (
+            <label className="hidden items-center gap-1 text-[11px] text-[#765416] lg:inline-flex" data-testid="dishwasher-side-control" data-auto-design-surface="desktop">
+              Dishwasher side
+              <select
+                aria-label="Dishwasher side"
+                className="h-8 rounded-md border border-[#d4a75a] bg-white px-1 text-[11px] text-[#1a2744]"
+                value={dishwasherSidePreference ?? resolveDishwasherSide({ preference: null, originCorner: "left" })}
+                onChange={(event) => setDishwasherSidePreference(parseDishwasherSideChoice(event.target.value))}
+              >
+                <option value="left">Left of sink</option>
+                <option value="right">Right of sink</option>
+                <option value="none">No dishwasher</option>
+              </select>
+            </label>
+          )}
+          {autoDesignAnchorNote && (
+            <span data-testid="auto-design-refrigerator-anchor-note" data-auto-design-surface="desktop" className="hidden max-w-[14rem] text-[11px] leading-snug text-[#765416] lg:inline">
+              {autoDesignAnchorNote}
+            </span>
+          )}
+        </>
         <div className={`${isCompactWorkspace ? "hidden" : "hidden lg:flex"} shrink-0 items-center gap-1`}>
           <Button
             variant="outline"
@@ -24095,9 +24223,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          onVerified={() => { setAutoDesignAccessPrompt(null); void autoDesignAccess.refetch(); }}
 	        />
 	      )}
-	      {autoDesignAvailable && (
+	      <AlertDialog open={applyWallAutoDesignPromptOpen} onOpenChange={(open) => { if (!open) setApplyWallAutoDesignPromptOpen(false); }}>
+	        <AlertDialogContent data-testid="apply-wall-auto-design-prompt">
+	          <AlertDialogHeader>
+	            <AlertDialogTitle>Want Auto-Design to lay out this kitchen?</AlertDialogTitle>
+	            <AlertDialogDescription>Your walls are on the plan. Auto-Design can lay out the cabinets from a few questions, or you can place them yourself. Auto-Design stays in the toolbar either way.</AlertDialogDescription>
+	          </AlertDialogHeader>
+	          <AlertDialogFooter>
+	            <AlertDialogCancel data-testid="apply-wall-auto-design-no" onClick={() => answerApplyWallAutoDesignPrompt(false)}>No, I'll design it</AlertDialogCancel>
+	            <AlertDialogAction data-testid="apply-wall-auto-design-yes" onClick={() => answerApplyWallAutoDesignPrompt(true)}>Yes, use Auto-Design</AlertDialogAction>
+	          </AlertDialogFooter>
+	        </AlertDialogContent>
+	      </AlertDialog>
+	      {(autoDesignAvailable || autoDesignOpen) && (
 	        <AutoDesignDialog
 	          open={autoDesignOpen}
+	          blockedNotice={autoDesignBlockedNotice}
 	          onOpenChange={setAutoDesignOpen}
 	          onWallGuideChange={setAutoDesignWallGuideSelection}
 	          onLoadSixWallTrainingRoom={isAdmin ? loadAutoDesignSixWallTrainingRoom : undefined}
@@ -26297,12 +26438,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           className="flex max-h-[min(92dvh,900px)] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         >
           <DialogHeader className="shrink-0 px-6 pt-6 pr-12 text-left">
-            <DialogTitle className="font-serif text-xl">Choose your cabinet vendor and color</DialogTitle>
+            <DialogTitle className="font-serif text-xl">{cabinetStylePopupPurpose === "auto-design" ? "Auto-Design: pick your door style" : "Choose your cabinet vendor and color"}</DialogTitle>
             <DialogDescription>
               {cabinetStyleStepCopy(cabinetStylePopupPurpose).description}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
+            {cabinetStylePopupPurpose !== "auto-design" && (
             <div className="space-y-1.5" data-testid="fresh-room-distributor-step">
               <Label htmlFor="fresh-room-distributor">1. Cabinet vendor</Label>
               <Select
@@ -26321,8 +26463,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               </Select>
               {(distributorLabels ?? []).length === 0 && <p className="text-xs text-muted-foreground">Loading available cabinet distributors…</p>}
             </div>
+            )}
             <div className="space-y-1.5" data-testid="fresh-room-door-style-step">
-              <Label id="fresh-room-door-style-label">2. Door style / color</Label>
+              <Label id="fresh-room-door-style-label">{cabinetStylePopupPurpose === "auto-design" ? "Door style / color" : "2. Door style / color"}</Label>
               <fieldset
                 aria-labelledby="fresh-room-door-style-label"
                 aria-label="Choose door style"
@@ -26345,7 +26488,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                             data-testid="fresh-room-door-style-option"
                             aria-label={`${name} door thumbnail`}
                             aria-pressed={selected}
-                            onClick={() => setSlotStyle("A", style.id)}
+                            onClick={() => (cabinetStylePopupPurpose === "auto-design" ? pickAutoDesignDoorStyle(style.id) : setSlotStyle("A", style.id))}
                             className={`flex flex-col overflow-hidden rounded-lg border bg-white text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] ${selected ? "border-[#a87f33] ring-2 ring-[#a87f33]" : "border-border hover:border-[#a87f33]"}`}
                           >
                             <DoorSamplePhoto url={photoUrl} alt={`${name} door sample`} className="h-36 w-full" />
@@ -26373,6 +26516,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             )}
           </div>
           <DialogFooter className="shrink-0 flex-row items-center gap-3 border-t bg-background px-6 py-4 sm:flex-row sm:justify-start">
+            {cabinetStylePopupPurpose !== "auto-design" && (
             <Button
               type="button"
               className="min-w-0 flex-1 bg-[#a87f33] text-white hover:bg-[#8f6b29]"
@@ -26381,6 +26525,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             >
               {cabinetStyleStepCopy(cabinetStylePopupPurpose).confirmLabel}
             </Button>
+            )}
             {/* Never a one-way door: a modal that covers the whole Designer has
                 to be dismissible even before a vendor is chosen. The palette's
                 own setup card reopens it whenever a cabinet is added. Skipping

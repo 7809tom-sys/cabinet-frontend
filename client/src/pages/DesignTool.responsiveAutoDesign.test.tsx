@@ -285,9 +285,13 @@ describe("Auto-Design after the toolbar cleanup, on phone, tablet, and desktop",
   });
 
   for (const width of [375, 768, 1280]) {
-    it(`the old desktop toolbar button, desktop dishwasher picker, More-sheet row and 3D button are gone at ${width}px`, async () => {
+    it(`keeps one always-on toolbar Auto-Design button (1024px+), while the More-sheet row and 3D button stay gone at ${width}px`, async () => {
       await renderDesigner(width);
-      for (const id of ["admin-auto-design-auto-build", "dishwasher-side-control", "three-d-floating-auto-design", "more-sheet-auto-design"]) {
+      // Tom (owner voice, Nov 24 2026, 12:36 PM CT): one always-visible Auto-Design button in the toolbar.
+      const toolbar = screen.getByTestId("admin-auto-design-auto-build") as HTMLButtonElement;
+      expect(visibleAt(toolbar, width)).toBe(width >= 1024);
+      expect(toolbar.disabled).toBe(false);
+      for (const id of ["three-d-floating-auto-design", "more-sheet-auto-design"]) {
         expect(screen.queryByTestId(id), id).toBeNull();
       }
       if (width < 1024) {

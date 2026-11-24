@@ -18,11 +18,15 @@ describe("public Auto-Design Designer wiring", () => {
     // Nothing may reintroduce an admin/affiliate condition on the feature.
     expect(pageSource).not.toContain("isAdmin || Boolean(affiliateSlug)");
     expect(pageSource).not.toContain("Auto-Design layout is available in affiliate Designers and for CabinetDealz admins.");
-    // The old toolbar buttons are gone: Auto-Design opens from the Kitchen section
-    // of the "Start with a room layout" popup, on the same shared control.
-    expect(pageSource).not.toContain('data-testid="admin-auto-design-auto-build"');
-    expect(pageSource).toContain("<RoomLayoutPopupPicker");
-    expect(pageSource).toContain("enabled: autoDesignControl.enabled");
+    expect(pageSource).toContain('data-testid="admin-auto-design-auto-build"');
+    // Tom (owner voice, Nov 24 2026, 12:36 PM CT): the toolbar button is always
+    // rendered and clickable; a blocked build is explained inside the popup.
+    const buttonAt = pageSource.indexOf('data-testid="admin-auto-design-auto-build"');
+    const buttonBlock = pageSource.slice(pageSource.lastIndexOf("<Button", buttonAt), buttonAt);
+    expect(buttonBlock).toContain("onClick={openAutoDesignAlways}");
+    expect(buttonBlock).not.toContain("disabled=");
+    expect(pageSource).toContain("blockedNotice={autoDesignBlockedNotice}");
+    expect(pageSource).toContain("disabled={!autoDesignControl.enabled}");
     expect(pageSource).toContain("buildAutoDesignLayout");
     expect(pageSource).toContain("runAutoDesignLayout");
   });
@@ -112,9 +116,9 @@ describe("public Auto-Design Designer wiring", () => {
     expect(dialogSource).toContain("Left of sink");
     expect(dialogSource).toContain("Right of sink");
     expect(dialogSource).toContain("No dishwasher");
+    expect(pageSource).toContain("No dishwasher");
     expect(dialogSource).toContain("dishwasherSide");
-    // The desktop toolbar copy is gone; the dialog (and the phone top actions) keep it.
-    expect(pageSource).toContain("onDishwasherSideChange={setDishwasherSidePreference}");
+    expect(pageSource).toContain("data-testid=\"dishwasher-side-control\"");
     expect(pageSource).toContain("dishwasherSide: dishwasherSidePreference");
     expect(dialogSource).toContain("Optional exact dishwasher center");
   });
