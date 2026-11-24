@@ -517,6 +517,7 @@ const noSelectedPelicanIds: ReadonlySet<number> = new Set<number>();
 
 
 import { buildSurfaceCartLines } from "@/lib/surfaceCartLines";
+import { designCartMissingFixtures, missingCartFixtureKinds, missingCartFixturesLabel, type MissingCartFixtureKind } from "@/lib/designCartMissingFixtures";
 import { fixtureQuantitiesFromPlacements } from "@/lib/designCartReconciliation";
 import { mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { flooringLayoutName, isFlooringRotation, type FlooringRotationDegrees } from "@/lib/flooringLayout";
@@ -1772,6 +1773,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [proDesignerOpen, setProDesignerOpen] = useState(false);
   const [surfacesOpen, setSurfacesOpen] = useState(false);
+  const [surfacesInitialCategory, setSurfacesInitialCategory] = useState<"Quartz Slabs (Countertops)" | null>(null);
   const [showerWizardOpen, setShowerWizardOpen] = useState(false);
   const forcedOpenSinkRef = useRef<OpenSinkBasePlacement | null>(null);
   /**
@@ -11938,6 +11940,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       return { sinkUid, queue: [current.sinkUid, ...current.queue.filter((uid) => uid !== sinkUid)] };
     });
   }, [sinks]);
+  // Owner rule (Tom, Nov 23 2026): the cart popover names the sink, faucet and countertop still to choose.
+  const cartMissingFixtures = useMemo(() => designCartMissingFixtures({ roomType, placed, sinks, selectedSurfaces, countertopOn: countertop }), [countertop, placed, roomType, selectedSurfaces, sinks]);
+  const cartMissingFixtureKinds = missingCartFixtureKinds(cartMissingFixtures);
+  const chooseMissingCartFixture = (kind: MissingCartFixtureKind) => {
+    const item = cartMissingFixtures.find((entry) => entry.kind === kind);
+    if (kind === "countertop") { setSurfacesInitialCategory("Quartz Slabs (Countertops)"); setSurfacesOpen(true); return; }
+    const faucetSink = kind === "faucet" ? sinks.find((sink) => sink.uid === item?.sinkUid && sink.autoDesignFaucet) : null;
+    if (faucetSink && autoDesignAvailable) { openAutoDesignFaucetPicker(faucetSink.uid); return; }
+    if (item?.cabinetUid) { setSinkBaseDialog({ cabinetUid: item.cabinetUid }); setRangeTopStep("sink"); return; }
+    toast.info(`Select the sink on the plan to choose its ${kind}.`);
+  };
   const keepAutoDesignFaucetDefault = useCallback(() => {
     setAutoDesignFaucetPrompt((current) => {
       if (!current || current.queue.length === 0) return null;
@@ -23662,6 +23675,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                   {hasPendingCabinetPrices && (
                     <p data-testid="missing-price-cart-notice" className="rounded border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-900">{missingPriceBannerText(missingPriceSummary.count)} The Cart keeps every design item; a current price is required only before secure order submission.</p>
                   )}
+                  {cartMissingFixtureKinds.length > 0 && (
+                    <div data-testid="cart-missing-fixtures" className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+                      <p className="font-semibold">{missingCartFixturesLabel(cartMissingFixtures)}</p>
+                      <p className="mt-0.5">Choose them so they go in the cart. You can still add everything else now.</p>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {cartMissingFixtureKinds.map((kind) => (
+                          <Button key={kind} size="sm" variant="outline" data-testid={`cart-choose-${kind}`} className="h-7 px-2 text-xs" onClick={() => chooseMissingCartFixture(kind)}>Choose {kind}</Button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <Button className="w-full bg-[#a87f33] text-white hover:bg-[#a87f33]/90" onClick={() => {
                     if (hasConflicts && !window.confirm(t("dt_confirm_export_conflicts", { n: conflictUids.size, s: conflictUids.size > 1 ? "s" : "" }))) return;
                     addAllToCart();
@@ -24164,7 +24188,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 
       <SurfacesPickerDialog
 	        open={surfacesOpen}
-	        onOpenChange={setSurfacesOpen}
+	        onOpenChange={(open) => { setSurfacesOpen(open); if (!open) setSurfacesInitialCategory(null); }}
+	        initialCategory={surfacesInitialCategory}
 	        selected={selectedSurfaces}
 	        activeThreeDBacksplashId={activeBacksplashSurface?.id ?? null}
 	        onSetActiveThreeDBacksplash={setActiveBacksplashSurface}
