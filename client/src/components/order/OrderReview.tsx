@@ -32,7 +32,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { US_STATE_TAX_RATES } from "@shared/usSalesTax";
 import { resolveCheckoutTier, type CheckoutTier } from "@/lib/checkoutContext";
 import { checkoutPresentation } from "@/lib/checkoutPresentation";
-import { resolveCheckoutAlias } from "@/lib/affiliateCheckoutAlias";
+import { checkoutLineStyleName, resolveCheckoutAlias } from "@/lib/affiliateCheckoutAlias";
 import { installationEstimateDocumentPath } from "@shared/installationEstimateLink";
 import { isHardwareCheckoutLine, isSurfaceCheckoutLine } from "@/lib/cartCheckoutPrefill";
 import { checkoutUnitPriceForLine, isCabinetFreightLine } from "@/lib/orderLinePricing";
@@ -932,7 +932,13 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
         category: l.cartCategory ?? null,
         pelicanProductId: isSurfaceCheckoutLine(l) ? l.cartPelicanProductId ?? null : null,
         vendorProductId: isHardwareCheckoutLine(l) ? l.cartVendorProductId ?? null : null,
-        doorStyle: isSurfaceCheckoutLine(l) || isHardwareCheckoutLine(l) ? null : brandedStyleName ?? null,
+        doorStyle: isSurfaceCheckoutLine(l) || isHardwareCheckoutLine(l)
+          ? null
+          : checkoutLineStyleName(
+            optionalPositiveFreightId(l.cartStyleId) ?? optionalPositiveFreightId(selectedStyle?.styleId),
+            styleOptions,
+            storeBranding?.styleNames as Record<number, string> | null | undefined,
+          ),
         tier: resolveCheckoutTier(l.cartTier, accountTier),
         matched: l.matched,
       })),
