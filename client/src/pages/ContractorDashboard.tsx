@@ -405,6 +405,7 @@ function ContractorIntro() {
       </span>
       <h1 className="font-serif text-4xl font-bold mt-4">Designs, customers, and labor in one place</h1>
       <p className="text-muted-foreground text-lg mt-3 max-w-2xl">Save a kitchen in the 3D Designer, attach it to a customer on your CRM, and build your installation and labor invoice separately from CabinetDealz materials.</p>
+      <p className="text-muted-foreground mt-3 max-w-2xl">Want your own website and higher sales volume while staying a contractor? <a href="/affiliate" className="underline underline-offset-4">Learn about the Affiliate Program</a>.</p>
     </div>
   );
 }
