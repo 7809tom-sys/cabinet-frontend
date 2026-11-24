@@ -26317,15 +26317,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         <DialogContent
           data-testid="fresh-room-catalog-setup"
           data-purpose={cabinetStylePopupPurpose ?? "catalog"}
-          className="max-h-[min(92vh,900px)] max-w-3xl overflow-y-auto"
+          className="flex max-h-[min(92dvh,900px)] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         >
-          <DialogHeader>
+          <DialogHeader className="shrink-0 px-6 pt-6 pr-12 text-left">
             <DialogTitle className="font-serif text-xl">Choose your cabinet vendor and color</DialogTitle>
             <DialogDescription>
               {cabinetStyleStepCopy(cabinetStylePopupPurpose).description}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
             <div className="space-y-1.5" data-testid="fresh-room-distributor-step">
               <Label htmlFor="fresh-room-distributor">1. Cabinet vendor</Label>
               <Select
@@ -26355,7 +26355,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                 {catalogDistributorId == null ? (
                   <p className="rounded-lg border border-dashed border-border bg-neutral-50 px-3 py-6 text-center text-xs text-muted-foreground">Loading door samples…</p>
                 ) : (
-                  <div className="max-h-[min(42vh,22rem)] overflow-y-auto rounded-lg border border-border bg-neutral-50 p-2">
+                  <div className="overflow-y-auto rounded-lg border border-border bg-neutral-50 p-2">
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {displayUniqueDoorStyles.map((style) => {
                         const name = affiliateStyleName(style);
@@ -26395,10 +26395,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               </div>
             )}
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 flex-row items-center gap-3 border-t bg-background px-6 py-4 sm:flex-row sm:justify-start">
             <Button
               type="button"
-              className="w-full bg-[#a87f33] text-white hover:bg-[#8f6b29]"
+              className="min-w-0 flex-1 bg-[#a87f33] text-white hover:bg-[#8f6b29]"
               disabled={catalogDistributorId == null || styleId == null}
               onClick={() => finishCabinetStylePopup("confirm")}
             >

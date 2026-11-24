@@ -30,6 +30,15 @@ describe("fresh room catalog onboarding", () => {
     expect(gateBlock).not.toContain("onPointerDownOutside");
   });
 
+  it("pins the action buttons under the scrolling vendor and door content", () => {
+    const gateStart = source.indexOf('data-testid="fresh-room-catalog-setup"');
+    const gate = source.slice(gateStart, source.indexOf("</Dialog>", gateStart));
+    expect(gate).toContain("flex max-h-[min(92dvh,900px)] w-full max-w-3xl flex-col gap-0 overflow-hidden p-0");
+    expect(gate).toContain("min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4");
+    expect(gate).toContain("shrink-0 flex-row items-center gap-3 border-t bg-background px-6 py-4");
+    expect(gate).not.toContain('className="w-full bg-[#a87f33]');
+  });
+
   it("hands the chosen catalog into the normal cabinet catalog", () => {
     expect(source).toContain('setPaletteType("base");');
     expect(source).toContain('toast.success("Catalog ready. Choose a cabinet to begin your design.")');
