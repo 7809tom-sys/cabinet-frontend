@@ -2828,10 +2828,18 @@ export function addThreeDSidePanelsToFloor(
 export const THREE_D_CABINET_FRONT_OUTER_REVEAL_IN = 1 / 16;
 export const THREE_D_CABINET_FRONT_CENTER_GAP_IN = 1 / 8;
 
-export function threeDCabinetFrontColumnLayout(bodyWidth: number, count: number, flush = false) {
+export function threeDCabinetFrontColumnLayout(
+  bodyWidth: number,
+  count: number,
+  flush: boolean | { flushOuter?: boolean; flushCenter?: boolean } = false,
+) {
   const columnCount = Math.max(1, Math.round(count));
-  const outerReveal = (flush ? 0 : THREE_D_CABINET_FRONT_OUTER_REVEAL_IN) * INCH;
-  const centerGap = (flush ? 0 : THREE_D_CABINET_FRONT_CENTER_GAP_IN) * INCH;
+  // Wood doors stay flush with the cabinet edge. Paired doors still keep the
+  // 1/8 inch center split, so two leaves do not read as one wide door.
+  const flushOuter = typeof flush === "boolean" ? flush : Boolean(flush.flushOuter);
+  const flushCenter = typeof flush === "boolean" ? flush : Boolean(flush.flushCenter);
+  const outerReveal = (flushOuter ? 0 : THREE_D_CABINET_FRONT_OUTER_REVEAL_IN) * INCH;
+  const centerGap = (flushCenter ? 0 : THREE_D_CABINET_FRONT_CENTER_GAP_IN) * INCH;
   const availableWidth = Math.max(
     0.08,
     bodyWidth - outerReveal * 2 - centerGap * Math.max(0, columnCount - 1),
@@ -8108,12 +8116,18 @@ export function addCabinet(
     const doorsPerRow = threeDTallPantryDoorsPerRow(sku);
     const addPantryRow = (height: number, centerY: number, row: "lower" | "upper") => {
       const sideInset = woodDoorPhotograph ? PANTRY_CORNER_INSET : 0.04;
+      const columns = woodDoorPhotograph
+        ? threeDCabinetFrontColumnLayout(bodyWidth - sideInset * 2, doorsPerRow, { flushOuter: true, flushCenter: false })
+        : null;
       const leafGap = woodDoorPhotograph ? 0 : 0.03;
-      const doorWidth = (bodyWidth - sideInset * 2) / doorsPerRow;
+      const doorWidth = columns?.columnWidth ?? (bodyWidth - sideInset * 2) / doorsPerRow;
       for (let i = 0; i < doorsPerRow; i++) {
-        const leafWidth = doorWidth - leafGap;
+        const leafWidth = columns ? doorWidth : doorWidth - leafGap;
         const door = new THREE.Mesh(new THREE.BoxGeometry(leafWidth, Math.max(0.08, height - 0.025), 0.052), faceMaterial);
-        door.position.set(-bodyWidth / 2 + sideInset + doorWidth * (i + 0.5), centerY, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
+        const centerX = columns
+          ? columns.centerX(i)
+          : -bodyWidth / 2 + sideInset + ((bodyWidth - sideInset * 2) / doorsPerRow) * (i + 0.5);
+        door.position.set(centerX, centerY, woodDoorPhotograph ? recessedWoodFrontZ(0.066, 0.052) : 0.035);
         door.userData = { cabinetFront: true, pantryDoorSet: row, pantryDoorsPerRow: doorsPerRow, flushPhysicalFace: true };
         frontGroup.add(door);
         addShakerFrame(leafWidth, Math.max(0.08, height - 0.025), door.position.x, door.position.y, 0.066);
@@ -8756,7 +8770,7 @@ export function addCabinet(
     const farmhouseDoorBottomY = -bodyHeight / 2 + 0.04;
     const farmhouseDoorHeight = Math.max(0.2, farmhouseDoorTopY - farmhouseDoorBottomY);
     const farmhouseDoorCenterY = farmhouseDoorBottomY + farmhouseDoorHeight / 2;
-    const farmhouseDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, farmhouseFace.doorCount, woodDoorPhotograph);
+    const farmhouseDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, farmhouseFace.doorCount, { flushOuter: woodDoorPhotograph, flushCenter: false });
     for (let index = 0; index < farmhouseFace.doorCount; index++) {
       const door = new THREE.Mesh(
         new THREE.BoxGeometry(farmhouseDoorColumns.columnWidth, farmhouseDoorHeight, 0.045),
@@ -8942,7 +8956,7 @@ export function addCabinet(
 	      frontGroup.add(shelf);
 	    }
 	  }
-	  const standardDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, doorCount, woodDoorPhotograph);
+	  const standardDoorColumns = threeDCabinetFrontColumnLayout(bodyWidth, doorCount, { flushOuter: woodDoorPhotograph, flushCenter: false });
 	  for (let i = 0; i < doorCount; i++) {
 	    const doorWidth = standardDoorColumns.columnWidth;
 	    const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, 0.045), sku.glassDoor ? glassDoorMaterial : faceMaterial);

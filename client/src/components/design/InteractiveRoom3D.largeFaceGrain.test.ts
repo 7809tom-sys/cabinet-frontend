@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, applyLargeFaceWoodUv, hideDuplicateFaceFrameRail, PANTRY_CORNER_INSET, PANTRY_FRONT_LEAD, recessedWoodFrontZ, woodOuterEdgeDelta } from "./InteractiveRoom3D";
+import { addCabinet, applyLargeFaceWoodUv, hideDuplicateFaceFrameRail, PANTRY_CORNER_INSET, PANTRY_FRONT_LEAD, recessedWoodFrontZ, THREE_D_CABINET_FRONT_CENTER_GAP_IN, threeDCabinetFrontColumnLayout, woodOuterEdgeDelta } from "./InteractiveRoom3D";
 import { DLC_FRAME_DETAIL } from "@shared/dlcFr26Textures";
 
 const WOOD = {
@@ -248,12 +248,41 @@ describe("large wood faces and single rail edges", () => {
       if (mesh.isMesh && mesh.userData?.cabinetFront && !mesh.userData?.physicalRail && !mesh.userData?.shakerNotch) leaves.push(mesh);
       if (node.userData?.cabinetDoorSeam) seams += 1;
     });
-    expect(seams).toBe(0);
+    expect(seams).toBe(1);
     const ordered = leaves.sort((a, b) => a.position.x - b.position.x);
     expect(ordered).toHaveLength(2);
     const rightOf = (door: THREE.Mesh) => door.position.x + (door.geometry as THREE.BoxGeometry).parameters.width / 2;
     const leftOf = (door: THREE.Mesh) => door.position.x - (door.geometry as THREE.BoxGeometry).parameters.width / 2;
-    expect(leftOf(ordered[1]!) - rightOf(ordered[0]!)).toBeLessThan(0.01);
+    expect((leftOf(ordered[1]!) - rightOf(ordered[0]!)) * 12).toBeCloseTo(THREE_D_CABINET_FRONT_CENTER_GAP_IN, 2);
+  });
+
+  it("keeps a thin split between paired wood doors and none between drawers", () => {
+    const doors = threeDCabinetFrontColumnLayout(24 / 12, 2, { flushOuter: true, flushCenter: false });
+    const drawers = threeDCabinetFrontColumnLayout(24 / 12, 2, true);
+    expect(doors.outerReveal).toBe(0);
+    expect(doors.centerGap * 12).toBeCloseTo(THREE_D_CABINET_FRONT_CENTER_GAP_IN, 3);
+    expect(drawers.centerGap).toBe(0);
+    expect(drawers.outerReveal).toBe(0);
+    const root = build(WOOD, BASE);
+    const leaves: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.userData?.cabinetFront || mesh.userData?.cabinetDrawerFront || mesh.userData?.physicalRail || mesh.userData?.shakerNotch) return;
+      leaves.push(mesh);
+    });
+    const ordered = leaves.sort((a, b) => a.position.x - b.position.x);
+    expect(ordered.length).toBeGreaterThanOrEqual(2);
+    const rightOf = (door: THREE.Mesh) => door.position.x + (door.geometry as THREE.BoxGeometry).parameters.width / 2;
+    const leftOf = (door: THREE.Mesh) => door.position.x - (door.geometry as THREE.BoxGeometry).parameters.width / 2;
+    expect((leftOf(ordered[1]!) - rightOf(ordered[0]!)) * 12).toBeCloseTo(THREE_D_CABINET_FRONT_CENTER_GAP_IN, 2);
+    let visibleStiles = 0;
+    root.traverse((node) => {
+      if (node.userData?.faceFrameEdge === "left" || node.userData?.faceFrameEdge === "right" || node.userData?.faceFrameEdge === "top") {
+        expect(node.visible).toBe(false);
+        visibleStiles += node.visible ? 1 : 0;
+      }
+    });
+    expect(visibleStiles).toBe(0);
   });
 
   it("keeps the pantry door split while the upper door reaches the top", () => {
