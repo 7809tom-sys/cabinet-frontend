@@ -45,8 +45,18 @@ describe("checkout page state before review", () => {
     const load = builder.slice(builder.indexOf("const loadPrefill"), builder.indexOf("useEffect(() => {\n    if (prefillConsumed.current)"));
     expect(load).not.toMatch(/getItem\(prefillKey\);\s*if \(raw\) sessionStorage\.removeItem/);
     expect(load).toContain("if (!checkout) dropPrefill();");
+    expect(builder).toContain("resolveCheckoutHandoff");
     expect(builder).toContain("if (!checkout && affiliateSlugForStoreScope(storeScope)) return;");
     expect(builder).toContain("{!checkout && !hasLines && (");
     expect(builder).toContain('{checkout ? "Checkout" : t("ob_title")}');
+  });
+
+  it("does not let the cart continue button submit the page back onto itself", () => {
+    const cart = source("client/src/pages/Cart.tsx");
+    const checkoutStart = cart.indexOf("onClick={requestOrder}");
+    const buttonStart = cart.lastIndexOf("<Button", checkoutStart);
+    expect(cart.slice(buttonStart, checkoutStart)).toContain('type="button"');
+    expect(cart).toContain("persistCheckoutHandoff");
+    expect(cart).toContain('browserStorage("local")');
   });
 });

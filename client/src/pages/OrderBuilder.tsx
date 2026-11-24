@@ -11,10 +11,18 @@ import {
 } from "lucide-react";
 import { OrderReview, type ReviewLine } from "@/components/order/OrderReview";
 import { BarcodeScanTab } from "@/components/order/BarcodeScanTab";
-import { cartPrefillStorageKey } from "@/pages/Cart";
+import { useCart } from "@/contexts/CartContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { applyCartCheckoutPrefill, type CartCheckoutPrefillItem } from "@/lib/cartCheckoutPrefill";
 import { affiliateSlugForStoreScope, resolveStoreScope } from "@/lib/affiliateContext";
+import {
+  browserStorage,
+  cartPrefillStorageKey,
+  parseCheckoutHandoff,
+  readStorageItem,
+  resolveCheckoutHandoff,
+  type CheckoutHandoff,
+} from "@/lib/checkoutHandoff";
 import { checkoutPrefillState, storeCartPath } from "@/lib/storeCheckout";
 import { Link } from "wouter";
 
@@ -37,6 +45,7 @@ function fileToDataUrl(file: File): Promise<string> {
  */
 export default function OrderBuilder({ checkout = false }: { checkout?: boolean } = {}) {
   const { t } = useLanguage();
+  const { items: cartItems, sourceDesignId: cartDesignId, zip: cartZip } = useCart();
 	const storeScope = resolveStoreScope({
 	  pathname: typeof window !== "undefined" ? window.location.pathname : "/order/new",
 	  search: typeof window !== "undefined" ? window.location.search : "",
@@ -50,54 +59,48 @@ export default function OrderBuilder({ checkout = false }: { checkout?: boolean 
   const [initialTier, setInitialTier] = useState<string | null>(null);
   const [kitchenDesignId, setKitchenDesignId] = useState<number | null>(null);
   const [carrierPreference, setCarrierPreference] = useState<"ups" | null>(null);
-  const [hasPrefill, setHasPrefill] = useState(false);
+  const [destinationZip, setDestinationZip] = useState<string | null>(null);
   const [prefillFailed, setPrefillFailed] = useState(false);
   const cartPath = storeCartPath(affiliateSlugForStoreScope(storeScope));
 
-  // If the user arrived from the cart ("Request this order"), pick up the
-  // prefilled {code, qty} pairs, match them, and drop straight into review.
-  // The hand-off stays in sessionStorage until the lines are matched, so a
-  // remount, reload, or second click never lands on an empty order.
+  // Checkout reads the persisted cart (localStorage), not only the session
+  // hand-off written by Continue. A direct load or a refresh with items still
+  // in the cart stays on checkout instead of showing "Go to cart".
   const prefillKey = cartPrefillStorageKey(storeScope);
+  const readHandoff = (): CheckoutHandoff | null => {
+    const sessionRaw = readStorageItem(browserStorage("session"), prefillKey);
+    if (!checkout) return parseCheckoutHandoff(sessionRaw);
+    return resolveCheckoutHandoff({
+      sessionRaw,
+      localHandoffRaw: readStorageItem(browserStorage("local"), prefillKey),
+      cartItems,
+      kitchenDesignId: cartDesignId,
+      destinationZip: cartZip,
+    });
+  };
+  const [hasPrefill, setHasPrefill] = useState(() => Boolean(readHandoff()?.items.length));
   const dropPrefill = () => {
-    try {
-      sessionStorage.removeItem(prefillKey);
-    } catch {
-      /* ignore */
+    for (const storage of [browserStorage("session"), browserStorage("local")]) {
+      try {
+        storage?.removeItem(prefillKey);
+      } catch {
+        /* ignore */
+      }
     }
   };
   const loadPrefill = () => {
-    let raw: string | null = null;
-    try {
-	  raw = sessionStorage.getItem(prefillKey);
-    } catch {
-      return;
-    }
-    setHasPrefill(Boolean(raw));
+    const handoff = readHandoff();
+    setHasPrefill(Boolean(handoff?.items.length));
     setPrefillFailed(false);
-    if (!raw) return;
-    let parsed: CartCheckoutPrefillItem[] = [];
-    try {
-      const decoded = JSON.parse(raw) as
-        | { items: CartCheckoutPrefillItem[]; styleId: number | null; tier: string | null; kitchenDesignId?: number | null; carrierPreference?: "ups" | null }
-        | CartCheckoutPrefillItem[]; // legacy format
-      if (Array.isArray(decoded)) {
-        parsed = decoded;
-      } else {
-        parsed = decoded.items;
-        if (decoded.styleId) setInitialStyleId(decoded.styleId);
-        if (decoded.tier) setInitialTier(decoded.tier);
-        if (Number.isInteger(decoded.kitchenDesignId) && decoded.kitchenDesignId! > 0) setKitchenDesignId(decoded.kitchenDesignId!);
-        if (decoded.carrierPreference === "ups") setCarrierPreference("ups");
-      }
-    } catch {
-      dropPrefill();
-      setHasPrefill(false);
-      return;
-    }
-    const items = parsed.filter((p) => p.code && p.qty > 0);
+    if (!handoff) return;
+    if (handoff.styleId) setInitialStyleId(handoff.styleId);
+    if (handoff.tier) setInitialTier(handoff.tier);
+    if (handoff.kitchenDesignId) setKitchenDesignId(handoff.kitchenDesignId);
+    if (handoff.carrierPreference === "ups") setCarrierPreference("ups");
+    if (handoff.destinationZip) setDestinationZip(handoff.destinationZip);
+    const items: CartCheckoutPrefillItem[] = handoff.items.filter((p) => p.code && p.qty > 0);
     if (items.length === 0) {
-      dropPrefill();
+      if (!checkout) dropPrefill();
       setHasPrefill(false);
       return;
     }
@@ -237,6 +240,7 @@ export default function OrderBuilder({ checkout = false }: { checkout?: boolean 
             kitchenDesignId={kitchenDesignId ?? undefined}
             initialTier={initialTier ?? undefined}
             carrierPreference={carrierPreference ?? undefined}
+            initialZip={destinationZip}
           />
         )}
       </div>
