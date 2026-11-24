@@ -1074,6 +1074,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   // Set only when the style popup is the Start-from-scratch opener. Confirming
   // it then opens the room layout. Skipping or any other opener does not.
   const chainRoomLayoutAfterStyleRef = useRef(false);
+  // A bathroom or closet template chosen before a door style. Applied only
+  // after the shared picker is confirmed, so the blank room is not created first.
+  const pendingRoomApplyRef = useRef<(() => void) | null>(null);
   const [cabinetStylePopupPurpose, setCabinetStylePopupPurpose] = useState<CabinetStylePopupPurpose>(null);
   const [beginnerFirstCabinetGuideOpen, setBeginnerFirstCabinetGuideOpen] = useState(false);
   const [interactive3dOpen, setInteractive3dOpen] = useState(false);
@@ -3792,10 +3795,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     chainRoomLayoutAfterStyleRef.current = false;
     setCatalogSetupOpen(false);
     if (cabinetStylePopupPurpose === "auto-design") {
+      pendingRoomApplyRef.current = null;
       if (autoFollow === "auto-design") window.setTimeout(openAutoDesignQuestions, 0);
       return;
     }
+    const pendingRoom = pendingRoomApplyRef.current;
+    pendingRoomApplyRef.current = null;
     if (action !== "confirm") return;
+    if (pendingRoom) {
+      pendingRoom();
+      return;
+    }
     setPaletteType("base");
     if (panelDrawerMode) setMobilePanel("catalog");
     if (followUp === "room-layout") {
@@ -3806,6 +3816,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     }
     toast.success("Catalog ready. Choose a cabinet to begin your design.");
   }, [cabinetStylePopupPurpose, catalogDistributorId, openAutoDesignQuestions, panelDrawerMode, styleId]);
+  const beginRoomTemplateAfterDoorStyle = useCallback((apply: () => void) => {
+    if (styleId != null) {
+      apply();
+      return;
+    }
+    pendingRoomApplyRef.current = apply;
+    chainRoomLayoutAfterStyleRef.current = false;
+    setCabinetStylePopupPurpose(null);
+    setLayoutStarterOpen(false);
+    window.setTimeout(() => setCatalogSetupOpen(true), 0);
+  }, [styleId]);
   const activeSceneLayoutPresetId = selectedLayoutPresetId ?? "kitchen_l_standard";
   const hasPersistedRoomLayout = hasDesignedRoomGeometry(room);
   const hasPersistedTwoDPlan = hasPersistedRoomLayout || placed.length > 0 || openings.length > 0 || sinks.length > 0 || island != null || furniture.length > 0 || ponyWalls.length > 0;
@@ -26172,7 +26193,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                type="button"
 	                data-testid="bathroom-template-empty-room"
 	                disabled={layoutLocked || Boolean(placed.length || openings.length || island || sinks.length || furniture.length || ponyWalls.length || annotations.length)}
-	                onClick={applyBathroomStarterTemplate}
+	                onClick={() => beginRoomTemplateAfterDoorStyle(applyBathroomStarterTemplate)}
 	                className="w-full rounded-lg border border-sky-400 bg-white p-3 text-left shadow-sm transition-colors hover:border-sky-600 hover:bg-sky-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
 	              >
 	                <span className="block text-sm font-semibold text-[#192432]">{BATHROOM_STARTER_TEMPLATE.label}</span>
@@ -26195,22 +26216,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                    disabled={layoutLocked || Boolean(placed.length || openings.length || island || sinks.length || furniture.length || ponyWalls.length || annotations.length)}
 	                    onClick={() => {
 	                      if (layoutLocked || placed.length || openings.length || island || sinks.length || furniture.length || ponyWalls.length || annotations.length) return;
-	                      const { room: presetRoom, openings: presetOpenings } = "doorWidthIn" in preset ? roomFromWalkInPreset(preset, makeUid()) : roomFromReachInPreset(preset, makeUid());
-	                      applyRoom(presetRoom);
-	                      setOpenings(presetOpenings);
-	                      setSelectedLayoutPresetId(preset.id);
-	                      setRoomType("closet");
-	                      setPaletteType("closetparts");
-	                      setActiveWall("top");
-	                      setPlacementTarget("wall");
-	                      setViewMode("plan");
-	                      setSelectedUid(null);
-	                      setSelectedOpeningUid(null);
-	                      setPolygonEditMode(false);
-	                      setDrawMode(false);
-	                      setMeasureMode(false);
-	                      setLayoutStarterOpen(false);
-	                      toast.success(`${preset.label} applied. Measure your actual closet and door opening before ordering.`);
+	                      beginRoomTemplateAfterDoorStyle(() => {
+	                        const { room: presetRoom, openings: presetOpenings } = "doorWidthIn" in preset ? roomFromWalkInPreset(preset, makeUid()) : roomFromReachInPreset(preset, makeUid());
+	                        applyRoom(presetRoom);
+	                        setOpenings(presetOpenings);
+	                        setSelectedLayoutPresetId(preset.id);
+	                        setRoomType("closet");
+	                        setPaletteType("closetparts");
+	                        setActiveWall("top");
+	                        setPlacementTarget("wall");
+	                        setViewMode("plan");
+	                        setSelectedUid(null);
+	                        setSelectedOpeningUid(null);
+	                        setPolygonEditMode(false);
+	                        setDrawMode(false);
+	                        setMeasureMode(false);
+	                        setLayoutStarterOpen(false);
+	                        toast.success(`${preset.label} applied. Measure your actual closet and door opening before ordering.`);
+	                      });
 	                    }}
 	                    className="rounded-lg border border-[#c8a972]/60 bg-white p-3 text-left shadow-sm transition-colors hover:border-[#a87f33] hover:bg-[#fffaf0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#192432] disabled:cursor-not-allowed disabled:opacity-50"
 	                  >
