@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, LayoutPanelTop, Loader2, Ruler, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { trpc } from "@/lib/trpc";
 import type { RoomData } from "@/lib/design";
@@ -159,48 +159,28 @@ export function RoomLayoutStarter({
   }
 
   return (
-    <Card className="border-primary/20 bg-gradient-to-br from-card via-card to-primary/5 shadow-sm">
-      <CardHeader className="space-y-1 pb-3">
-        <div className="flex items-center gap-2 text-primary"><Sparkles className="h-4 w-4" /><span className="text-xs font-semibold uppercase tracking-[0.16em]">Fast start</span></div>
-        <CardTitle className="font-serif text-lg">Start with a room layout</CardTitle>
-        <p className="text-sm text-muted-foreground">Choose the room shape first, then use real catalog availability to preview compatible cabinet zones.</p>
-        <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl border bg-muted/35 p-1" aria-label="Guided kitchen design progress">
+    <Card className="border-primary/20 bg-card shadow-none">
+      <CardHeader className="space-y-1 px-3 py-2">
+        <div className="flex items-center gap-2 text-primary"><Sparkles className="h-3.5 w-3.5" /><span className="text-[11px] font-semibold uppercase tracking-[0.14em]">Fast start</span></div>
+        <div className="grid grid-cols-4 gap-1 rounded-md border bg-muted/35 p-0.5" aria-label="Guided kitchen design progress">
           {GUIDED_ROOM_WORKFLOW_STEPS.map(({ step, label }) => {
             const { active, complete } = guidedRoomWorkflowStepState(workflowStage, step);
-            return <button key={step} type="button" onClick={() => setWorkflowStage(step)} className={`min-w-0 rounded-lg px-1.5 py-2 text-center transition-colors ${active ? "bg-primary text-primary-foreground shadow-sm" : complete ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-background"}`}>
-              <span className="mx-auto flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold">{complete ? "✓" : step}</span>
-              <span className="mt-1 block truncate text-[10px] font-semibold sm:text-xs">{label}</span>
+            return <button key={step} type="button" onClick={() => setWorkflowStage(step)} className={`min-w-0 truncate rounded px-1 py-1 text-center text-[11px] font-semibold leading-tight transition-colors ${active ? "bg-primary text-primary-foreground shadow-sm" : complete ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-background"}`}>
+              {complete ? "✓ " : `${step}. `}{label}
             </button>;
           })}
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-2 px-3 pb-3 pt-0">
         {onApplyContinuousRoom ? (
-          <section className="rounded-xl border bg-background/80 p-3 shadow-sm" aria-label="Room design mode">
-            <div className="flex items-center gap-3">
-              <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg transition-colors duration-200 ${startMode === "continuous" ? "bg-amber-100 text-[#9a6717]" : "bg-primary/10 text-primary"}`}>
-                {startMode === "continuous" ? <Ruler className="h-4 w-4" /> : <LayoutPanelTop className="h-4 w-4" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className="text-sm font-semibold">{startMode === "continuous" ? "Advanced continuous walls" : "Easy room shapes"}</span>
-                  <span className={`text-[10px] font-bold uppercase tracking-wide ${startMode === "continuous" ? "text-[#9a6717]" : "text-primary"}`}>{startMode === "continuous" ? "Advanced" : "Beginner"}</span>
-                </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">{startMode === "continuous" ? "Enter each measured wall and exact turn. Beginner room shapes remain unchanged." : "Choose a friendly room shape and starter layout using the standard cabinet rules."}</p>
-              </div>
-              <div className="flex shrink-0 flex-col items-center gap-1">
-                <Switch
-                  checked={startMode === "continuous"}
-                  onCheckedChange={(advanced) => setStartMode(advanced ? "continuous" : "starter")}
-                  aria-label="Use advanced continuous walls"
-                />
-                <span className="text-[9px] font-medium text-muted-foreground">Advanced</span>
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-lg border bg-muted/30 text-xs font-semibold" aria-hidden="true">
-              <span className={`flex items-center gap-1.5 px-2.5 py-2 transition-colors duration-200 ${startMode === "starter" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}><LayoutPanelTop className="h-3.5 w-3.5" /> Easy shapes</span>
-              <span className={`flex items-center justify-end gap-1.5 px-2.5 py-2 text-right transition-colors duration-200 ${startMode === "continuous" ? "bg-[#b98d3e] text-white" : "text-muted-foreground"}`}>Continuous walls <Ruler className="h-3.5 w-3.5" /></span>
-            </div>
+          <section className="flex items-center gap-2 rounded-md border bg-background px-2 py-1.5" aria-label="Room design mode">
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">{startMode === "continuous" ? "Advanced continuous walls" : "Easy room shapes"}</span>
+            <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wide ${startMode === "continuous" ? "text-[#9a6717]" : "text-primary"}`}>{startMode === "continuous" ? "Advanced" : "Beginner"}</span>
+            <Switch
+              checked={startMode === "continuous"}
+              onCheckedChange={(advanced) => setStartMode(advanced ? "continuous" : "starter")}
+              aria-label="Use advanced continuous walls"
+            />
           </section>
         ) : showContinuousWallComingSoon ? (
           <section className="rounded-xl border border-amber-300/80 bg-amber-50/70 p-3 shadow-sm" aria-label="Continuous walls availability">
@@ -231,53 +211,56 @@ export function RoomLayoutStarter({
           </section>
         ) : (
           <>
-        <section className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-semibold"><Ruler className="h-4 w-4 text-primary" /> 1. Pick a room shape</div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <section className="space-y-1">
+          <div className="flex items-center gap-1.5 text-xs font-semibold"><Ruler className="h-3.5 w-3.5 text-primary" /> 1. Pick a room shape</div>
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
             {roomShapes.map((shape) => {
               const active = shape.id === shapeId;
               return (
                 <button key={shape.id} type="button" onClick={() => { setShapeId(shape.id); setWorkflowStage(2); }}
-                  className={`rounded-lg border p-3 text-left transition-colors ${active ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border bg-background hover:border-primary/50"}`}>
-                  <div className="flex items-center justify-between gap-2"><span className="font-semibold">{shape.name}</span>{active ? <CheckCircle2 className="h-4 w-4 text-primary" /> : null}</div>
-                  {shape.description ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{shape.description}</p> : null}
+                  className={`rounded-md border px-2 py-1.5 text-left transition-colors ${active ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border bg-background hover:border-primary/50"}`}>
+                  <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">{shape.name}</span>{active ? <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> : null}</div>
+                  {shape.description ? <p className="truncate text-[11px] leading-4 text-muted-foreground">{shape.description}</p> : null}
                 </button>
               );
             })}
           </div>
         </section>
 
-        <section className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-semibold"><LayoutPanelTop className="h-4 w-4 text-primary" /> 2. Pick a starter layout</div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <section className="space-y-1">
+          <div className="flex items-center gap-1.5 text-xs font-semibold"><LayoutPanelTop className="h-3.5 w-3.5 text-primary" /> 2. Pick a starter layout</div>
+          <div className="grid grid-cols-1 gap-1">
             {availableLayouts.map((layout) => {
               const active = layout.id === layoutId;
               const layoutNumber = numberedLayoutTile(availableLayouts, layout.id) ?? 1;
               return (
                 <button key={layout.id} type="button" onClick={() => { setLayoutId(layout.id); setWorkflowStage(3); }}
-                  className={`rounded-xl border p-3 text-left transition-all ${active ? "border-primary bg-primary/10 ring-2 ring-primary/30" : "border-border bg-background hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-sm"}`}>
-                  <div className="flex items-start gap-2"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{layoutNumber}</span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-1"><span className="truncate font-semibold">{layout.name}</span>{active ? <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" /> : null}</div>{layout.description ? <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{layout.description}</p> : null}</div></div>
+                  className={`flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors ${active ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border bg-background hover:border-primary/50"}`}>
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-bold ${active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>{layoutNumber}</span>
+                  <span className="shrink-0 text-sm font-semibold">{layout.name}</span>
+                  {layout.description ? <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">{layout.description}</span> : <span className="flex-1" />}
+                  {active ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" /> : null}
                 </button>
               );
             })}
           </div>
         </section>
 
-        <section className="rounded-lg border bg-background/80 p-3">
-          <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">Design summary</span>{catalogLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}</div>
-          {!canResolveCatalog ? <p className="mt-1 text-xs text-muted-foreground">Choose a door style first to view real orderable SKU options for this layout.</p> : null}
+        <section className="rounded-md border bg-background/80 px-2 py-1.5">
+          <div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold">Design summary</span>{catalogLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /> : null}</div>
+          {!canResolveCatalog ? <p className="text-[11px] leading-4 text-muted-foreground">Choose a door style first to view real orderable SKU options for this layout.</p> : null}
           {canResolveCatalog && catalogData ? (
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-1 grid grid-cols-1 gap-1 sm:grid-cols-3">
               {catalogData.zones.map((zone) => {
                 const candidatesByZone = catalogData.candidatesByZone as Record<string, unknown[]>;
                 const candidates = candidatesByZone[zone.zoneKey] ?? [];
-                return <div key={zone.zoneKey} className="flex items-center justify-between gap-3 text-xs"><span className="font-medium">{zone.label}</span><Badge variant={candidates.length ? "secondary" : "outline"}>{candidates.length ? `${candidates.length} real SKU option${candidates.length === 1 ? "" : "s"}` : "Choose manually"}</Badge></div>;
+                return <div key={zone.zoneKey} className="flex items-center justify-between gap-2 text-[11px]"><span className="font-medium">{zone.label}</span><Badge variant={candidates.length ? "secondary" : "outline"} className="px-1.5 py-0 text-[10px]">{candidates.length ? `${candidates.length} real SKU option${candidates.length === 1 ? "" : "s"}` : "Choose manually"}</Badge></div>;
               })}
             </div>
           ) : null}
         </section>
 
-        <Button className="w-full" disabled={!selectedShape || !selectedLayout} onClick={() => {
+        <Button className="sticky bottom-0 z-10 w-full" disabled={!selectedShape || !selectedLayout} onClick={() => {
           if (!selectedShape || !selectedLayout) return;
           onApplyRoom(roomFromSeededShape(selectedShape));
           onLayoutSelected?.(selectedLayout.id);
