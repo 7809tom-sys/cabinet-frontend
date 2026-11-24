@@ -110,6 +110,8 @@ interface Props {
   kitchenDesignId?: number;
   /** Optional cart selection to request a verified UPS parcel quote only. */
   carrierPreference?: "ups";
+  /** ZIP already entered for the cart's shipping quote. */
+  initialZip?: string | null;
 }
 
 // Extract the dimension digits from a raw code so the Fix picker can pre-search
@@ -225,7 +227,7 @@ function ConfidenceBadge({ line }: { line: ReviewLine }) {
   );
 }
 
-export function OrderReview({ lines, source, onLinesChange, onReset, initialStyleId, initialTier, kitchenDesignId, carrierPreference }: Props) {
+export function OrderReview({ lines, source, onLinesChange, onReset, initialStyleId, initialTier, kitchenDesignId, carrierPreference, initialZip }: Props) {
   const { t } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const accountTier = (user as { pricingTier?: string } | null)?.pricingTier;
@@ -241,7 +243,10 @@ export function OrderReview({ lines, source, onLinesChange, onReset, initialStyl
   const [addressLine1, setAddressLine1] = useState("");
   const [addressLine2, setAddressLine2] = useState("");
   const [city, setCity] = useState("");
-  const [zip, setZip] = useState("");
+  const [zip, setZip] = useState(() => {
+    const value = (initialZip ?? "").trim();
+    return /^\d{5}(?:-\d{4})?$/.test(value) ? value : "";
+  });
   const [notes, setNotes] = useState("");
   // Fulfillment: default ship; switched to pickup only when the customer picks a
   // nearby distributor's pickup location (offered when ZIP is within radius).

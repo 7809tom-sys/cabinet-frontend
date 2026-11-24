@@ -63,6 +63,8 @@ export function ShippingQuoteBox({
   manualBusy,
   estimateSent,
   manualSent,
+  zip: zipProp,
+  onZipChange,
 }: {
   items: ShippingQuoteRequestItem[];
   className?: string;
@@ -74,8 +76,16 @@ export function ShippingQuoteBox({
   manualBusy?: boolean;
   estimateSent?: boolean;
   manualSent?: boolean;
+  /** Persisted cart ZIP. When set with onZipChange, the quote survives a reload. */
+  zip?: string;
+  onZipChange?: (zip: string) => void;
 }) {
-  const [zip, setZip] = useState("");
+  const [uncontrolledZip, setUncontrolledZip] = useState("");
+  const zip = zipProp ?? uncontrolledZip;
+  const setZip = (value: string) => {
+    if (onZipChange) onZipChange(value);
+    else setUncontrolledZip(value);
+  };
   const quote = trpc.shippingQuotes.getShippingQuote.useMutation();
   const destination = useMemo(() => ({ zip }), [zip]);
   const zipReady = /^\d{5}$/.test(zip);
@@ -122,6 +132,11 @@ export function ShippingQuoteBox({
             value={zip}
             placeholder="5-digit ZIP"
             onChange={(event) => setZip(event.target.value.replace(/\D/g, "").slice(0, 5))}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              requestQuote();
+            }}
             className="w-32"
           />
         </div>

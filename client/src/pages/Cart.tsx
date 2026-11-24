@@ -18,10 +18,14 @@ import { resolveLockedCheckoutUnitPrice } from "@/lib/checkoutPriceLock";
 import {
   affiliateSlugForStoreScope,
   resolveStoreScope,
-  scopedBrowserStorageKey,
-  type StoreScope,
 } from "@/lib/affiliateContext";
-import { cartItemToCheckoutPrefill } from "@/lib/cartCheckoutPrefill";
+import {
+  CART_PREFILL_KEY,
+  browserStorage,
+  cartPrefillStorageKey,
+  checkoutHandoffFromCart,
+  persistCheckoutHandoff,
+} from "@/lib/checkoutHandoff";
 import { storeCheckoutPath } from "@/lib/storeCheckout";
 import { cartNoteWithoutMosaicWaste, mosaicBacksplashWasteInNote } from "@/lib/mosaicBacksplashWaste";
 import { refrigeratorPanelCutNotesIn } from "@/lib/refrigeratorEndPanelCut";
@@ -32,16 +36,12 @@ import { isCatalogFreeShippingFlag } from "@shared/freeShippingItem";
 import { ShippingQuoteBox, ShippingQuoteResults } from "@/components/shipping/ShippingQuoteBox";
 import { cartItemsToShippingQuote, quotesForCartIndexes, type PublicVendorQuote } from "@/components/shipping/cartShippingQuote";
 
-// Key the OrderBuilder reads on mount to prefill the review step from the cart.
-export const CART_PREFILL_KEY = "cd_cart_prefill_v1";
-export function cartPrefillStorageKey(scope: StoreScope) {
-  return scopedBrowserStorageKey(CART_PREFILL_KEY, scope);
-}
+export { CART_PREFILL_KEY, cartPrefillStorageKey };
 
 export default function Cart() {
   const { t, lang } = useLanguage();
   useSeo({ title: t("seo_cart_t"), description: t("seo_cart_d"), lang });
-  const { items, removeItem, setQty, clear, subtotal, count, sourceDesignId } = useCart();
+  const { items, removeItem, setQty, clear, subtotal, count, sourceDesignId, zip, setZip } = useCart();
   const storeScope = resolveStoreScope({
     pathname: typeof window !== "undefined" ? window.location.pathname : "/cart",
     search: typeof window !== "undefined" ? window.location.search : "",
@@ -161,24 +161,27 @@ export default function Cart() {
     [items],
   );
 
-  const requestOrder = () => {
+  const requestOrder = (event?: { preventDefault?: () => void }) => {
+    event?.preventDefault?.();
     if (items.length === 0) return;
-    // Include styleId and tier from the first item so OrderReview can pre-select
-    // the correct door style and pricing tier instead of defaulting to Aston Green.
-    const firstItem = items[0];
-    const prefill = {
-      items: items.map((i) => cartItemToCheckoutPrefill(i, liveUnitPrice(i))),
-      styleId: firstItem?.styleId ?? null,
-      tier: firstItem?.tier ?? null,
+    // Live prices and the quote ZIP are written to both stores. Checkout also
+    // rebuilds from the localStorage cart, so a blocked sessionStorage or a
+    // direct /checkout load still opens these lines instead of an empty page.
+    const prefill = checkoutHandoffFromCart({
+      items,
+      unitPrice: liveUnitPrice,
       kitchenDesignId: sourceDesignId,
-      carrierPreference: null,
-    };
-    try {
-      sessionStorage.setItem(cartPrefillStorageKey(storeScope), JSON.stringify(prefill));
-    } catch {
-      /* ignore */
+      destinationZip: zip,
+    });
+    if (prefill) {
+      persistCheckoutHandoff(cartPrefillStorageKey(storeScope), prefill, [
+        browserStorage("session"),
+        browserStorage("local"),
+      ]);
     }
     // Affiliate carts go to the store checkout step, not the Build an Order tool.
+    // type="button" on the control keeps this click from submitting a surrounding
+    // form, which would reload this cart URL instead of leaving it.
     navigate(currentAffiliateSlug ? storeCheckoutPath(currentAffiliateSlug) : "/order/new");
   };
 
@@ -509,13 +512,19 @@ export default function Cart() {
             </p>
           ) : shippingQuoteRequest.requests.length > 0 ? (
             <div className="mb-4">
-              <ShippingQuoteBox items={shippingQuoteRequest.requests} onQuoted={setSectionQuotes} />
+              <ShippingQuoteBox
+                items={shippingQuoteRequest.requests}
+                onQuoted={setSectionQuotes}
+                zip={zip ?? ""}
+                onZipChange={(value) => setZip(value || null)}
+              />
             </div>
           ) : null}
           <p className="mb-2 text-center text-xs text-muted-foreground">
             Review delivery and the final Stripe payment total before placing your order.
           </p>
           <Button
+            type="button"
             className="w-full"
             size="lg"
             onClick={requestOrder}
