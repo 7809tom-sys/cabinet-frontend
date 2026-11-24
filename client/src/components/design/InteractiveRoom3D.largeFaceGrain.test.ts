@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { addCabinet, applyLargeFaceWoodUv, hideDuplicateFaceFrameRail, recessedWoodFrontZ, woodOuterEdgeDelta } from "./InteractiveRoom3D";
+import { addCabinet, applyLargeFaceWoodUv, hideDuplicateFaceFrameRail, PANTRY_CORNER_INSET, PANTRY_FRONT_LEAD, recessedWoodFrontZ, woodOuterEdgeDelta } from "./InteractiveRoom3D";
 import { DLC_FRAME_DETAIL } from "@shared/dlcFr26Textures";
 
 const WOOD = {
@@ -273,7 +273,51 @@ describe("large wood faces and single rail edges", () => {
       if (mesh.isMesh && mesh.userData?.carcassShell) shellTop = (mesh.geometry as THREE.BoxGeometry).parameters.height / 2;
     });
     expect(topOf(upper)).toBeGreaterThan(shellTop - 0.02);
+    expect(topOf(upper)).toBeLessThanOrEqual(shellTop - 0.0005);
     expect(topOf(lower)).toBeLessThan(bottomOf(upper));
     expect((bottomOf(upper) - topOf(lower)) * 12).toBeGreaterThan(0.15);
+    let shellMesh: THREE.Mesh | null = null;
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && mesh.userData?.carcassShell) shellMesh = mesh;
+    });
+    expect(shellMesh).toBeTruthy();
+    const shell = shellMesh as unknown as THREE.Mesh;
+    expect(shell.userData.pantryFrontExtended).toBe(true);
+    const position = shell.geometry.getAttribute("position");
+    const halfW = (shell.geometry as THREE.BoxGeometry).parameters.width / 2;
+    const halfH = (shell.geometry as THREE.BoxGeometry).parameters.height / 2;
+    const carcassFront = (shell.geometry as THREE.BoxGeometry).parameters.depth / 2;
+    let cornerMinY = Infinity;
+    let cornerMaxY = -Infinity;
+    let topFront = -Infinity;
+    for (let index = 0; index < position.count; index += 1) {
+      const x = position.getX(index);
+      const y = position.getY(index);
+      const z = position.getZ(index);
+      if (x < -halfW + 0.002 && z > carcassFront + 0.01) {
+        cornerMinY = Math.min(cornerMinY, y);
+        cornerMaxY = Math.max(cornerMaxY, y);
+      }
+      if (y > halfH - 0.002 && z > carcassFront + 0.01) topFront = Math.max(topFront, z);
+    }
+    expect(cornerMaxY).toBeGreaterThan(halfH - 0.002);
+    expect(cornerMinY).toBeLessThan(-halfH + 0.002);
+    expect(topFront).toBeGreaterThan(carcassFront + 0.04);
+    const doorFront = worldBox(upper).max.z;
+    const shellFront = worldBox(shell).max.z;
+    expect(shellFront - doorFront).toBeGreaterThan(PANTRY_FRONT_LEAD / 2);
+    const doorOuter = Math.abs(upper.position.x) + (upper.geometry as THREE.BoxGeometry).parameters.width / 2;
+    expect(halfW - doorOuter).toBeCloseTo(PANTRY_CORNER_INSET, 3);
+  });
+
+  it("does not extend a painted pantry or a wood base cabinet", () => {
+    const painted = build(PAINT, PANTRY);
+    const base = build(WOOD, BASE);
+    for (const root of [painted, base]) {
+      root.traverse((node) => {
+        expect(node.userData?.pantryFrontExtended).toBeUndefined();
+      });
+    }
   });
 });

@@ -472,6 +472,18 @@ export function hideDuplicateFaceFrameRail(edge: "top" | "bottom" | "left" | "ri
   return edge === "bottom" && placement === "wall";
 }
 
+/**
+ * A wood pantry shell grows forward over the door. The side lip is the corner,
+ * so the upper/lower split cannot notch it and the door side cannot z-fight it.
+ * The door sits just inside that lip.
+ */
+export const PANTRY_SIDE_LIP = 0.008;
+export const PANTRY_CORNER_INSET = 0.01;
+/** Covers the door top, which stops 0.001 under the cabinet top. */
+export const PANTRY_TOP_LIP = 0.008;
+/** The shell leads the door by this much so their front faces do not share a plane. */
+export const PANTRY_FRONT_LEAD = 0.002;
+
 /** How far a wood front may grow to reach the cabinet edge. A real door split is larger. */
 export const WOOD_FRONT_EDGE_EXTEND_MAX = 0.12;
 
@@ -551,6 +563,124 @@ export function extendWoodFrontsToCabinetEdges(frontGroup: THREE.Object3D, bodyH
     const bottomDelta = woodOuterEdgeDelta(bottom, bottomTarget);
     if (bottomDelta) extendWoodFrontFrame(frame, bottomDelta, "bottom");
   }
+}
+
+function concatGeometries(parts: THREE.BufferGeometry[]) {
+  const names = ["position", "normal", "uv"] as const;
+  let count = 0;
+  for (const part of parts) count += part.getAttribute("position").count;
+  const merged = new THREE.BufferGeometry();
+  for (const name of names) {
+    const itemSize = parts[0]?.getAttribute(name)?.itemSize ?? (name === "uv" ? 2 : 3);
+    const array = new Float32Array(count * itemSize);
+    let offset = 0;
+    for (const part of parts) {
+      const attribute = part.getAttribute(name);
+      if (!attribute) continue;
+      array.set(attribute.array as Float32Array, offset * itemSize);
+      offset += attribute.count;
+    }
+    merged.setAttribute(name, new THREE.BufferAttribute(array, itemSize));
+  }
+  return merged;
+}
+
+/** Drop triangles whose average normal matches. The geometry is non-indexed. */
+function withoutFaces(geometry: THREE.BufferGeometry, reject: (normal: THREE.Vector3) => boolean) {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const uv = geometry.getAttribute("uv");
+  const kept: number[] = [];
+  const face = new THREE.Vector3();
+  for (let index = 0; index < position.count; index += 3) {
+    face.set(0, 0, 0);
+    for (let corner = 0; corner < 3; corner += 1) {
+      face.x += normal.getX(index + corner);
+      face.y += normal.getY(index + corner);
+      face.z += normal.getZ(index + corner);
+    }
+    if (reject(face.multiplyScalar(1 / 3))) continue;
+    kept.push(index, index + 1, index + 2);
+  }
+  const next = new THREE.BufferGeometry();
+  for (const [name, source, itemSize] of [["position", position, 3], ["normal", normal, 3], ["uv", uv, 2]] as const) {
+    if (!source) continue;
+    const array = new Float32Array(kept.length * itemSize);
+    kept.forEach((vertex, offset) => {
+      for (let component = 0; component < itemSize; component += 1) array[offset * itemSize + component] = source.getComponent(vertex, component);
+    });
+    next.setAttribute(name, new THREE.BufferAttribute(array, itemSize));
+  }
+  return next;
+}
+
+/**
+ * Continue the pantry side and top forward to the door front, as part of the
+ * shell. One mesh means one grain and one corner: the upper/lower split cannot
+ * notch the edge, the door side is not on that plane, and the top has no groove
+ * in front of it. The box's original width, height and depth stay on `parameters`.
+ */
+export function extendPantryShellToDoorFront(shell: THREE.Mesh, doorFrontZ: number) {
+  const geometry = shell.geometry as THREE.BoxGeometry;
+  const params = geometry.parameters;
+  if (!params || typeof params.width !== "number" || typeof params.height !== "number" || typeof params.depth !== "number") return null;
+  const carcassFront = params.depth / 2;
+  const lipDepth = doorFrontZ + PANTRY_FRONT_LEAD - carcassFront;
+  if (!(lipDepth > 0.004)) return null;
+  const side = Math.min(PANTRY_SIDE_LIP, params.width / 4);
+  const top = Math.min(PANTRY_TOP_LIP, params.height / 4);
+  const frontZ = carcassFront + lipDepth;
+  const extendedDepth = params.depth + lipDepth;
+  const extendedCenterZ = (-params.depth / 2 + frontZ) / 2;
+  const owned: THREE.BufferGeometry[] = [];
+  const shellCopy = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  // One top face from the back of the cabinet to the door, and one side face
+  // on each side. Separate lips left a seam across the top.
+  owned.push(withoutFaces(shellCopy, (normal) => normal.y > 0.5 || Math.abs(normal.x) > 0.5 || normal.z > 0.5));
+  shellCopy.dispose();
+  const cap = new THREE.BoxGeometry(params.width, top, extendedDepth);
+  cap.translate(0, params.height / 2 - top / 2, extendedCenterZ);
+  owned.push(cap.toNonIndexed());
+  cap.dispose();
+  for (const sign of [-1, 1] as const) {
+    const lip = new THREE.BoxGeometry(side, params.height - top, extendedDepth);
+    lip.translate(sign * (params.width / 2 - side / 2), -top / 2, extendedCenterZ);
+    owned.push(lip.toNonIndexed());
+    lip.dispose();
+  }
+  const merged = concatGeometries(owned);
+  (merged as THREE.BoxGeometry).parameters = {
+    width: params.width,
+    height: params.height,
+    depth: params.depth,
+    widthSegments: params.widthSegments ?? 1,
+    heightSegments: params.heightSegments ?? 1,
+    depthSegments: params.depthSegments ?? 1,
+  };
+  shell.geometry = merged;
+  geometry.dispose();
+  for (const part of owned) part.dispose();
+  shell.userData = { ...shell.userData, pantryFrontExtended: true, pantryFrontZ: frontZ };
+  return { lipDepth, frontZ };
+}
+
+function pantryDoorFrontZ(frontGroup: THREE.Object3D, fallback: number) {
+  let front = fallback;
+  frontGroup.traverse((node) => {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh || (node.userData?.grainPiece !== "rail" && node.userData?.grainPiece !== "stile")) return;
+    mesh.geometry.computeBoundingBox();
+    const box = mesh.geometry.boundingBox;
+    if (!box) return;
+    let z = box.max.z;
+    let current: THREE.Object3D | null = mesh;
+    while (current && current !== frontGroup) {
+      z += current.position.z;
+      current = current.parent;
+    }
+    front = Math.max(front, frontGroup.position.z + z);
+  });
+  return front;
 }
 
 /** One clamped copy of the center grain, aspect-matched to the piece. Never tiled. */
@@ -7977,7 +8107,7 @@ export function addCabinet(
     const upperDoorHeight = Math.max(0.2, bodyHeight - lowerDoorHeight - 0.1);
     const doorsPerRow = threeDTallPantryDoorsPerRow(sku);
     const addPantryRow = (height: number, centerY: number, row: "lower" | "upper") => {
-      const sideInset = woodDoorPhotograph ? 0 : 0.04;
+      const sideInset = woodDoorPhotograph ? PANTRY_CORNER_INSET : 0.04;
       const leafGap = woodDoorPhotograph ? 0 : 0.03;
       const doorWidth = (bodyWidth - sideInset * 2) / doorsPerRow;
       for (let i = 0; i < doorsPerRow; i++) {
@@ -9005,6 +9135,10 @@ export function addCabinet(
     grainRotation: 0,
   };
   if (woodDoorPhotograph) extendWoodFrontsToCabinetEdges(frontGroup, bodyHeight, isWall);
+  if (woodDoorPhotograph && isTall && !pantryLayout && /pantry/i.test(`${sku.masterCode ?? ""} ${sku.description ?? ""}`)) {
+    const shell = bodyMeshes.find((mesh) => mesh.userData?.carcassShell);
+    if (shell) extendPantryShellToDoorFront(shell, pantryDoorFrontZ(frontGroup, faceDepth + 0.08));
+  }
   cabinet.add(frontGroup);
   // Doors and drawers already reference the shared sample. Box skins receive it
   // again when the image finishes loading, and that callback stamps them too.
