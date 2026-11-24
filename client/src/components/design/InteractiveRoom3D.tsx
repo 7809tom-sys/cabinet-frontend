@@ -11148,6 +11148,11 @@ export function farmhouseApronEdgeInsetIn(input: {
 
 const apronEdgeInset = farmhouseApronEdgeInsetIn;
 
+/** Top of an undermounted farm-sink rim, a hair under the counter underside. */
+export function farmhouseUndermountTopY(countertopTop: number): number {
+  return countertopTop - STD.COUNTERTOP_THICKNESS * INCH - (1 / 16) * INCH;
+}
+
 export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlacement?: DeckFaucetPlacement) {
   const width = sink.width * INCH;
   const depth = sink.depth * INCH;
@@ -11269,9 +11274,13 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       new RoundedBoxGeometry(segment.width, rimHeight, segment.depth, 3, Math.min(0.028, segment.width * 0.18, segment.depth * 0.18)),
       steel,
     );
-    rimSegment.position.set(centerX + segment.x, countertopTop + 0.018, centerZ + segment.z);
+    rimSegment.position.set(
+      centerX + segment.x,
+      sink.apronFront ? farmhouseUndermountTopY(countertopTop) - rimHeight / 2 : countertopTop + 0.018,
+      centerZ + segment.z,
+    );
     rimSegment.renderOrder = 24;
-    rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
+    rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, undermountedFarmhouseRim: sink.apronFront === true, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
     addFixtureNode(rimSegment);
   });
   const openingWidth = Math.max(0.04, openingMaxX - openingMinX);
@@ -11411,7 +11420,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     const sidewaysDirection = side === "left" ? 1 : side === "right" ? -1 : 0;
     apron.position.set(
       centerX + sidewaysDirection * edgeInset,
-      countertopTop - exteriorHeight / 2 + 0.006,
+      farmhouseUndermountTopY(countertopTop) - exteriorHeight / 2,
       centerZ + direction * edgeInset,
     );
     apron.userData = { sinkApronFront: true, sinkApronMaterial: isGunmetalBlack ? "gunmetal-black" : isSourceMeasuredStainlessApron ? "stainless-steel" : "fireclay", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };

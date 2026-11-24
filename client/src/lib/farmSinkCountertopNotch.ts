@@ -1,12 +1,11 @@
 /**
- * Apron-front (farm) sink countertop notch.
+ * Apron-front (farm) sink countertop.
  *
- * A farm sink's apron and top rim are the front of the run. Stone stops at the
- * sink's left and right sides and continues only behind it. Undermount and
- * drop-in sinks are not notched: their bowls stay openings inside a full slab.
- *
- * Every slab keeps one outline with that bite removed, so area, plan, and 3D
- * stay on the same geometry.
+ * A farm sink is undermounted. The counter slab stays whole over the rim and
+ * the bowl opening is cut in the 3D view, the same way an undermount bowl is.
+ * The apron hangs below the counter's front edge. The old notch bit the entire
+ * front of the slab away, which left the rim sitting on the counter like a
+ * drop-in. Undermount and drop-in sinks are unchanged.
  */
 
 export type ApronNotchPoint = { x: number; y: number };
@@ -38,29 +37,17 @@ export type ApronNotchSurface = {
 type Rect = { x: number; y: number; width: number; depth: number };
 
 const EPS = 1e-4;
-/** How far the bite is extended past the sink front so it clears any overhang. */
-const FRONT_REACH_IN = 48;
 
 export function isApronFrontSink(sink: ApronNotchSink): boolean {
   return sink.apronFront === true || sink.type === "farmhouse";
 }
 
-/** World rectangle removed from the counter: the sink footprint, extended out the room-facing side. */
-export function apronFrontNotchRect(sink: ApronNotchSink): Rect | null {
-  if (!isApronFrontSink(sink)) return null;
-  if (!(sink.width > EPS) || !(sink.depth > EPS)) return null;
-  switch (sink.wallSide) {
-    case "bottom":
-      return { x: sink.x, y: sink.y - FRONT_REACH_IN, width: sink.width, depth: sink.depth + FRONT_REACH_IN };
-    case "left":
-      return { x: sink.x, y: sink.y, width: sink.width + FRONT_REACH_IN, depth: sink.depth };
-    case "right":
-      return { x: sink.x - FRONT_REACH_IN, y: sink.y, width: sink.width + FRONT_REACH_IN, depth: sink.depth };
-    case "top":
-      return { x: sink.x, y: sink.y, width: sink.width, depth: sink.depth + FRONT_REACH_IN };
-    default:
-      return null;
-  }
+/**
+ * No plan notch. The counter covers the farm sink's rim. The bowl cutout is
+ * drawn with the sink, not by deleting the front of the slab.
+ */
+export function apronFrontNotchRect(_sink: ApronNotchSink): Rect | null {
+  return null;
 }
 
 function polygonArea(points: readonly ApronNotchPoint[]): number {
