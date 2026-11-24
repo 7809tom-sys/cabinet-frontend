@@ -303,9 +303,9 @@ describe("Auto-Design is public", () => {
 
     fireEvent.click(triggerAt(1280));
     await act(async () => {});
-    expect(
-      await screen.findByTestId("auto-design-auto-build-dialog"),
-    ).toBeTruthy();
+    const step = await screen.findByTestId("fresh-room-catalog-setup");
+    expect(step.getAttribute("data-purpose")).toBe("auto-design");
+    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
   });
 });
 
@@ -373,9 +373,9 @@ describe("Auto-Design is reachable from the floating column (fullscreen)", () =>
       fireEvent.click(screen.getByTestId("three-d-floating-auto-design"));
       await act(async () => {});
 
-      expect(
-        await screen.findByTestId("auto-design-auto-build-dialog"),
-      ).toBeTruthy();
+      const step = await screen.findByTestId("fresh-room-catalog-setup");
+      expect(step.getAttribute("data-purpose")).toBe("auto-design");
+      expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
     },
   );
 
@@ -411,9 +411,9 @@ describe("Auto-Design is reachable from the floating column (fullscreen)", () =>
 
       fireEvent.click(auto);
       await act(async () => {});
-      expect(
-        await screen.findByTestId("auto-design-auto-build-dialog"),
-      ).toBeTruthy();
+      const step = await screen.findByTestId("fresh-room-catalog-setup");
+      expect(step.getAttribute("data-purpose")).toBe("auto-design");
+      expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
     },
   );
 });

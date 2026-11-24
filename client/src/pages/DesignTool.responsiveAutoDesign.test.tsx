@@ -380,7 +380,9 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
 
     fireEvent.click(trigger);
     await act(async () => {});
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    const step = await screen.findByTestId("fresh-room-catalog-setup");
+    expect(step.getAttribute("data-purpose")).toBe("auto-design");
+    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
   });
 
   it("opens from the phone top actions for a sink base alone", async () => {
@@ -391,7 +393,9 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     expect(trigger.disabled).toBe(false);
     fireEvent.click(trigger);
     await act(async () => {});
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    const step = await screen.findByTestId("fresh-room-catalog-setup");
+    expect(step.getAttribute("data-purpose")).toBe("auto-design");
+    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
   });
 
   it("keeps the opener shut once the button is disabled by real cabinet work", async () => {
@@ -413,7 +417,9 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     expect(trigger.disabled).toBe(false);
     fireEvent.click(trigger);
     await act(async () => {});
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    const step = await screen.findByTestId("fresh-room-catalog-setup");
+    expect(step.getAttribute("data-purpose")).toBe("auto-design");
+    expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
   });
 });
 

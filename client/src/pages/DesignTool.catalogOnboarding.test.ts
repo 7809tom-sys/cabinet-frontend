@@ -45,10 +45,14 @@ describe("fresh room catalog onboarding", () => {
     expect(selector).toContain('data-testid="fresh-room-door-style-option"');
     expect(selector).toContain('aria-label={`${name} door thumbnail`}');
     expect(selector).toContain('const photoUrl = preferredDoorReferenceUrl(style);');
+    expect(selector).toContain('alt={`${name} door sample`}');
     expect(selector).toContain('onClick={() => setSlotStyle("A", style.id)}');
     expect(selector).toContain('aria-pressed={selected}');
     expect(selector).toContain("overflow-y-auto");
-    expect(selector).toContain("<DoorSamplePhoto url={photoUrl} alt=\"\" className=\"h-36 w-full\" />");
+    expect(selector).toContain("<DoorSamplePhoto url={photoUrl} alt={`${name} door sample`} className=\"h-36 w-full\" />");
+    expect(selector).not.toContain("Choose a distributor first");
+    expect(source).toContain("cabinetStyleStepCopy(cabinetStylePopupPurpose)");
+    expect(source).not.toContain("Your room is ready");
     expect(source).toContain('loading="lazy"');
     expect(source).toContain("object-contain");
   });
