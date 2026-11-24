@@ -261,6 +261,16 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+/**
+ * Choosing Auto-Design opens the vendor / door-style step first. The Continue
+ * path into the measured build is covered by DesignTool.autoDesignVendorStep.test.tsx.
+ */
+async function expectAutoDesignVendorStep() {
+  const step = await screen.findByTestId("fresh-room-catalog-setup");
+  expect(step.getAttribute("data-purpose")).toBe("auto-design");
+  expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
+}
+
 describe("Auto-Design after the toolbar cleanup, on phone, tablet, and desktop", () => {
   it("opens the popup collapsed and shows an enabled Auto-Design in Kitchen at 1280px", async () => {
     await renderDesigner(1280);
@@ -320,7 +330,9 @@ describe("Auto-Design after the toolbar cleanup, on phone, tablet, and desktop",
     await renderDesigner(1280);
     fireEvent.click(await triggerAt(1280));
     await act(async () => { await new Promise((r) => setTimeout(r, 200)); });
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    // The vendor / door-style step comes first; Continue (covered with mocked
+    // vendor lines in DesignTool.autoDesignVendorStep.test.tsx) opens the dialog.
+    await expectAutoDesignVendorStep();
   });
 });
 
@@ -342,7 +354,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
 
     fireEvent.click(trigger);
     await act(async () => {});
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    await expectAutoDesignVendorStep();
   });
 
   it("opens from the phone top actions for a sink base alone", async () => {
@@ -353,7 +365,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     expect(trigger.disabled).toBe(false);
     fireEvent.click(trigger);
     await act(async () => {});
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    await expectAutoDesignVendorStep();
   });
 
   it("keeps the opener shut once the button is disabled by real cabinet work", async () => {
@@ -375,7 +387,7 @@ describe("a pushed sink base opens Auto-Design whenever the button is enabled", 
     expect(trigger.disabled).toBe(false);
     fireEvent.click(trigger);
     await act(async () => {});
-    expect(await screen.findByTestId("auto-design-auto-build-dialog")).toBeTruthy();
+    await expectAutoDesignVendorStep();
   });
 });
 

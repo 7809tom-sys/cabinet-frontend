@@ -269,6 +269,16 @@ async function triggerAt(width: number): Promise<HTMLElement> {
   return screen.findByTestId("room-layout-popup-auto-design");
 }
 
+/**
+ * Choosing Auto-Design opens the vendor / door-style step first. The Continue
+ * path into the measured build is covered by DesignTool.autoDesignVendorStep.test.tsx.
+ */
+async function expectAutoDesignVendorStep() {
+  const step = await screen.findByTestId("fresh-room-catalog-setup");
+  expect(step.getAttribute("data-purpose")).toBe("auto-design");
+  expect(screen.queryByTestId("auto-design-auto-build-dialog")).toBeNull();
+}
+
 beforeEach(() => {
   cleanup();
   window.localStorage.clear();
@@ -305,9 +315,7 @@ describe("Auto-Design is public", () => {
 
     fireEvent.click(await triggerAt(1280));
     await act(async () => {});
-    expect(
-      await screen.findByTestId("auto-design-auto-build-dialog"),
-    ).toBeTruthy();
+    await expectAutoDesignVendorStep();
   });
 });
 
@@ -373,9 +381,7 @@ describe("Auto-Design is reachable from the floating column (fullscreen)", () =>
       fireEvent.click(screen.getByTestId("three-d-floating-auto-design"));
       await act(async () => {});
 
-      expect(
-        await screen.findByTestId("auto-design-auto-build-dialog"),
-      ).toBeTruthy();
+      await expectAutoDesignVendorStep();
     },
   );
 
@@ -411,9 +417,7 @@ describe("Auto-Design is reachable from the floating column (fullscreen)", () =>
 
       fireEvent.click(auto);
       await act(async () => {});
-      expect(
-        await screen.findByTestId("auto-design-auto-build-dialog"),
-      ).toBeTruthy();
+      await expectAutoDesignVendorStep();
     },
   );
 });

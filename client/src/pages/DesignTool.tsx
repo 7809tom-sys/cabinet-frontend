@@ -326,6 +326,7 @@ import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesig
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
 import { postBuildFixturePrompts, productFromOpeningPick } from "@/lib/autoDesignOpeningFixturePick";
 import { followUpAfterCabinetStyle, initialDesignerPopup, popupsForRestoredDraft, shouldPromptFixturePick } from "@/lib/designerStartPopups";
+import { AUTO_DESIGN_STYLE_STEP_COPY, autoDesignStepVendor, followUpAfterAutoDesignStyle, type CabinetStylePopupPurpose } from "@/lib/autoDesignStyleStep";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
@@ -1073,6 +1074,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   // Set only when the style popup is the Start-from-scratch opener. Confirming
   // it then opens the room layout. Skipping or any other opener does not.
   const chainRoomLayoutAfterStyleRef = useRef(false);
+  const [cabinetStylePopupPurpose, setCabinetStylePopupPurpose] = useState<CabinetStylePopupPurpose>(null);
   const [beginnerFirstCabinetGuideOpen, setBeginnerFirstCabinetGuideOpen] = useState(false);
   const [interactive3dOpen, setInteractive3dOpen] = useState(false);
   const [requestedThreeDPreview, setRequestedThreeDPreview] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "3d");
@@ -1504,6 +1506,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	 */
 	const openAutoDesign = useCallback(() => {
 	  // Opening it does not move anything already on the plan.
+	  if (!autoDesignControlEnabledRef.current) return;
+	  // Vendor and door style/color first (autoDesignStyleStep); confirming opens the questions.
+	  chainRoomLayoutAfterStyleRef.current = false;
+	  setCabinetStylePopupPurpose("auto-design");
+	  setCatalogSetupOpen(true);
+	}, []);
+	const openAutoDesignQuestions = useCallback(() => {
 	  if (!autoDesignControlEnabledRef.current) return;
 	  // The colored numbered wall guide is meaningful only in the 2D Floor Plan.
 	  // This does not modify the plan; it simply opens the measured-kitchen workflow.
@@ -3743,6 +3752,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     const label = distributorNameById.get(nextDistributorId) ?? "that distributor";
     toast.info(`Showing ${label} — choose a door style for this line.`);
   }, [catalogDistributorScopeId, distributorNameById, placed.length, selectedStyleDistributorId, styleDistributorIdById, styleId, t]);
+  useEffect(() => {
+    if (!catalogSetupOpen) { setCabinetStylePopupPurpose(null); return; }
+    if (cabinetStylePopupPurpose !== "auto-design") return;
+    const vendor = autoDesignStepVendor({ catalogDistributorId, lockedDistributorId, selectedStyleDistributorId });
+    if (vendor != null && vendor !== catalogDistributorId) setCatalogDistributorId(vendor);
+    // Preselect once per opening, so a vendor the shopper picks in the step sticks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cabinetStylePopupPurpose, catalogSetupOpen]);
   const handleRoomLayoutSelected = useCallback((layoutPresetId: string) => {
     setSelectedLayoutPresetId(layoutPresetId);
     setLayoutStarterOpen(false);
@@ -3761,6 +3778,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     });
     chainRoomLayoutAfterStyleRef.current = false;
     setCatalogSetupOpen(false);
+    if (cabinetStylePopupPurpose === "auto-design") {
+      if (followUpAfterAutoDesignStyle({ action, purpose: cabinetStylePopupPurpose, distributorChosen: catalogDistributorId != null, styleChosen: styleId != null })) window.setTimeout(openAutoDesignQuestions, 0);
+      return;
+    }
     if (action !== "confirm") return;
     setPaletteType("base");
     if (panelDrawerMode) setMobilePanel("catalog");
@@ -3771,7 +3792,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       return;
     }
     toast.success("Catalog ready. Choose a cabinet to begin your design.");
-  }, [panelDrawerMode]);
+  }, [cabinetStylePopupPurpose, catalogDistributorId, openAutoDesignQuestions, panelDrawerMode, styleId]);
   const activeSceneLayoutPresetId = selectedLayoutPresetId ?? "kitchen_l_standard";
   const hasPersistedRoomLayout = hasDesignedRoomGeometry(room);
   const hasPersistedTwoDPlan = hasPersistedRoomLayout || placed.length > 0 || openings.length > 0 || sinks.length > 0 || island != null || furniture.length > 0 || ponyWalls.length > 0;
@@ -26225,12 +26246,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       <Dialog open={catalogSetupOpen} onOpenChange={(open) => { if (!open) finishCabinetStylePopup("dismiss"); }}>
         <DialogContent
           data-testid="fresh-room-catalog-setup"
+          data-purpose={cabinetStylePopupPurpose ?? "catalog"}
           className="max-h-[min(92vh,900px)] max-w-3xl overflow-y-auto"
         >
           <DialogHeader>
             <DialogTitle className="font-serif text-xl">Choose your cabinet vendor and color</DialogTitle>
             <DialogDescription>
-              Your room is ready. Choose the cabinet vendor first, then choose the door style/color before placing anything in the design.
+              {cabinetStylePopupPurpose === "auto-design" ? AUTO_DESIGN_STYLE_STEP_COPY.description : "Your room is ready. Choose the cabinet vendor first, then choose the door style/color before placing anything in the design."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -26310,7 +26332,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               disabled={catalogDistributorId == null || styleId == null}
               onClick={() => finishCabinetStylePopup("confirm")}
             >
-              Continue to cabinet catalog
+              {cabinetStylePopupPurpose === "auto-design" ? AUTO_DESIGN_STYLE_STEP_COPY.confirmLabel : "Continue to cabinet catalog"}
             </Button>
             {/* Never a one-way door: a modal that covers the whole Designer has
                 to be dismissible even before a vendor is chosen. The palette's
@@ -26322,7 +26344,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               data-testid="fresh-room-catalog-setup-skip"
               onClick={() => finishCabinetStylePopup("dismiss")}
             >
-              Not now
+              {cabinetStylePopupPurpose === "auto-design" ? AUTO_DESIGN_STYLE_STEP_COPY.dismissLabel : "Not now"}
             </Button>
           </DialogFooter>
         </DialogContent>
