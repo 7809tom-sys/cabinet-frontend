@@ -49,6 +49,8 @@ import { CrmTableView, type TableDeal } from "@/components/crm/monday/CrmTableVi
 import { CrmPipelineTotals } from "@/components/crm/monday/CrmPipelineTotals";
 import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/CrmEmailWorkspace";
 import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
+import { CustomerListImportAdminDialog } from "@/components/crm/outreach/CustomerListImportAdminDialog";
+import { OutreachPanel } from "@/components/crm/outreach/OutreachPanel";
 
 type CustomerSummary = { text: string; href: string; customerKey: string };
 
@@ -186,7 +188,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [crmView, setCrmView] = useState<"board" | "table" | "email">("board");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach">("board");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
@@ -317,6 +319,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
           </Select>
           <ImportLeadsDialog lang={lang} affiliateId={scopedAffiliateId} />
           <CustomerListImportDialog lang={lang} affiliateId={affiliateId} />
+          {isMasterView && <CustomerListImportAdminDialog />}
           <NewDealDialog lang={lang} affiliateId={affiliateId} />
         </div>
       </div>
@@ -326,14 +329,14 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(["board", "table", "email"] as const).map((view) => (
+        {(isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)).map((view) => (
           <button
             key={view}
             type="button"
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : "Email"}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : "Outreach"}
           </button>
         ))}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
@@ -411,6 +414,8 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
           onOpen={setOpenDealId}
           onPatch={(id, patch) => inlineUpdate.mutate({ id, ...patch })}
         />
+      ) : crmView === "outreach" && isMasterView ? (
+        <OutreachPanel />
       ) : crmView === "email" ? (
         <CrmEmailWorkspace audience={boardScope === "affiliate" ? "affiliate" : "admin"} showConnections={isMasterView} prefill={emailPrefill} />
       ) : (
