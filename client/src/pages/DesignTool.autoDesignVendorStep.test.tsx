@@ -231,10 +231,11 @@ describe("Auto-Design asks for the vendor and door style/color first", () => {
       const selected = options.filter((option) => option.getAttribute("aria-pressed") === "true");
       expect(selected).toHaveLength(1);
       expect(selected[0].textContent).toContain("Gray Slab");
-      // Usable at every width: the dialog scrolls inside the viewport and the
-      // door grid starts at two columns on a phone.
-      expect(step.className).toContain("overflow-y-auto");
-      expect(step.className).toContain("max-h-[min(92vh,900px)]");
+      // The popup stays inside the viewport. The vendor list, door grid, and
+      // preview scroll; Continue and Cancel stay pinned.
+      expect(step.className).toContain("overflow-hidden");
+      expect(step.className).toContain("max-h-[min(92dvh,900px)]");
+      expect(step.querySelector(".overflow-y-auto")).toBeTruthy();
       expect(options[0].parentElement?.className).toContain("grid-cols-2");
       expect(within(step).getByRole("button", { name: "Cancel" })).toBeTruthy();
 
@@ -309,7 +310,11 @@ describe("Auto-Design asks for the vendor and door style/color first", () => {
     seedDraft(null);
     await renderDesigner(375);
     const step = await openStep(375);
-    expect(within(step).getByText("Choose a distributor first")).toBeTruthy();
+    // A plan with no vendor still shows the first catalog line's door photos.
+    // Continue stays off until a door style is picked.
+    expect(within(step).queryByText("Choose a distributor first")).toBeNull();
+    expect(within(step).getByRole("combobox", { name: "Choose cabinet distributor" }).textContent).toContain("Line One");
+    expect(within(step).getAllByTestId("fresh-room-door-style-option").length).toBeGreaterThan(0);
     expect(continueButton(step).disabled).toBe(true);
   });
 });

@@ -27,7 +27,8 @@ describe("Every bathroom Designer popup can be closed", () => {
     const gate = dialogBlock("<Dialog open={catalogSetupOpen}");
     // A modal gate over the whole workspace must never depend on the user
     // noticing the corner X or knowing Escape.
-    expect(gate).toContain("Continue to cabinet catalog");
+    expect(gate).toContain("cabinetStyleStepCopy(cabinetStylePopupPurpose).confirmLabel");
+    expect(gate).toContain('data-testid="fresh-room-catalog-setup-skip"');
     expect(gate).toContain("setCatalogSetupOpen(false)");
   });
 
