@@ -23,6 +23,8 @@ interface Props {
   onClear: () => void;
   affiliateSlug?: string | null;
   compact?: boolean;
+  /** Extra classes for the trigger. The toolbar uses this to hide the duplicate on tablet and computer widths. */
+  triggerClassName?: string;
   /**
    * Increment to open the picker from an external affordance (the floating
    * canvas rail). The dialog still owns its own open state, so the toolbar
@@ -37,7 +39,7 @@ interface Props {
  * pricing is intentionally re-read from the public catalog when the Designer
  * prepares its materials list and cart line.
  */
-export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug, compact = false, openSignal }: Props) {
+export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug, compact = false, triggerClassName, openSignal }: Props) {
   const [open, setOpen] = useState(false);
   const [collection, setCollection] = useState<string | undefined>();
   const [productType, setProductType] = useState<string | undefined>();
@@ -92,7 +94,7 @@ export function HardwareCatalogPicker({ value, onSelect, onClear, affiliateSlug,
         aria-label="Select real cabinet hardware"
         title={value ? `Real hardware: ${value.collection} ${value.sku} in ${value.finish}` : "Choose a Hardware Resources cabinet hardware item for the design preview"}
         onClick={() => setOpen(true)}
-        className={`min-h-8 shrink-0 gap-1.5 ${compact ? "h-10 max-w-full justify-start" : "max-w-52"}`}
+        className={`min-h-8 shrink-0 gap-1.5 ${compact ? "h-10 max-w-full justify-start" : "max-w-52"} ${triggerClassName ?? ""}`}
       >
         <span className="h-3 w-3 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: value ? catalogHardwareFinishAccent(value.finish) : "#b8bbc0" }} />
         <Wrench className="h-3.5 w-3.5 shrink-0" />

@@ -18202,6 +18202,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           onClear={() => setCatalogHardwareSelection(null)}
           affiliateSlug={affiliateSlug}
           compact={isTabletWorkspace}
+          triggerClassName="lg:hidden"
           openSignal={hardwarePickerSignal}
         />
         {roomType !== "closet" && (
@@ -18368,7 +18369,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               variant={isTabletWorkspace ? "default" : "outline"}
               size="sm"
               data-testid="tablet-add-cabinet"
-              className={`hidden lg:inline-flex shrink-0 ${isTabletWorkspace ? "h-10 min-w-11 bg-[#1a2744] px-3 text-white hover:bg-[#24375f]" : ""}`}
+              className="hidden"
               onClick={() => setMobilePanel((panel) => panel === "catalog" ? null : "catalog")}
             >
               {isTabletWorkspace ? <Plus className="mr-1.5 h-4 w-4" /> : <Boxes className="mr-1.5 h-3.5 w-3.5" />} {isTabletWorkspace ? (paletteType === "closetparts" ? "Add closet parts" : "Add cabinet") : "Catalog"}
