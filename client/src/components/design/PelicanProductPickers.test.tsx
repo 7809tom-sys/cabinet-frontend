@@ -53,7 +53,8 @@ describe("PelicanFaucetPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /show all 7 faucets/i }));
 
     expect(screen.getByText("PL-8216 BN")).toBeTruthy();
-    expect(screen.getByAltText("Pelican verified faucet 7")).toBeTruthy();
+    // Shown to the customer under the store's own StoneCreek name.
+    expect(screen.getByAltText("StoneCreek verified faucet 7")).toBeTruthy();
   });
 
   it("returns the exact photo-backed, priced SKU that the user taps", () => {
@@ -63,5 +64,21 @@ describe("PelicanFaucetPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /pelican verified faucet 1/i }));
 
     expect(onSelect).toHaveBeenCalledWith(faucets[0]);
+  });
+});
+
+describe("PelicanCountertopPicker photo cards", () => {
+  it("opens on the slab cards when the countertop pop-up asks for it", () => {
+    render(<PelicanCountertopPicker defaultExpanded selectedSurfaces={[]} onSelect={vi.fn()} onBrowseAll={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /countertop choices/i }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByTestId("product-photo-placeholder")).toBeTruthy();
+  });
+
+  it("selects a slab when its photo is tapped, through the same handler as the button", () => {
+    const onSelect = vi.fn();
+    render(<PelicanCountertopPicker defaultExpanded selectedSurfaces={[]} onSelect={onSelect} onBrowseAll={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("countertop-card-photo-11"));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0]![0]).toMatchObject({ id: 11, sellPrice: 2430 });
   });
 });

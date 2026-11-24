@@ -77,3 +77,32 @@ describe("AutoDesignFaucetDialog", () => {
     expect(onKeepDefault).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("AutoDesignFaucetDialog photo grid", () => {
+  it("shows each faucet as a photo tile and says StoneCreek instead of the supplier name", () => {
+    const onChoose = vi.fn();
+    render(
+      <AutoDesignFaucetDialog
+        open
+        sinkLabel="SB36"
+        sinkCount={1}
+        products={[pelican, other]}
+        loading={false}
+        catalogUnavailable={false}
+        onKeepDefault={vi.fn()}
+        onChoose={onChoose}
+      />,
+    );
+    const tile = screen.getByTestId("auto-design-faucet-option-8203");
+    expect(tile.querySelector("img")?.getAttribute("src")).toBe("https://example.test/pl-8203.png");
+    const noPhoto = screen.getByTestId("auto-design-faucet-option-42");
+    expect(noPhoto.querySelector('[data-testid="product-photo-placeholder"]')).toBeTruthy();
+    expect(noPhoto.textContent).toContain("Bridge Kitchen Faucet");
+    expect(screen.getByTestId("auto-design-faucet-brand-Pelican").textContent).toBe("StoneCreek");
+    expect(screen.getByTestId("auto-design-faucet-dialog").textContent).not.toContain("Pelican");
+    fireEvent.click(tile);
+    expect(tile.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByTestId("auto-design-faucet-use"));
+    expect(onChoose).toHaveBeenCalledWith(pelican, false);
+  });
+});

@@ -81,3 +81,31 @@ describe("DesignerFixturePickPopup", () => {
     expect(onDismiss).toHaveBeenCalled();
   });
 });
+
+describe("DesignerFixturePickPopup photo grid", () => {
+  it("shows sinks and faucets as photo tiles, with a placeholder when a photo is missing", () => {
+    renderPopup({
+      faucetProducts: [{ ...faucet, imageUrl: "https://example.test/pl-8203.png" }],
+    });
+    expect(screen.getByTestId("fixture-sink-grid")).toBeTruthy();
+    expect(screen.getByTestId("fixture-faucet-grid")).toBeTruthy();
+    const faucetTile = screen.getByTestId(`fixture-faucet-${faucet.id}`);
+    expect(faucetTile.querySelector("img")?.getAttribute("src")).toBe("https://example.test/pl-8203.png");
+    const sinkTile = screen.getByTestId(`fixture-sink-${sink.id}`);
+    expect(sinkTile.querySelector("img")).toBeNull();
+    expect(sinkTile.querySelector('[data-testid="product-photo-placeholder"]')).toBeTruthy();
+    expect(sinkTile.textContent).toContain(sink.name);
+  });
+
+  it("toggles the selected tile and keeps Save wired to the same ids", () => {
+    const { onSave } = renderPopup();
+    const tile = screen.getByTestId(`fixture-sink-${sink.id}`);
+    fireEvent.click(tile);
+    expect(tile.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(tile);
+    expect(tile.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(tile);
+    fireEvent.click(screen.getByTestId("fixture-pick-save"));
+    expect(onSave).toHaveBeenCalledWith({ sinkId: sink.id, faucetId: null });
+  });
+});
