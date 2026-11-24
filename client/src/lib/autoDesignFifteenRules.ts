@@ -85,7 +85,7 @@ function roleLabel(role: "sink" | "refrigerator" | "range"): string {
 // ---------------------------------------------------------------------------
 
 export type ConstructionType = "new" | "old";
-export type UtilityId = "electrical" | "plumbing" | "rangeHookup" | "sinkBase";
+export type UtilityId = "electrical" | "plumbing" | "fridgeWater" | "rangeHookup" | "sinkBase";
 
 export const UTILITY_QUESTIONS: readonly { id: UtilityId; label: string; question: string }[] = [
   {
@@ -95,8 +95,13 @@ export const UTILITY_QUESTIONS: readonly { id: UtilityId; label: string; questio
   },
   {
     id: "plumbing",
-    label: "Plumbing",
-    question: "Can the plumbing move three inches one way or the other?",
+    label: "Sink plumbing",
+    question: "Can the sink plumbing move three inches one way or the other?",
+  },
+  {
+    id: "fridgeWater",
+    label: "Ice maker / fridge water line",
+    question: "Can the ice maker / fridge water line move three inches one way or the other?",
   },
   {
     id: "rangeHookup",
@@ -161,7 +166,8 @@ export type IslandOrPeninsula = "none" | "island" | "peninsula";
 
 export type AutoDesignIntake = {
   construction: ConstructionType | null;
-  canMove: Record<UtilityId, boolean | null>;
+  /** fridgeWater is optional so older saved answers and callers keep working. */
+  canMove: Omit<Record<UtilityId, boolean | null>, "fridgeWater"> & { fridgeWater?: boolean | null };
   preferences: PreferenceId[];
   islandOrPeninsula: IslandOrPeninsula;
   peninsulaSide: "left" | "right" | null;
@@ -223,7 +229,7 @@ export function hasPreference(
 /**
  * Rule 2: anchor kinds the build must NOT wiggle.
  * sinkBase "no" or plumbing "no" -> sink and dishwasher.
- * rangeHookup "no" -> stove. electrical "no" -> refrigerator.
+ * rangeHookup "no" -> stove. electrical "no" or fridgeWater "no" -> refrigerator.
  * Old construction does NOT by itself lock anything.
  */
 export function lockedAnchorKinds(intake: AutoDesignIntake | null | undefined): AutoDesignKind[] {
@@ -235,7 +241,7 @@ export function lockedAnchorKinds(intake: AutoDesignIntake | null | undefined): 
     locked.add("dishwasher");
   }
   if (cm.rangeHookup === false) locked.add("stove");
-  if (cm.electrical === false) locked.add("refrigerator");
+  if (cm.electrical === false || cm.fridgeWater === false) locked.add("refrigerator");
   const order: AutoDesignKind[] = ["sink", "stove", "dishwasher", "refrigerator"];
   return order.filter((k) => locked.has(k));
 }

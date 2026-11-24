@@ -11,6 +11,7 @@ import {
   intakeMissing,
   togglePreference,
   lockedAnchorKinds,
+  UTILITY_QUESTIONS,
   anchorWiggleIn,
   landingGaps,
   sinkBaseDownsizeSteps,
@@ -175,6 +176,29 @@ describe("togglePreference", () => {
     i = togglePreference(i, "dishwasher", true);
     i = togglePreference(i, "dishwasher", false);
     expect(i.preferences).toEqual([]);
+  });
+});
+
+describe("fridge water line utility question", () => {
+  const base = { electrical: null, plumbing: null, rangeHookup: null, sinkBase: null };
+  it("is listed with its own wording", () => {
+    const q = UTILITY_QUESTIONS.find((u) => u.id === "fridgeWater");
+    expect(q?.label).toBe("Ice maker / fridge water line");
+    expect(q?.question).toBe("Can the ice maker / fridge water line move three inches one way or the other?");
+    expect(UTILITY_QUESTIONS.find((u) => u.id === "plumbing")?.label).toBe("Sink plumbing");
+  });
+  it("No locks only the refrigerator", () => {
+    const i = intake({ canMove: { ...base, fridgeWater: false } });
+    expect(lockedAnchorKinds(i)).toEqual(["refrigerator"]);
+    expect(anchorWiggleIn(i, "refrigerator")).toBe(0);
+    expect(anchorWiggleIn(i, "sink")).toBe(3);
+  });
+  it("Yes or unanswered/missing key does not lock the refrigerator", () => {
+    expect(lockedAnchorKinds(intake({ canMove: { ...base, fridgeWater: true } }))).toEqual([]);
+    expect(lockedAnchorKinds(intake({ canMove: { ...base } }))).toEqual([]);
+  });
+  it("Sink plumbing No still locks sink and dishwasher, not the fridge", () => {
+    expect(lockedAnchorKinds(intake({ canMove: { ...base, plumbing: false } }))).toEqual(["sink", "dishwasher"]);
   });
 });
 
