@@ -46,7 +46,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Popover, PopoverContent, PopoverTrigger,
+  Popover, PopoverAnchor, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -1099,6 +1099,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   // New windows use a real photographic scene by default; Daylight remains an explicit fallback choice.
   const [windowSceneKind, setWindowSceneKind] = useState<WindowSceneKind>(DEFAULT_WINDOW_SCENE_KIND);
   const [windowFrameStyle, setWindowFrameStyle] = useState<WindowFrameStyle>("white");
+  const [windowToolbarChoicesOpen, setWindowToolbarChoicesOpen] = useState(false);
 
   // Room + placement state
   const [room, setRoomState] = useState<RoomData>(DEFAULT_ROOM);
@@ -14908,6 +14909,18 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setFillerAttrOpen(false);
     setCabEditSheetOpen(false);
   }, [openings, selectOpening]);
+  const openEditWindow = useCallback(() => {
+    const selectedWindow = selectedOpeningUid
+      ? openings.find((opening) => opening.uid === selectedOpeningUid && opening.kind === "window")
+      : undefined;
+    const target = selectedWindow ?? openings.find((opening) => opening.kind === "window");
+    if (target) {
+      setWindowToolbarChoicesOpen(false);
+      openWindowAttributes(target.uid);
+      return;
+    }
+    setWindowToolbarChoicesOpen(true);
+  }, [openWindowAttributes, openings, selectedOpeningUid]);
 	  const openFillerAttributes = useCallback((uid: string) => {
     const filler = placed.find((item) => item.uid === uid);
     if (!filler || !isFillerItem(filler)) return false;
@@ -18211,42 +18224,63 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             )}
           </Button>
         )}
-        <label className="designer-toolbar-window-controls hidden items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs font-medium text-foreground lg:flex" title="Choose the visual scene shown through windows">
-          <span className="text-muted-foreground">Window</span>
-          <select
-            value={windowFrameStyle}
-            onChange={(event) => setWindowFrameStyle(event.target.value as WindowFrameStyle)}
-            className="h-7 bg-transparent text-xs font-semibold outline-none"
-            aria-label="Window frame style"
-            data-testid="window-frame-style-selector"
-          >
-            <option value="white">White frame</option>
-            <option value="black">Black frame</option>
-            <option value="wood">Wood frame</option>
-          </select>
-          <select
-            value={windowSceneKind}
-            onChange={(event) => setWindowSceneKind(event.target.value as WindowSceneKind)}
-            className="h-7 bg-transparent text-xs font-semibold outline-none"
-            aria-label="Window scene"
-            data-testid="window-scene-selector"
-          >
-            <option value="daylight">Daylight</option>
-            <option value="garden">Garden photo</option>
-            <option value="woodland">Woodland photo</option>
-            <option value="coastal">Coastal photo</option>
-            <option value="urban">Urban photo</option>
-            <option value="mountain">Mountain photo</option>
-            <option value="night">Night photo</option>
-            <option value="city-skyline">City skyline photo</option>
-            <option value="desert">Desert photo</option>
-            <option value="snow">Snowy mountain photo</option>
-            <option value="seasonal-garden">Seasonal garden</option>
-            <option value="autumn-woodland">Autumn woodland</option>
-            <option value="suburban">Suburban view</option>
-            <option value="privacy">Privacy glass</option>
-          </select>
-        </label>
+        <Popover open={windowToolbarChoicesOpen} onOpenChange={setWindowToolbarChoicesOpen}>
+          <PopoverAnchor asChild>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="edit-window-button"
+              aria-label="Edit window"
+              title="Edit window"
+              onClick={openEditWindow}
+              className="designer-toolbar-edit-window hidden h-12 w-24 shrink-0 px-1 text-xs font-semibold leading-tight lg:inline-flex"
+            >
+              Edit window
+            </Button>
+          </PopoverAnchor>
+          <PopoverContent className="w-64 space-y-3 p-3" align="start" data-testid="edit-window-choices">
+            <p className="text-sm font-semibold">Window attributes</p>
+            <label className="grid gap-1 text-xs font-medium">
+              Frame
+              <select
+                value={windowFrameStyle}
+                onChange={(event) => setWindowFrameStyle(event.target.value as WindowFrameStyle)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs font-semibold"
+                aria-label="Window frame style"
+                data-testid="window-frame-style-selector"
+              >
+                <option value="white">White frame</option>
+                <option value="black">Black frame</option>
+                <option value="wood">Wood frame</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs font-medium">
+              View
+              <select
+                value={windowSceneKind}
+                onChange={(event) => setWindowSceneKind(event.target.value as WindowSceneKind)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs font-semibold"
+                aria-label="Window scene"
+                data-testid="window-scene-selector"
+              >
+                <option value="daylight">Daylight</option>
+                <option value="garden">Garden photo</option>
+                <option value="woodland">Woodland photo</option>
+                <option value="coastal">Coastal photo</option>
+                <option value="urban">Urban photo</option>
+                <option value="mountain">Mountain photo</option>
+                <option value="night">Night photo</option>
+                <option value="city-skyline">City skyline photo</option>
+                <option value="desert">Desert photo</option>
+                <option value="snow">Snowy mountain photo</option>
+                <option value="seasonal-garden">Seasonal garden</option>
+                <option value="autumn-woodland">Autumn woodland</option>
+                <option value="suburban">Suburban view</option>
+                <option value="privacy">Privacy glass</option>
+              </select>
+            </label>
+          </PopoverContent>
+        </Popover>
         {/* Floor Plan / Room Size stays visible in every desktop workspace mode.
             Mobile uses the compact room-size sheet trigger immediately below. */}
         <div className={`${isTabletWorkspace ? "hidden" : "hidden lg:block"} ${layoutLocked ? "pointer-events-none opacity-50" : ""}`} title={layoutLocked ? t("dt_sh_unlock_to_edit_room") : undefined}>
