@@ -6,6 +6,15 @@ import type {
   AffiliateEmailSettingsView,
 } from "@shared/affiliateEmailSettings";
 
+/** Read-only public DNS check from the server. `domain` is null with no own domain. */
+export type AffiliateDomainRecordCheck = {
+  domain: string | null;
+  spf: boolean;
+  dmarc: boolean;
+  dkimSelector: string | null;
+  reliable: boolean;
+};
+
 type QueryOptions = { retry?: boolean; enabled?: boolean };
 
 type QueryResult<T> = {
@@ -34,6 +43,9 @@ type ProcedureError = { message: string; data?: { code?: string } | null };
 export function useAffiliateEmailSettingsProcedures() {
   return trpc as unknown as {
     affiliateEmailSettings: {
+      domainRecords: {
+        useQuery: (input: { affiliateId: number }, options?: QueryOptions) => QueryResult<AffiliateDomainRecordCheck>;
+      };
       get: {
         useQuery: (input: { affiliateId: number }, options?: QueryOptions) => QueryResult<AffiliateEmailSettingsView>;
       };

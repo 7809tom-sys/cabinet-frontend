@@ -24,7 +24,7 @@ const { mutate, testMutate, updateOptions, testOptions, updatePending, testPendi
   },
   updatePending: { current: false },
   testPending: { current: false },
-  settings: { current: { data: undefined as AffiliateEmailSettingsView | undefined, isLoading: false, error: null as { message: string } | null } },
+  settings: { current: { data: undefined as AffiliateEmailSettingsView | undefined, isLoading: false, error: null as { message: string; data?: { code?: string } | null } | null } },
   queryError: { current: null as { message: string } | null },
   invalidate: vi.fn(async () => undefined),
 }));
@@ -35,6 +35,7 @@ vi.mock("@/lib/affiliateEmailSettingsProcedures", () => ({
   useAffiliateEmailSettingsProcedures: () => ({
     useUtils: () => ({ affiliateEmailSettings: { get: { invalidate } } }),
     affiliateEmailSettings: {
+      domainRecords: { useQuery: () => ({ data: undefined, isLoading: false, error: null, refetch: () => undefined }) },
       get: { useQuery: () => settings.current },
       update: {
         useMutation: (options: typeof updateOptions.current) => {
@@ -55,7 +56,7 @@ vi.mock("@/lib/affiliateEmailSettingsProcedures", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), message: vi.fn(), error: vi.fn() } }));
 
 import { toast } from "sonner";
-import { AffiliateEmailSettingsPanel } from "./AffiliateEmailSettingsPanel";
+import { AFFILIATE_EMAIL_UNAVAILABLE_MESSAGE, AffiliateEmailSettingsPanel } from "./AffiliateEmailSettingsPanel";
 
 const savedView: AffiliateEmailSettingsView = {
   affiliateId: 7,
@@ -270,7 +271,7 @@ describe("affiliate Email settings area", () => {
     settings.current = {
       data: undefined,
       isLoading: false,
-      error: { message: "You can only change email settings for your own store." },
+      error: { message: "You can only change email settings for your own store.", data: { code: "FORBIDDEN" } },
     };
     render(<AffiliateEmailSettingsPanel affiliateId={7} canEdit />);
     expect(screen.getByRole("alert").textContent).toBe("You can only change email settings for your own store.");
@@ -312,5 +313,63 @@ describe("affiliate Email setup instructions in the panel", () => {
     expect(dashboard).toContain('case "email":');
     expect(dashboard).toContain("<AffiliateEmailSettingsPanel");
     expect(dashboard).toContain('(section === "email" && !access.isOwner)');
+  });
+});
+
+describe("Gmail recognition, own-domain instructions, and graceful failure", () => {
+  const blank: AffiliateEmailSettingsView = {
+    ...savedView, email: "", username: "", provider: "yahoo", smtpHost: "smtp.mail.yahoo.com", smtpPort: 465,
+    hasAppPassword: false, configured: false, enabled: false, lastTestedAt: null, lastTestOk: null,
+  };
+
+  it("switches a typed @gmail.com address to the Gmail server and fills the username", () => {
+    configure(blank);
+    fireEvent.change(screen.getByLabelText("Your email address"), { target: { value: "rich@gmail.com" } });
+    expect((screen.getByLabelText("Mail server") as HTMLInputElement).value).toBe("smtp.gmail.com");
+    expect((screen.getByLabelText("Port") as HTMLInputElement).value).toBe("465");
+    expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("rich@gmail.com");
+    expect(screen.getByTestId("affiliate-email-recognized").textContent).toContain("Gmail");
+    expect(screen.getByLabelText("Google app password")).toBeTruthy();
+    expect(screen.getByText("Gmail needs an app password.")).toBeTruthy();
+    expect(screen.getByTestId("affiliate-email-setup-guide").textContent).toContain("2-Step Verification");
+  });
+
+  it("does not override a provider the owner picked by hand", () => {
+    configure(blank);
+    fireEvent.change(screen.getByLabelText("Your email address"), { target: { value: "rich@yahoo.com" } });
+    expect((screen.getByLabelText("Mail server") as HTMLInputElement).value).toBe("smtp.mail.yahoo.com");
+  });
+
+  it("shows own-domain mailbox instructions for a non-free-mail address", () => {
+    configure(blank);
+    fireEvent.change(screen.getByLabelText("Your email address"), { target: { value: "rich@reaveswaycabinets.com" } });
+    const guide = screen.getByTestId("affiliate-domain-mail-guide");
+    expect(guide.textContent).toContain("reaveswaycabinets.com");
+    expect(guide.textContent).toContain("smtp.hostinger.com");
+    expect(guide.textContent).toContain("v=spf1 include:_spf.mail.hostinger.com ~all");
+    expect(guide.textContent).toContain("v=DMARC1; p=none; rua=mailto:dmarc@reaveswaycabinets.com");
+  });
+
+  it("shows the domain instructions for a store with a custom domain even with a Gmail address", () => {
+    configure({ ...blank, email: "rich@gmail.com", customDomain: "reavesway.com" });
+    expect(screen.getByTestId("affiliate-domain-mail-guide").textContent).toContain("reavesway.com");
+  });
+
+  it("shows a plain unavailable message, not a database error, and keeps the help on the page", () => {
+    settings.current = {
+      data: undefined,
+      isLoading: false,
+      error: { message: "Failed query: select id from affiliate_email_settings", data: { code: "INTERNAL_SERVER_ERROR" } },
+    };
+    render(<AffiliateEmailSettingsPanel affiliateId={7} canEdit />);
+    expect(screen.getByRole("alert").textContent).toBe(AFFILIATE_EMAIL_UNAVAILABLE_MESSAGE);
+    expect(document.body.textContent).not.toContain("Failed query");
+    expect(screen.getByTestId("affiliate-email-setup-guide")).toBeTruthy();
+    expect(screen.queryByLabelText("Your email address")).toBeNull();
+  });
+
+  it("treats a server-flagged unavailable view the same way", () => {
+    configure({ ...blank, unavailable: true });
+    expect(screen.getByRole("alert").textContent).toBe(AFFILIATE_EMAIL_UNAVAILABLE_MESSAGE);
   });
 });

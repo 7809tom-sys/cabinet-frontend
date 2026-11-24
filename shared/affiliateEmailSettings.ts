@@ -79,7 +79,7 @@ export const AFFILIATE_APP_PASSWORD_HELP: Record<AffiliateEmailProvider, { headl
   },
   gmail: {
     headline: "Gmail needs an app password.",
-    detail: "In your Google Account, open Security, turn on 2-Step Verification, then open App passwords. Your normal Google password will not work here.",
+    detail: "In your Google Account, open Security, turn on 2-Step Verification, then open App passwords (myaccount.google.com/apppasswords). Your normal Google password will not work here.",
   },
   outlook: {
     headline: "Outlook usually needs an app password.",
@@ -127,7 +127,7 @@ export const AFFILIATE_EMAIL_SETUP_GUIDES: AffiliateEmailSetupGuide[] = [
     label: "Gmail",
     steps: [
       "Open your Google Account, click Security, then turn on 2-Step Verification if it is off.",
-      "On the same Security page, click App passwords. If you do not see it, search for App passwords in the search box at the top of the page.",
+      "On the same Security page, click App passwords, or go straight to myaccount.google.com/apppasswords. If you do not see it, 2-Step Verification is not on yet, or your account is managed by an organization that blocks app passwords.",
       "Type a name like CabinetDealz and click Create. Copy the 16-character password Google shows you.",
       "Come back to this page. Type your Gmail address, choose Gmail, paste the app password, and click Save email settings.",
       "Click Send test email. When the test arrives in your inbox, you are done.",
@@ -176,6 +176,219 @@ export function affiliateEmailSetupGuide(provider: AffiliateEmailProvider): Affi
     ?? AFFILIATE_EMAIL_SETUP_GUIDES[AFFILIATE_EMAIL_SETUP_GUIDES.length - 1];
 }
 
+// ─── Provider recognition ─────────────────────────────────────────────────────
+
+const PROVIDER_DOMAINS: Record<Exclude<AffiliateEmailProvider, "custom">, readonly string[]> = {
+  gmail: ["gmail.com", "googlemail.com"],
+  yahoo: ["yahoo.com", "ymail.com", "rocketmail.com"],
+  outlook: ["outlook.com", "hotmail.com", "live.com", "msn.com"],
+};
+
+/** Consumer mailboxes with no preset here. The owner must look up the server. */
+const OTHER_FREE_MAIL_DOMAINS = [
+  "aol.com", "icloud.com", "me.com", "mac.com", "proton.me", "protonmail.com",
+  "gmx.com", "zoho.com", "comcast.net", "att.net", "sbcglobal.net", "verizon.net", "cox.net",
+];
+
+export function affiliateEmailDomain(email: string): string | null {
+  const value = email.trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  if (at < 1 || at === value.length - 1) return null;
+  const domain = value.slice(at + 1);
+  return /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/.test(domain) ? domain : null;
+}
+
+export type AffiliateEmailRecognition =
+  | { kind: "none" }
+  | { kind: "preset"; provider: Exclude<AffiliateEmailProvider, "custom">; domain: string }
+  | { kind: "other-free"; domain: string }
+  | { kind: "own-domain"; domain: string };
+
+/**
+ * What the typed address tells us. Gmail, Yahoo and Outlook.com addresses map to
+ * their preset. A different consumer mailbox has no preset. Anything else is
+ * treated as the owner's own domain.
+ */
+export function recognizeAffiliateEmail(email: string): AffiliateEmailRecognition {
+  const domain = affiliateEmailDomain(email);
+  if (!domain) return { kind: "none" };
+  for (const provider of Object.keys(PROVIDER_DOMAINS) as Array<keyof typeof PROVIDER_DOMAINS>) {
+    if (PROVIDER_DOMAINS[provider].includes(domain)) return { kind: "preset", provider, domain };
+  }
+  if (OTHER_FREE_MAIL_DOMAINS.includes(domain)) return { kind: "other-free", domain };
+  return { kind: "own-domain", domain };
+}
+
+/**
+ * Apply what the typed address implies. A recognized address switches the
+ * provider (and its server and port) and fills the username with the address,
+ * but only when the owner has not already chosen something else on purpose:
+ * `providerTouched` is true after they pick a provider by hand.
+ */
+export function applyAffiliateEmailRecognition(
+  draft: AffiliateEmailSettingsDraft,
+  options: { providerTouched: boolean; usernameTouched: boolean },
+): AffiliateEmailSettingsDraft {
+  const recognition = recognizeAffiliateEmail(draft.email);
+  let next = draft;
+  if (recognition.kind === "preset" && !options.providerTouched && draft.provider !== recognition.provider) {
+    next = applyAffiliateEmailPreset(next, recognition.provider);
+  }
+  if (recognition.kind !== "none" && !options.usernameTouched) {
+    next = { ...next, username: draft.email.trim() };
+  }
+  return next;
+}
+
+// ─── Own-domain mailbox instructions ──────────────────────────────────────────
+// Every host, port and DNS value below comes from the provider's own help page
+// (URLs in `sources`). Nothing here is a guess. DKIM values that Google and
+// Microsoft generate per domain are deliberately not written out: the guide
+// tells the owner where to copy them from.
+
+export type DomainMailHostKey = "hostinger" | "google" | "microsoft" | "other";
+
+export type DomainDnsRecord = {
+  type: "TXT" | "CNAME";
+  name: string;
+  value: string;
+  note?: string;
+};
+
+export type DomainMailHostGuide = {
+  key: DomainMailHostKey;
+  label: string;
+  /** Where the owner creates the mailbox. */
+  createMailbox: string[];
+  /** Server fields to type into this page. `host` is empty for "other". */
+  smtp: { host: string; port: number; security: string; username: string; password: string };
+  /** Records for deliverability, with the owner's domain filled in. */
+  dns: (domain: string) => DomainDnsRecord[];
+  sources: string[];
+};
+
+export const DOMAIN_MAIL_HOST_GUIDES: DomainMailHostGuide[] = [
+  {
+    key: "hostinger",
+    label: "Hostinger Email",
+    createMailbox: [
+      "In Hostinger hPanel, open Emails, then pick your domain and create a mailbox like you@yourdomain.com.",
+      "Write down the mailbox password. Hostinger accepts that password, or an app password if the mailbox uses two-factor sign-in.",
+    ],
+    smtp: {
+      host: "smtp.hostinger.com",
+      port: 465,
+      security: "SSL/TLS (port 587 with STARTTLS also works if 465 is blocked)",
+      username: "The full email address",
+      password: "The mailbox password (or an app password if the mailbox uses 2FA)",
+    },
+    dns: (domain) => [
+      { type: "TXT", name: "@", value: "v=spf1 include:_spf.mail.hostinger.com ~all", note: "Keep only one SPF record on the domain." },
+      { type: "CNAME", name: "hostingermail-a._domainkey", value: "hostingermail-a.dkim.mail.hostinger.com" },
+      { type: "CNAME", name: "hostingermail-b._domainkey", value: "hostingermail-b.dkim.mail.hostinger.com" },
+      { type: "CNAME", name: "hostingermail-c._domainkey", value: "hostingermail-c.dkim.mail.hostinger.com" },
+      { type: "TXT", name: "_dmarc", value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`, note: "p=none only watches. It does not block anything." },
+    ],
+    sources: [
+      "https://docs.hostinger.com/emails/setup-devices",
+      "https://www.hostinger.com/support/how-to-fix-smtp-email-sending-errors-on-hostinger/",
+      "https://www.hostinger.com/support/1583673-what-is-the-spf-record-for-hostinger-email/",
+      "https://www.hostinger.com/support/4456413-what-are-the-dkim-records-for-hostinger-email/",
+      "https://www.hostinger.com/support/8412851-how-to-add-a-dmarc-record-for-hostinger-email/",
+    ],
+  },
+  {
+    key: "google",
+    label: "Google Workspace",
+    createMailbox: [
+      "In the Google Admin console, add the user (Directory, then Users) so they have you@yourdomain.com.",
+      "Sign in as that user, turn on 2-Step Verification, then create an app password at myaccount.google.com/apppasswords. Your Workspace administrator can block app passwords, so ask them if the page is missing.",
+    ],
+    smtp: {
+      host: "smtp.gmail.com",
+      port: 465,
+      security: "SSL/TLS (port 587 with STARTTLS also works)",
+      username: "The full Google Workspace email address",
+      password: "A Google app password",
+    },
+    dns: (domain) => [
+      { type: "TXT", name: "@", value: "v=spf1 include:_spf.google.com ~all", note: "If other services also send mail for your domain, add their include: values to this same record." },
+      { type: "TXT", name: "google._domainkey", value: "Copy the value Google shows you", note: "Google Admin console, Apps, Google Workspace, Gmail, Authenticate email, Generate new record. Then click Start authentication. Google says to wait 24 to 72 hours after turning Gmail on before the key is available." },
+      { type: "TXT", name: "_dmarc", value: `v=DMARC1; p=none; rua=mailto:postmaster@${domain}`, note: "Google says to wait 48 hours after SPF and DKIM are working before adding DMARC." },
+    ],
+    sources: [
+      "https://developers.google.com/workspace/gmail/imap/imap-smtp",
+      "https://knowledge.workspace.google.com/admin/gmail/send-email-from-a-printer-scanner-or-app",
+      "https://knowledge.workspace.google.com/admin/security/set-up-spf",
+      "https://knowledge.workspace.google.com/admin/security/set-up-dkim",
+      "https://knowledge.workspace.google.com/admin/security/set-up-dmarc",
+    ],
+  },
+  {
+    key: "microsoft",
+    label: "Microsoft 365",
+    createMailbox: [
+      "In the Microsoft 365 admin center, open Users, then Active users, and add a licensed user with you@yourdomain.com.",
+      "Turn on Authenticated SMTP for that mailbox: select the user, open Mail, then Manage email apps, check Authenticated SMTP, and save. Microsoft turns it off by default for newer organizations.",
+    ],
+    smtp: {
+      host: "smtp.office365.com",
+      port: 587,
+      security: "STARTTLS (TLS 1.2 or newer). Microsoft does not support port 465 for this.",
+      username: "The full Microsoft 365 email address",
+      password: "The mailbox password. If your organization uses security defaults, SMTP sign-in may be blocked and your administrator must allow it.",
+    },
+    dns: (domain) => [
+      { type: "TXT", name: "@", value: "v=spf1 include:spf.protection.outlook.com -all", note: "This is Microsoft's record when Microsoft 365 is the only sender for the domain." },
+      { type: "CNAME", name: "selector1._domainkey", value: "Copy the target Microsoft shows you", note: "Microsoft Defender portal, Email authentication settings, DKIM. The target is different for every domain." },
+      { type: "CNAME", name: "selector2._domainkey", value: "Copy the target Microsoft shows you", note: "Same page as selector1." },
+      { type: "TXT", name: "_dmarc", value: `v=DMARC1; p=none; pct=100; rua=mailto:dmarc@${domain}` },
+    ],
+    sources: [
+      "https://learn.microsoft.com/en-us/exchange/mail-flow-best-practices/how-to-set-up-a-multifunction-device-or-application-to-send-email-using-microsoft-365-or-office-365",
+      "https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/authenticated-client-smtp-submission",
+      "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-spf-configure",
+      "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dkim-configure",
+      "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dmarc-configure",
+    ],
+  },
+  {
+    key: "other",
+    label: "Another host",
+    createMailbox: [
+      "Create the mailbox in your hosting or email provider's control panel.",
+      "Find its Outgoing mail (SMTP) settings in the provider's help. Look for the server name, the port, and whether it uses SSL/TLS or STARTTLS.",
+    ],
+    smtp: {
+      host: "",
+      port: 587,
+      security: "Use what your provider lists. Port 465 is SSL/TLS. Port 587 is STARTTLS.",
+      username: "Usually the full email address",
+      password: "The mailbox password or an app password",
+    },
+    dns: (domain) => [
+      { type: "TXT", name: "@", value: "Your provider's SPF value", note: "Ask your provider for it. A domain may have only one SPF record." },
+      { type: "TXT", name: "(selector)._domainkey", value: "Your provider's DKIM value", note: "Your provider names the selector and gives the value." },
+      { type: "TXT", name: "_dmarc", value: `v=DMARC1; p=none; rua=mailto:dmarc@${domain}`, note: "A starting record that only watches. Add it after SPF and DKIM work." },
+    ],
+    sources: [],
+  },
+];
+
+/** The settings to type in for a host guide. Only the preset-less "custom" provider is used. */
+export function applyDomainMailHost(
+  draft: AffiliateEmailSettingsDraft,
+  guide: DomainMailHostGuide,
+): AffiliateEmailSettingsDraft {
+  return {
+    ...draft,
+    provider: "custom",
+    smtpHost: guide.smtp.host || draft.smtpHost,
+    smtpPort: guide.smtp.port,
+    username: draft.username || draft.email.trim(),
+  };
+}
+
 export function isAffiliateEmailProvider(value: unknown): value is AffiliateEmailProvider {
   return typeof value === "string" && (AFFILIATE_EMAIL_PROVIDERS as readonly string[]).includes(value);
 }
@@ -213,6 +426,10 @@ export type AffiliateEmailSettingsView = {
   canEdit: boolean;
   lastTestedAt: string | null;
   lastTestOk: boolean | null;
+  /** The store's own domain, when it has one. */
+  customDomain?: string | null;
+  /** True when the server could not read the settings table (pending database update). */
+  unavailable?: boolean;
 };
 
 export function affiliateEmailSettingsConfigured(
