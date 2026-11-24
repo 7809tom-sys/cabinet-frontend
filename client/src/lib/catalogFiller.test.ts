@@ -13,9 +13,13 @@ describe("catalogFillerForGap", () => {
 	it("does not let a blank base-filler depth lose to a 12-inch wall filler", () => {
 	  const blankDepthBase = { id: 8, masterCode: "BFF3", description: '3" x 34.5" Fluted Base Filler', category: "Filler", subCategory: "Filler", width: 3, depth: null, height: 34.5, catalogImageUrl: null };
 	  const wall = { id: 9, masterCode: "WFF342", description: '3" x 42" Wall Filler', category: "Filler", subCategory: "Filler", width: 3, depth: 12, height: 42, catalogImageUrl: null };
-	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "base")?.masterCode).toBe("BFF3");
-	  // Fluted WFF fillers are never auto-picked (Tom, voice, Nov 19 2026, 7:41 AM CT).
-	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "wall")?.masterCode).not.toBe("WFF342");
+	  // No BFF or fluted filler is ever auto-picked (Tom, voice, Nov 19 2026 for WFF; Nov 24 2026, 11:58 AM CT for BFF).
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "base")).toBeNull();
+	  expect(catalogFillerForGap([wall, blankDepthBase], 0.5, "wall")).toBeNull();
+	  // A blank-depth plain filler still is not beaten by a 12-inch wall filler on the base row.
+	  const blankDepthPlain = { ...blankDepthBase, id: 10, masterCode: "F342", description: 'Filler — 3" W x 42" H' };
+	  const plainWall = { ...wall, id: 11, masterCode: "WF342", description: '3" x 42" Wall Filler' };
+	  expect(catalogFillerForGap([plainWall, blankDepthPlain, blankDepthBase, wall], 0.5, "base")?.masterCode).toBe("F342");
 	});
 
 	it("uses one real 3-inch stock filler for every installed cut through 3 inches", () => {

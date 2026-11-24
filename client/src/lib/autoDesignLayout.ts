@@ -93,7 +93,8 @@ import { exposedPanelFindings, exposedPanelRequirements } from "./exposedPanelRu
 import { repackFifteenRuleLayout } from "./autoDesignFifteenRepack";
 import { applyMinimumFiller } from "./autoDesignMinimumFiller";
 import { slideRunsTowardInsideCorners } from "./autoDesignSlideRunsToCorner";
-import { isFlutedFiller } from "./catalogFiller";
+import { isBannedAutoDesignFiller } from "./catalogFiller";
+import { bannedFillerFinding, enforceAutoDesignFillerBan } from "./autoDesignBannedFillerGuard";
 import { trimRefrigeratorWallSide } from "./autoDesignRefrigeratorWallSide";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import {
@@ -912,13 +913,14 @@ export function runAutoDesignLayout(rawArgs: {
         baseCatalog: onlyWidthsIn(rawArgs.baseCatalog, glassWidths),
       }
     : rawArgs;
-  // Fluted fillers (WFF) are decorative only (Tom, voice, Nov 19 2026, 7:41 AM CT): Auto Design never
-  // places one on its own, so they leave every catalog the build picks fillers and panels from.
+  // Fluted fillers and BFF fillers are banned from every generated plan (Tom, voice, Nov 19 2026,
+  // 7:41 AM CT; widened to BFF Nov 24 2026, 11:58 AM CT, PERMANENT): they leave every catalog the
+  // build picks fillers and panels from, and the end-of-generation guard below is the backstop.
   const args = {
     ...glassArgs,
-    fillers: glassArgs.fillers.filter((row) => !isFlutedFiller(row)),
-    ...(glassArgs.panelCatalog ? { panelCatalog: glassArgs.panelCatalog.filter((row) => !isFlutedFiller(row)) } : {}),
-    refrigeratorEndPanels: glassArgs.refrigeratorEndPanels.filter((row) => !isFlutedFiller(row)),
+    fillers: glassArgs.fillers.filter((row) => !isBannedAutoDesignFiller(row)),
+    ...(glassArgs.panelCatalog ? { panelCatalog: glassArgs.panelCatalog.filter((row) => !isBannedAutoDesignFiller(row)) } : {}),
+    refrigeratorEndPanels: glassArgs.refrigeratorEndPanels.filter((row) => !isBannedAutoDesignFiller(row)),
   };
   const { input, room, makeUid } = args;
   const openings = [...args.openings];
@@ -2824,6 +2826,18 @@ export function runAutoDesignLayout(rawArgs: {
     }
     if (cornerFills.length > 0 && hasPreference(input.intake, "budget-friendly")) {
       notes.push(`Budget friendly: the countertop runs all the way back to the wall at ${cornerFills.length === 1 ? "the inside corner" : `${cornerFills.length} inside corners`} (${cornerFills.map((surface) => `${Math.round(surface.width * 100) / 100}″ × ${Math.round(surface.depth * 100) / 100}″`).join(", ")} corner top added).`);
+    }
+  }
+  // End-of-generation guard (Tom, owner voice, Nov 24 2026, 11:58 AM CT, PERMANENT): no BFF or
+  // fluted filler leaves the build. A banned piece becomes the plain filler of the same stock, or
+  // is dropped with a note when the line sells none.
+  {
+    const ban = enforceAutoDesignFillerBan(working, catalogFillers, new Set(preExisting.map((item) => item.uid)));
+    if (ban.swapped.length || ban.dropped.length) {
+      working = ban.placed;
+      notes.push(...ban.notes);
+      const finding = bannedFillerFinding(ban);
+      if (finding) reviewFindings.push(finding);
     }
   }
   if (input.intake) reviewFindings.push(...fifteenRuleFindings({ placed: working, room, baseCatalog: args.baseCatalog, intake: input.intake, wallLabelOf: (wallId) => wallNames[wallId] ?? null, peninsulaBuilt: peninsulaSummary != null }));

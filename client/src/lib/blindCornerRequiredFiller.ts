@@ -15,6 +15,7 @@ import { isWallBlindCornerCabinet } from "./cabinetGraphics";
 import { isTrueBlindCornerCode } from "./designerCornerSection";
 import {
   catalogFillerForGap,
+  isBannedAutoDesignFiller,
   fittedCatalogFillerDescription,
   isCatalogFiller,
   type CatalogFillerCandidate,
@@ -66,6 +67,8 @@ function wallBlindCornerCatalogFiller(
 ) {
   return candidates
     .filter(isCatalogFiller)
+    // No BFF or fluted filler in a generated plan (Tom, voice, Nov 24 2026, 11:58 AM CT).
+    .filter((candidate) => !isBannedAutoDesignFiller(candidate))
     .filter((candidate) => finite(candidate.width, 0) + 0.001 >= BLIND_CORNER_FILLER_WIDTH_IN)
     .sort((left, right) => {
       const widthDelta = finite(left.width, 0) - finite(right.width, 0);

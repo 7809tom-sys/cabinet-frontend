@@ -329,6 +329,7 @@ import { followUpAfterCabinetStyle, initialDesignerPopup, popupsForRestoredDraft
 import { cabinetStyleStepCopy, followUpAfterAutoDesignStyle, styleStepVendor, type CabinetStylePopupPurpose } from "@/lib/cabinetStyleStep";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
+import { bannedFillerFinding, enforceAutoDesignFillerBan } from "@/lib/autoDesignBannedFillerGuard";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { autoDesignRunNotice, overRangeDefaultedFinding, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
@@ -5499,6 +5500,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     }
     // The selected door, on uppers, bases, talls, and fillers.
     working = stampAutoDesignSingleFinish(working, styleIdRef.current ?? null);
+    // End-of-generation guard on the corner-stage build too (Tom, owner voice, Nov 24 2026,
+    // 11:58 AM CT, PERMANENT): no BFF or fluted filler in a generated plan.
+    {
+      const ban = enforceAutoDesignFillerBan(working, catalogFillers);
+      working = ban.placed;
+      const finding = bannedFillerFinding(ban);
+      if (finding) reviewFindings.push(finding);
+    }
     placedRef.current = working;
     setPlaced(working);
     const openingBase = stage.sinkWindow && !openings.some((opening) => opening.uid === stage.sinkWindow!.uid)
