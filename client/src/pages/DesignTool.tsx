@@ -18210,15 +18210,15 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             variant="outline"
             size="sm"
             data-testid="designer-pelican-trigger"
-            aria-label="Select Pelican surfaces and fixtures"
+            aria-label={`Select ${bathroomFixtureCatalogVendorLabel()} surfaces and fixtures`}
             title={selectedSurfaces.length > 0
-              ? `Pelican surfaces & fixtures (${selectedSurfaces.length} in this design)`
-              : "Choose Pelican quartz, flooring, tile, sinks, faucets and bath fixtures: one card per model with a finish dropdown, like the hardware picker"}
+              ? `${bathroomFixtureCatalogVendorLabel()} surfaces & fixtures (${selectedSurfaces.length} in this design)`
+              : `Choose ${bathroomFixtureCatalogVendorLabel()} quartz, flooring, tile, sinks, faucets and bath fixtures: one card per model with a finish dropdown, like the hardware picker`}
             onClick={openPelicanCatalog}
             className="min-h-8 shrink-0 gap-1.5 border-[#a87f33] text-[#7a5c24] hover:bg-[#a87f33]/10"
           >
             <Waves className="h-3.5 w-3.5 shrink-0" />
-            <span className="designer-toolbar-pelican-label">Pelican</span>
+            <span className="designer-toolbar-pelican-label">{bathroomFixtureCatalogVendorLabel()}</span>
             {selectedSurfaces.length > 0 && (
               <span className="rounded-full bg-[#a87f33] px-1.5 text-[10px] font-bold leading-4 text-white" aria-hidden="true">{selectedSurfaces.length}</span>
             )}
@@ -23967,9 +23967,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             {roomType !== "closet" && (
               <MobileBarButton
                 icon={<Waves className="h-5 w-5" />}
-                label="Pelican"
+                label={bathroomFixtureCatalogVendorLabel()}
                 testId="mobile-pelican-trigger"
-                ariaLabel="Open Pelican Surfaces and Fixtures"
+                ariaLabel={`Open ${bathroomFixtureCatalogVendorLabel()} Surfaces and Fixtures`}
                 active={surfacesOpen}
                 onClick={openPelicanCatalog}
               />
@@ -26257,7 +26257,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              bathroom={(
 	            <section data-testid="bathroom-room-template" className="rounded-lg border border-sky-300/70 bg-sky-50/60 p-2">
 	              <div className="mb-0.5 text-sm font-semibold text-[#192432]">Bathroom · empty room template</div>
-	              <p className="mb-2 text-xs leading-4 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced Pelican fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
+	              <p className="mb-2 text-xs leading-4 text-slate-600">Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets and source-priced {bathroomFixtureCatalogVendorLabel()} fixtures yourself; every item moves and rotates freely on the plan. It does not add a product, price, or installation claim.</p>
 	              <button
 	                type="button"
 	                data-testid="bathroom-template-empty-room"

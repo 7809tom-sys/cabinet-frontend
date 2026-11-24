@@ -10,6 +10,7 @@ import {
 } from "./design";
 import { floorRectsOverlap, nearestClearFloorPosition, occupiedFloor, type FloorRect } from "./floorOccupancy";
 import { isPelicanVanityFaucetSku } from "@shared/pelicanBathroomFixtures";
+import { bathroomFixtureCatalogVendorLabel } from "@/lib/pelicanSinkCatalogDescriptions";
 import { placeTubFiller } from "./tubFillerFloor";
 import { isShowerPanFurniture, placeShowerPanInBay } from "./showerPlacement";
 import {
@@ -318,7 +319,7 @@ export function bathroomFixtureChecklist(input: {
 export const BATHROOM_STARTER_TEMPLATE = {
   id: "bathroom-blank-10x8-v1",
   label: "Bathroom starter · empty 10 ft × 8 ft room",
-  description: "Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets, a vanity, or source-priced Pelican fixtures yourself; no zones or placeholder shapes are added.",
+  description: `Starts a blank 10 ft × 8 ft bathroom plan. Add cabinets, a vanity, or source-priced ${bathroomFixtureCatalogVendorLabel()} fixtures yourself; no zones or placeholder shapes are added.`,
   room: { width: 120, depth: 96, ceilingHeight: 96 } satisfies RoomData,
 } as const;
 
