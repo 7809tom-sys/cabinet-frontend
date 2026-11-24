@@ -330,6 +330,7 @@ import { cabinetStyleStepCopy, followUpAfterAutoDesignStyle, styleStepVendor, ty
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
 import { bannedFillerFinding, enforceAutoDesignFillerBan } from "@/lib/autoDesignBannedFillerGuard";
+import { cornerFillerFinding, enforceCornerFillersAtEveryAngle } from "@/lib/autoDesignAngleFillerGuard";
 import { mergeAutoDesignRefrigeratorCaps, runAutoDesignLayout, stampAutoDesignSingleFinish, uniformCabinetStyleId } from "@/lib/autoDesignLayout";
 import { designerFillerDeletionSet, isDesignerPlacedFiller, moveDesignerFiller } from "@/lib/designerFillerActions";
 import { autoDesignRunNotice, overRangeDefaultedFinding, type DesignerReviewFinding } from "@/lib/designerReviewFindings";
@@ -5557,6 +5558,16 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     working = stampAutoDesignSingleFinish(working, styleIdRef.current ?? null);
     // End-of-generation guard on the corner-stage build too (Tom, owner voice, Nov 24 2026,
     // 11:58 AM CT, PERMANENT): no BFF or fluted filler in a generated plan.
+    // Corner fillers at every recognized angle on the corner-stage build too (Tom, owner voice,
+    // Nov 24 2026, 12:38-12:41 PM CT, PERMANENT).
+    {
+      const corners = enforceCornerFillersAtEveryAngle({
+        placed: working, room, catalogFillers, makeUid, styleId: styleIdRef.current ?? null, allowShift: true,
+      });
+      working = corners.placed;
+      const finding = cornerFillerFinding(corners);
+      if (finding) reviewFindings.push(finding);
+    }
     {
       const ban = enforceAutoDesignFillerBan(working, catalogFillers);
       working = ban.placed;
@@ -10248,6 +10259,24 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 		          }
 		        }
 		      }
+
+      // Hand placement at an angled corner (Tom, owner voice, Nov 24 2026, 12:40 PM CT): a base,
+      // upper, tall or under-counter appliance placed by hand at a recognized angle gets its plain
+      // corner board on that side automatically, the same piece the end-of-build check adds. Only
+      // this cabinet's wall is checked, the user's cabinets are never moved, nothing is doubled,
+      // and it commits with the placement so one undo removes both.
+      if (!requestedIslandFace && finalCab.wallId && ["wall", "base", "tall", "appliance"].includes(String(finalCab.placement))) {
+        const handCorner = enforceCornerFillersAtEveryAngle({
+          placed: committedRun, room, catalogFillers, makeUid, styleId: styleIdRef.current ?? null,
+          onlyWallIds: new Set([finalCab.wallId]), allowShift: false, includeSquareCorners: false,
+        });
+        const ownBoards = handCorner.inserted.filter((piece) => piece.ownerUid === finalCab.uid);
+        if (ownBoards.length > 0) {
+          committedRun = handCorner.placed.filter((item) => !handCorner.inserted.some((piece) => piece.uid === item.uid && piece.ownerUid !== finalCab.uid));
+          setFillerInsertionTransition({ uids: ownBoards.map((piece) => piece.uid), key: Date.now() });
+          toast.success(`${ownBoards.map((piece) => `${piece.masterCode} trimmed to ${formatInches(piece.cutIn)}`).join(" and ")} added at the angled corner beside ${finalCab.masterCode}.`);
+        }
+      }
 
       // ── Now do all state updates and side effects exactly once ──────────
       setPlacementWarning(sinkBaseAdvisory);
@@ -24240,6 +24269,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          open={autoDesignOpen}
 	          blockedNotice={autoDesignBlockedNotice}
 	          openings={openings}
+	          placed={placed}
 	          onOpenChange={setAutoDesignOpen}
 	          onWallGuideChange={setAutoDesignWallGuideSelection}
 	          onLoadSixWallTrainingRoom={isAdmin ? loadAutoDesignSixWallTrainingRoom : undefined}

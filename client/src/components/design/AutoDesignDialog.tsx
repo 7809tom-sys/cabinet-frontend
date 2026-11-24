@@ -14,7 +14,8 @@ import { emptyAutoDesignIntake, hasPreference, intakeMissing, type AutoDesignInt
 import { Checkbox } from "@/components/ui/checkbox";
 import { KITCHEN_USE_OPTIONS, type KitchenUseId } from "@/lib/kitchenUsage";
 import { DEFAULT_OVER_RANGE_ANSWER } from "@/lib/overRangeCompanion";
-import type { RoomData, WallOpening } from "@/lib/design";
+import type { PlacedCabinet, RoomData, WallOpening } from "@/lib/design";
+import { autoDesignShapeLabel, autoDesignWallList } from "@/lib/autoDesignWallList";
 import type {
   DishwasherSideChoice,
   AutoDesignInputs,
@@ -38,6 +39,8 @@ type Props = {
   wallCount?: number;
   /** Live room used to label each setup wall with its current width. */
   room?: RoomData;
+  /** The plan's pieces, so the wall list can mark an empty wall (it stays listed and counted). */
+  placed?: readonly PlacedCabinet[];
   /** Visual-only Floor Plan guide; receives the same datum choices as anchor measurements. */
   onWallGuideChange?: (selection: { originCorner: AutoDesignOriginCorner; runDirection: AutoDesignRunDirection }) => void;
   /** Replaces only an empty admin Designer room with the blank six-wall training shell. */
@@ -102,7 +105,7 @@ const defaultFieldValue = (measurement: AutoDesignDefaultMeasurement | null, fal
   ? { wallLabel: measurement.wallLabel, centerOffsetIn: String(measurement.centerOffsetIn) }
   : fallback);
 
-export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false, blockedNotice = null, openings = [] }: Props) {
+export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false, blockedNotice = null, openings = [], placed = [] }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
@@ -181,6 +184,10 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     const allowed = new Set<string>(layoutWallLabels);
     return autoDesignWallWidthRows(room, originCorner, runDirection).filter((row) => allowed.has(row.label));
   }, [layoutWallLabels, originCorner, room, runDirection]);
+  // Wall-list shape model (Tom, owner voice, Nov 24 2026, 12:50 PM CT): every wall in order with
+  // its angle to the next one; an empty wall stays listed and counted; the label is derived.
+  const roomWalls = useMemo(() => (room?.customWalls?.length ? autoDesignWallList(room, placed) : []), [placed, room]);
+  const roomShapeLabel = useMemo(() => autoDesignShapeLabel(roomWalls), [roomWalls]);
   const wallWidthText = (label: WallLabel) => wallWidths.find((row) => row.label === label)?.text ?? label;
   const usableSpan = (label: WallLabel) => autoDesignWallUsableSpan({ room, layoutType, originCorner, runDirection, wallCount }, label);
   /** Openings on one wall in measurement space, split into doors (block every base) and windows. */
@@ -442,6 +449,18 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
                       </li>
                     ))}
                   </ul>
+                )}
+                {roomWalls.length > 0 && (
+                  <div data-testid="auto-design-room-walls" className="mt-2 border-t border-sky-200 pt-2">
+                    <p className="font-semibold text-slate-900">Room shape: <span data-testid="auto-design-room-shape">{roomShapeLabel}</span></p>
+                    <ol className="mt-1 grid gap-0.5">
+                      {roomWalls.map((wall) => (
+                        <li key={wall.wallId} data-testid={`auto-design-room-wall-${wall.index}`} data-empty={wall.empty ? "true" : "false"}>
+                          {wall.label}: {Math.round(wall.lengthIn * 8) / 8}″{wall.empty ? " · empty run" : ""}{wall.angleToNextDeg != null ? ` · ${wall.angleToNextDeg}° to Wall ${wall.index + 1}` : ""}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
                 )}
                 <p className="mt-2 leading-relaxed">Colored Wall 1–6 markers are shown on the Floor Plan. The matching small dot marks the corner where that wall’s center measurements begin.</p>
               </div>

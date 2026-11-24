@@ -166,8 +166,10 @@ describe("Tom's five-wall kitchen (line 330011)", () => {
     const fridgeRun = cornerEndBase(result.placed, room, "top", "end");
     // Before: B36 stopped 25¾″ from the corner. Now the run ends where the 3″ board ends.
     expect(fridgeRun.gap).toBeCloseTo(BASE_SETBACK, 1);
+    // The measured top/angTR pair only: the end-of-build corner check (Tom, Nov 24 2026, 12:38 PM CT)
+    // also closes angTR's other 45° end beside the dishwasher with its own "angle-corner-" board.
     const pair = result.placed.filter((item) => item.fillerTransitionKind === "front-miter-pair" && item.placement === "base"
-      && (item.wallId === "top" || item.wallId === "angTR"));
+      && (item.wallId === "top" || item.wallId === "angTR") && !String(item.fillerPieceGroupId ?? "").startsWith("angle-corner-"));
     expect(pair).toHaveLength(2);
     for (const piece of pair) {
       expect(piece.masterCode).toBe("F342");

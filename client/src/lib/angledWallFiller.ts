@@ -656,3 +656,90 @@ export function repairMissingAngledWallFillers(
   }
   return { placed: added.length > 0 ? next : [...placed], added };
 }
+
+/**
+ * One plain filler board at an angled inside corner, cut from `source` stock to
+ * the exact opening (Tom, owner voice, Nov 24 2026, 12:37-12:41 PM CT: fillers
+ * are trimmed blanks; the shape and angle follow the corner). The board runs on
+ * `wallId` from the corner-side face of `owner` (the cabinet or under-counter
+ * appliance nearest the vertex) to the front miter line, with its rear edge on
+ * the rear (3/4 in) miter line, so it meets the other wall's board (or the other
+ * run's front line) flush at the corner. It stands alone: it does not need a
+ * counterpart, so a dishwasher, range, tall end or an empty neighbor wall no
+ * longer leaves that side open.
+ */
+export function singleAngledFillerBoard(input: {
+  owner: PlacedCabinet;
+  wallId: string;
+  layer: "base" | "wall" | "tall";
+  /** Along-wall offset (from the wall's start) of the owner's corner-side face. */
+  faceOffsetIn: number;
+  /** Along-wall offset of the front miter point. */
+  frontMiterOffsetIn: number;
+  /** Along-wall offset of the rear (3/4 in) miter point. */
+  rearMiterOffsetIn: number;
+  /** Miter cut on the board's corner end, degrees (half the wall turn: 22.5° at a 45° turn). */
+  miterAngleDeg: number;
+  /** Turn between the two walls, for the description (45 at a 135° inside corner). */
+  turnDeg: number;
+  elevation: { bottom: number; height: number };
+  source: CatalogFillerCandidate;
+  room: RoomData;
+  makeUid: () => string;
+  styleId: number | null;
+  vertexKey: string;
+}): PlacedCabinet | null {
+  const { owner, wallId, room, source } = input;
+  const depth = Math.max(FRONT_FILLER_DEPTH_IN, input.layer === "wall" ? STD.WALL_DEPTH : STD.BASE_DEPTH);
+  const footprint = frontFillerFootprint(wallId, room, input.faceOffsetIn, input.frontMiterOffsetIn, input.rearMiterOffsetIn, depth, owner.peninsulaSide);
+  if (!footprint) return null;
+  const spot = frontFillerPlacement(wallId, input.faceOffsetIn, input.frontMiterOffsetIn, depth, room, owner.peninsulaSide);
+  const exactCutWidth = Math.abs(input.frontMiterOffsetIn - input.faceOffsetIn);
+  const rearWidth = Math.abs(input.rearMiterOffsetIn - input.faceOffsetIn);
+  const stockWidth = numberValue(source.width);
+  const vertical = installedFillerVerticalSpec(input.layer, input.elevation.height);
+  const sourceDescription = source.description ?? source.masterCode;
+  const installedName = /\bscribe\b/i.test(sourceDescription) ? "Filler" : sourceDescription;
+  const miterLabel = Math.round(input.miterAngleDeg * 100) / 100;
+  const turnLabel = Math.round(input.turnDeg * 100) / 100;
+  const towardEnd = input.frontMiterOffsetIn >= input.faceOffsetIn;
+  return {
+    uid: input.makeUid(),
+    cabinetId: source.id,
+    masterCode: source.masterCode,
+    description: `${installedName} — ${source.masterCode} trimmed to ${roundedEighth(exactCutWidth)}" with ${miterLabel}° miter (corner filler at a ${turnLabel}° turn)`,
+    category: source.category,
+    subCategory: source.subCategory,
+    placement: input.layer,
+    x: spot.x,
+    y: spot.y,
+    width: exactCutWidth,
+    nominalWidth: stockWidth,
+    depth,
+    nominalDepth: depth,
+    height: vertical.storedHeight,
+    nominalHeight: numberValue(source.height),
+    rotation: spot.rotation,
+    numberOfDoors: 0,
+    numberOfDrawers: 0,
+    catalogImageUrl: source.catalogImageUrl ?? null,
+    mountBottom: input.elevation.bottom,
+    styleId: input.styleId,
+    wallId: spot.wallId ?? wallId,
+    wallOffset: spot.wallOffset ?? Math.min(input.faceOffsetIn, input.frontMiterOffsetIn),
+    fillerPieceGroupId: `angle-corner-${input.vertexKey}-${wallId}-${input.layer}`,
+    fillerBillingRole: "primary",
+    fillerTotalWidth: exactCutWidth,
+    fillerPlacementMode: towardEnd ? "right" : "left",
+    fillerForCabinetUid: owner.uid,
+    fillerMiterAngle: input.miterAngleDeg,
+    fillerMiteredEnd: towardEnd ? "end" : "start",
+    fillerTransitionKind: "front-miter-pair",
+    fillerTransitionPiece: "owner",
+    fillerTransitionRearWidthIn: rearWidth,
+    fillerTransitionFrontWidthIn: exactCutWidth,
+    fillerTransitionStockWidthIn: stockWidth,
+    fillerTransitionPlanFootprint: footprint.map((point) => ({ ...point })),
+    fillerIndependentCabinetSupport: true,
+  } as PlacedCabinet;
+}

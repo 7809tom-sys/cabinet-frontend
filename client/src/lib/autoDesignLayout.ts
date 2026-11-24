@@ -95,6 +95,7 @@ import { applyMinimumFiller } from "./autoDesignMinimumFiller";
 import { slideRunsTowardInsideCorners } from "./autoDesignSlideRunsToCorner";
 import { isBannedAutoDesignFiller } from "./catalogFiller";
 import { bannedFillerFinding, enforceAutoDesignFillerBan } from "./autoDesignBannedFillerGuard";
+import { cornerFillerFinding, enforceCornerFillersAtEveryAngle } from "./autoDesignAngleFillerGuard";
 import { trimRefrigeratorWallSide } from "./autoDesignRefrigeratorWallSide";
 import { cornerFirstWasPulled, describeCornerFirst, pickCornerFirst } from "./cornerFirst";
 import {
@@ -2827,6 +2828,18 @@ export function runAutoDesignLayout(rawArgs: {
     if (cornerFills.length > 0 && hasPreference(input.intake, "budget-friendly")) {
       notes.push(`Budget friendly: the countertop runs all the way back to the wall at ${cornerFills.length === 1 ? "the inside corner" : `${cornerFills.length} inside corners`} (${cornerFills.map((surface) => `${Math.round(surface.width * 100) / 100}″ × ${Math.round(surface.depth * 100) / 100}″`).join(", ")} corner top added).`);
     }
+  }
+  // End-of-build corner filler check (Tom, owner voice, Nov 24 2026, 12:38-12:41 PM CT, PERMANENT):
+  // every recognized angle gets its plain filler on both sides, trimmed to the opening; a missing
+  // side is inserted, the run is shifted along the wall if needed, with a review note.
+  {
+    const corners = enforceCornerFillersAtEveryAngle({
+      placed: working, room, catalogFillers, makeUid, styleId: args.styleId ?? null, allowShift: true,
+    });
+    working = corners.placed;
+    notes.push(...corners.notes);
+    const finding = cornerFillerFinding(corners);
+    if (finding) reviewFindings.push(finding);
   }
   // End-of-generation guard (Tom, owner voice, Nov 24 2026, 11:58 AM CT, PERMANENT): no BFF or
   // fluted filler leaves the build. A banned piece becomes the plain filler of the same stock, or
