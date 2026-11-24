@@ -253,6 +253,7 @@ export function SurfacesPickerDialog({
   onPlaceBathroomFixture,
   bathroomPaletteMode = "fixtures",
   initialBathroomRole,
+  initialCategory,
   affiliateSlug,
   injectedBathroomRows,
 }: {
@@ -293,6 +294,8 @@ export function SurfacesPickerDialog({
   bathroomPaletteMode?: BathroomPaletteMode;
   /** Active family requested from a compact row or a guided checklist step. */
   initialBathroomRole?: RecommendedRole;
+  /** Kitchen tab to open on, e.g. the countertop tab from the cart's "Choose" button. */
+  initialCategory?: PelicanCategory | null;
   affiliateSlug?: string | null;
   /**
    * Pre-resolved bathroom catalog rows, keyed by role. Only a capture harness
@@ -307,6 +310,9 @@ export function SurfacesPickerDialog({
   useEffect(() => {
     if (open && isBathroom && initialBathroomRole) setBathroomRole(initialBathroomRole);
   }, [open, isBathroom, initialBathroomRole]);
+  useEffect(() => {
+    if (open && !isBathroom && initialCategory) setCategory(initialCategory);
+  }, [open, isBathroom, initialCategory]);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [countertopSwatchFilter, setCountertopSwatchFilter] = useState<CountertopSwatchFilter>("all");
