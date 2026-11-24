@@ -565,6 +565,60 @@ export function extendWoodFrontsToCabinetEdges(frontGroup: THREE.Object3D, bodyH
   }
 }
 
+function woodFrameOuterSpan(frame: THREE.Object3D) {
+  const rails = frame.children.filter((child) => (child as THREE.Mesh).isMesh && child.userData?.grainPiece === "rail") as THREE.Mesh[];
+  if (!rails.length) return null;
+  let top = -Infinity;
+  let bottom = Infinity;
+  for (const rail of rails) {
+    const height = (rail.geometry as THREE.BoxGeometry).parameters?.height;
+    if (typeof height !== "number") continue;
+    const y = frame.position.y + rail.position.y;
+    top = Math.max(top, y + height / 2);
+    bottom = Math.min(bottom, y - height / 2);
+  }
+  return Number.isFinite(top) && top > bottom ? { top, bottom } : null;
+}
+
+/**
+ * The door leaves grow to the cabinet edge after the gap fill is built, so the
+ * fill used to stop short and the light shell showed at the top and at a stacker
+ * joint. Stretch each fill to the box edge the leaves grew toward. Width and
+ * depth stay put, so an Oxford pair keeps the same split.
+ */
+export function extendWoodDoorSeams(frontGroup: THREE.Object3D, bodyHeight: number, extendBottom: boolean) {
+  const seams = frontGroup.children.filter((child) => child.userData?.cabinetDoorSeam) as THREE.Mesh[];
+  const frames = frontGroup.children.filter((child) => child.userData?.physicalRails);
+  const boxTop = bodyHeight / 2;
+  const boxBottom = -bodyHeight / 2;
+  for (const seam of seams) {
+    const spans = frames
+      .map((frame) => ({ span: woodFrameOuterSpan(frame), dx: Math.abs(frame.position.x - seam.position.x) }))
+      .filter((item): item is { span: { top: number; bottom: number }; dx: number } => {
+        if (!item.span || item.dx >= 0.85) return false;
+        return item.span.bottom - 0.05 < seam.position.y && item.span.top + 0.05 > seam.position.y;
+      })
+      .sort((a, b) => a.dx - b.dx)
+      .slice(0, 2);
+    if (!spans.length) continue;
+    let top = Math.max(...spans.map((item) => item.span.top));
+    let bottom = Math.min(...spans.map((item) => item.span.bottom));
+    if (boxTop - top < 0.02) top = boxTop;
+    if (extendBottom && bottom - boxBottom < 0.02) bottom = boxBottom;
+    const height = top - bottom;
+    if (height < 0.02) continue;
+    const params = (seam.geometry as THREE.BoxGeometry).parameters;
+    // Overlap the stile edges by a hair so the rail corner does not read as a
+    // light tick beside the gap. The door opening itself stays 1/8 inch.
+    const cover = 0.002;
+    const next = new THREE.BoxGeometry((params.width ?? 0.01) + cover * 2, height, params.depth ?? 0.012);
+    seam.geometry.dispose();
+    seam.geometry = next;
+    seam.position.y = (top + bottom) / 2;
+    seam.userData = { ...seam.userData, woodDoorSeamFullHeight: true };
+  }
+}
+
 function concatGeometries(parts: THREE.BufferGeometry[]) {
   const names = ["position", "normal", "uv"] as const;
   let count = 0;
@@ -8133,6 +8187,17 @@ export function addCabinet(
         addShakerFrame(leafWidth, Math.max(0.08, height - 0.025), door.position.x, door.position.y, 0.066);
         addFaceShadow(leafWidth, Math.max(0.08, height - 0.025), door.position.x, door.position.y);
         addPull(doorWidth - 0.03, Math.max(0.08, height - 0.025), door.position.x, door.position.y, false, 0.086, row, doorsPerRow === 1 ? singleDoorHinge : null);
+        if (columns && i > 0 && columns.centerGap > 0.002) {
+          const seam = new THREE.Mesh(
+            new THREE.BoxGeometry(columns.centerGap, Math.max(0.08, height - 0.025), 0.012),
+            shadowRevealMaterial.clone(),
+          );
+          (seam.material as THREE.MeshStandardMaterial).opacity = 0.92;
+          (seam.material as THREE.MeshStandardMaterial).depthWrite = true;
+          seam.position.set(centerX - columns.columnWidth / 2 - columns.centerGap / 2, centerY, 0.11);
+          seam.userData = { cabinetDoorSeam: true, pantryDoorSeam: true };
+          frontGroup.add(seam);
+        }
       }
     };
     addPantryRow(lowerDoorHeight, -bodyHeight / 2 + 0.05 + lowerDoorHeight / 2, "lower");
@@ -9148,7 +9213,10 @@ export function addCabinet(
     wallSolidFace: isWall && !doorSampleUrl,
     grainRotation: 0,
   };
-  if (woodDoorPhotograph) extendWoodFrontsToCabinetEdges(frontGroup, bodyHeight, isWall);
+  if (woodDoorPhotograph) {
+    extendWoodFrontsToCabinetEdges(frontGroup, bodyHeight, isWall);
+    extendWoodDoorSeams(frontGroup, bodyHeight, isWall);
+  }
   if (woodDoorPhotograph && isTall && !pantryLayout && /pantry/i.test(`${sku.masterCode ?? ""} ${sku.description ?? ""}`)) {
     const shell = bodyMeshes.find((mesh) => mesh.userData?.carcassShell);
     if (shell) extendPantryShellToDoorFront(shell, pantryDoorFrontZ(frontGroup, faceDepth + 0.08));

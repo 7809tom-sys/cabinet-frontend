@@ -249,6 +249,14 @@ describe("large wood faces and single rail edges", () => {
       if (node.userData?.cabinetDoorSeam) seams += 1;
     });
     expect(seams).toBe(1);
+    let seamSpan = 0;
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.isMesh || !node.userData?.cabinetDoorSeam) return;
+      expect(node.userData.woodDoorSeamFullHeight).toBe(true);
+      seamSpan = (mesh.geometry as THREE.BoxGeometry).parameters.height;
+    });
+    expect(seamSpan * 12).toBeGreaterThan(29);
     const ordered = leaves.sort((a, b) => a.position.x - b.position.x);
     expect(ordered).toHaveLength(2);
     const rightOf = (door: THREE.Mesh) => door.position.x + (door.geometry as THREE.BoxGeometry).parameters.width / 2;
@@ -338,6 +346,25 @@ describe("large wood faces and single rail edges", () => {
     expect(shellFront - doorFront).toBeGreaterThan(PANTRY_FRONT_LEAD / 2);
     const doorOuter = Math.abs(upper.position.x) + (upper.geometry as THREE.BoxGeometry).parameters.width / 2;
     expect(halfW - doorOuter).toBeCloseTo(PANTRY_CORNER_INSET, 3);
+  });
+
+  it("fills a paired pantry split from the cabinet top to the door bottom", () => {
+    const root = build(WOOD, { ...PANTRY, width: 24, numberOfDoors: 4, masterCode: "PC2496", description: "24 Pantry Cabinet" });
+    const seams: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh && node.userData?.pantryDoorSeam) seams.push(mesh);
+    });
+    expect(seams.length).toBeGreaterThanOrEqual(2);
+    const tops = seams.map((seam) => seam.position.y + (seam.geometry as THREE.BoxGeometry).parameters.height / 2);
+    expect(Math.max(...tops) * 12).toBeGreaterThan(39);
+    for (const seam of seams) {
+      const front = seam.position.z + ((seam.geometry as THREE.BoxGeometry).parameters.depth ?? 0.012) / 2;
+      expect(front).toBeGreaterThan(0.08);
+      const widthIn = (seam.geometry as THREE.BoxGeometry).parameters.width * 12;
+      expect(widthIn).toBeGreaterThan(THREE_D_CABINET_FRONT_CENTER_GAP_IN);
+      expect(widthIn).toBeLessThan(THREE_D_CABINET_FRONT_CENTER_GAP_IN + 0.08);
+    }
   });
 
   it("does not extend a painted pantry or a wood base cabinet", () => {
