@@ -22,6 +22,10 @@ import {
   affiliateEmailDraftFromView,
   affiliateEmailStatus,
   applyAffiliateEmailPreset,
+  applyAffiliateEmailRecognition,
+  applyDomainMailHost,
+  recognizeAffiliateEmail,
+  type DomainMailHostGuide,
   buildAffiliateEmailSettingsUpdate,
   isAffiliateEmailProvider,
   type AffiliateEmailProvider,
@@ -30,6 +34,7 @@ import {
   type AffiliateEmailSettingsView,
 } from "@shared/affiliateEmailSettings";
 import { AffiliateEmailConfiguredBadge, AffiliateEmailSetupGuide } from "./AffiliateEmailSetupGuide";
+import { AffiliateDomainMailGuide } from "./AffiliateDomainMailGuide";
 
 type Props = {
   /** The store whose mailbox this is. The server re-checks ownership. */
@@ -38,7 +43,15 @@ type Props = {
   canEdit: boolean;
   /** Shown in the card description so the owner knows which store they are editing. */
   storeName?: string;
+  /** Opens the Domain Setup tab. Without it the guide links to the dashboard URL. */
+  onOpenDomainSetup?: () => void;
 };
+
+/** Error codes that carry a message the owner should read as-is. Anything else is a server fault. */
+const READABLE_ERROR_CODES = new Set(["FORBIDDEN", "UNAUTHORIZED", "NOT_FOUND", "BAD_REQUEST"]);
+
+export const AFFILIATE_EMAIL_UNAVAILABLE_MESSAGE =
+  "Email settings are unavailable right now. They need a database update on our side, so you cannot view or change them yet. The rest of your dashboard works as usual, and we have logged the technical details.";
 
 const PROVIDER_FIELD_LABEL: Record<AffiliateEmailProvider, string> = {
   yahoo: "Yahoo app password",
@@ -47,7 +60,7 @@ const PROVIDER_FIELD_LABEL: Record<AffiliateEmailProvider, string> = {
   custom: "Password from your email provider",
 };
 
-export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }: Props) {
+export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName, onOpenDomainSetup }: Props) {
   const api = useAffiliateEmailSettingsProcedures();
   const utils = api.useUtils();
   const query = api.affiliateEmailSettings.get.useQuery(
@@ -64,6 +77,16 @@ export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }:
   const [testError, setTestError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const lastLoadedRef = useRef<string | null>(null);
+  // True once the owner picks a provider by hand. A typed address then stops
+  // switching the provider underneath them.
+  const providerTouchedRef = useRef(false);
+
+  const recognition = recognizeAffiliateEmail(draft.email);
+  const ownDomain = recognition.kind === "own-domain" ? recognition.domain : (saved?.customDomain ?? null);
+  const domainRecords = api.affiliateEmailSettings.domainRecords.useQuery(
+    { affiliateId: affiliateId ?? 0 },
+    { enabled: affiliateId != null && affiliateId > 0 && ownDomain != null && saved != null && !saved.unavailable, retry: false },
+  );
 
   // Reload the form from the server, but never wipe what the owner is typing:
   // a background refetch keeps their values until they save.
@@ -122,6 +145,28 @@ export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }:
     },
   });
 
+  function onEmailChange(value: string) {
+    setDraft((current) => {
+      const previousEmail = current.email.trim();
+      const username = current.username.trim();
+      // The username follows the address until the owner types a different one.
+      const usernameTouched = username !== "" && username !== previousEmail;
+      return applyAffiliateEmailRecognition(
+        { ...current, email: value },
+        { providerTouched: providerTouchedRef.current, usernameTouched },
+      );
+    });
+    if (fieldError) setFieldError(null);
+    if (saveError) setSaveError(null);
+    if (testResult) setTestResult(null);
+  }
+
+  function onUseDomainHost(guide: DomainMailHostGuide) {
+    providerTouchedRef.current = true;
+    setDraft((current) => applyDomainMailHost(current, guide));
+    if (fieldError) setFieldError(null);
+  }
+
   function set(patch: Partial<AffiliateEmailSettingsDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
     if (fieldError) setFieldError(null);
@@ -166,10 +211,31 @@ export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }:
     return <div className="flex justify-center py-12"><Spinner className="h-6 w-6" /></div>;
   }
 
-  if (query.error) {
+  const errorCode = query.error?.data?.code ?? "";
+  if (query.error && READABLE_ERROR_CODES.has(errorCode)) {
     return (
       <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
         {query.error.message}
+      </div>
+    );
+  }
+
+  // The settings table could not be read. Say so plainly and keep the help on
+  // the page, instead of a bare database error with nothing else on it.
+  if (query.error || saved?.unavailable) {
+    return (
+      <div className="max-w-3xl space-y-6" data-testid="affiliate-email-settings-unavailable">
+        <div>
+          <h2 className="text-xl font-bold">Email</h2>
+        </div>
+        <div role="alert" className="flex gap-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>{AFFILIATE_EMAIL_UNAVAILABLE_MESSAGE}</p>
+        </div>
+        {saved?.customDomain ? (
+          <AffiliateDomainMailGuide domain={saved.customDomain} isStoreDomain onOpenDomainSetup={onOpenDomainSetup} />
+        ) : null}
+        <AffiliateEmailSetupGuide defaultProvider="gmail" />
       </div>
     );
   }
@@ -239,8 +305,21 @@ export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }:
               autoComplete="email"
               placeholder="rich@reaveswaycabinets.com"
               value={draft.email}
-              onChange={(event) => set({ email: event.target.value })}
+              onChange={(event) => onEmailChange(event.target.value)}
             />
+            {recognition.kind === "preset" ? (
+              <p className="text-xs text-emerald-800 dark:text-emerald-300" data-testid="affiliate-email-recognized">
+                We recognized a {AFFILIATE_EMAIL_PRESETS[recognition.provider].label} address
+                {draft.provider === recognition.provider
+                  ? ` and filled in the mail server (${AFFILIATE_EMAIL_PRESETS[recognition.provider].host}, port ${AFFILIATE_EMAIL_PRESETS[recognition.provider].port}).`
+                  : ". Choose it in Email provider below to fill in the mail server."}
+              </p>
+            ) : null}
+            {recognition.kind === "other-free" ? (
+              <p className="text-xs text-muted-foreground" data-testid="affiliate-email-unrecognized">
+                We do not have ready-made settings for {recognition.domain}. Choose Custom below and use the outgoing mail server your provider lists.
+              </p>
+            ) : null}
             <p className="text-xs text-muted-foreground">
               This is not your CabinetDealz sign-in. It is the mailbox you already use with your customers.
             </p>
@@ -291,6 +370,7 @@ export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }:
                 value={provider}
                 onValueChange={(value) => {
                   if (!isAffiliateEmailProvider(value)) return;
+                  providerTouchedRef.current = true;
                   setDraft((current) => applyAffiliateEmailPreset(current, value));
                   if (fieldError) setFieldError(null);
                 }}
@@ -486,6 +566,16 @@ export function AffiliateEmailSettingsPanel({ affiliateId, canEdit, storeName }:
           ) : null}
         </CardContent>
       </Card>
+
+      {ownDomain ? (
+        <AffiliateDomainMailGuide
+          domain={ownDomain}
+          isStoreDomain={saved?.customDomain === ownDomain}
+          onUseSettings={onUseDomainHost}
+          records={domainRecords.data ?? null}
+          onOpenDomainSetup={onOpenDomainSetup}
+        />
+      ) : null}
 
       <AffiliateEmailSetupGuide defaultProvider={provider} />
     </div>

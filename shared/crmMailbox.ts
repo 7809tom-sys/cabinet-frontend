@@ -119,6 +119,9 @@ export type PublicAffiliateEmailSettings = {
   lastTestedAt: Date | string | null;
   lastTestOk: boolean | null;
   connected: boolean;
+  /** Present on newer servers (migration 0231). */
+  contactEmail?: string;
+  lastTestError?: string | null;
 };
 
 export function affiliateSmtpReady(settings: Pick<StoredAffiliateEmailSettings, "enabled" | "smtpHost" | "smtpUser" | "smtpPass"> | null | undefined): boolean {

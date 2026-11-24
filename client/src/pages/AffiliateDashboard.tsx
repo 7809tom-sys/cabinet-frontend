@@ -925,6 +925,7 @@ export default function AffiliateDashboard() {
             affiliateId={affiliate.id}
             canEdit={access.isOwner}
             storeName={affiliate.storeName}
+            onOpenDomainSetup={() => setSection("settings")}
           />
         );
       case "settings":

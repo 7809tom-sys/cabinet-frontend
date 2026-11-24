@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCrmFormLetterContext } from "@/lib/crmFormLetterContext";
 import { trpc } from "@/lib/trpc";
+import { useAffiliateEmailSettingsProcedures, type AffiliateDomainRecordCheck } from "@/lib/affiliateEmailSettingsProcedures";
+import { CrmSenderStatus } from "@/components/crm/monday/CrmSenderStatus";
 import { toast } from "sonner";
 
 export type MailboxRow = {
@@ -110,6 +112,9 @@ export function CrmEmailWorkspaceView({
   setupInitiallyOpen = false,
   senderRole,
   senderProfile,
+  senderUnavailable = false,
+  hasOwnDomain = false,
+  domainRecords = null,
   onSend,
   onSaveDraft,
   onDeleteDraft,
@@ -130,6 +135,12 @@ export function CrmEmailWorkspaceView({
   senderRole?: CrmFormLetterRole;
   /** Company, location, and contact details the letter introduces. */
   senderProfile?: CrmSenderProfile | null;
+  /** The sender settings could not be read (pending database update). */
+  senderUnavailable?: boolean;
+  /** The store has its own domain (Domain Setup). */
+  hasOwnDomain?: boolean;
+  /** Read-only DNS check result for the store's mail domain. */
+  domainRecords?: AffiliateDomainRecordCheck | null;
   onSend: (input: { dealId: number; to: string; subject: string; body: string; html: string; draftId?: number }) => Promise<void>;
   onSaveDraft: (input: { id?: number; dealId: number | null; toEmail: string; subject: string; bodyHtml: string }) => Promise<void>;
   onDeleteDraft: (id: number) => Promise<void>;
@@ -262,6 +273,9 @@ export function CrmEmailWorkspaceView({
 
   return (
     <div className="space-y-4" data-testid="crm-email-workspace">
+      {audience === "affiliate" ? (
+        <CrmSenderStatus settings={settings} unavailable={senderUnavailable} records={domainRecords} hasOwnDomain={hasOwnDomain} />
+      ) : null}
       <section className="rounded-xl border border-slate-200 bg-white">
         <button className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={() => setSetupOpen((open) => !open)}>
           <span>
@@ -533,6 +547,12 @@ export function CrmEmailWorkspace({
   const templates = trpc.crm.emailTemplates.list.useQuery();
   const setup = trpc.crm.emailSetup.get.useQuery(undefined, { enabled: audience === "affiliate" });
   const connections = trpc.crm.emailSetup.connections.useQuery(undefined, { enabled: showConnections });
+  const setupExtra = setup.data as { affiliateId?: number; customDomain?: string | null; unavailable?: boolean } | undefined;
+  const senderApi = useAffiliateEmailSettingsProcedures();
+  const domainRecords = senderApi.affiliateEmailSettings.domainRecords.useQuery(
+    { affiliateId: setupExtra?.affiliateId ?? 0 },
+    { enabled: audience === "affiliate" && (setupExtra?.affiliateId ?? 0) > 0 && !setupExtra?.unavailable, retry: false },
+  );
   const send = trpc.crm.sendEmail.useMutation();
   const saveDraft = trpc.crm.emailDrafts.save.useMutation();
   const deleteDraft = trpc.crm.emailDrafts.remove.useMutation();
@@ -561,6 +581,9 @@ export function CrmEmailWorkspace({
       prefill={prefill}
       senderRole={sender.role}
       senderProfile={sender.profile}
+      senderUnavailable={Boolean(setupExtra?.unavailable) || (audience === "affiliate" && setup.isError)}
+      hasOwnDomain={Boolean(setupExtra?.customDomain)}
+      domainRecords={domainRecords.data ?? null}
       onSend={async (input) => {
         await send.mutateAsync(input);
         toast.success("Email sent");

@@ -272,3 +272,31 @@ describe("affiliate invoice copy notice", () => {
     expect(AFFILIATE_INVOICE_COPY_NOTE).toContain("cannot be turned off");
   });
 });
+
+import { DOMAIN_MAIL_HOST_GUIDES, applyAffiliateEmailRecognition, emptyAffiliateEmailDraft, recognizeAffiliateEmail } from "./affiliateEmailSettings";
+
+describe("provider recognition", () => {
+  it("recognizes Gmail, Yahoo and Outlook.com families", () => {
+    expect(recognizeAffiliateEmail("a@gmail.com")).toMatchObject({ kind: "preset", provider: "gmail" });
+    expect(recognizeAffiliateEmail("a@GoogleMail.com")).toMatchObject({ kind: "preset", provider: "gmail" });
+    expect(recognizeAffiliateEmail("a@ymail.com")).toMatchObject({ kind: "preset", provider: "yahoo" });
+    expect(recognizeAffiliateEmail("a@hotmail.com")).toMatchObject({ kind: "preset", provider: "outlook" });
+    expect(recognizeAffiliateEmail("a@icloud.com").kind).toBe("other-free");
+    expect(recognizeAffiliateEmail("a@shop.com")).toEqual({ kind: "own-domain", domain: "shop.com" });
+    expect(recognizeAffiliateEmail("nonsense").kind).toBe("none");
+  });
+
+  it("only switches the provider while the owner has not chosen one", () => {
+    const draft = { ...emptyAffiliateEmailDraft(), email: "a@gmail.com" };
+    expect(applyAffiliateEmailRecognition(draft, { providerTouched: false, usernameTouched: false }))
+      .toMatchObject({ provider: "gmail", smtpHost: "smtp.gmail.com", smtpPort: 465, username: "a@gmail.com" });
+    expect(applyAffiliateEmailRecognition(draft, { providerTouched: true, usernameTouched: true }))
+      .toMatchObject({ provider: "yahoo", username: "" });
+  });
+
+  it("every domain host guide produces records for the owner's domain", () => {
+    for (const guide of DOMAIN_MAIL_HOST_GUIDES) {
+      expect(guide.dns("shop.com").some((r) => r.name === "_dmarc" && r.value.includes("shop.com"))).toBe(true);
+    }
+  });
+});

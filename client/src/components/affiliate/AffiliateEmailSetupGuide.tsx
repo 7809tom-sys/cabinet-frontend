@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle2, KeyRound, MousePointerClick } from "lucide-react";
@@ -24,6 +24,8 @@ const PROVIDER_NOTE: Record<AffiliateEmailProvider, string> = {
 
 export function AffiliateEmailSetupGuide({ defaultProvider = "yahoo" }: { defaultProvider?: AffiliateEmailProvider }) {
   const [provider, setProvider] = useState<AffiliateEmailProvider>(defaultProvider);
+  // Follow the provider chosen (or recognized from the address) in the form above.
+  useEffect(() => setProvider(defaultProvider), [defaultProvider]);
 
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4" data-testid="affiliate-email-setup-guide">
