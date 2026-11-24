@@ -141,10 +141,10 @@ export function AutoDesignIntakeSection(props: {
         </div>
       </div>
 
-      {/* Step 3 · What the customer wants (rule 12) */}
+      {/* Step 3 · Choose your preferences (rule 12) */}
       <div className="grid gap-2">
         <p className="text-sm font-semibold text-[#244338]">
-          Step 3 · What the customer wants
+          Step 3 · Choose your preferences
         </p>
 
         <DropdownMenu>

@@ -34,6 +34,8 @@ describe("AutoDesignIntakeSection", () => {
     expect(step1).toBeGreaterThanOrEqual(0);
     expect(step2).toBeGreaterThan(step1);
     expect(step3).toBeGreaterThan(step2);
+    expect(text).toContain("Step 3 · Choose your preferences");
+    expect(text).not.toContain("What the customer wants");
   });
 
   it("shows the construction sentence until old construction is picked", () => {
