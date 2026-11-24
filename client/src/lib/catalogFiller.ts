@@ -81,19 +81,28 @@ export function isCatalogDecorativeLeg(candidate: Pick<CatalogFillerCandidate, "
 }
 
 /**
- * Fluted fillers (WFF...) are decorative (Tom, voice, Nov 19 2026, 7:41 AM CT): never placed
- * automatically, only when the person adds one on purpose. Every automatic filler, panel and
- * seam pick skips them.
+ * PERMANENT / HIGH-PRIORITY rule (Tom, owner voice, Nov 24 2026, 11:58 AM CT): fluted fillers and
+ * BFF fillers are banned from every generated Auto Design plan. They stay in the catalog for a
+ * person to add on purpose; no automatic filler, panel, seam or corner pick ever returns one.
+ * Supersedes the Nov 19 2026 carve-out that kept BFF3 as 330011's 3 in base filler and the
+ * PR 436 wording "BFF3 / WFF342 135° fillers" at 45° corners.
+ *
+ * Banned: any code starting BFF or WFF, any "fluted" description, and decorative filler overlays.
  */
-export function isFlutedFiller(candidate: { masterCode?: string | null; description?: string | null }): boolean {
+export function isBannedAutoDesignFiller(candidate: { masterCode?: string | null; description?: string | null }): boolean {
   const code = String(candidate.masterCode ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (/^WFF/.test(code)) return true;
+  if (/^(?:BFF|WFF)/.test(code)) return true;
   // A decorative filler overlay rides on a 6 in filler; it is never a standalone filler.
   if (isFillerOverlay(candidate)) return true;
-  // BFF base fillers keep their job: on line 330011 BFF3 is described as "Fluted Base Filler" but it
-  // is the line's only 3 in base filler (corner clearance pairs), so only the code decides there.
-  if (/^BFF/.test(code)) return false;
   return /\bfluted\b/i.test(String(candidate.description ?? ""));
+}
+
+/**
+ * Fluted fillers are decorative (Tom, voice, Nov 19 2026, 7:41 AM CT; widened to BFF on
+ * Nov 24 2026, 11:58 AM CT). Kept as the historic name; same answer as isBannedAutoDesignFiller.
+ */
+export function isFlutedFiller(candidate: { masterCode?: string | null; description?: string | null }): boolean {
+  return isBannedAutoDesignFiller(candidate);
 }
 
 /**
@@ -149,7 +158,7 @@ export function catalogFillerForGap(
 
   return candidates
     .filter(isCatalogFiller)
-    .filter((candidate) => !isFlutedFiller(candidate))
+    .filter((candidate) => !isBannedAutoDesignFiller(candidate))
     // AltaEuro's documented 2-7/8-inch "3-inch" overlay is nominal 3-inch stock, so it
     // also satisfies an exact 3-inch seam such as a blind-corner filler.
     .filter((candidate) => numberValue(candidate.width) + 0.001 >= gapWidth
@@ -162,7 +171,7 @@ export function catalogFillerForGap(
       const widthDelta = numberValue(left.width) - numberValue(right.width);
       if (Math.abs(widthDelta) > 0.001) return widthDelta;
       // A base filler (BF..) does not go on the wall row when the line sells another board, and
-      // a wall filler (WF..) not on the base row (Natura Maple report, Nov 19 2026: BFF3 on top).
+      // a wall filler (WF..) not on the base row (Natura Maple report, Nov 19 2026).
       const layerDelta = wrongLayerRank(left.masterCode, placement) - wrongLayerRank(right.masterCode, placement);
       if (layerDelta !== 0) return layerDelta;
       const depthDelta = depthRank(left.depth, desiredDepth) - depthRank(right.depth, desiredDepth);

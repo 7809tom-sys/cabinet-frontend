@@ -14,12 +14,14 @@ function item(uid: string, masterCode: string, along: number, width: number, ext
   } as PlacedCabinet;
 }
 
-describe("fluted fillers are never auto-picked (Tom, voice, Nov 19 2026, 7:41 AM CT)", () => {
-  it("isFlutedFiller spots WFF codes and 'fluted' descriptions", () => {
+describe("fluted and BFF fillers are never auto-picked (Tom, voice, Nov 19 / Nov 24 2026)", () => {
+  it("isFlutedFiller spots WFF and BFF codes and 'fluted' descriptions", () => {
     expect(isFlutedFiller({ masterCode: "WFF342" })).toBe(true);
     expect(isFlutedFiller({ masterCode: "X1", description: "3 in Fluted Filler" })).toBe(true);
     expect(isFlutedFiller({ masterCode: "F342" })).toBe(false);
-    expect(isFlutedFiller({ masterCode: "BFF3", description: "3\" x 34.5\" Fluted Base Filler" })).toBe(false);
+    // BFF is banned too (Tom, owner voice, Nov 24 2026, 11:58 AM CT): the Nov 19 BFF carve-out is gone.
+    expect(isFlutedFiller({ masterCode: "BFF3", description: "3\" x 34.5\" Fluted Base Filler" })).toBe(true);
+    expect(isFlutedFiller({ masterCode: "BFF6", description: "6\" x 34.5\" Filler" })).toBe(true);
   });
   it("catalogFillerForGap never returns a WFF, even when it is the only 3 in wall filler", () => {
     for (const gap of [0.75, 1.5, 2.25, 3, 6]) {

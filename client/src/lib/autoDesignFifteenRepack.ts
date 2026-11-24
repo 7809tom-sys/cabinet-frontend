@@ -38,7 +38,7 @@ import {
   type GapFill,
   planRun,
 } from "./autoDesignRunPacking";
-import { isFlutedFiller } from "./catalogFiller";
+import { isBannedAutoDesignFiller } from "./catalogFiller";
 
 export type FifteenRepackMove = {
   uid: string;
@@ -306,7 +306,7 @@ function fillerRows(catalog: readonly DesignCabinet[]): StockRow[] {
     if (!isFillerItem(row)) continue;
     if (isPanelItem(row)) continue;
     // Fluted fillers are decorative only; never picked automatically (Tom, Nov 19 2026).
-    if (isFlutedFiller(row)) continue;
+    if (isBannedAutoDesignFiller(row)) continue;
     const w = dim(row.width, 0);
     if (w <= 0) continue;
     out.push({ row, width: w });

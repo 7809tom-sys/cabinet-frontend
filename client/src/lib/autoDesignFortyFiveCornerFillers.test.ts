@@ -160,7 +160,7 @@ describe("inside-corner reservations", () => {
 });
 
 describe("Tom's five-wall kitchen (line 330011)", () => {
-  it("closes the fridge-run / sink-run base corner with a 3″ BFF3 pair, cabinets starting at the filler end", () => {
+  it("closes the fridge-run / sink-run base corner with a plain 3″ F342 pair (never BFF, Tom Nov 24 2026), cabinets starting at the filler end", () => {
     const result = build();
     const room = tomsFiveWallRoom();
     const fridgeRun = cornerEndBase(result.placed, room, "top", "end");
@@ -170,7 +170,7 @@ describe("Tom's five-wall kitchen (line 330011)", () => {
       && (item.wallId === "top" || item.wallId === "angTR"));
     expect(pair).toHaveLength(2);
     for (const piece of pair) {
-      expect(piece.masterCode).toBe("BFF3");
+      expect(piece.masterCode).toBe("F342");
       expect(piece.fillerMiterAngle).toBe(22.5);
       expect(piece.fillerTransitionStockWidthIn).toBe(3);
       expect(piece.width).toBeLessThanOrEqual(3);
