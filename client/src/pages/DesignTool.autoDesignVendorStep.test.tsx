@@ -120,7 +120,10 @@ function stubViewport(width: number) {
   window.matchMedia = ((query: string) => {
     const min = /min-width:\s*(\d+)px/.exec(query);
     const max = /max-width:\s*(\d+)px/.exec(query);
-    const matches = (min ? width >= Number(min[1]) : true) && (max ? width <= Number(max[1]) : true);
+    // A desktop has a mouse; phones and tablets (under 1024px) have a finger.
+    const matches = /pointer:\s*coarse/.test(query)
+      ? width < 1024
+      : (min ? width >= Number(min[1]) : true) && (max ? width <= Number(max[1]) : true);
     return { matches, media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false };
   }) as unknown as typeof window.matchMedia;
 }
@@ -157,20 +160,36 @@ async function renderDesigner(width: number) {
   await act(async () => {});
 }
 
-function autoDesignTrigger(width: number): HTMLButtonElement {
+/**
+ * The Auto-Design opener visible at this width. On main that is the toolbar or
+ * the phone/tablet top-actions button; once the room layout popup carries the
+ * desktop opener (feat/room-layout-popup-auto-design) it is Room layout →
+ * Kitchen → Auto-Design. Every opener goes through the same `openAutoDesign`.
+ */
+async function autoDesignTrigger(width: number): Promise<HTMLButtonElement> {
   const visible = [
     screen.queryByTestId("admin-auto-design-auto-build"),
     screen.queryByTestId("mobile-auto-design-auto-build"),
   ].find((element) => visibleAt(element, width));
-  expect(visible, `an Auto-Design trigger must be visible at ${width}px`).toBeTruthy();
-  return visible as HTMLButtonElement;
+  if (visible) return visible as HTMLButtonElement;
+  const roomLayout = screen.queryAllByLabelText("Room layout").find((element) => visibleAt(element, width));
+  if (roomLayout) {
+    fireEvent.click(roomLayout);
+  } else {
+    fireEvent.click(screen.getByTestId("compact-workspace-more-trigger"));
+    await act(async () => {});
+    fireEvent.click(within(await screen.findByRole("dialog")).getByText("Room layout"));
+  }
+  await act(async () => {});
+  fireEvent.click(await screen.findByTestId("room-layout-popup-kitchen"));
+  return (await screen.findByTestId("room-layout-popup-auto-design")) as HTMLButtonElement;
 }
 
 async function openStep(width: number) {
-  const trigger = autoDesignTrigger(width);
+  const trigger = await autoDesignTrigger(width);
   expect(trigger.disabled).toBe(false);
   fireEvent.click(trigger);
-  await act(async () => {});
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)); });
   const step = await screen.findByTestId("fresh-room-catalog-setup");
   expect(step.getAttribute("data-purpose")).toBe("auto-design");
   return step;
