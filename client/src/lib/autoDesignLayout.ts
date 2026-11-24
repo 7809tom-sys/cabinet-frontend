@@ -2348,6 +2348,19 @@ export function runAutoDesignLayout(rawArgs: {
         cabinetCode: corner.masterCode,
       });
     }
+    // An appliance the customer measured (range, dishwasher, refrigerator) is never
+    // removed without its own named line in the report.
+    for (const unit of escaped.filter((item) => item.placement === "appliance" || isRefrigerator(item))) {
+      reviewFindings.push({
+        ruleId: "nothing-past-wall-or-room",
+        code: "appliance-dropped-outside-bounds",
+        severity: "warning",
+        title: `${unit.masterCode} was removed: it ran past its wall end`,
+        detail: `${unit.masterCode} extended past its wall run or outside the drawn room, so it is not in this layout. Adjust the wall length or the measured appliance positions, then run Auto-Design again.`,
+        cabinetUid: unit.uid,
+        cabinetCode: unit.masterCode,
+      });
+    }
     working = working.filter((item) => cabinetInsideBounds(item, room));
   }
   let peninsulaSummary: AutoDesignPeninsulaSummary | null = null;

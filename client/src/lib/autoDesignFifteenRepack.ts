@@ -944,6 +944,14 @@ export function repackFifteenRuleLayout(input: {
 
     // Sink/DW panel shift
     const sinkGroup = groups.find((g) => g.kind === "sink");
+    // True when a piece that cannot wiggle already fills the 3/4 in the sink group would step into.
+    const inwardStripHeld = (g: Group, inward: number): boolean => {
+      const lo = inward < 0 ? g.start + inward : g.end;
+      const hi = inward < 0 ? g.start : g.end + inward;
+      const hits = (a: number, b: number) => a < hi - EPS && b > lo + EPS;
+      if (groups.some((o) => o !== g && o.baseMembers.length > 0 && !o.wiggle && !o.landing && hits(o.start, o.end))) return true;
+      return extraBaseBlocks.some((b) => hits(b.start, b.end));
+    };
     if (sinkGroup) {
       const sinkBase = sinkGroup.baseMembers.find((m) => isSinkBase(m));
       const dw = sinkGroup.baseMembers.find((m) => isDishwasher(m));
@@ -957,16 +965,54 @@ export function repackFifteenRuleLayout(input: {
           const dwAlong = alongOf(dw, side, input.room);
           const sbAlong = alongOf(sinkBase, side, input.room);
           const dwAfter = dwAlong >= sbAlong;
-          const delta = dwAfter ? 0.75 : -0.75;
-          const shifted = shiftItem(dw, delta, frame);
-          const idx = sinkGroup.members.indexOf(dw);
-          if (idx >= 0) sinkGroup.members[idx] = shifted;
-          const bIdx = sinkGroup.baseMembers.indexOf(dw);
-          if (bIdx >= 0) sinkGroup.baseMembers[bIdx] = shifted;
+          const delta = dwAfter ? PANEL_IN : -PANEL_IN;
+          // A dishwasher flush to the wall end has no room to step 3/4 in away from the
+          // sink base: pushing it would hang it past the wall, and the bounds pass would
+          // then drop it. Take the panel room from the cabinet side instead (the sink base
+          // steps 3/4 in inward, counted against its 3 in wiggle), so the appliance stays put.
+          const dwEnd = dwAlong + spanOf(dw, side, input.room);
+          const dwAtWallEnd = dwAfter
+            ? dwEnd + PANEL_IN > frame.runEnd + EPS
+            : dwAlong - PANEL_IN < frame.runStart - EPS;
           const panelRow = pickPanelRow(panelStock, sbH, sinkBase.depth);
-          if (panelRow) {
-            const panelAlong = dwAfter ? alongOf(sinkBase, side, input.room) + spanOf(sinkBase, side, input.room) : alongOf(sinkBase, side, input.room) - PANEL_IN;
-            const panel = buildPanelItem(panelRow, sinkBase, dwAfter ? "end" : "start", panelAlong, side, input.room, input.makeUid);
+          let host: PlacedCabinet | null = sinkBase;
+          if (!dwAtWallEnd) {
+            const shifted = shiftItem(dw, delta, frame);
+            const idx = sinkGroup.members.indexOf(dw);
+            if (idx >= 0) sinkGroup.members[idx] = shifted;
+            const bIdx = sinkGroup.baseMembers.indexOf(dw);
+            if (bIdx >= 0) sinkGroup.baseMembers[bIdx] = shifted;
+          } else if (panelRow && !sinkGroup.locked && (sinkGroup.wiggle?.lo ?? 0) <= -PANEL_IN + EPS && !inwardStripHeld(sinkGroup, -delta)) {
+            const inward = -delta;
+            const step = (m: PlacedCabinet) => (m === dw ? m : shiftItem(m, inward, frame));
+            sinkGroup.members = sinkGroup.members.map(step);
+            sinkGroup.baseMembers = sinkGroup.baseMembers.map(step);
+            sinkGroup.upperMembers = sinkGroup.upperMembers.map(step);
+            const shiftRange = (r: { lo: number; hi: number } | null) => (r ? { lo: r.lo - inward, hi: r.hi - inward } : null);
+            sinkGroup.wiggle = shiftRange(sinkGroup.wiggle);
+            sinkGroup.landing = shiftRange(sinkGroup.landing);
+            host = sinkGroup.baseMembers.find((m) => m.uid === sinkBase.uid) ?? sinkBase;
+            moves.push({ uid: sinkBase.uid, kind: "sink", wallId: side, deltaAlongIn: inward, reason: "wiggle" });
+            notes.push(`${sinkBase.masterCode} moved ${fmt(inward)}" so the end panel fits beside ${dw.masterCode}, which stays flush at the wall end.`);
+          } else if (!panelRow) {
+            // No panel stock: nothing to make room for, and the dishwasher stays at the wall.
+            host = null;
+          } else {
+            // Neither piece can give up the 3/4 in: keep both where they were measured and say so.
+            host = null;
+            findings.push({
+              ruleId: "exposed-panel-three-quarter",
+              code: "sink-dw-panel-no-room-at-wall-end",
+              severity: "warning",
+              title: `No end panel between ${sinkBase.masterCode} and ${dw.masterCode}`,
+              detail: `${dw.masterCode} is flush to the wall end and ${sinkBase.masterCode} cannot move 3/4 in, so the 3/4 in end panel between them was not placed. Both stay where they were measured.`,
+              cabinetUid: sinkBase.uid,
+              cabinetCode: sinkBase.masterCode,
+            });
+          }
+          if (panelRow && host) {
+            const panelAlong = dwAfter ? alongOf(host, side, input.room) + spanOf(host, side, input.room) : alongOf(host, side, input.room) - PANEL_IN;
+            const panel = buildPanelItem(panelRow, host, dwAfter ? "end" : "start", panelAlong, side, input.room, input.makeUid);
             sinkGroup.members.push(panel);
             sinkGroup.baseMembers.push(panel);
             notes.push(`Added end panel between ${sinkBase.masterCode} and ${dw.masterCode}.`);
