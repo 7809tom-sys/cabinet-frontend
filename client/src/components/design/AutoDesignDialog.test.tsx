@@ -255,7 +255,7 @@ describe("AutoDesignDialog", () => {
     fireEvent.click(screen.getByTestId("auto-design-sink-window"));
     fireEvent.click(screen.getByTestId("auto-design-build-submit"));
     expect(onBuild).toHaveBeenCalledWith(expect.objectContaining({
-      sinkWindowCenter: expect.objectContaining({ wallLabel: "Wall 1", centerOffsetIn: 24 }),
+      sinkWindowCenter: expect.objectContaining({ wallLabel: "Wall 1", centerOffsetIn: Number((screen.getByLabelText("Sink base center from selected wall start in inches") as HTMLInputElement).value) }),
     }));
     onBuild.mockClear();
     fireEvent.click(screen.getByTestId("auto-design-sink-window"));

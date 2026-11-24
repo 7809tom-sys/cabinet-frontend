@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Boxes, Check, Droplets, Flame } from "lucide-react";
 import { autoDesignWallWidthRows } from "@/lib/autoDesignAutoBuild";
 import { autoDesignSelectableWallLabels } from "@/lib/autoDesignCornerStage";
+import { autoDesignDefaultCenters, type AutoDesignDefaultMeasurement } from "@/lib/autoDesignDefaultCenters";
 import { AutoDesignIntakeSection } from "./AutoDesignIntakeSection";
 import { emptyAutoDesignIntake, hasPreference, intakeMissing, type AutoDesignIntake } from "@/lib/autoDesignFifteenRules";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -87,17 +88,30 @@ const omissionLabels: Record<(typeof applianceFields)[number], string> = {
   refrigerator: "Do not add Refrigerator",
 };
 type FieldValue = { wallLabel: WallLabel; centerOffsetIn: string };
+const defaultFieldValue = (measurement: AutoDesignDefaultMeasurement | null, fallback: FieldValue): FieldValue => (measurement
+  ? { wallLabel: measurement.wallLabel, centerOffsetIn: String(measurement.centerOffsetIn) }
+  : fallback);
 
 export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading = false, wallCount = 4, room, onWallGuideChange, onLoadSixWallTrainingRoom, dishwasherSide: dishwasherSidePreference = null, onDishwasherSideChange, onOpenSinkPicker, selectedSinkName = null, onOpenTallPicker, selectedTallSummary = null, onOpenRangePicker, selectedRangeLabel = null, childPickerOpen = false }: Props) {
   const [layoutType, setLayoutType] = useState<AutoDesignLayoutType>("single-wall");
   const [originCorner, setOriginCorner] = useState<AutoDesignOriginCorner>("left");
   const [runDirection, setRunDirection] = useState<AutoDesignRunDirection>("right");
-  const [values, setValues] = useState<Record<PointField, FieldValue>>({
-    sink: { wallLabel: "Wall 1", centerOffsetIn: "24" },
-    stove: { wallLabel: "Wall 1", centerOffsetIn: "120" },
-    dishwasher: { wallLabel: "Wall 1", centerOffsetIn: "" },
-    refrigerator: { wallLabel: "Wall 1", centerOffsetIn: "72" },
+  // Starting centers come from the room and the choices below, so Build works
+  // without edits (the old fixed 24 / 120 / 72 overlapped on a 144" wall).
+  const [values, setValues] = useState<Record<PointField, FieldValue>>(() => {
+    const start = autoDesignDefaultCenters({
+      room, layoutType: "single-wall", originCorner: "left", runDirection: "right", wallCount,
+      sinkBaseWidthIn: 36, dishwasherSide: "right", includeStove: true, includeRefrigerator: true, refrigeratorWidthIn: 36,
+    });
+    return {
+      sink: defaultFieldValue(start.sink, { wallLabel: "Wall 1", centerOffsetIn: "" }),
+      stove: defaultFieldValue(start.stove, { wallLabel: "Wall 1", centerOffsetIn: "" }),
+      dishwasher: { wallLabel: "Wall 1", centerOffsetIn: "" },
+      refrigerator: defaultFieldValue(start.refrigerator, { wallLabel: "Wall 1", centerOffsetIn: "" }),
+    };
   });
+  /** Fields the customer typed in or moved to another wall. Their values are never replaced. */
+  const [edited, setEdited] = useState<Record<PointField, boolean>>({ sink: false, stove: false, dishwasher: false, refrigerator: false });
   const [omitted, setOmitted] = useState<Record<(typeof applianceFields)[number], boolean>>({
     stove: false,
     dishwasher: false,
@@ -128,10 +142,13 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
     setDishwasherSide((prev) => (prev === "none" ? "right" : prev));
   }, [intake.preferences]);
 
-  const setValue = (field: PointField, patch: Partial<FieldValue>) => setValues((current) => ({
-    ...current,
-    [field]: { ...current[field], ...patch },
-  }));
+  const setValue = (field: PointField, patch: Partial<FieldValue>) => {
+    setEdited((current) => (current[field] ? current : { ...current, [field]: true }));
+    setValues((current) => ({
+      ...current,
+      [field]: { ...current[field], ...patch },
+    }));
+  };
   const layoutWallLabels = useMemo(
     () => autoDesignSelectableWallLabels(layoutType, wallCount),
     [layoutType, wallCount],
@@ -170,6 +187,44 @@ export function AutoDesignDialog({ open, onOpenChange, onBuild, catalogLoading =
   const optionalMeasurement = (field: PointField) => values[field].centerOffsetIn.trim() ? measurement(field) : null;
 
   const noDishwasher = omitted.dishwasher || dishwasherSide === "none";
+  // Typed values are obstacles the starting centers work around; only untouched fields follow the defaults.
+  const typedValue = (field: PointField): AutoDesignDefaultMeasurement | null => {
+    if (!edited[field] || !values[field].centerOffsetIn.trim()) return null;
+    const center = Number(values[field].centerOffsetIn);
+    return Number.isFinite(center) ? { wallLabel: values[field].wallLabel, centerOffsetIn: center } : null;
+  };
+  const typedKey = (Object.keys(labels) as PointField[]).map((field) => {
+    const typed = typedValue(field);
+    return typed ? `${field}:${typed.wallLabel}:${typed.centerOffsetIn}` : `${field}:-`;
+  }).join("|");
+  const startingCenters = useMemo(() => autoDesignDefaultCenters({
+    room,
+    layoutType,
+    originCorner,
+    runDirection,
+    wallCount,
+    sinkBaseWidthIn: sinkBaseWidth,
+    dishwasherSide: noDishwasher ? "none" : dishwasherSide,
+    includeStove: !omitted.stove,
+    includeRefrigerator: !omitted.refrigerator,
+    refrigeratorWidthIn: refrigeratorWidth,
+    fixed: { sink: typedValue("sink"), stove: typedValue("stove"), refrigerator: typedValue("refrigerator"), dishwasher: typedValue("dishwasher") },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [room, layoutType, originCorner, runDirection, wallCount, sinkBaseWidth, noDishwasher, dishwasherSide, omitted.stove, omitted.refrigerator, refrigeratorWidth, typedKey]);
+  useEffect(() => {
+    setValues((current) => {
+      let next = current;
+      for (const field of ["sink", "stove", "refrigerator"] as const) {
+        if (edited[field]) continue;
+        const measurement = startingCenters[field];
+        if (!measurement) continue;
+        const centerOffsetIn = String(measurement.centerOffsetIn);
+        if (current[field].wallLabel === measurement.wallLabel && current[field].centerOffsetIn === centerOffsetIn) continue;
+        next = { ...next, [field]: { wallLabel: measurement.wallLabel, centerOffsetIn } };
+      }
+      return next;
+    });
+  }, [startingCenters, edited]);
   const submit = () => {
     setSubmitError(null);
     const missing = intakeMissing(intake);
