@@ -6580,6 +6580,14 @@ export function addCabinet(
 		    };
     cabinet.add(body);
     bodyMeshes.push(body);
+    if (specialty.kind === "farmhouse-sink") {
+      // The carcass is a closed box. Its wood top shows through the bowl as a
+      // tan panel. A farm sink base is open on top; the bowl is the interior.
+      const openTop = withoutFaces(body.geometry.toNonIndexed(), (normal) => normal.y > 0.85);
+      body.geometry.dispose();
+      body.geometry = openTop;
+      body.userData = { ...body.userData, farmhouseOpenTop: true };
+    }
   }
 
 	  const textureMaterials: THREE.MeshStandardMaterial[] = [];
@@ -11159,6 +11167,15 @@ export function farmhouseApronTopY(countertopTop: number): number {
   return countertopTop - STD.COUNTERTOP_THICKNESS * INCH;
 }
 
+/**
+ * Where a manufacturer sink mesh is seated. An apron sink's rim is the top of
+ * the mesh, and that top belongs under the slab. Every other sink stays on the
+ * counter surface.
+ */
+export function farmhouseManufacturerSeatY(countertopTop: number, apronFront: boolean): number {
+  return apronFront ? farmhouseApronTopY(countertopTop) : countertopTop;
+}
+
 export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlacement?: DeckFaucetPlacement) {
   const width = sink.width * INCH;
   const depth = sink.depth * INCH;
@@ -11501,7 +11518,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       pelicanProfileId: sink.pelicanProfileId,
       pelicanProductName: sink.pelicanProductName,
       x: centerX,
-      y: countertopTop,
+      y: farmhouseManufacturerSeatY(countertopTop, farmSink),
       z: centerZ,
     },
     addFixtureNode,
