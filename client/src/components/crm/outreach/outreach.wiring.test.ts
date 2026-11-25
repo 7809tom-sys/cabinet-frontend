@@ -10,6 +10,8 @@ describe("admin CRM import + outreach wiring", () => {
     expect(board).toContain("{isMasterView && <CustomerListImportAdminDialog />}");
     expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)');
     expect(board).toContain('crmView === "outreach" && isMasterView ? (');
+    // The Outreach pill (with its explainer) still switches to the Outreach view.
+    expect(board).toContain("<OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />");
   });
 
   it("adds a master-only Distributors view that narrows the stage board to distributor prospects", () => {
