@@ -24354,6 +24354,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         onBacksplashHeightModeChange={setBacksplashHeightMode}
         countertopBacksplashHeightIn={countertopBacksplashHeightIn}
         onCountertopBacksplashHeightChange={setCountertopBacksplashHeightIn}
+        hardwareSelection={catalogHardwareSelection}
+        onSelectHardware={selectCatalogHardware}
       />
       <MosaicFloorPatternDialog
         floor={mosaicFloorPrompt}
