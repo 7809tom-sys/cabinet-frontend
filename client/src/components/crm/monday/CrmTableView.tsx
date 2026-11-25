@@ -3,6 +3,12 @@ import { CRM_PRIORITIES, CRM_PRIORITY_LABELS, CRM_STAGES, CRM_STAGE_LABELS, type
 import { CRM_STAGE_COLORS, crmDueState, type MondayDeal } from "@shared/crmMailbox";
 import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
 import { isDistributorProspect } from "@/lib/crmDistributorFilter";
+import { isCabinetShopProspect } from "@/lib/crmCabinetShopFilter";
+
+/** Distributor and cabinet shop prospects get the site comparison cell. */
+function isSiteScoutRow(deal: TableDeal): boolean {
+  return isDistributorProspect(deal) || isCabinetShopProspect(deal);
+}
 import { CRM_DESIGN_STAMP_LABELS, designSavedTitle, formatDesignSavedDate, type CrmDesignStampFields } from "@/lib/crmDesignStamps";
 
 type Lang = "en" | "es";
@@ -40,8 +46,8 @@ export function CrmTableView({
   onOpen: (id: number) => void;
   onPatch: (id: number, patch: { title?: string; stage?: CrmStage; priority?: CrmPriority; estimatedValue?: number | null; nextFollowUpAt?: number | null }) => void;
 }) {
-  // The site comparison column only appears when distributor prospects are listed.
-  const showSiteCompare = deals.some(isDistributorProspect);
+  // The site comparison column only appears when distributor or cabinet shop prospects are listed.
+  const showSiteCompare = deals.some(isSiteScoutRow);
   const columns = 9 + (showAffiliate ? 1 : 0) + (showSiteCompare ? 1 : 0);
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white" data-testid="crm-table-view">
@@ -154,7 +160,7 @@ function CrmTableRow({
       <td className="px-3 py-2 text-xs text-slate-500" data-testid="crm-last-design-saved" title={designSavedTitle(deal.lastDesignSavedAt)}>{formatDesignSavedDate(deal.lastDesignSavedAt, lang)}</td>
       {showSiteCompare && (
         <td className="px-3 py-2 min-w-[260px] align-top" data-testid="crm-site-compare-cell">
-          {isDistributorProspect(deal) ? <DistributorSiteCompare deal={deal} /> : <span className="text-xs text-slate-400">—</span>}
+          {isSiteScoutRow(deal) ? <DistributorSiteCompare deal={deal} /> : <span className="text-xs text-slate-400">—</span>}
         </td>
       )}
     </tr>
