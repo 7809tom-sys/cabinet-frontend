@@ -97,7 +97,8 @@ import { combinedSwatchTextureWindow, type FaceSourceKind, type FaceTextureWindo
 import { RAISED_PANEL_BEVEL_DEPTH_IN, RAISED_PANEL_BEVEL_WIDTH_IN, resolveDoorProfile } from "@shared/doorStyleAppearance";
 import { isRaisedPanelFrontSurface, raisedPanelApplicationForStyle } from "@shared/raisedPanelDoorBlueprint";
 import { doorFrontTextureMapping, isFrameFreeGrainTexture, prefersSolidPaintedFace } from "@shared/doorFrontFinish";
-import { largeFaceGrainCanvas, largeFacePositionUvs, largeWoodFaceGrain, pieceGrainCanvas, WOOD_LARGE_FACE_ANISOTROPY, woodPanelPieceUv, woodPanelPreviewUv, woodPanelSampleInches } from "@/lib/woodPanelGrain";
+import { centerPanelGrainCanvas, largeFacePositionUvs, WOOD_LARGE_FACE_ANISOTROPY, woodPanelPieceUv, woodPanelPreviewUv, woodPanelSampleInches } from "@/lib/woodPanelGrain";
+import { applyPartWoodGrain, applyPartWoodGrainUvs, configurePartGrainTexture, partGrainPhase, partWoodGrainAxis, type PartGrainTile } from "@/lib/partWoodGrain";
 import { isPaintedFinish } from "@shared/paintedFinish";
 import { attachSlopedRaisedPanel, effectiveRaisedBevelDepthIn, threeDFaceUsesRaisedPanelBevel } from "./raisedPanelBevel";
 import { disposeApplianceFrontTextureCache, isCachedApplianceFrontTexture, loadApplianceFrontTexture, refrigeratorBodyMaterialParams } from "./applianceFinishTint";
@@ -758,24 +759,6 @@ export function pieceGrainTexture(
   return map;
 }
 
-function configureLargeFaceGrainMap(map: THREE.Texture): THREE.Texture {
-  map.colorSpace = THREE.SRGBColorSpace;
-  // Across the grain is one crop. Along the grain the canvas is already a
-  // mirrored pair, so a repeat meets the same pixels and does not draw a line.
-  map.wrapS = THREE.ClampToEdgeWrapping;
-  map.wrapT = THREE.RepeatWrapping;
-  map.magFilter = THREE.LinearFilter;
-  map.minFilter = THREE.LinearMipmapLinearFilter;
-  map.generateMipmaps = true;
-  map.anisotropy = Math.max(map.anisotropy || 1, WOOD_LARGE_FACE_ANISOTROPY);
-  map.repeat.set(1, 1);
-  map.offset.set(0, 0);
-  map.rotation = 0;
-  map.center.set(0, 0);
-  map.needsUpdate = true;
-  return map;
-}
-
 /** Real-inch UVs for one large face. Door pieces never call this. */
 export function applyLargeFaceWoodUv(
   geometry: THREE.BufferGeometry,
@@ -800,10 +783,11 @@ export function applyLargeFaceWoodUv(
 }
 
 /**
- * Replace a framed door photograph with one copy of center-panel grain per piece.
- * The copy is cropped to the piece's aspect (rails are turned first). It is
- * clamped, never repeated, so a door cannot show a seam. Large faces (sides,
- * ends, tops, fillers, toe kicks) instead use one fixed real-inch scale.
+ * Replace a framed door photograph with the flat center of that photo, tiled at
+ * one real-inch scale. Rails, drawer rails, and the toe kick run the grain
+ * along their length. Stiles, panels, and cabinet sides keep it vertical.
+ * The tile is mirrored, never stretched to the piece, so a long rail does not
+ * smear and a side does not show a different density than a drawer.
  * Painted materials are not marked and are skipped.
  */
 export function applyLoadedWoodPanelGrain(
@@ -812,8 +796,16 @@ export function applyLoadedWoodPanelGrain(
   options?: { drawersOnly?: boolean },
 ): boolean {
   const sample = woodPanelSampleInches(image.width, image.height);
-  const largeBoard = largeFaceGrainCanvas(image);
-  const largeMap = largeBoard ? configureLargeFaceGrainMap(new THREE.CanvasTexture(largeBoard)) : null;
+  const tile = { across: sample.width, along: sample.height };
+  const board = centerPanelGrainCanvas(image);
+  if (!board || !(tile.across > 0) || !(tile.along > 0)) return false;
+  const shared = new THREE.CanvasTexture(board);
+  shared.colorSpace = THREE.SRGBColorSpace;
+  configurePartGrainTexture(shared);
+  shared.magFilter = THREE.LinearFilter;
+  shared.minFilter = THREE.LinearMipmapLinearFilter;
+  shared.generateMipmaps = true;
+  shared.anisotropy = Math.max(shared.anisotropy || 1, WOOD_LARGE_FACE_ANISOTROPY);
   let applied = false;
   let index = 0;
   root.traverse((node) => {
@@ -821,71 +813,26 @@ export function applyLoadedWoodPanelGrain(
     if (!mesh.isMesh || Array.isArray(mesh.material)) return;
     const material = mesh.material as THREE.MeshStandardMaterial;
     if (!material?.userData?.centerPanelGrain || typeof material.clone !== "function") return;
-    const largeGrain = largeWoodFaceGrain(mesh.userData as Record<string, unknown>);
-    if (largeGrain && largeMap && !options?.drawersOnly) {
-      const salt = (index * 0.37 + mesh.position.x * 1.7 + mesh.position.y * 0.9 + mesh.position.z * 1.3) % 1;
-      index += 1;
-      const previousGeometry = mesh.geometry;
-      mesh.geometry = applyLargeFaceWoodUv(previousGeometry, largeGrain, sample, salt);
-      if (previousGeometry !== mesh.geometry) previousGeometry.dispose();
-      const next = material.clone();
-      next.map = largeMap;
-      next.userData = {
-        ...material.userData,
-        centerPanelGrain: true,
-        largeFaceWoodUv: true,
-        woodPanelGrain: largeGrain,
-        woodPanelSampleIn: sample,
-        woodPanelGrainSalt: salt,
-      };
-      applyWoodDoorPhotoFidelity(next);
-      mesh.material = next;
-      applied = true;
-      return;
-    }
     const drawer = Boolean(mesh.userData?.cabinetDrawerFront);
     if (options?.drawersOnly && !drawer) return;
     if (!options?.drawersOnly && drawer && mesh.userData?.drawerGrain) return;
-    const params = (mesh.geometry as THREE.BoxGeometry).parameters;
-    let widthIn = typeof params?.width === "number" ? params.width * 12 : 0;
-    let heightIn = typeof params?.height === "number" ? params.height * 12 : 0;
-    if (widthIn < 0.5 || heightIn < 0.5) {
-      mesh.geometry.computeBoundingBox();
-      const size = new THREE.Vector3();
-      mesh.geometry.boundingBox?.getSize(size);
-      widthIn = Math.max(widthIn, size.x * 12);
-      heightIn = Math.max(heightIn, size.y * 12);
-    }
-    const horizontal = mesh.userData?.grainPiece === "rail";
-    const grain = horizontal ? "horizontal" : "vertical";
-    const salt = (index * 0.37 + widthIn * 0.013 + heightIn * 0.021) % 1;
+    const axis = partWoodGrainAxis(mesh.userData as Record<string, unknown>) ?? "vertical";
+    const role = String(mesh.userData?.grainPiece ?? mesh.userData?.faceFrameEdge ?? axis);
+    const phase = partGrainPhase(`${role}|${index}|${axis}`);
     index += 1;
-    const board = pieceGrainCanvas(image, widthIn || 12, heightIn || 12, grain, salt);
-    const map = board
-      ? new THREE.CanvasTexture(board)
-      : material.map
-        ? pieceGrainTexture(material.map, widthIn || 12, heightIn || 12, grain, salt)
-        : null;
-    if (!map) return;
-    if (board) {
-      map.colorSpace = THREE.SRGBColorSpace;
-      map.wrapS = THREE.ClampToEdgeWrapping;
-      map.wrapT = THREE.ClampToEdgeWrapping;
-      map.repeat.set(1, 1);
-      map.offset.set(0, 0);
-      map.rotation = 0;
-    }
-    map.needsUpdate = true;
+    applyPartWoodGrainUvs(mesh.geometry, axis, tile, phase);
     const next = material.clone();
-    next.map = map;
+    next.map = shared;
     next.userData = {
       ...material.userData,
       centerPanelGrain: true,
-      woodPanelGrain: grain,
-      woodPanelGrainSalt: salt,
+      woodPanelGrain: axis,
+      partWoodGrain: true,
+      woodPanelSampleIn: sample,
     };
     applyWoodDoorPhotoFidelity(next);
     mesh.material = next;
+    mesh.userData = { ...mesh.userData, partWoodGrain: true, partWoodGrainAxis: axis };
     applied = true;
   });
   return applied;
@@ -6604,6 +6551,28 @@ export function addCabinet(
 	  // callback can run before that assignment, so this starts false.
 	  let woodDoorPhotograph = false;
 	  const usesCuratedCabinetGrain = !renderSolidFace && isCuratedCabinetGrainSample(doorSampleUrl);
+	  // A frame-free grain board has a real size in inches. Each stile, rail,
+	  // panel, side, and toe kick is mapped at that size. A door photograph
+	  // (no /grain/ tile) keeps the center-panel path below.
+	  const partGrainDoorTile: PartGrainTile | null = (() => {
+	    const tile = surfaceTextures?.faceCrop?.faceTileIn;
+	    if (paintedFinish || renderSolidFace || !isFrameFreeGrainTexture(doorSampleUrl) || !tile || !(tile[0] > 0) || !(tile[1] > 0)) return null;
+	    return { across: tile[0], along: tile[1] };
+	  })();
+	  const partGrainDrawerTile: PartGrainTile | null = (() => {
+	    const tile = surfaceTextures?.faceCrop?.faceTileDrawerIn;
+	    if (!partGrainDoorTile || !tile || !(tile[0] > 0) || !(tile[1] > 0)) return null;
+	    return { across: tile[0], along: tile[1] };
+	  })();
+	  const finishPartWoodGrain = () => {
+	    if (!partGrainDoorTile) return;
+	    applyPartWoodGrain(cabinet, {
+	      door: partGrainDoorTile,
+	      drawer: partGrainDrawerTile,
+	      placementUid: sku.placementUid,
+	    });
+	    cabinet.userData = { ...cabinet.userData, partWoodGrain: true };
+	  };
 	  // Assigned once the texture exists. The loader callback runs after the
 	  // face meshes are built, which is when box skins receive the sample.
 	  let stampCabinetWoodGrain = () => {};
@@ -6616,6 +6585,7 @@ export function addCabinet(
       rememberDoorPanelHex(loaded);
       applyPlainStructuralFinish?.(color, loaded);
       stampCabinetWoodGrain();
+      finishPartWoodGrain();
       // The full door photo includes its own frame. Once the pixels are here,
       // every framed piece switches to grain from the flat center panel.
       if (loaded.image) {
@@ -6693,7 +6663,9 @@ export function addCabinet(
 	  stampCabinetWoodGrain = () => {
 	    // A painted face is solid. A framed door photograph is already one copy:
 	    // a per-piece window would crop a different part of its frame onto each board.
-	    if (renderSolidFace || doorPhotographMappedOnce) return;
+	    // A frame-free grain tile is mapped per board in real inches. The random
+	    // window used to zoom and slide that tile, which is the scribbled grain.
+	    if (renderSolidFace || doorPhotographMappedOnce || partGrainDoorTile) return;
 	    applyThreeDCabinetPieceGrain(cabinet, {
 	      placementUid: sku.placementUid,
 	      sampleUrl: doorSampleUrl,
@@ -6774,8 +6746,14 @@ export function addCabinet(
     new THREE.TextureLoader().load(dlcDrawerNormalUrl, (normal) => {
       normal.wrapS = THREE.MirroredRepeatWrapping;
       normal.wrapT = THREE.MirroredRepeatWrapping;
-      normal.repeat.set(dlcDrawerRepeat.repeatX, dlcDrawerRepeat.repeatY);
-      if (drawerTexture) normal.offset.copy(drawerTexture.offset);
+      if (partGrainDoorTile) {
+        normal.repeat.set(1, 1);
+        normal.offset.set(0, 0);
+        normal.rotation = 0;
+      } else {
+        normal.repeat.set(dlcDrawerRepeat.repeatX, dlcDrawerRepeat.repeatY);
+        if (drawerTexture) normal.offset.copy(drawerTexture.offset);
+      }
       dlcDrawerNormal = normal;
       const apply = (node: THREE.Object3D) => {
         const mesh = node as THREE.Mesh;
@@ -7058,11 +7036,19 @@ export function addCabinet(
       texture.wrapS = THREE.MirroredRepeatWrapping;
       texture.wrapT = THREE.MirroredRepeatWrapping;
       const tile = surfaceTextures?.faceCrop?.faceTileIn;
-      // Sides tile the grain at its physical size (about one cabinet depth wide, one height tall).
-      if (tile && tile[0] > 0 && tile[1] > 0) texture.repeat.set(Math.max(0.1, 24 / tile[0]), Math.max(0.1, heightIn / tile[1]));
+      // Part grain writes the inches into the mesh UVs, so the side texture
+      // stays one unrotated tile. The old 24-inch repeat stretched that tile
+      // across whatever face happened to use UV 0–1.
+      if (partGrainDoorTile) {
+        texture.repeat.set(1, 1);
+        texture.offset.set(0, 0);
+        texture.rotation = 0;
+        texture.center.set(0.5, 0.5);
+      } else if (tile && tile[0] > 0 && tile[1] > 0) texture.repeat.set(Math.max(0.1, 24 / tile[0]), Math.max(0.1, heightIn / tile[1]));
       else texture.repeat.set(2, 1.5);
       dlcGrainTexture = texture;
       applyStructuralFinish(color, doorTexture);
+      finishPartWoodGrain();
     });
   }
 	  const trimMaterial = new THREE.MeshPhysicalMaterial({ color: faceColor, map: woodDoorPhotograph ? centerPanelPreview(doorTexture) : doorTexture, ...doorFinishSurface, ...(dlcPhotoComp ? { toneMapped: false } : {}) });
@@ -7082,8 +7068,14 @@ export function addCabinet(
 	    new THREE.TextureLoader().load(dlcNormalUrl, (normal) => {
 	      normal.wrapS = THREE.MirroredRepeatWrapping;
 	      normal.wrapT = THREE.MirroredRepeatWrapping;
-	      normal.repeat.set(dlcDoorRepeat.repeatX, dlcDoorRepeat.repeatY);
-	      if (doorTexture) normal.offset.copy(doorTexture.offset); // relief stays aligned with the staggered grain
+	      if (partGrainDoorTile) {
+	        normal.repeat.set(1, 1);
+	        normal.offset.set(0, 0);
+	        normal.rotation = 0;
+	      } else {
+	        normal.repeat.set(dlcDoorRepeat.repeatX, dlcDoorRepeat.repeatY);
+	        if (doorTexture) normal.offset.copy(doorTexture.offset); // relief stays aligned with the staggered grain
+	      }
 	      for (const material of [faceMaterial, trimMaterial]) {
 	        material.normalMap = normal;
 	        material.normalScale.set(0.6, 0.6);
@@ -9226,6 +9218,7 @@ export function addCabinet(
   // Doors and drawers already reference the shared sample. Box skins receive it
   // again when the image finishes loading, and that callback stamps them too.
   stampCabinetWoodGrain();
+  finishPartWoodGrain();
   // Every appliance needs a click target that resolves through its placement
   // root. Standard RANGE records already add a dedicated range envelope below;
   // this additionally covers legacy stove-coded appliances that otherwise only
