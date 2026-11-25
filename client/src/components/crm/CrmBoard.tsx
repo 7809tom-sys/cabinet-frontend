@@ -70,6 +70,9 @@ export function CustomerActivityLine({ text, href, nested = false }: { text: str
 }
 
 type Lang = CrmLanguage;
+
+/** Column header overrides used only while the Distributors view is open. */
+export const DISTRIBUTORS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Distributor" };
 const L = (lang: Lang) => ({
   title: lang === "es" ? "CRM de ventas" : "Sales CRM",
   subtitle: lang === "es"
@@ -231,7 +234,11 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
   const mondayDeals = useMemo(() => filterMondayDeals(filteredDeals, mondayFilters), [filteredDeals, mondayFilters]);
   // Distributors view (master only): same filters, narrowed to distributor prospects.
   const distributorDeals = useMemo(() => filterDistributorProspects(mondayDeals), [mondayDeals]);
-  const viewDeals = crmView === "distributors" && (data as any)?.isMasterView === true ? distributorDeals : mondayDeals;
+  const distributorsViewOpen = crmView === "distributors" && (data as any)?.isMasterView === true;
+  const viewDeals = distributorsViewOpen ? distributorDeals : mondayDeals;
+  // Display-only: in the Distributors view the "new" stage column reads "Distributor".
+  // The stage value stays "new", and the main Board keeps "New".
+  const stageLabelOverrides: Partial<Record<CrmStage, string>> | undefined = distributorsViewOpen ? DISTRIBUTORS_VIEW_STAGE_LABELS : undefined;
   const affiliateNames = (data as any)?.affiliateNames as Record<number, string> | undefined;
   const affiliateBranding = (data as any)?.affiliateBranding as Record<number, CrmAffiliateBrand> | undefined;
   const isMasterView = (data as any)?.isMasterView === true;
@@ -352,7 +359,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
           <SelectTrigger className="h-9 w-[140px] bg-white" aria-label="Filter by stage"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All stages</SelectItem>
-            {CRM_STAGES.map((stage) => <SelectItem key={stage} value={stage}>{CRM_STAGE_LABELS[stage][lang]}</SelectItem>)}
+            {CRM_STAGES.map((stage) => <SelectItem key={stage} value={stage}>{stageLabelOverrides?.[stage] ?? CRM_STAGE_LABELS[stage][lang]}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as typeof priorityFilter)}>
@@ -430,6 +437,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         <CrmStageBoard
           deals={viewDeals}
           lang={lang}
+          stageLabels={stageLabelOverrides}
           onMove={(id, stage) => move.mutate({ id, stage })}
           onQuickAdd={(stage, title) => quickAdd.mutate({ title, stage, affiliateId: affiliateId ?? masterAffiliateId })}
           renderCard={(deal) => (

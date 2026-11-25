@@ -13,12 +13,15 @@ export function CrmStageBoard<T extends { id: number; stage: CrmStage }>({
   onMove,
   onQuickAdd,
   renderCard,
+  stageLabels,
 }: {
   deals: T[];
   lang: Lang;
   onMove: (id: number, stage: CrmStage) => void;
   onQuickAdd: (stage: CrmStage, title: string) => void;
   renderCard: (deal: T) => React.ReactNode;
+  /** Optional per-board column header overrides. Stage values are unchanged. */
+  stageLabels?: Partial<Record<CrmStage, string>>;
 }) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-3" data-testid="crm-stage-board">
@@ -29,6 +32,7 @@ export function CrmStageBoard<T extends { id: number; stage: CrmStage }>({
             key={stage}
             stage={stage}
             lang={lang}
+            label={stageLabels?.[stage] ?? CRM_STAGE_LABELS[stage][lang]}
             count={items.length}
             onMove={onMove}
             onQuickAdd={onQuickAdd}
@@ -44,6 +48,7 @@ export function CrmStageBoard<T extends { id: number; stage: CrmStage }>({
 function CrmStageGroup({
   stage,
   lang,
+  label,
   count,
   onMove,
   onQuickAdd,
@@ -51,6 +56,7 @@ function CrmStageGroup({
 }: {
   stage: CrmStage;
   lang: Lang;
+  label: string;
   count: number;
   onMove: (id: number, stage: CrmStage) => void;
   onQuickAdd: (stage: CrmStage, title: string) => void;
@@ -72,7 +78,7 @@ function CrmStageGroup({
       }}
     >
       <header className="flex items-center justify-between gap-2 rounded-t-xl px-3 py-2 text-white" style={{ backgroundColor: color }}>
-        <h4 className="text-sm font-semibold">{CRM_STAGE_LABELS[stage][lang]}</h4>
+        <h4 className="text-sm font-semibold">{label}</h4>
         <span className="rounded-full bg-white/20 px-2 text-xs">{count}</span>
       </header>
       <div className="space-y-2 p-2 min-h-[8rem]">{children}</div>
@@ -90,7 +96,7 @@ function CrmStageGroup({
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           placeholder={lang === "es" ? "Agregar trato" : "Quick add"}
-          aria-label={`Quick add ${CRM_STAGE_LABELS[stage][lang]}`}
+          aria-label={`Quick add ${label}`}
           className="h-8 bg-white text-xs"
         />
         <Button type="submit" size="icon" variant="outline" className="h-8 w-8 shrink-0" aria-label="Add deal">
