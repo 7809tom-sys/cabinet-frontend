@@ -25,49 +25,67 @@ const sink: AutoDesignSinkProduct = {
 };
 
 function renderPopup(overrides: Partial<Parameters<typeof DesignerFixturePickPopup>[0]> = {}) {
-  const onSave = vi.fn();
+  const onPickSink = vi.fn();
+  const onPickFaucet = vi.fn();
   const onDismiss = vi.fn();
   const utils = render(
     <DesignerFixturePickPopup
       open
+      step="sink"
       sinkProducts={[sink]}
       faucetProducts={[faucet]}
       loading={false}
-      onSave={onSave}
+      onPickSink={onPickSink}
+      onPickFaucet={onPickFaucet}
       onDismiss={onDismiss}
       {...overrides}
     />,
   );
-  return { ...utils, onSave, onDismiss };
+  return { ...utils, onPickSink, onPickFaucet, onDismiss };
 }
 
 describe("DesignerFixturePickPopup", () => {
-  it("shows the title when open", () => {
+  it("opens on the sink step with no faucet list", () => {
     renderPopup();
-    expect(screen.getByTestId("designer-fixture-pick-popup")).toBeTruthy();
-    expect(screen.getByText("Pick your faucet and sink")).toBeTruthy();
+    expect(screen.getByTestId("designer-fixture-pick-popup").getAttribute("data-step")).toBe("sink");
+    expect(screen.getByText("Pick your sink")).toBeTruthy();
+    expect(screen.queryByText("Pick your faucet and sink")).toBeNull();
+    expect(screen.getByTestId("fixture-sink-grid")).toBeTruthy();
+    expect(screen.queryByTestId("fixture-faucet-grid")).toBeNull();
   });
 
-  it("calls onDismiss and not onSave when 'Skip for now' is clicked", () => {
-    const { onSave, onDismiss } = renderPopup();
+  it("picking a sink closes this step and does not pick a faucet", () => {
+    const { onPickSink, onPickFaucet, onDismiss } = renderPopup();
+    fireEvent.click(screen.getByTestId(`fixture-sink-${sink.id}`));
+    expect(onPickSink).toHaveBeenCalledTimes(1);
+    expect(onPickSink).toHaveBeenCalledWith(sink.id);
+    expect(onPickFaucet).not.toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it("opens the faucet step only after the sink step, with no sink list", () => {
+    const { onPickSink, onPickFaucet } = renderPopup({ step: "faucet" });
+    expect(screen.getByText("Pick your faucet")).toBeTruthy();
+    expect(screen.getByTestId("fixture-faucet-grid")).toBeTruthy();
+    expect(screen.queryByTestId("fixture-sink-grid")).toBeNull();
+    fireEvent.click(screen.getByTestId(`fixture-faucet-${faucet.id}`));
+    expect(onPickFaucet).toHaveBeenCalledWith(faucet.id);
+    expect(onPickSink).not.toHaveBeenCalled();
+  });
+
+  it("Skip for now ends the flow without picking", () => {
+    const { onPickSink, onPickFaucet, onDismiss } = renderPopup();
     fireEvent.click(screen.getByTestId("fixture-pick-skip"));
     expect(onDismiss).toHaveBeenCalledTimes(1);
-    expect(onSave).not.toHaveBeenCalled();
+    expect(onPickSink).not.toHaveBeenCalled();
+    expect(onPickFaucet).not.toHaveBeenCalled();
   });
 
-  it("calls onSave with the picked sink and faucet ids", () => {
-    const { onSave } = renderPopup();
-    fireEvent.click(screen.getByTestId(`fixture-sink-${sink.id}`));
-    fireEvent.click(screen.getByTestId(`fixture-faucet-${faucet.id}`));
-    fireEvent.click(screen.getByTestId("fixture-pick-save"));
-    expect(onSave).toHaveBeenCalledTimes(1);
-    expect(onSave).toHaveBeenCalledWith({ sinkId: sink.id, faucetId: faucet.id });
-  });
-
-  it("disables Save when nothing is picked", () => {
-    renderPopup();
-    const save = screen.getByTestId("fixture-pick-save") as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+  it("Skip for now on the faucet step does not pick a faucet", () => {
+    const { onPickFaucet, onDismiss } = renderPopup({ step: "faucet" });
+    fireEvent.click(screen.getByTestId("fixture-pick-skip"));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onPickFaucet).not.toHaveBeenCalled();
   });
 
   it("shows 'Price unavailable' for a product with a null sellPrice", () => {
@@ -75,37 +93,31 @@ describe("DesignerFixturePickPopup", () => {
     expect(screen.getByText("Price unavailable")).toBeTruthy();
   });
 
-  it("calls onDismiss when Escape is pressed", () => {
-    const { onDismiss } = renderPopup();
+  it("calls onDismiss when Escape is pressed and does not open the next step", () => {
+    const { onDismiss, onPickFaucet } = renderPopup();
     fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
     expect(onDismiss).toHaveBeenCalled();
+    expect(onPickFaucet).not.toHaveBeenCalled();
   });
 });
 
 describe("DesignerFixturePickPopup photo grid", () => {
-  it("shows sinks and faucets as photo tiles, with a placeholder when a photo is missing", () => {
+  it("shows the sink as a photo tile, with a placeholder when a photo is missing", () => {
     renderPopup({
       faucetProducts: [{ ...faucet, imageUrl: "https://example.test/pl-8203.png" }],
     });
-    expect(screen.getByTestId("fixture-sink-grid")).toBeTruthy();
-    expect(screen.getByTestId("fixture-faucet-grid")).toBeTruthy();
-    const faucetTile = screen.getByTestId(`fixture-faucet-${faucet.id}`);
-    expect(faucetTile.querySelector("img")?.getAttribute("src")).toBe("https://example.test/pl-8203.png");
     const sinkTile = screen.getByTestId(`fixture-sink-${sink.id}`);
     expect(sinkTile.querySelector("img")).toBeNull();
     expect(sinkTile.querySelector('[data-testid="product-photo-placeholder"]')).toBeTruthy();
     expect(sinkTile.textContent).toContain(sink.name);
   });
 
-  it("toggles the selected tile and keeps Save wired to the same ids", () => {
-    const { onSave } = renderPopup();
-    const tile = screen.getByTestId(`fixture-sink-${sink.id}`);
-    fireEvent.click(tile);
-    expect(tile.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(tile);
-    expect(tile.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(tile);
-    fireEvent.click(screen.getByTestId("fixture-pick-save"));
-    expect(onSave).toHaveBeenCalledWith({ sinkId: sink.id, faucetId: null });
+  it("shows the faucet photo on the faucet step", () => {
+    renderPopup({
+      step: "faucet",
+      faucetProducts: [{ ...faucet, imageUrl: "https://example.test/pl-8203.png" }],
+    });
+    const faucetTile = screen.getByTestId(`fixture-faucet-${faucet.id}`);
+    expect(faucetTile.querySelector("img")?.getAttribute("src")).toBe("https://example.test/pl-8203.png");
   });
 });

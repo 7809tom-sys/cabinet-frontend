@@ -4242,6 +4242,14 @@ describe("sink base + sink fixture handling (Design Tool fixes)", () => {
     expect(isFarmSinkBasePaletteItem(farmSink)).toBe(true);
     expect(isFarmSinkBasePaletteItem({ masterCode: "SB-36", description: "Sink Base 36" })).toBe(false);
     expect(isFarmSinkBasePaletteItem({ masterCode: "LSB36", description: "Base Easy Reach Lazy Susan" })).toBe(false);
+    // A restored Natura Maple / Ashford row may not carry every farm flag.
+    // The code prefix, the name, or the catalog category is enough on its own.
+    expect(isFarmSinkBasePaletteItem({ masterCode: "FSB 36", description: "Sink Base", subCategory: "Sink Base", category: "Base" })).toBe(true);
+    expect(isFarmSinkBasePaletteItem({ masterCode: "ADA-FSB-36", description: "Sink Base" })).toBe(true);
+    expect(isFarmSinkBasePaletteItem({ masterCode: "SB36", description: "36\" Sink Base", category: "Farm Sink Base" })).toBe(true);
+    expect(isFarmSinkBasePaletteItem({ masterCode: "SB36", description: "Sink Base", subCategory: "Farm Sink Base" })).toBe(true);
+    expect(isFarmSinkBasePaletteItem({ masterCode: "SB36", name: "Farm Sink Base", description: "Base cabinet", subCategory: "Sink Base" })).toBe(true);
+    expect(isFarmSinkBasePaletteItem({ displayMasterCode: "FSB36", masterCode: "CAB-100", description: "Sink Base", subCategory: "Sink Base" })).toBe(true);
 
     expect(paletteActiveWallPlacement("top", ROOM_12x10, [], [], 36, 24, "base"))
       .toMatchObject({ x: 0, y: 0, rotation: 0 });
