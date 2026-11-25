@@ -74,19 +74,18 @@ const apronSink = { id: 9101, pelicanCode: "PL-HA135 R0", name: "PL-HA135 R0 Far
 const kitchenFaucet = { id: 9202, pelicanCode: "PL-8237 BN", name: "PL-8237 BN Fountain Series Kitchen Faucet", category: "Sinks & Faucets", subCategory: "Faucets", size: null, imageUrl: null, sellPrice: 28900, slug: "pl-8237-bn" };
 
 describe("a farmhouse sink base takes the regular sink-base path", () => {
-  it("opens the same Sink / Range Top chooser a regular sink base opens", () => {
-    // Placing an FSB used to close the dialog and defer to a side-panel guide.
+  it("asks What goes on top first, then filters the sink list for a farm base", () => {
     expect(source).not.toContain("Farm Sink Base added. Choose a verified apron-front sink from the Sink Selection Guide in the side panel.");
     const placementBranch = source.slice(
       source.indexOf("if (isSinkBaseCabinet(finalCab)) {"),
       source.indexOf("if (isFloatingShelfItem(finalCab)) {"),
     );
-    // One branch, one chooser, for every sink base.
-    expect(placementBranch).toContain("setSinkBaseDialog({ cabinetUid: finalCab.uid });");
-    expect(placementBranch).toContain("setRangeTopStep(\"choose\");");
+    expect(placementBranch).toContain("sinkBasePlacementDialog({");
+    expect(placementBranch).toContain("placementDialog === \"what-goes-on-top\"");
+    expect(placementBranch).not.toContain("placementDialog === \"fixture-pick\"");
+    expect(placementBranch).not.toContain("setFixturePickOpen(true)");
     expect(placementBranch).not.toContain("} else if (isFarmSinkBasePaletteItem(finalCab)) {");
-    // It still says what kind of base it is, so the copy is honest.
-    expect(placementBranch).toContain("is a farmhouse / apron-front sink base. Choose its apron-front sink, then its faucet.");
+    expect(source).toContain("sinksFittingExistingBase(autoDesignSinkProducts, base)");
   });
 
   it("is recognised as a sink base by the bathroom path", () => {

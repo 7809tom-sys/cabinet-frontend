@@ -5,6 +5,7 @@ import {
   autoDesignSinkProductsPresent,
   catalogSinkInstallation,
   isAutoDesignSinkProduct,
+  sinksFittingExistingBase,
   planAutoDesignSinkPlacement,
   resolveAutoDesignSinkBase,
   sinkBaseForProduct,
@@ -66,6 +67,59 @@ describe("the auto-designer sink list", () => {
     expect(products).not.toContain("PL-8237 BN");
     expect(products.some((code) => /Deck Plate/.test(code))).toBe(false);
     expect(products).not.toContain("PL-R1917W");
+  });
+});
+
+describe("the faucet and sink popup list", () => {
+  const products = sinkRows
+    .filter((row) => isAutoDesignSinkProduct({
+      id: row.id,
+      pelicanCode: row.pelicanCode,
+      name: row.name,
+      description: row.description ?? null,
+      subCategory: row.subCategory,
+    }))
+    .map((row) => ({
+      id: row.id,
+      pelicanCode: row.pelicanCode,
+      name: row.name,
+      description: row.description ?? null,
+      subCategory: row.subCategory,
+      size: row.size ?? null,
+      imageUrl: row.imageUrl ?? null,
+      sellPrice: row.sellPrice ?? null,
+    }));
+
+  it("shows only apron-front sinks on a farm sink base", () => {
+    const shown = sinksFittingExistingBase(products, farmBase(36));
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.every((row) => catalogSinkInstallation(row) === "farmhouse")).toBe(true);
+    expect(shown.map((row) => row.pelicanCode)).toContain("PL-GMB135 R0 16g");
+    expect(shown.map((row) => row.pelicanCode)).not.toContain("PL-HA104 R0 16g");
+  });
+
+  it("shows no apron-front sinks on a regular sink base", () => {
+    const shown = sinksFittingExistingBase(products, sinkBase(36));
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.every((row) => {
+      const kind = catalogSinkInstallation(row);
+      return kind === "undermount" || kind === "drop-in";
+    })).toBe(true);
+    expect(shown.map((row) => row.pelicanCode)).toContain("PL-HA104 R0 16g");
+    expect(shown.map((row) => row.pelicanCode)).not.toContain("PL-GMB135 R0 16g");
+  });
+
+  it("reads farm or apron from the catalog text when a sink has no verified profile", () => {
+    const fireclay = {
+      id: 99001,
+      pelicanCode: "PL-FC3318SB White",
+      name: "PL-FC3318SB White",
+      description: "33 inch Farmhouse Apron-Front fireclay sink",
+      subCategory: "Sinks",
+    };
+    expect(catalogSinkInstallation(fireclay)).toBe("farmhouse");
+    expect(sinksFittingExistingBase([fireclay, product("PL-HA104 R0 16g")], farmBase(36)).map((row) => row.pelicanCode)).toEqual(["PL-FC3318SB White"]);
+    expect(sinksFittingExistingBase([fireclay], sinkBase(36))).toEqual([]);
   });
 });
 

@@ -38,6 +38,7 @@ import { designOpenPath } from "@/lib/designOwnerScope";
 import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
+import { filterDistributorProspects } from "@/lib/crmDistributorFilter";
 import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
@@ -64,6 +65,9 @@ export { CustomerActivityLine };
 type CustomerSummary = { text: string; href: string; customerKey: string };
 
 type Lang = CrmLanguage;
+
+/** Column header overrides used only while the Distributors view is open. */
+export const DISTRIBUTORS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Distributor" };
 const L = (lang: Lang) => ({
   title: lang === "es" ? "CRM de ventas" : "Sales CRM",
   subtitle: lang === "es"
@@ -187,7 +191,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach">("board");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors">("board");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
@@ -222,7 +226,14 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     due: dueFilter,
     affiliate: masterAffiliateFilter === "house" ? "house" : "all",
   }), [search, stageFilter, priorityFilter, dueFilter, masterAffiliateFilter]);
-  const viewDeals = useMemo(() => filterMondayDeals(filteredDeals, mondayFilters), [filteredDeals, mondayFilters]);
+  const mondayDeals = useMemo(() => filterMondayDeals(filteredDeals, mondayFilters), [filteredDeals, mondayFilters]);
+  // Distributors view (master only): same filters, narrowed to distributor prospects.
+  const distributorDeals = useMemo(() => filterDistributorProspects(mondayDeals), [mondayDeals]);
+  const distributorsViewOpen = crmView === "distributors" && (data as any)?.isMasterView === true;
+  const viewDeals = distributorsViewOpen ? distributorDeals : mondayDeals;
+  // Display-only: in the Distributors view the "new" stage column reads "Distributor".
+  // The stage value stays "new", and the main Board keeps "New".
+  const stageLabelOverrides: Partial<Record<CrmStage, string>> | undefined = distributorsViewOpen ? DISTRIBUTORS_VIEW_STAGE_LABELS : undefined;
   const affiliateNames = (data as any)?.affiliateNames as Record<number, string> | undefined;
   const affiliateBranding = (data as any)?.affiliateBranding as Record<number, CrmAffiliateBrand> | undefined;
   const isMasterView = (data as any)?.isMasterView === true;
@@ -328,7 +339,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
+        {(isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
           <OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />
         ) : (
           <button
@@ -337,7 +348,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : "Outreach"}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : `Distributors (${distributorDeals.length})`}
           </button>
         ))}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
@@ -345,7 +356,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
           <SelectTrigger className="h-9 w-[140px] bg-white" aria-label="Filter by stage"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All stages</SelectItem>
-            {CRM_STAGES.map((stage) => <SelectItem key={stage} value={stage}>{CRM_STAGE_LABELS[stage][lang]}</SelectItem>)}
+            {CRM_STAGES.map((stage) => <SelectItem key={stage} value={stage}>{stageLabelOverrides?.[stage] ?? CRM_STAGE_LABELS[stage][lang]}</SelectItem>)}
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value as typeof priorityFilter)}>
@@ -423,6 +434,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         <CrmStageBoard
           deals={viewDeals}
           lang={lang}
+          stageLabels={stageLabelOverrides}
           onMove={(id, stage) => move.mutate({ id, stage })}
           onQuickAdd={(stage, title) => quickAdd.mutate({ title, stage, affiliateId: affiliateId ?? masterAffiliateId })}
           renderCard={(deal) => (

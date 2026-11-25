@@ -44,6 +44,40 @@ describe("web app manifest and install icons", () => {
   });
 });
 
+describe("affiliate storefront home-screen install", () => {
+  it("keeps the platform manifest static and named CabinetDealz for the main site", () => {
+    const manifest = JSON.parse(read("client/public/manifest.json"));
+    expect(manifest.name).toBe("CabinetDealz");
+    expect(manifest.short_name).toBe("CabinetDealz");
+    expect(manifest.start_url).toBe("/");
+    expect(manifest.scope).toBe("/");
+  });
+
+  it("routes each storefront's manifest and icons to the backend, including from a store subdomain", () => {
+    const vercel = JSON.parse(read("vercel.json")) as {
+      redirects: Array<{ source: string; destination: string; has?: unknown[] }>;
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    // /store/:slug/manifest.webmanifest and /store/:slug/app-icon-*.png reach
+    // the backend, which serves them before the HTML shell.
+    const storeRewrite = vercel.rewrites.find((rule) => rule.source === "/store/:path*");
+    expect(storeRewrite?.destination).toMatch(/\/_shell\/store\/:path\*$/);
+    const storeIndex = vercel.rewrites.indexOf(storeRewrite!);
+    const spaIndex = vercel.rewrites.findIndex((rule) => rule.destination === "/index.html");
+    expect(storeIndex).toBeLessThan(spaIndex);
+
+    // A subdomain visit lands on /store/:slug, inside the manifest scope, and
+    // /store/... requests on the subdomain are never redirected again.
+    const subdomainRules = vercel.redirects.filter((rule) => Array.isArray(rule.has));
+    expect(subdomainRules.find((rule) => rule.source === "/")?.destination).toBe("/store/:slug");
+    const pathRule = subdomainRules.find((rule) => rule.source.startsWith("/:path("));
+    const pathPattern = new RegExp(`^/${pathRule!.source.slice("/:path(".length, -")".length)}$`);
+    expect(pathPattern.test("/store/reaves/manifest.webmanifest")).toBe(false);
+    expect(pathPattern.test("/store/reaves/app-icon-192.png")).toBe(false);
+    expect(pathPattern.test("/design")).toBe(true);
+  });
+});
+
 describe("sticky header safe-area padding", () => {
   it("applies max() safe-area insets on the site header, menu, and page footers", () => {
     const css = read("client/src/components/TopNav.css");

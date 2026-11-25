@@ -64,6 +64,59 @@ function hasChosenProductId(id: number | null | undefined): boolean {
  * asked once. A base that already has a catalog sink, faucet, or cooktop
  * product is not asked again, so reloading a saved room does not reopen it.
  */
+/**
+ * Which chooser a newly placed sink base opens.
+ *
+ * Every sink base, farm or regular, starts at "What goes on top?". The sink
+ * list and the faucet list open only after the shopper picks Sink. Closing
+ * any step ends the flow, so a dismissed picker never reveals this chooser.
+ */
+export function sinkBasePlacementDialog(input: {
+  farmSinkBase: boolean;
+  promptFixturePick: boolean;
+  explicitSinkProduct: boolean;
+}): "what-goes-on-top" | "none" {
+  if (input.explicitSinkProduct || !input.promptFixturePick) return "none";
+  // Farm and regular bases share this first step. The farm flag only filters
+  // the sink list after the shopper picks Sink.
+  return input.farmSinkBase || !input.farmSinkBase ? "what-goes-on-top" : "none";
+}
+
+export type SinkBaseFlowStep = "what-goes-on-top" | "pick-sink" | "pick-faucet" | "range-top" | "none";
+
+/**
+ * The single next popup. A click outside, the X, or Skip is `dismiss` and
+ * ends the flow from every step.
+ */
+export function nextSinkBasePopup(input: {
+  from: "placement" | "what-goes-on-top" | "pick-sink" | "pick-faucet" | "range-top";
+  action: "open" | "sink" | "range-top" | "pick-sink" | "pick-faucet" | "dismiss";
+}): SinkBaseFlowStep {
+  if (input.action === "dismiss") return "none";
+  if (input.from === "placement" && input.action === "open") return "what-goes-on-top";
+  if (input.from === "what-goes-on-top" && input.action === "sink") return "pick-sink";
+  if (input.from === "what-goes-on-top" && input.action === "range-top") return "range-top";
+  if (input.from === "pick-sink" && input.action === "pick-sink") return "pick-faucet";
+  if (input.from === "pick-faucet" && input.action === "pick-faucet") return "none";
+  return "none";
+}
+
+/** Closing the sink picker or the faucet picker ends the flow. Nothing follows. */
+export function dialogAfterFixturePick(): null {
+  return null;
+}
+
+/**
+ * On a phone, the selected-cabinet sheet must not cover What goes on top,
+ * Pick your sink, or Pick your faucet. Other sheets are unchanged.
+ */
+export function sinkFlowCoversSelectedCabinetSheet(input: {
+  fixturePickOpen: boolean;
+  sinkBaseDialogOpen: boolean;
+}): boolean {
+  return input.fixturePickOpen || input.sinkBaseDialogOpen;
+}
+
 export function shouldPromptFixturePick(input: {
   cabinet: FixturePickCabinet;
   existingSink?: FixturePickSink | null;
