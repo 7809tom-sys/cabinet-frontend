@@ -55,6 +55,7 @@ import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/Cr
 import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
 import { CustomerListImportAdminDialog } from "@/components/crm/outreach/CustomerListImportAdminDialog";
 import { OutreachPanel } from "@/components/crm/outreach/OutreachPanel";
+import { OutreachViewButton } from "@/components/crm/outreach/OutreachExplainer";
 import { CustomerActivityLine } from "@/components/crm/CustomerActivityLine";
 
 // Kept as a re-export so existing imports from CrmBoard keep working.
@@ -327,7 +328,9 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)).map((view) => (
+        {(isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
+          <OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />
+        ) : (
           <button
             key={view}
             type="button"
