@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { ShippingQuoteBox } from "@/components/shipping/ShippingQuoteBox";
 import { FlooringCartonFacts } from "@/components/design/FlooringCartonFacts";
 import { pelicanSinkCatalogDescription, pelicanSinkCatalogFactLine, pelicanSinkCatalogName } from "@/lib/pelicanSinkCatalogDescriptions";
+import { PelicanCadDownloads } from "@/components/pelican/PelicanCadDownloads";
 
 export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string; affiliateSlug?: string }) {
   const [, navigate] = useLocation();
@@ -305,6 +306,7 @@ export default function SurfacesProduct({ slug, affiliateSlug }: { slug: string;
             <div>Item code: {data.pelicanCode}</div>
             {displayName !== data.name && <div>Source name: {data.name}</div>}
           </div>
+          <PelicanCadDownloads pelicanCode={data.pelicanCode} />
         </div>
       </div>
 

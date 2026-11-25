@@ -86,6 +86,7 @@ const AffiliateSetup = lazy(() => import("@/pages/AffiliateSetup"));
 const Account = lazy(() => import("@/pages/Account"));
 const StoreAccount = lazy(() => import("@/pages/StoreAccount"));
 const CustomerFeaturePreview = lazy(() => import("@/pages/CustomerFeaturePreview"));
+const PelicanCadPreview = lazy(() => import("@/pages/PelicanCadPreview"));
 const PlanSheet = lazy(() => import("@/pages/PlanSheet"));
 const FeeSystemDoc = lazy(() => import("@/pages/FeeSystemDoc"));
 const Surfaces = lazy(() => import("@/pages/Surfaces"));
@@ -489,6 +490,13 @@ export default function App() {
           <Route path="/dev/customer-preview">
             <Suspense fallback={<PageLoader />}>
               <CustomerFeaturePreview />
+            </Suspense>
+          </Route>
+        )}
+        {import.meta.env.DEV && (
+          <Route path="/dev/pelican-cad">
+            <Suspense fallback={<PageLoader />}>
+              <PelicanCadPreview />
             </Suspense>
           </Route>
         )}
