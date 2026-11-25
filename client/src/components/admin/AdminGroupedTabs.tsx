@@ -94,7 +94,7 @@ import PendingReviewAdmin from "@/components/admin/PendingReviewAdmin";
 import PendingDistributorConnectionsAdmin from "@/components/admin/PendingDistributorConnectionsAdmin";
 import GenericCabinetsAdmin from "@/components/admin/GenericCabinetsAdmin";
 import { BulkDimensionsAdmin } from "@/components/admin/BulkDimensionsAdmin";
-import { countertopQuoteStyleDetails, formatQuoteDateCT } from "@/components/admin/countertopQuoteDisplay";
+import { CORIAN_SHEET_LENGTH_IN, CORIAN_SHEET_SQ_FT, CORIAN_SHEET_WIDTH_IN, countertopQuoteSlabsNeeded, countertopQuoteStyleDetails, formatQuoteDateCT } from "@/components/admin/countertopQuoteDisplay";
 import BundleDealsAdmin from "@/components/admin/BundleDealsAdmin";
 import PriceShop10x10 from "@/pages/PriceShop10x10";
 import MediaLibraryAdmin from "@/components/admin/MediaLibraryAdmin";
@@ -382,6 +382,7 @@ function CountertopQuotes() {
               </div>
               <div className="text-sm text-muted-foreground">
                 {Number(q.squareFeet).toFixed(1)} sq ft · {Number(q.linearFeet).toFixed(1)} lin ft
+                {" · "}<span data-testid={`countertop-quote-slabs-${q.id}`} title={`Corian sheets are ${CORIAN_SHEET_WIDTH_IN}" x ${CORIAN_SHEET_LENGTH_IN}" (${CORIAN_SHEET_SQ_FT} sq ft), sold whole: sq ft ÷ ${CORIAN_SHEET_SQ_FT}, rounded up`}>Slabs needed: {countertopQuoteSlabsNeeded(q.squareFeet) ?? "—"}</span>
                 {q.hasIsland ? " · island" : ""}
                 {q.zip ? ` · ZIP ${q.zip}` : ""}
               </div>
