@@ -19,8 +19,12 @@ export type ApronNotchSink = {
   width: number;
   depth: number;
   wallSide?: string | null;
+  /** Bowl size along the sink's width, before a left/right plan swap. */
+  bowlWidth?: number | null;
   /** Bowl size along the sink's depth, before a left/right plan swap. */
   bowlDepth?: number | null;
+  /** Sink width before a left/right plan swap. */
+  sourceWidth?: number | null;
   /** Sink depth before a left/right plan swap. The into-the-room span. */
   sourceDepth?: number | null;
 };
@@ -42,6 +46,8 @@ export type ApronNotchSurface = {
 type Rect = { x: number; y: number; width: number; depth: number };
 
 const EPS = 1e-4;
+/** How far the counter crosses the bowl edge on the left, right, and back. */
+export const FARM_COUNTER_REVEAL_IN = 0.75;
 /** A standard base counter overhangs the 24" box by 1.5". */
 const STANDARD_FRONT_OVERHANG_IN = 1.5;
 /**
@@ -63,6 +69,33 @@ export function apronFrontRimDepthIn(sink: ApronNotchSink): number {
   const bowl = sink.bowlDepth ?? Math.max(0, sourceDepth - 3);
   const bowlIntoRoom = Math.min(intoRoom, Math.max(0, bowl));
   return Math.max(0, (intoRoom - bowlIntoRoom) / 2);
+}
+
+/**
+ * The hole cut in the slab over an apron sink. It is smaller than the sink on
+ * the left, the right, and the back. The front is the apron notch, not a lip.
+ */
+export function farmCounterOpening(sink: ApronNotchSink): {
+  holeLateralIn: number;
+  holeIntoRoomIn: number;
+  sideOverlapIn: number;
+  backOverlapIn: number;
+} | null {
+  if (!isApronFrontSink(sink)) return null;
+  const side = sink.wallSide ?? "top";
+  const lateral = side === "left" || side === "right" ? sink.depth : sink.width;
+  const intoRoom = side === "left" || side === "right" ? sink.width : sink.depth;
+  const sourceLateral = sink.sourceWidth ?? lateral;
+  const sourceInto = sink.sourceDepth ?? intoRoom;
+  const bowlLateral = Math.min(lateral, Math.max(0, sink.bowlWidth ?? sourceLateral - 3));
+  const bowlInto = Math.min(intoRoom, Math.max(0, sink.bowlDepth ?? sourceInto - 3));
+  const reveal = FARM_COUNTER_REVEAL_IN;
+  return {
+    holeLateralIn: Math.max(0, bowlLateral - reveal * 2),
+    holeIntoRoomIn: Math.max(0, bowlInto - reveal),
+    sideOverlapIn: (lateral - bowlLateral) / 2 + reveal,
+    backOverlapIn: (intoRoom - bowlInto) / 2 + reveal,
+  };
 }
 
 function notchPastFrontIn(): number {

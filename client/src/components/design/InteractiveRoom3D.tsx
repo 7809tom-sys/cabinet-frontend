@@ -63,7 +63,7 @@ export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout, FARMHOUSE_SINK_APRON_PROUD_IN } from "@/lib/farmhouseSinkBaseFace";
-import { applyApronFrontCountertopNotches, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
+import { applyApronFrontCountertopNotches, FARM_COUNTER_REVEAL_IN, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShellVertices, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
@@ -11266,6 +11266,9 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   const openingMaxX = Math.min(outerMaxX - 0.018, openingBounds.maxX);
   const openingMinZ = Math.max(outerMinZ + 0.018, openingBounds.minZ);
   const openingMaxZ = Math.min(outerMaxZ - 0.018, openingBounds.maxZ);
+  const farmSink = isApronFrontSink(sink);
+  // A farm sink lives under the slab. Its walls stop at the underside, not the top.
+  const sinkBodyTopY = farmSink ? farmhouseUndermountTopY(countertopTop) : countertopTop;
   const rimHeight = 0.045;
   const rimSegments = [
     { side: "back", width, depth: openingMinZ - outerMinZ, x: 0, z: (outerMinZ + openingMinZ) / 2 },
@@ -11288,7 +11291,6 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
           : "front";
     // The apron is the front of a farm sink. A rim bar here sits on the apron
     // and reads as a gray strip past the sink sides, so it is not drawn.
-    const farmSink = isApronFrontSink(sink);
     if (farmSink && segment.side === roomFacingRimSide) return;
     const rimCenterY = farmSink
       ? farmhouseUndermountTopY(countertopTop) - rimHeight / 2
@@ -11302,10 +11304,29 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, undermountedFarmhouseRim: farmSink, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
     addFixtureNode(rimSegment);
   });
-  const openingWidth = Math.max(0.04, openingMaxX - openingMinX);
-  const openingDepth = Math.max(0.04, openingMaxZ - openingMinZ);
-  const openingCenterX = centerX + (openingMinX + openingMaxX) / 2;
-  const openingCenterZ = centerZ + (openingMinZ + openingMaxZ) / 2;
+  const reveal = farmSink ? FARM_COUNTER_REVEAL_IN * INCH : 0;
+  const wallSide = sink.wallSide ?? "top";
+  let cutMinX = openingMinX;
+  let cutMaxX = openingMaxX;
+  let cutMinZ = openingMinZ;
+  let cutMaxZ = openingMaxZ;
+  if (reveal > 0) {
+    if (wallSide === "left" || wallSide === "right") {
+      cutMinZ += reveal;
+      cutMaxZ -= reveal;
+      if (wallSide === "left") cutMinX += reveal;
+      else cutMaxX -= reveal;
+    } else {
+      cutMinX += reveal;
+      cutMaxX -= reveal;
+      if (wallSide === "bottom") cutMaxZ -= reveal;
+      else cutMinZ += reveal;
+    }
+  }
+  const openingWidth = Math.max(0.04, cutMaxX - cutMinX);
+  const openingDepth = Math.max(0.04, cutMaxZ - cutMinZ);
+  const openingCenterX = centerX + (cutMinX + cutMaxX) / 2;
+  const openingCenterZ = centerZ + (cutMinZ + cutMaxZ) / 2;
   const cutoutMaskMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthTest: false, depthWrite: false });
   cutoutMaskMaterial.stencilWrite = true;
   cutoutMaskMaterial.stencilRef = sinkStencilRef;
@@ -11313,8 +11334,10 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   cutoutMaskMaterial.stencilFail = THREE.ReplaceStencilOp;
   cutoutMaskMaterial.stencilZFail = THREE.ReplaceStencilOp;
   cutoutMaskMaterial.stencilZPass = THREE.ReplaceStencilOp;
-  // The countertop opening has to match the bowl: an elliptical basin under a
-  // rectangular hole shows four slivers of the counter's underside.
+  // A farm opening is smaller than the bowl on the left, the right, and the
+  // back, so the slab covers that rim. The front stays open for the apron.
+  // An elliptical basin under a rectangular hole shows four slivers of the
+  // counter's underside, so a vanity oval keeps the opening the bowl shape.
   const openingIsElliptical = sink.bathroomVanitySink === true && (sink.bowlShape === "oval" || sink.bowlShape === "circle");
   const openingShadow = new THREE.Mesh(
     openingIsElliptical
@@ -11363,7 +11386,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       ? ellipticalSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, 72)
       : recessedSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, bowlRadius);
     const bowl = new THREE.Mesh(bowlGeometry, basinInterior);
-    bowl.position.set(bowlX, countertopTop, bowlZ);
+    bowl.position.set(bowlX, sinkBodyTopY, bowlZ);
     bowl.renderOrder = 20;
     bowl.userData = { sinkBowl: true, recessedSinkBowl: true, openSinkBowl: true, visibleInteriorDepth: true, bowlDepthIn: bowlHeightForIndex / INCH, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId, sinkBowlIndex: bowlIndex + 1 };
     addFixtureNode(bowl);
@@ -11375,7 +11398,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       new RoundedBoxGeometry(floorInset.bottomWidth, 0.025, floorInset.bottomDepth, 4, Math.min(0.08, floorInset.bottomWidth * 0.07, floorInset.bottomDepth * 0.07)),
       bowlFloorMaterial,
     );
-    bowlFloor.position.set(bowlX, countertopTop - bowlHeightForIndex + 0.014, bowlZ);
+    bowlFloor.position.set(bowlX, sinkBodyTopY - bowlHeightForIndex + 0.014, bowlZ);
     bowlFloor.renderOrder = 21;
     bowlFloor.userData = { sinkBowlFloor: true, visibleSinkBowlBottom: true, recessedDepthIn: bowlHeightForIndex / INCH, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId, sinkBowlIndex: bowlIndex + 1 };
     addFixtureNode(bowlFloor);
@@ -11386,7 +11409,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     drainMaterial.roughness = 0.34;
     const drain = new THREE.Mesh(new THREE.CylinderGeometry(drainRadius * 0.82, drainRadius * 0.82, 0.022, 32), drainMaterial);
     const drainPosition = documentedDrainPosition(bowlX, bowlZ, sourceBowlWidthForIndex, sourceBowlDepthForIndex);
-    drain.position.set(drainPosition.x, countertopTop - bowlHeightForIndex + 0.03, drainPosition.z);
+    drain.position.set(drainPosition.x, sinkBodyTopY - bowlHeightForIndex + 0.03, drainPosition.z);
     drain.renderOrder = 22;
     drain.userData = { sinkDrain: true, drainAtBowlBottom: true, fixtureDetail: true, sinkBowlIndex: bowlIndex + 1, documentedDrainInset: hasMeasuredDrainInset };
     addFixtureNode(drain);
@@ -11459,7 +11482,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     );
     divider.position.set(
       centerX + (lateralIsX ? (asymmetricLayout?.dividerOffset ?? 0) : 0),
-      countertopTop - 0.11,
+      sinkBodyTopY - 0.11,
       centerZ + (lateralIsX ? 0 : (asymmetricLayout?.dividerOffset ?? 0)),
     );
     divider.renderOrder = 22;

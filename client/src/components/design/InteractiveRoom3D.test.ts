@@ -6403,6 +6403,28 @@ describe("interactive 3D room scene helpers", () => {
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
   });
 
+  function expectFarmOpeningUnderTheSlab(root: THREE.Object3D, sink: { x: number; y: number; width: number; depth: number }) {
+    let mask: THREE.Object3D | null = null;
+    const rimTops: number[] = [];
+    root.traverse((node) => {
+      if (node.userData.sinkCountertopCutoutMask) mask = node;
+      if (node.userData.sinkRim) rimTops.push(new THREE.Box3().setFromObject(node).max.y);
+    });
+    const placed = sinkFixtureTransform(sink as never);
+    const underside = placed.countertopTop - STD.COUNTERTOP_THICKNESS / 12;
+    for (const top of rimTops) expect(top).toBeLessThanOrEqual(underside + 1e-4);
+    expect(mask).not.toBeNull();
+    const opening = new THREE.Box3().setFromObject(mask!);
+    const halfW = (sink.width / 2) / 12;
+    const halfD = (sink.depth / 2) / 12;
+    const minOverlap = 0.5 / 12;
+    expect(opening.min.x).toBeGreaterThanOrEqual(placed.x - halfW + minOverlap);
+    expect(opening.max.x).toBeLessThanOrEqual(placed.x + halfW - minOverlap);
+    expect(opening.min.z).toBeGreaterThanOrEqual(placed.z - halfD + minOverlap);
+    expect((opening.max.x - opening.min.x) * 12).toBeLessThan(sink.width);
+    expect((opening.max.z - opening.min.z) * 12).toBeLessThan(sink.depth);
+  }
+
   it("renders PL-GMB135 R0 as a countertop-seated gunmetal retrofit farmhouse sink with measured exterior and bowl geometry", () => {
     const root = new THREE.Group();
     const sink = {
@@ -6424,6 +6446,13 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(32.5, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(17.25, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(9.125, 5);
+    const countertopTop = sinkFixtureTransform(sink).countertopTop;
+    const underside = countertopTop - STD.COUNTERTOP_THICKNESS / 12;
+    expect(bowlBounds.max.y).toBeLessThanOrEqual(underside + 1e-4);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(countertopTop), 5);
+    const apronBounds = new THREE.Box3().setFromObject(apron!);
+    expect(apronBounds.max.y).toBeLessThanOrEqual(underside + 1e-4);
+    expectFarmOpeningUnderTheSlab(root, sink);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
   });
 
@@ -6448,7 +6477,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(29.125, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(16.125, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(9.25, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
   });
 
@@ -6476,7 +6505,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(34.5625, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(18.5625, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(9, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
   });
 
@@ -6504,7 +6533,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(31, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(16, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(9.75, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     expect(drains[0].userData.documentedDrainInset).toBe(true);
     expect((drains[0].position.x - bowl!.position.x) * 12).toBeCloseTo(0, 5);
@@ -6557,7 +6586,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(34, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(16, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(9.75, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     expect(drains[0].userData.documentedDrainInset).toBe(true);
     expect((drains[0].position.x - bowl!.position.x) * 12).toBeCloseTo(0, 5);
@@ -6611,7 +6640,7 @@ describe("interactive 3D room scene helpers", () => {
       expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(15.375, 5);
       expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(16.5, 5);
       expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(9.25, 5);
-      expect(bounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+      expect(bounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     }
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
   });
@@ -6644,7 +6673,7 @@ describe("interactive 3D room scene helpers", () => {
       expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(14.5, 6);
       expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(16, 6);
       expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(10, 6);
-      expect(bounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+      expect(bounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
       expect(drains[index].userData.documentedDrainInset).toBe(true);
       expect((drains[index].position.x - bowl.position.x) * 12).toBeCloseTo(0, 5);
       expect((drains[index].position.z - bowl.position.z) * 12).toBeCloseTo(-(8 - 120 / 25.4), 5);
@@ -6701,7 +6730,7 @@ describe("interactive 3D room scene helpers", () => {
       expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(expectedWidth, 5);
       expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(16, 5);
       expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(10, 5);
-      expect(bounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+      expect(bounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     }
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     for (const [index, drain] of drains.entries()) {
@@ -6758,7 +6787,7 @@ describe("interactive 3D room scene helpers", () => {
       expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(expectedWidth, 5);
       expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(16, 5);
       expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(10, 5);
-      expect(bounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+      expect(bounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     }
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     for (const [index, drain] of drains.entries()) {
@@ -6815,7 +6844,7 @@ describe("interactive 3D room scene helpers", () => {
       expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(expectedWidth, 5);
       expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(16, 5);
       expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(10, 5);
-      expect(bounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+      expect(bounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
       expect(drains[index]?.userData.documentedDrainInset).toBe(true);
       expect((drains[index]!.position.z - bowls[index].position.z) * 12).toBeCloseTo(-(8 - 120 / 25.4), 5);
     }
@@ -7348,7 +7377,7 @@ describe("interactive 3D room scene helpers", () => {
       expect((bounds.max.x - bounds.min.x) * 12).toBeCloseTo(16, 5);
       expect((bounds.max.z - bounds.min.z) * 12).toBeCloseTo(16, 5);
       expect((bounds.max.y - bounds.min.y) * 12).toBeCloseTo(10, 5);
-      expect(bounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+      expect(bounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
       expect(drains[index]?.userData.documentedDrainInset).toBe(true);
       expect((drains[index]!.position.z - bowls[index].position.z) * 12).toBeCloseTo(-(8 - 120 / 25.4), 5);
     }
@@ -7402,7 +7431,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(30, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(16, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(10, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     expect(drain?.userData.documentedDrainInset).toBe(true);
     expect((drain!.position.z - bowl!.position.z) * 12).toBeCloseTo(-(8 - 120 / 25.4), 5);
@@ -7452,7 +7481,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(27, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(16, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(10, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     expect(drain?.userData.documentedDrainInset).toBe(true);
     expect((drain!.position.z - bowl!.position.z) * 12).toBeCloseTo(-(8 - 120 / 25.4), 5);
@@ -7502,7 +7531,7 @@ describe("interactive 3D room scene helpers", () => {
     expect((bowlBounds.max.x - bowlBounds.min.x) * 12).toBeCloseTo(33, 5);
     expect((bowlBounds.max.z - bowlBounds.min.z) * 12).toBeCloseTo(16, 5);
     expect((bowlBounds.max.y - bowlBounds.min.y) * 12).toBeCloseTo(10, 5);
-    expect(bowlBounds.max.y).toBeCloseTo(sinkFixtureTransform(sink).countertopTop, 6);
+    expect(bowlBounds.max.y).toBeCloseTo(farmhouseUndermountTopY(sinkFixtureTransform(sink).countertopTop), 5);
     expect(apron?.position.z).toBeGreaterThan(sinkFixtureTransform(sink).z);
     expect(drain?.userData.documentedDrainInset).toBe(true);
     expect((drain!.position.z - bowl!.position.z) * 12).toBeCloseTo(-(8 - 120 / 25.4), 5);
@@ -7931,6 +7960,11 @@ describe("interactive 3D room scene helpers", () => {
     expect(apron).not.toBeNull();
     const apronBounds = new THREE.Box3().setFromObject(apron!);
     expect(apronBounds.max.y).toBeCloseTo(farmhouseApronTopY(countertopTop), 5);
+    expect(apronBounds.max.y).toBeLessThanOrEqual(countertopTop - STD.COUNTERTOP_THICKNESS / 12 + 1e-4);
+    expectFarmOpeningUnderTheSlab(root, sink);
+    let bowlTop = -Infinity;
+    root.traverse((node) => { if (node.userData.sinkBowl) bowlTop = Math.max(bowlTop, new THREE.Box3().setFromObject(node).max.y); });
+    expect(bowlTop).toBeLessThanOrEqual(countertopTop - STD.COUNTERTOP_THICKNESS / 12 + 1e-4);
     expect(root.children.find((node) => node.userData.sinkRimSide === "front")).toBeUndefined();
     expect((apronBounds.max.x - apronBounds.min.x) * 12).toBeLessThanOrEqual(36.05);
   });
@@ -7949,7 +7983,9 @@ describe("interactive 3D room scene helpers", () => {
     const countertopTop = sinkFixtureTransform(sink).countertopTop;
     const bowlBounds = new THREE.Box3().setFromObject(bowl!);
     const apronBounds = new THREE.Box3().setFromObject(apron!);
-    expect(bowlBounds.max.y).toBeCloseTo(countertopTop, 6);
+    const underside = countertopTop - STD.COUNTERTOP_THICKNESS / 12;
+    expect(bowlBounds.max.y).toBeLessThanOrEqual(underside + 1e-4);
+    expect(apronBounds.max.y).toBeLessThanOrEqual(underside + 1e-4);
     expect(apronBounds.max.y).toBeCloseTo(farmhouseApronTopY(countertopTop), 5);
     expect(apronBounds.max.y).toBeCloseTo(countertopTop - STD.COUNTERTOP_THICKNESS / 12, 5);
     expect(apronBounds.max.y).toBeLessThan(countertopTop - 1 / 12);

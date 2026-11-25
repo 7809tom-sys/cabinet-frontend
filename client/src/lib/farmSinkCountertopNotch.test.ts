@@ -4,6 +4,7 @@ import {
   apronFrontNotchRect,
   apronFrontRemovedArea,
   apronFrontRimDepthIn,
+  farmCounterOpening,
   isApronFrontSink,
   subtractRunIntervals,
   type ApronNotchSurface,
@@ -71,6 +72,13 @@ describe("apron-front countertop notch", () => {
     expect(isApronFrontSink({ type: "farmhouse", x: 0, y: 0, width: 30, depth: 20 })).toBe(true);
     const seeded = { type: "farmhouse" as const, apronFront: undefined, x: 0, y: 0, width: 36, depth: 20, wallSide: "top" as const };
     expect(apronFrontNotchRect(seeded)?.width).toBe(36);
+    const opening = farmCounterOpening(seeded);
+    expect(opening).not.toBeNull();
+    expect(opening!.holeLateralIn).toBeLessThan(seeded.width);
+    expect(opening!.holeIntoRoomIn).toBeLessThan(seeded.depth);
+    expect(opening!.sideOverlapIn).toBeGreaterThanOrEqual(0.5);
+    expect(opening!.sideOverlapIn).toBeLessThanOrEqual(seeded.width / 2);
+    expect(opening!.backOverlapIn).toBeGreaterThanOrEqual(0.5);
     expect(isApronFrontSink({ type: "single", apronFront: false, x: 0, y: 0, width: 30, depth: 18 })).toBe(false);
     expect(rim).toBeCloseTo((21 - 18) / 2, 5);
     const notch = apronFrontNotchRect(farm);
