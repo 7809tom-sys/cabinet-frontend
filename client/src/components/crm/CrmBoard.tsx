@@ -43,6 +43,8 @@ import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
+import { CountertopQuoteInvoicePicker } from "@/components/crm/CountertopQuoteInvoicePicker";
+import { countertopInvoiceErrorMessage, countertopInvoiceGate, type CountertopQuoteInvoiceOption } from "@/lib/countertopInvoiceGate";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
 import { CrmCustomerLookup } from "@/components/crm/CrmCustomerLookup";
@@ -1143,6 +1145,12 @@ function QuickInvoiceDialog({
   const suggestedEmail = suggestedInvoiceEmail(deal.contactEmail, invoiceRecipient);
   const [recipient, setRecipient] = useState(suggestedEmail);
   const [recipientEdited, setRecipientEdited] = useState(false);
+  // Countertop quote billed by the slab; gated on shipping info being on file.
+  const [countertopQuoteId, setCountertopQuoteId] = useState<number | null>(null);
+  const countertopOptions = trpc.crm.countertopQuoteInvoiceOptions.useQuery({ dealId }, { enabled: open, retry: false });
+  const countertopQuotes = (countertopOptions.data?.quotes ?? undefined) as CountertopQuoteInvoiceOption[] | undefined;
+  const countertopGate = countertopInvoiceGate({ quoteId: countertopQuoteId, quotes: countertopQuotes, shippingOnFile: countertopOptions.data?.shippingOnFile });
+  const countertopLine: CrmQuickInvoiceLine | null = countertopGate.ok && countertopGate.line ? countertopGate.line : null;
 
   useEffect(() => {
     const nextHasPricedLinkedPlan = Number(linkedDesigns[0]?.catalogSubtotal ?? 0) > 0;
@@ -1153,6 +1161,7 @@ function QuickInvoiceDialog({
     setSelectedDesignId(linkedDesigns[0] ? String(linkedDesigns[0].id) : "none");
     setNotes("");
     setPreviewLines(null);
+    setCountertopQuoteId(null);
     setRecipientEdited(false);
     setRecipient(suggestedInvoiceEmail(deal.contactEmail, invoiceRecipient));
   }, [deal.id, linkedDesigns.length, linkedDesigns[0]?.id, linkedDesigns[0]?.catalogSubtotal, prefill?.cabinetOrderAmount, prefill?.shippingAmount, prefill?.laborAmount]);
@@ -1176,7 +1185,9 @@ function QuickInvoiceDialog({
     },
     onError: (error) => {
       const message = error.message;
-      if (message === "missing_recipient") toast.error(label("Enter the homeowner email to send this invoice.", "Ingrese el correo del propietario para enviar esta factura."));
+      const countertopMessage = countertopInvoiceErrorMessage(message);
+      if (countertopMessage) { toast.error(countertopMessage); void countertopOptions.refetch(); }
+      else if (message === "missing_recipient") toast.error(label("Enter the homeowner email to send this invoice.", "Ingrese el correo del propietario para enviar esta factura."));
       else if (message === "not_configured" || message === "disabled") toast.error(CRM_EMAIL_BLOCK_MESSAGES[message][lang]);
       else toast.error(message || label("Could not send the invoice email.", "No se pudo enviar el correo de la factura."));
     },
@@ -1224,7 +1235,11 @@ function QuickInvoiceDialog({
 
   function openPreview() {
     const lines = collectLines();
-    if (!lines.length) {
+    if (!countertopGate.ok) {
+      toast.error(countertopGate.message);
+      return;
+    }
+    if (!lines.length && !countertopLine) {
       toast.error(label("Select at least one service and enter a valid amount.", "Seleccione al menos un servicio e ingrese un importe válido."));
       return;
     }
@@ -1232,7 +1247,8 @@ function QuickInvoiceDialog({
   }
 
   function createInvoice() {
-    const lines = previewLines ?? collectLines();
+    if (!countertopGate.ok) { toast.error(countertopGate.message); return; }
+    const lines = [...(previewLines ?? collectLines()), ...(countertopLine ? [countertopLine] : [])];
     if (!lines.length) return;
     const now = new Date();
     const opened = openCrmQuickInvoicePdf({
@@ -1261,13 +1277,16 @@ function QuickInvoiceDialog({
   }
 
   function emailInvoice() {
-    if (!previewLines?.length) return;
+    if (!previewLines || (!previewLines.length && !countertopLine)) return;
+    if (!countertopGate.ok) { toast.error(countertopGate.message); return; }
     sendInvoiceEmail.mutate({
       dealId,
       to: recipient.trim(),
       lines: previewLines,
       linkedDesignId: selectedDesign?.id ?? null,
       notes: notes.trim() || null,
+      // The server rebuilds the slab line from the quote and re-checks shipping.
+      countertopQuoteId: countertopLine ? countertopQuoteId : null,
     });
   }
 
@@ -1289,7 +1308,7 @@ function QuickInvoiceDialog({
     </div>
   );
 
-  const invoiceTotal = crmQuickInvoiceTotal(previewLines ?? []);
+  const invoiceTotal = crmQuickInvoiceTotal([...(previewLines ?? []), ...(countertopLine ? [countertopLine] : [])]);
   const formatMoney = (amount: number) => amount.toLocaleString(undefined, { style: "currency", currency: "USD" });
   const deliveryBlocked = emailReadyQuery.isFetched && !emailReadyQuery.isError && !(emailReadiness?.configured && emailReadiness.enabled);
   const sourceLabel = recipientEdited ? null : invoiceEmailSourceLabel(invoiceRecipient?.source ?? (deal.contactEmail ? "deal" : null), lang);
@@ -1316,6 +1335,12 @@ function QuickInvoiceDialog({
                     }} />}
                   </div>
                 ))}
+                {countertopLine && (
+                  <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-center gap-3 px-3 py-2.5" data-testid="crm-invoice-countertop-line">
+                    <span className="text-sm font-medium">{countertopLine.description}</span>
+                    <span className="text-right text-sm font-medium">{formatMoney(countertopLine.amount)}</span>
+                  </div>
+                )}
               </div>
               <div className="flex items-center justify-between bg-muted/30 px-3 py-3 text-sm font-bold"><span>{label("Invoice total", "Total de la factura")}</span><span>{formatMoney(invoiceTotal)}</span></div>
             </div>
@@ -1355,6 +1380,17 @@ function QuickInvoiceDialog({
               <ServiceRow id="invoice-shipping" title={label("Shipping", "Envío")} state={shipping} setState={setShipping} source={prefill?.shippingSource} emptyAmountLabel={label("Quote required", "Cotización requerida")} />
               {prefill?.shippingNote && <p className="-mt-1 px-1 text-[11px] text-amber-700">{prefill.shippingNote}</p>}
               <ServiceRow id="invoice-labor" title={label("Labor", "Mano de obra")} state={labor} setState={setLabor} source={prefill?.laborSource} />
+              {countertopQuotes && (
+                <CountertopQuoteInvoicePicker
+                  dealId={dealId}
+                  quotes={countertopQuotes}
+                  shippingMessage={countertopOptions.data?.shippingMessage ?? null}
+                  value={countertopQuoteId}
+                  onChange={setCountertopQuoteId}
+                  gate={countertopGate}
+                  onShippingSaved={() => { void countertopOptions.refetch(); utils.crm.deal.invalidate({ id: dealId }); }}
+                />
+              )}
             </div>
             <Field label={label("Linked design (optional)", "Diseño vinculado (opcional)")}>
               <Select value={selectedDesignId} onValueChange={chooseLinkedDesign}>
