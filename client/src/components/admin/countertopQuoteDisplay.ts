@@ -89,11 +89,20 @@ export function countertopQuoteStyleDetails(quote: {
   return out;
 }
 
-// Corian sheet size (30" x 144" = 30 sq ft, cited source) and the per-material
-// slab map live in shared/countertopSlabBilling.ts, shared with the backend
-// invoice line so the card and the invoice always agree.
-import { CORIAN_SHEET_LENGTH_IN, CORIAN_SHEET_SQ_FT, CORIAN_SHEET_WIDTH_IN } from "@shared/countertopSlabBilling";
-export { CORIAN_SHEET_LENGTH_IN, CORIAN_SHEET_SQ_FT, CORIAN_SHEET_WIDTH_IN };
+/**
+ * Corian® Solid Surface standard sheet, in inches: 30" wide x 144" long
+ * (12 mm / 1/2" sheet; 19 mm / 3/4" sheets share the same size), which is
+ * 30 sq ft per sheet. Corian is sold by the full sheet only, so the slab count
+ * always rounds up. Change these two numbers if the supplier's sheet changes.
+ * Source: Corian Solid Surface Sheet Products (K-24016-NA) and Product
+ * Overview (K-27478-NA), corian.com:
+ * https://www.corian.com/bin/corianweb/pdf-inline?path=%2Fcontent%2Fdam%2Fcorian%2Fassets%2Fpdf%2Fdocuments%2Fen-us%2Fk-24016_corian_solid_surface_sheet_products.pdf
+ * No waste factor is applied: the repo's countertop slab math
+ * (lib/surfaceCartLines.ts) uses none, only full-slab rounding.
+ */
+export const CORIAN_SHEET_WIDTH_IN = 30;
+export const CORIAN_SHEET_LENGTH_IN = 144;
+export const CORIAN_SHEET_SQ_FT = (CORIAN_SHEET_WIDTH_IN * CORIAN_SHEET_LENGTH_IN) / 144;
 
 /**
  * Whole Corian slabs needed for a quote: ceil(squareFeet / sheet sq ft).

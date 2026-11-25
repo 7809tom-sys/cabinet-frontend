@@ -8,21 +8,40 @@ const panel = readFileSync(new URL("./OutreachPanel.tsx", import.meta.url), "utf
 describe("admin CRM import + outreach wiring", () => {
   it("shows the admin import and the Outreach view only in the admin master CRM", () => {
     expect(board).toContain("{isMasterView && <CustomerListImportAdminDialog />}");
-    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)');
+    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors", "cabinetShops"] as const) : (["board", "table", "email"] as const)');
     expect(board).toContain('crmView === "outreach" && isMasterView ? (');
+    // The Outreach pill (with its explainer) still switches to the Outreach view.
+    expect(board).toContain("<OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />");
   });
 
   it("adds a master-only Distributors view that narrows the stage board to distributor prospects", () => {
     expect(board).toContain('const distributorsViewOpen = crmView === "distributors" && (data as any)?.isMasterView === true;');
-    expect(board).toContain("const viewDeals = distributorsViewOpen ? distributorDeals : mondayDeals;");
+    expect(board).toContain("const viewDeals = distributorsViewOpen ? distributorDeals : cabinetShopsViewOpen ? cabinetShopStateDeals : mondayDeals;");
     expect(board).toContain("`Distributors (${distributorDeals.length})`");
   });
 
   it("relabels the New column as Distributor only while the Distributors view is open", () => {
     expect(board).toContain('DISTRIBUTORS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Distributor" }');
-    expect(board).toContain("distributorsViewOpen ? DISTRIBUTORS_VIEW_STAGE_LABELS : undefined");
+    expect(board).toContain("distributorsViewOpen\n    ? DISTRIBUTORS_VIEW_STAGE_LABELS\n    : cabinetShopsViewOpen ? CABINET_SHOPS_VIEW_STAGE_LABELS : undefined");
     expect(board).toContain("stageLabels={stageLabelOverrides}");
     expect(board).toContain("stageLabelOverrides?.[stage] ?? CRM_STAGE_LABELS[stage][lang]");
+  });
+
+  it("adds a master-only Cabinet Shops view with a state filter and its own New column label", () => {
+    expect(board).toContain('const cabinetShopsViewOpen = crmView === "cabinetShops" && (data as any)?.isMasterView === true;');
+    expect(board).toContain("`Cabinet Shops (${cabinetShopDeals.length})`");
+    expect(board).toContain('CABINET_SHOPS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Cabinet shop" }');
+    expect(board).toContain('aria-label="Filter cabinet shops by state"');
+    expect(board).toContain("{isMasterView && <CabinetShopUploadDialog />}");
+  });
+
+  it("opens Cabinet Shops on one remembered state with a follow-up list (inline status and due date)", () => {
+    expect(board).toContain("const cabinetShopState = resolveCabinetShopState(cabinetShopPrefs.state, cabinetShopStates);");
+    expect(board).toContain("window.localStorage.setItem(CABINET_SHOP_VIEW_PREFS_KEY, JSON.stringify(next))");
+    expect(board).toContain('const cabinetShopListOpen = cabinetShopsViewOpen && cabinetShopPrefs.layout === "list";');
+    expect(board).toContain('crmView === "table" || cabinetShopListOpen ? (');
+    expect(board).toContain('aria-label="Cabinet shops layout"');
+    expect(board).toContain('"Follow-up list"');
   });
 
   it("keeps the existing affiliate customer-list import untouched", () => {
