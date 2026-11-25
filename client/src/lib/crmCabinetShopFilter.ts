@@ -70,3 +70,34 @@ export function filterCabinetShopsByState<T extends CabinetShopFilterDeal>(deals
   if (state === "unknown") return deals.filter((deal) => cabinetShopState(deal.notes) == null);
   return deals.filter((deal) => cabinetShopState(deal.notes) === state);
 }
+
+/** How the Cabinet Shops view lays out shops: a follow-up list (table) or the stage board. */
+export type CabinetShopLayout = "list" | "board";
+
+export type CabinetShopViewPrefs = { state: string; layout: CabinetShopLayout };
+
+/** Remembers the picked state and layout on this browser. */
+export const CABINET_SHOP_VIEW_PREFS_KEY = "crm.cabinetShops.view.v1";
+
+/** Reads saved prefs; bad or missing values fall back to no state picked yet and the list layout. */
+export function parseCabinetShopViewPrefs(raw: string | null | undefined): { state: string | null; layout: CabinetShopLayout } {
+  try {
+    const value = raw ? (JSON.parse(raw) as Partial<CabinetShopViewPrefs>) : {};
+    const state = typeof value.state === "string" && /^(all|unknown|[A-Z]{2})$/.test(value.state) ? value.state : null;
+    return { state, layout: value.layout === "board" ? "board" : "list" };
+  } catch {
+    return { state: null, layout: "list" };
+  }
+}
+
+/**
+ * The state the picker should show. A saved pick that still has shops wins
+ * ("all" always counts); otherwise the first state in working order (FL first),
+ * so the view opens on one state rather than every state mixed together.
+ */
+export function resolveCabinetShopState(saved: string | null, states: readonly CabinetShopStateCount[]): string {
+  if (saved === "all") return "all";
+  if (saved != null && states.some((s) => (s.state ?? "unknown") === saved)) return saved;
+  const first = states.find((s) => s.state != null) ?? states[0];
+  return first ? first.state ?? "unknown" : "all";
+}

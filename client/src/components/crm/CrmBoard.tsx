@@ -39,7 +39,15 @@ import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { filterDistributorProspects } from "@/lib/crmDistributorFilter";
-import { countCabinetShopsByState, filterCabinetShopProspects, filterCabinetShopsByState } from "@/lib/crmCabinetShopFilter";
+import {
+  CABINET_SHOP_VIEW_PREFS_KEY,
+  countCabinetShopsByState,
+  filterCabinetShopProspects,
+  filterCabinetShopsByState,
+  parseCabinetShopViewPrefs,
+  resolveCabinetShopState,
+  type CabinetShopLayout,
+} from "@/lib/crmCabinetShopFilter";
 import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
@@ -196,7 +204,18 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
   const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors" | "cabinetShops">("board");
-  const [cabinetShopState, setCabinetShopState] = useState<string>("all");
+  // Cabinet Shops view: the picked state (null until picked, then FL first) and
+  // list/board layout, remembered on this browser.
+  const [cabinetShopPrefs, setCabinetShopPrefs] = useState<{ state: string | null; layout: CabinetShopLayout }>(() =>
+    parseCabinetShopViewPrefs(typeof window === "undefined" ? null : window.localStorage.getItem(CABINET_SHOP_VIEW_PREFS_KEY)),
+  );
+  const updateCabinetShopPrefs = (patch: Partial<{ state: string; layout: CabinetShopLayout }>) => {
+    setCabinetShopPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      try { window.localStorage.setItem(CABINET_SHOP_VIEW_PREFS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      return next;
+    });
+  };
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
@@ -240,6 +259,8 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
   const cabinetShopDeals = useMemo(() => filterCabinetShopProspects(mondayDeals), [mondayDeals]);
   const cabinetShopStates = useMemo(() => countCabinetShopsByState(cabinetShopDeals), [cabinetShopDeals]);
   const cabinetShopsViewOpen = crmView === "cabinetShops" && (data as any)?.isMasterView === true;
+  const cabinetShopState = resolveCabinetShopState(cabinetShopPrefs.state, cabinetShopStates);
+  const cabinetShopListOpen = cabinetShopsViewOpen && cabinetShopPrefs.layout === "list";
   const cabinetShopStateDeals = useMemo(() => filterCabinetShopsByState(cabinetShopDeals, cabinetShopState), [cabinetShopDeals, cabinetShopState]);
   const viewDeals = distributorsViewOpen ? distributorDeals : cabinetShopsViewOpen ? cabinetShopStateDeals : mondayDeals;
   // Display-only: in the Distributors view the "new" stage column reads "Distributor"
@@ -367,7 +388,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         ))}
         {isMasterView && <CabinetShopUploadDialog />}
         {cabinetShopsViewOpen && (
-          <Select value={cabinetShopState} onValueChange={setCabinetShopState}>
+          <Select value={cabinetShopState} onValueChange={(state) => updateCabinetShopPrefs({ state })}>
             <SelectTrigger className="h-9 w-[150px] bg-white" aria-label="Filter cabinet shops by state"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All states ({cabinetShopDeals.length})</SelectItem>
@@ -376,6 +397,21 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
               ))}
             </SelectContent>
           </Select>
+        )}
+        {cabinetShopsViewOpen && (
+          <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white text-sm" role="group" aria-label="Cabinet shops layout">
+            {(["list", "board"] as const).map((layout) => (
+              <button
+                key={layout}
+                type="button"
+                aria-pressed={cabinetShopPrefs.layout === layout}
+                onClick={() => updateCabinetShopPrefs({ layout })}
+                className={`px-3 py-1 font-medium ${cabinetShopPrefs.layout === layout ? "bg-[#1a2b4a] text-white" : "text-[#1a2b4a]"}`}
+              >
+                {layout === "list" ? "Follow-up list" : "Board"}
+              </button>
+            ))}
+          </div>
         )}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
         <Select value={stageFilter} onValueChange={(value) => setStageFilter(value as typeof stageFilter)}>
@@ -439,7 +475,9 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-64 rounded-lg" />)}
         </div>
-      ) : crmView === "table" ? (
+      ) : crmView === "table" || cabinetShopListOpen ? (
+        // The Table view, and the Cabinet Shops "Follow-up list": status, due date
+        // (next follow-up), priority and value edit inline; a row opens the deal for notes and email.
         <CrmTableView
           deals={viewDeals.map((deal): TableDeal => ({
             ...deal,

@@ -35,6 +35,15 @@ describe("admin CRM import + outreach wiring", () => {
     expect(board).toContain("{isMasterView && <CabinetShopUploadDialog />}");
   });
 
+  it("opens Cabinet Shops on one remembered state with a follow-up list (inline status and due date)", () => {
+    expect(board).toContain("const cabinetShopState = resolveCabinetShopState(cabinetShopPrefs.state, cabinetShopStates);");
+    expect(board).toContain("window.localStorage.setItem(CABINET_SHOP_VIEW_PREFS_KEY, JSON.stringify(next))");
+    expect(board).toContain('const cabinetShopListOpen = cabinetShopsViewOpen && cabinetShopPrefs.layout === "list";');
+    expect(board).toContain('crmView === "table" || cabinetShopListOpen ? (');
+    expect(board).toContain('aria-label="Cabinet shops layout"');
+    expect(board).toContain('"Follow-up list"');
+  });
+
   it("keeps the existing affiliate customer-list import untouched", () => {
     expect(board).toContain("<CustomerListImportDialog lang={lang} affiliateId={affiliateId} />");
     expect(board).toContain("trpc.crm.importCustomerList.useMutation");

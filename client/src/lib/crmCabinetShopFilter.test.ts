@@ -6,6 +6,8 @@ import {
   filterCabinetShopProspects,
   filterCabinetShopsByState,
   isCabinetShopProspect,
+  parseCabinetShopViewPrefs,
+  resolveCabinetShopState,
 } from "./crmCabinetShopFilter";
 import { isDistributorProspect } from "./crmDistributorFilter";
 
@@ -71,5 +73,31 @@ describe("state ordering and counts", () => {
     expect(filterCabinetShopsByState(shops, "all").map((d) => d.id)).toEqual([1, 3, 4]);
     expect(filterCabinetShopsByState(shops, "GA").map((d) => d.id)).toEqual([3]);
     expect(filterCabinetShopsByState(shops, "unknown").map((d) => d.id)).toEqual([4]);
+  });
+});
+
+describe("cabinet shop state picker prefs", () => {
+  const states = [{ state: "FL", count: 928 }, { state: "GA", count: 40 }, { state: null, count: 2 }];
+
+  it("opens on the first working state (FL) when nothing is saved", () => {
+    expect(resolveCabinetShopState(null, states)).toBe("FL");
+  });
+
+  it("keeps a saved state that still has shops, and 'all'", () => {
+    expect(resolveCabinetShopState("GA", states)).toBe("GA");
+    expect(resolveCabinetShopState("all", states)).toBe("all");
+    expect(resolveCabinetShopState("unknown", states)).toBe("unknown");
+  });
+
+  it("falls back to FL when the saved state has no shops, and to all when there are none", () => {
+    expect(resolveCabinetShopState("TX", states)).toBe("FL");
+    expect(resolveCabinetShopState("TX", [])).toBe("all");
+  });
+
+  it("parses saved prefs safely and defaults to the follow-up list", () => {
+    expect(parseCabinetShopViewPrefs(null)).toEqual({ state: null, layout: "list" });
+    expect(parseCabinetShopViewPrefs("not json")).toEqual({ state: null, layout: "list" });
+    expect(parseCabinetShopViewPrefs(JSON.stringify({ state: "GA", layout: "board" }))).toEqual({ state: "GA", layout: "board" });
+    expect(parseCabinetShopViewPrefs(JSON.stringify({ state: "<script>", layout: "x" }))).toEqual({ state: null, layout: "list" });
   });
 });

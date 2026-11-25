@@ -24,3 +24,21 @@ describe("CRM table site comparison for cabinet shops", () => {
     expect(screen.queryByTestId("crm-compare-ahead")).toBeNull();
   });
 });
+
+describe("CRM table contact line for cabinet shops", () => {
+  it("shows city and a tap-to-call phone only on cabinet shop rows", () => {
+    render(
+      <CrmTableView
+        deals={[{ ...base, contactPhone: "(555) 000-1111", location: "Nowhere, FL" }, { ...shop, contactPhone: "(407) 774-4400", location: "Altamonte Springs, FL" }]}
+        lang="en"
+        showAffiliate
+        onOpen={vi.fn()}
+        onPatch={vi.fn()}
+      />,
+    );
+    const lines = screen.getAllByTestId("crm-shop-contact");
+    expect(lines).toHaveLength(1);
+    expect(lines[0].textContent).toBe("Altamonte Springs, FL · (407) 774-4400");
+    expect(lines[0].querySelector("a")?.getAttribute("href")).toBe("tel:4077744400");
+  });
+});

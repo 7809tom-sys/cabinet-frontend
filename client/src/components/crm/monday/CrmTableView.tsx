@@ -15,6 +15,8 @@ type Lang = "en" | "es";
 
 export type TableDeal = MondayDeal & CrmDesignStampFields & {
   ownerName?: string | null;
+  contactPhone?: string | null;
+  location?: string | null;
   notes?: string | null;
   lastActivityAt?: Date | string | null;
 };
@@ -103,6 +105,14 @@ function CrmTableRow({
       <td className="px-3 py-2">
         <button className="text-left font-medium text-[#1a2b4a] hover:underline" onClick={() => onOpen(deal.id)}>{deal.contactName || deal.title}</button>
         <InlineText value={deal.title} label="Deal title" onCommit={(title) => onPatch(deal.id, { title })} />
+        {/* Cabinet shops are worked by phone: show where they are and a tap-to-call number. */}
+        {isCabinetShopProspect(deal) && (deal.location || deal.contactPhone) && (
+          <div className="text-xs text-slate-600" data-testid="crm-shop-contact">
+            {deal.location}
+            {deal.location && deal.contactPhone ? " · " : ""}
+            {deal.contactPhone && <a className="text-[#1a2b4a] hover:underline" href={`tel:${deal.contactPhone.replace(/[^\d+]/g, "")}`}>{deal.contactPhone}</a>}
+          </div>
+        )}
         {/* The number staff type into the quick lookup and read back to the customer. */}
         <div className="text-[10px] text-slate-500" data-testid="crm-customer-number">Customer #{deal.id}</div>
       </td>
