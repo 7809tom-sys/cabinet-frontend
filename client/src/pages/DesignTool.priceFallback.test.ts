@@ -45,7 +45,7 @@ describe("Designer verified price fallback", () => {
     expect(source).toContain('const isLayoutAppliance = g.sample.placement === "appliance"');
     expect(source).toMatch(/\? isLayoutAppliance\s*\n\s*\? "Not included"/);
     expect(source).toContain("Appliance price not included");
-    expect(source).toContain("{!isLayoutAppliance && <Popover>");
+    expect(source).toContain("{!isLayoutAppliance && !hidePrices && <Popover>");
   });
 
   it("normalizes saved foreign cabinet finish overrides after the independent door-style list resolves", () => {
