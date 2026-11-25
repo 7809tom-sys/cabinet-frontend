@@ -32,6 +32,8 @@ vi.mock("@/lib/trpc", () => {
     createRule: { useMutation: mutation((input) => saved.created.push(input as Record<string, unknown>)) },
     deleteRule: { useMutation: mutation((input) => saved.deleted.push(input as Record<string, unknown>)) },
     restoreRule: { useMutation: mutation((input) => saved.restored.push(input as Record<string, unknown>)) },
+    list: { useQuery: () => ({ data: [], isLoading: false, isError: false, error: null, refetch: async () => undefined }) },
+    update: { useMutation: mutation(() => undefined) },
   };
   return { trpc: { kitchenRules } };
 });
