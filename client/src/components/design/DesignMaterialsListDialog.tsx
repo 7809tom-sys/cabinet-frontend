@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { materialsListCsv, materialsListPricedTotal, materialsListPrintHtml, type MaterialsListRow } from "@/lib/designMaterialsList";
 import { canonicalMouldingLabel } from "@shared/catalogCategorySpelling";
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 
 function money(row: MaterialsListRow, value: number | null): string {
   if (value != null) return `$${value.toFixed(2)}`;
@@ -51,6 +52,8 @@ export function DesignMaterialsListDialog({
   /** Launch intent only: normal Materials opens show all rows; the conflict badge opens affected rows. */
   initialConflictsOnly?: boolean;
 }) {
+  // Demo distributor designer: no price columns, priced total or prices in CSV / print.
+  const hidePrices = useDesignerPricesHidden();
   const [showConflictsOnly, setShowConflictsOnly] = useState(initialConflictsOnly);
   // This is deliberately an initialization, not a controlled filter: after a
   // conflict-badge launch, the shopper can still select “Show all items”.
@@ -67,7 +70,7 @@ export function DesignMaterialsListDialog({
   const quoteRequiredCount = visibleRows.filter((row) => row.priceStatus === "quote_required").length;
 
   const downloadCsv = () => {
-    const csv = materialsListCsv(visibleRows);
+    const csv = materialsListCsv(visibleRows, { hidePrices });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -93,6 +96,7 @@ export function DesignMaterialsListDialog({
       roomLabel,
       styleName,
       generatedAt: new Date().toLocaleString(),
+      hidePrices,
     }));
     preview.document.close();
     preview.focus();
@@ -102,7 +106,7 @@ export function DesignMaterialsListDialog({
   const renderRows = (sectionRows: readonly MaterialsListRow[], heading: string) => (
     <>
       <tr className="bg-[#f7f0e3] text-[#6c4f1c]">
-        <th colSpan={12} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">{heading}</th>
+        <th colSpan={hidePrices ? 10 : 12} className="px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide">{heading}</th>
       </tr>
       {sectionRows.map((row) => (
         <tr key={`${row.section}:${row.label}:${row.code}:${row.styleColor}`} data-price-missing={rowMissingPrice(row) ? "true" : undefined} className={`border-b align-top ${rowMissingPrice(row) ? "border-red-300 bg-red-50 odd:bg-red-50 even:bg-red-50" : "border-slate-200 odd:bg-white even:bg-slate-50/60"}`}>
@@ -133,8 +137,8 @@ export function DesignMaterialsListDialog({
           <td className="px-2 py-2 min-w-[130px]">{row.styleColor}</td>
           <td className="px-2 py-2 whitespace-nowrap">{row.dimensions}</td>
           <td className="px-2 py-2 text-right tabular-nums">{row.qty}</td>
-          <td className={`px-2 py-2 text-right whitespace-nowrap tabular-nums ${row.priceStatus === "unavailable" ? "text-rose-700" : row.unitPrice == null ? "text-amber-700" : ""}`}>{money(row, row.unitPrice)}</td>
-          <td className={`px-2 py-2 text-right whitespace-nowrap font-semibold tabular-nums ${row.priceStatus === "unavailable" ? "text-rose-700" : row.lineTotal == null ? "text-amber-700" : ""}`}>{money(row, row.lineTotal)}</td>
+          {!hidePrices && <td className={`px-2 py-2 text-right whitespace-nowrap tabular-nums ${row.priceStatus === "unavailable" ? "text-rose-700" : row.unitPrice == null ? "text-amber-700" : ""}`}>{money(row, row.unitPrice)}</td>}
+          {!hidePrices && <td className={`px-2 py-2 text-right whitespace-nowrap font-semibold tabular-nums ${row.priceStatus === "unavailable" ? "text-rose-700" : row.lineTotal == null ? "text-amber-700" : ""}`}>{money(row, row.lineTotal)}</td>}
           <td className="px-2 py-2 min-w-[180px] text-slate-600">{row.notes || "—"}</td>
         </tr>
       ))}
@@ -206,7 +210,7 @@ export function DesignMaterialsListDialog({
             <table className="min-w-[1270px] w-full border-collapse text-[11px]">
               <thead className="sticky top-0 z-10 bg-[#1a2744] text-white shadow-sm">
                 <tr>
-                  {['Remove', 'No.', 'Item code', 'Description', 'Category', 'Distributor', 'Color / style', 'Dimensions', 'Qty', 'Unit price', 'Line total', 'Notes'].map((heading, index) => (
+                  {['Remove', 'No.', 'Item code', 'Description', 'Category', 'Distributor', 'Color / style', 'Dimensions', 'Qty', ...(hidePrices ? [] : ['Unit price', 'Line total']), 'Notes'].map((heading, index) => (
                     <th key={heading} className={`px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wide ${index === 0 ? "sticky left-0 z-[1] bg-[#1a2744] text-center" : ""}`}>{heading}</th>
                   ))}
                 </tr>
@@ -227,7 +231,7 @@ export function DesignMaterialsListDialog({
               {unavailableCabinetCount > 0 && <span className="font-semibold text-rose-700"> · {unavailableCabinetCount} unavailable cabinet line{unavailableCabinetCount === 1 ? "" : "s"}</span>}
               {quoteRequiredCount > 0 && <span className="font-semibold text-amber-700"> · {quoteRequiredCount} quote-required line{quoteRequiredCount === 1 ? "" : "s"}</span>}
             </span>
-            <span className="text-sm font-bold text-[#1a2744]">Priced total: ${materialsListPricedTotal(visibleRows).toFixed(2)}</span>
+            {!hidePrices && <span className="text-sm font-bold text-[#1a2744]">Priced total: ${materialsListPricedTotal(visibleRows).toFixed(2)}</span>}
           </div>
           {(unavailableCabinetCount > 0 || quoteRequiredCount > 0) && (
             <p className="mt-1 text-[11px] text-slate-600">Quote-required and unavailable lines remain on this materials list and are not added to the cart.</p>

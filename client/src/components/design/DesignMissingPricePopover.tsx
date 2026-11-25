@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { missingPriceLineLabel } from "@/lib/designMissingPrice";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 export type MissingPriceAlternative = {
   cabinetId: number;
   masterCode: string;
@@ -50,6 +51,7 @@ export function DesignMissingPricePopover({
   onAccept: (alternative: MissingPriceAlternative) => void;
   onDismiss: () => void;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   const query = trpc.designMissingPrice.alternatives.useQuery(
     { masterCode, cabinetId: cabinetId > 0 ? cabinetId : undefined, styleId, distributorId: distributorId ?? undefined, tier, limit: 3 },
     { retry: false },
@@ -95,7 +97,7 @@ export function DesignMissingPricePopover({
                   {alt.differences.length === 0 && <div className="mt-1 text-[10px] text-emerald-700">Same size and function.</div>}
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="text-[13px] font-bold text-[#1a2744]">${alt.customerPrice.toFixed(2)}</span>
+                  {!hidePrices && <span className="text-[13px] font-bold text-[#1a2744]">${alt.customerPrice.toFixed(2)}</span>}
                   <Button type="button" size="sm" className="h-7 gap-1 bg-emerald-600 px-2 text-[11px] text-white hover:bg-emerald-700" data-testid="missing-price-accept" onClick={() => onAccept(alt)}>
                     <Check className="h-3 w-3" /> Accept
                   </Button>

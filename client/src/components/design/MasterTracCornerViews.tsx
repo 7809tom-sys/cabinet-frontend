@@ -8,6 +8,7 @@ import { ThreeDRendererHost } from "./threeDRendererHost";
 import { ThreeDStartNotice } from "./ThreeDStartNotice";
 import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 const IN = 1 / 12;
 /** Owner-described straight mating edges. The source SKU still supplies the 29.5-inch bounding size. */
 const CORNER_MATING_EDGE_IN = 14.5;
@@ -168,6 +169,7 @@ export function masterTracCornerAssembly(placed: PlacedCabinet[]): THREE.Group |
 }
 
 function Heading({ placed, wall, view }: { placed: PlacedCabinet[]; wall: WallSide; view: string }) {
+  const hidePrices = useDesignerPricesHidden();
   const group = groupBoards(placed)!;
   const corner = group.corner;
   const corners = group.boards.filter(isMasterTracCornerBoard);
@@ -176,7 +178,7 @@ function Heading({ placed, wall, view }: { placed: PlacedCabinet[]; wall: WallSi
   const joint = joints.length ? masterTracProduct(joints[0].masterTracCorner.hJointSku!) : null;
   return <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 bg-[#192432] px-4 py-3 text-xs text-white">
     <div><strong className="text-sm">MasterTrac Closet · {view}</strong><span className="ml-2 text-stone-200">{corner.masterTracCorner.side === "start" ? "Left/start" : "Right/end"} · {wall} wall · {group.width.toFixed(2)}″ overall</span></div>
-    <span>{corners.length} curved corner {corners.length === 1 ? "shelf" : "shelves"} · {masterTracProduct(corner.masterCode)?.finish} · ${cornerList.toFixed(2)} List{joint ? ` · ${joints.length}× H-joint ${joint.sku} $${(joint.listEachUsd * joints.length).toFixed(2)}` : ""}</span>
+    <span>{corners.length} curved corner {corners.length === 1 ? "shelf" : "shelves"} · {masterTracProduct(corner.masterCode)?.finish}{hidePrices ? (joint ? ` · ${joints.length}× H-joint ${joint.sku}` : "") : <> · ${cornerList.toFixed(2)} List{joint ? ` · ${joints.length}× H-joint ${joint.sku} $${(joint.listEachUsd * joints.length).toFixed(2)}` : ""}</>}</span>
   </div>;
 }
 

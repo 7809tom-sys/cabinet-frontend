@@ -10,6 +10,7 @@ import { isRollOutEligible, MAX_ROLLOUT_TRAYS_PER_CABINET, normalizedRollOutTray
 import { isBaseCabinetAttributeAddOnEligible, isDrawerBaseCabinet } from "@/lib/baseCabinetAttributeAddOns";
 import { BaseCabinetAddOnButtons, attributeAddOnTarget } from "@/components/design/BaseCabinetAddOnButtons";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 export interface RollOutTrayPickerProps {
   cabinet: PlacedCabinet;
   /** The design's default door style (per-cabinet override wins via effectiveStyleId). */
@@ -42,6 +43,7 @@ export function RollOutTrayPicker({
   onSetQty,
   onAddSinkAndFaucet,
 }: RollOutTrayPickerProps) {
+  const hidePrices = useDesignerPricesHidden();
   const { t } = useLanguage();
 
   // PlacedCabinet doesn't carry the catalog corner flag; derive it so corner
@@ -125,7 +127,7 @@ export function RollOutTrayPicker({
             </p>
             <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className="font-mono">{tray.masterCode}</span>
-              {eachNum != null && Number.isFinite(eachNum) && (
+              {eachNum != null && Number.isFinite(eachNum) && !hidePrices && (
                 <span>
                   · ${eachNum.toFixed(2)} {t("dt_ca_rollout_each")}
                 </span>
