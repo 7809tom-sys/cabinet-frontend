@@ -25,7 +25,7 @@ vi.mock("@/lib/trpc", () => {
     isPending: false,
   });
   const kitchenRules = {
-    settings: { useQuery: () => ({ data: saved.rows, isLoading: false, isError: saved.isError, error: null, refetch: async () => undefined }) },
+    settings: { useQuery: () => ({ data: saved.rows, isLoading: false, isError: saved.isError, error: saved.isError ? { message: "Table 'cabinet_dealz.kitchen_rule_settings' doesn't exist" } : null, refetch: async () => undefined }) },
     parameters: { useQuery: () => ({ data: { values: {}, text: {} }, isLoading: false, isError: false, error: null, refetch: async () => undefined }) },
     saveSetting: { useMutation: mutation((input) => saved.saved.push(input as Record<string, unknown>)) },
     resetSetting: { useMutation: mutation((input) => saved.reset.push(input as Record<string, unknown>)) },

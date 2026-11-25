@@ -54,20 +54,14 @@ export function richAnswerUpdateInput(record: KitchenRuleRecord, answer: string)
 export type RichAnswerSaveState =
   | { kind: "ready" }
   | { kind: "loading" }
-  /** The live server has no kitchenRules procedures at all. */
-  | { kind: "api-missing"; message: string }
   /** The server answers, but this question's row is not in kitchen_rules (0238 not run). */
   | { kind: "row-missing"; message: string }
   | { kind: "error"; message: string };
 
-/** True for a tRPC "No procedure found" / NOT_FOUND error. */
-export function isMissingProcedureError(message: string | null | undefined): boolean {
-  return /no procedure found|not_found/i.test(message ?? "");
+/** True when a database error says the table is not there (TiDB/MySQL 1146), so the SQL hint applies. */
+export function isMissingTableError(message: string | null | undefined): boolean {
+  return /doesn't exist|does not exist|no such table|ER_NO_SUCH_TABLE|\b1146\b/i.test(message ?? "");
 }
-
-export const RICH_ANSWER_API_MISSING =
-  "Saving is not switched on yet: the server does not have the Kitchen Rules save API (kitchenRules.list and kitchenRules.update in cabinet-backend). "
-  + "Until that ships, use \"Keep on this computer\" so the answer is not lost, and Download answers to send them to Tom.";
 
 export const RICH_ANSWER_ROW_MISSING =
   "This question is not on the database yet, so its answer cannot be saved. Run docs/sql/0233_kitchen_rules.tidb.sql and "
@@ -81,7 +75,7 @@ export function richAnswerSaveState(input: {
   record: KitchenRuleRecord | null;
 }): RichAnswerSaveState {
   if (input.isError) {
-    if (isMissingProcedureError(input.errorMessage)) return { kind: "api-missing", message: RICH_ANSWER_API_MISSING };
+    if (isMissingTableError(input.errorMessage)) return { kind: "row-missing", message: RICH_ANSWER_ROW_MISSING };
     return { kind: "error", message: `The answers could not be loaded: ${input.errorMessage ?? "unknown error"}` };
   }
   if (input.isLoading) return { kind: "loading" };
@@ -89,7 +83,7 @@ export function richAnswerSaveState(input: {
   return { kind: "ready" };
 }
 
-/* ---------- answers kept on this computer while the server cannot save ---------- */
+/* ---------- answers kept on this computer when a save fails ---------- */
 
 const LOCAL_PREFIX = "kitchen-rules-rich-answer:";
 

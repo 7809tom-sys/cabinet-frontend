@@ -12,11 +12,16 @@ const state = vi.hoisted(() => ({
   listRows: [] as Array<Record<string, unknown>>,
   updates: [] as Array<Record<string, unknown>>,
   saves: [] as Array<Record<string, unknown>>,
+  failWith: null as null | string,
 }));
 
 vi.mock("@/lib/trpc", () => {
   const mutation = (onRun: (input: unknown) => void) => () => ({
-    mutateAsync: async (input: unknown) => { onRun(input); return { ok: true }; },
+    mutateAsync: async (input: unknown) => {
+      if (state.failWith) throw new Error(state.failWith);
+      onRun(input);
+      return { ok: true };
+    },
     isPending: false,
   });
   const query = (get: () => { data: unknown; error: null | { message: string } }) => () => {
@@ -44,7 +49,6 @@ vi.mock("sonner", () => ({
 import KitchenRulesAdmin from "./KitchenRulesAdmin";
 import { RICH_ANSWER_PROMPT } from "@/lib/kitchenRulesRichQuestions";
 
-const NOT_FOUND = { message: 'No procedure found on path "kitchenRules.list"' };
 
 function storedRich(overrides: Record<string, unknown> = {}) {
   return {
@@ -74,6 +78,7 @@ afterEach(() => {
   state.listRows = [];
   state.updates = [];
   state.saves = [];
+  state.failWith = null;
   window.localStorage.clear();
 });
 
@@ -126,19 +131,31 @@ describe("Questions for Rich: answers", () => {
     expect(within(card).getByRole("button", { name: /Edit answer/ })).toBeTruthy();
   });
 
-  it("says plainly when the server has no save API, and keeps the answer on this computer instead", () => {
-    state.listError = NOT_FOUND;
+  it("Save is on when the API answers, with no 'not switched on' message and no keep-local button", () => {
+    state.listRows = [storedRich()];
     render(<KitchenRulesAdmin />);
     openRich();
-    expect(screen.getByTestId("kitchen-rules-rich-api-missing").textContent).toContain("kitchenRules.list and kitchenRules.update");
-    fireEvent.click(screen.getByTestId("rich-question:rich-q-hood-bottom-answer"));
+    expect(screen.queryByText(/not switched on/i)).toBeNull();
+    fireEvent.click(screen.getByTestId("rich-question:rich-q-gap-in-run-answer"));
     const editor = screen.getByTestId("rich-answer-editor");
-    expect(within(editor).getByTestId("rich-answer-save-blocked")).toBeTruthy();
-    expect((within(editor).getByTestId("rich-answer-save") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(editor).getByTestId("rich-answer-text"), { target: { value: "Spice base." } });
+    expect((within(editor).getByTestId("rich-answer-save") as HTMLButtonElement).disabled).toBe(false);
+    expect(within(editor).queryByTestId("rich-answer-keep-local")).toBeNull();
+    expect(within(editor).queryByTestId("rich-answer-save-blocked")).toBeNull();
+  });
+
+  it("a failed save shows the server's real error and only then offers to keep the answer on this computer", async () => {
+    state.listRows = [storedRich()];
+    state.failWith = "You do not have required permission (10002)";
+    render(<KitchenRulesAdmin />);
+    openRich();
+    fireEvent.click(screen.getByTestId("rich-question:rich-q-gap-in-run-answer"));
+    const editor = screen.getByTestId("rich-answer-editor");
     fireEvent.change(within(editor).getByTestId("rich-answer-text"), { target: { value: "30 in on gas." } });
-    fireEvent.click(within(editor).getByTestId("rich-answer-keep-local"));
-    expect(state.updates).toHaveLength(0);
-    const saved = screen.getByTestId("rich-question:rich-q-hood-bottom-saved");
+    fireEvent.click(within(editor).getByTestId("rich-answer-save"));
+    await waitFor(() => expect(screen.getByTestId("rich-answer-save-error").textContent).toContain("You do not have required permission (10002)"));
+    fireEvent.click(screen.getByTestId("rich-answer-keep-local"));
+    const saved = screen.getByTestId("rich-question:rich-q-gap-in-run-saved");
     expect(saved.textContent).toContain("30 in on gas.");
     expect(saved.textContent).toContain("kept on this computer only");
   });
@@ -161,13 +178,23 @@ describe("Edit button on the rules list", () => {
     expect(screen.getByTestId("kitchen-rules-edit-hint")).toBeTruthy();
   });
 
-  it("when the server has no Kitchen Rules API, Edit still opens and says why Save is off", () => {
-    state.settingsError = { message: 'No procedure found on path "kitchenRules.settings"' };
+  it("Save, Reset and Delete are enabled, and a failed save shows the real error in the dialog", async () => {
     render(<KitchenRulesAdmin />);
-    expect(screen.getByTestId("kitchen-rules-api-missing").textContent).toContain("cabinet-backend");
-    expect(screen.queryByTestId("kitchen-rules-table-missing")).toBeNull();
+    expect(screen.queryByText(/not switched on|no Kitchen Rules save API/i)).toBeNull();
     fireEvent.click(screen.getByTestId("setting:jog_max_in-edit"));
-    expect(screen.getByTestId("kitchen-rule-save-blocked").textContent).toContain("Save comes on once that ships");
-    expect((screen.getByTestId("kitchen-rule-save") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("kitchen-rule-save") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("kitchen-rule-reset") as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId("kitchen-rule-delete") as HTMLButtonElement).disabled).toBe(false);
+    state.failWith = "That is outside the range this rule allows";
+    fireEvent.click(screen.getByTestId("kitchen-rule-save"));
+    await waitFor(() => expect(screen.getByTestId("kitchen-rule-save-error").textContent).toContain("That is outside the range this rule allows"));
+    expect(state.saves).toHaveLength(0);
+  });
+
+  it("a load error shows the server's message, not a missing-API message", () => {
+    state.settingsError = { message: "You do not have required permission (10002)" };
+    render(<KitchenRulesAdmin />);
+    expect(screen.getByTestId("kitchen-rules-load-error").textContent).toContain("You do not have required permission (10002)");
+    expect(screen.queryByTestId("kitchen-rules-table-missing")).toBeNull();
   });
 });

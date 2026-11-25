@@ -43,7 +43,7 @@ import {
   type KitchenRuleRecord,
 } from "@/lib/kitchenRulesApi";
 import {
-  isMissingProcedureError,
+  isMissingTableError,
   readLocalRichAnswer,
   richAnswerRecord,
   richAnswerSaveState,
@@ -103,15 +103,14 @@ export default function KitchenRulesAdmin() {
   const richList = useKitchenRulesList({ enabled: richOpen });
   const richUpdate = useKitchenRuleUpdate();
 
+  const [editError, setEditError] = useState<string | null>(null);
+  const [richSaveError, setRichSaveError] = useState<string | null>(null);
+
+  // The saved values could not be loaded. Show the server's own error; the 0254
+  // hint only when the error says the table is missing. Save stays available:
+  // a failed save shows its real error in the dialog.
   const tableUnavailable = query.isError;
-  // A tRPC NOT_FOUND means the server has no kitchenRules API at all, which no
-  // SQL file can fix, so the banner says that instead of blaming the table.
-  const apiMissing = tableUnavailable && isMissingProcedureError(query.error?.message);
-  const saveBlockedReason = tableUnavailable
-    ? apiMissing
-      ? "Saving is not switched on yet: the server does not have the Kitchen Rules save API (kitchenRules.* in cabinet-backend). You can open and read every rule; Save comes on once that ships."
-      : "The kitchen rule settings table is not on the database yet, so nothing can be saved. Run docs/sql/0254_kitchen_rule_settings.tidb.sql in the TiDB editor, then reload."
-    : null;
+  const tableMissing = tableUnavailable && isMissingTableError(query.error?.message);
   const rows = useMemo(() => mergeKitchenRuleSettings(query.data), [query.data]);
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -137,7 +136,7 @@ export default function KitchenRulesAdmin() {
     ? richAnswerSaveState({ isLoading: false, isError: true, errorMessage: richList.error?.message, record: null })
     : { kind: richList.isLoading ? "loading" : "ready" };
 
-  /** A saved server answer wins; otherwise one kept on this computer while saving is off. */
+  /** A saved server answer wins; otherwise one kept on this computer after a failed save. */
   function richAnswerFor(ruleCode: string): { text: string | null; where: "server" | "this computer" | null } {
     void localAnswersVersion;
     const server = richAnswerText(richAnswerRecord(richList.data, ruleCode)?.notesText);
@@ -177,22 +176,17 @@ export default function KitchenRulesAdmin() {
 
       {query.isLoading && <div className="flex justify-center py-8"><Spinner className="h-6 w-6" /></div>}
 
-      {tableUnavailable && apiMissing && (
-        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-api-missing">
-          The server does not have the Kitchen Rules save API yet (the <span className="font-mono">kitchenRules</span> procedures
-          in cabinet-backend), so this list shows the code defaults and nothing can be saved. Running SQL alone will not fix
-          this: the backend change has to ship first, then <span className="font-mono">docs/sql/0254_kitchen_rule_settings.tidb.sql</span> is
-          run in the TiDB editor. The Designer is unaffected: it keeps using the code defaults. Every rule still has an Edit
-          button so you can read it.
+      {tableUnavailable && tableMissing && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-table-missing">
+          The kitchen rule settings table is not on the database yet, so this list shows the code defaults. Run{" "}
+          <span className="font-mono">docs/sql/0254_kitchen_rule_settings.tidb.sql</span> in the TiDB editor, then reload.
+          {query.error ? ` ${query.error.message}` : ""}
         </p>
       )}
 
-      {tableUnavailable && !apiMissing && (
-        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-table-missing">
-          The kitchen rule settings table is not on the database yet, so this list shows the code defaults and nothing can be
-          saved. Run <span className="font-mono">docs/sql/0254_kitchen_rule_settings.tidb.sql</span> in the TiDB editor, then
-          reload. The Designer is unaffected: it keeps using the code defaults.
-          {query.error ? ` ${query.error.message}` : ""}
+      {tableUnavailable && !tableMissing && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-load-error">
+          The saved rule values could not be loaded, so this list shows the code defaults: {query.error?.message ?? "unknown error"}
         </p>
       )}
 
@@ -257,11 +251,6 @@ export default function KitchenRulesAdmin() {
               Download answers
             </Button>
           </div>
-          {richListState.kind === "api-missing" && (
-            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950" data-testid="kitchen-rules-rich-api-missing">
-              {richListState.message}
-            </p>
-          )}
           {richListState.kind === "error" && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950" data-testid="kitchen-rules-rich-error">
               {richListState.message}
@@ -386,26 +375,32 @@ export default function KitchenRulesAdmin() {
         <RuleEditor
           key={editing.settingKey}
           rule={editing}
-          saveBlockedReason={saveBlockedReason}
+          saveError={editError}
           pending={mutations.save.isPending || mutations.reset.isPending}
-          onClose={() => setEditing(null)}
+          onClose={() => { setEditing(null); setEditError(null); }}
           onAskDelete={() => setDeleting(editing)}
           onSave={async (input) => {
+            setEditError(null);
             try {
               await mutations.save.mutateAsync(input);
               setEditing(null);
               await afterChange("Kitchen rule saved");
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : "The rule was not saved");
+              const message = error instanceof Error ? error.message : "The rule was not saved";
+              setEditError(`The rule was not saved: ${message}`);
+              toast.error(message);
             }
           }}
           onReset={async () => {
+            setEditError(null);
             try {
               await mutations.reset.mutateAsync({ settingKey: editing.settingKey });
               setEditing(null);
               await afterChange("Rule reset to its default");
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : "The rule was not reset");
+              const message = error instanceof Error ? error.message : "The rule was not reset";
+              setEditError(`The rule was not reset: ${message}`);
+              toast.error(message);
             }
           }}
         />
@@ -423,17 +418,20 @@ export default function KitchenRulesAdmin() {
             errorMessage: richList.error?.message,
             record: richAnswerRecord(richList.data, answering.ruleCode),
           })}
+          saveError={richSaveError}
           pending={richUpdate.isPending}
-          onClose={() => setAnswering(null)}
+          onClose={() => { setAnswering(null); setRichSaveError(null); }}
           onKeepLocal={(answer) => {
             writeLocalRichAnswer(answering.ruleCode, answer);
             setLocalAnswersVersion((version) => version + 1);
             setAnswering(null);
+            setRichSaveError(null);
             toast.success(answer.trim() ? "Answer kept on this computer" : "Answer cleared on this computer");
           }}
           onSave={async (answer) => {
             const record = richAnswerRecord(richList.data, answering.ruleCode);
             if (!record) return;
+            setRichSaveError(null);
             try {
               await richUpdate.mutateAsync(richAnswerUpdateInput(record, answer));
               // The server copy is the answer now; drop any copy kept on this computer.
@@ -443,7 +441,9 @@ export default function KitchenRulesAdmin() {
               toast.success("Rich's answer saved");
               await richList.refetch();
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : "The answer was not saved");
+              const message = error instanceof Error ? error.message : "The answer was not saved";
+              setRichSaveError(`The answer was not saved: ${message}`);
+              toast.error(message);
             }
           }}
         />
@@ -536,7 +536,7 @@ type SaveInput = {
 function RuleEditor({
   rule,
   pending,
-  saveBlockedReason,
+  saveError,
   onClose,
   onSave,
   onReset,
@@ -544,8 +544,8 @@ function RuleEditor({
 }: {
   rule: KitchenRuleSetting;
   pending: boolean;
-  /** Set when the server cannot save, so the dialog says why instead of failing on Save. */
-  saveBlockedReason?: string | null;
+  /** The server's error from the last failed Save or Reset, shown in the dialog. */
+  saveError?: string | null;
   onClose: () => void;
   onSave: (input: SaveInput) => Promise<void>;
   onReset: () => Promise<void>;
@@ -585,9 +585,9 @@ function RuleEditor({
         </DialogHeader>
 
         <div className="grid gap-3">
-          {saveBlockedReason && (
-            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rule-save-blocked">
-              {saveBlockedReason}
+          {saveError && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="kitchen-rule-save-error">
+              {saveError}
             </p>
           )}
           {locked && (
@@ -700,7 +700,7 @@ function RuleEditor({
 
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={() => void onReset()} disabled={pending || Boolean(saveBlockedReason)} data-testid="kitchen-rule-reset">
+            <Button type="button" variant="outline" onClick={() => void onReset()} disabled={pending} data-testid="kitchen-rule-reset">
               <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset to default
             </Button>
             {locked ? (
@@ -713,7 +713,7 @@ function RuleEditor({
                 variant="outline"
                 className="text-destructive"
                 onClick={onAskDelete}
-                disabled={pending || Boolean(saveBlockedReason)}
+                disabled={pending}
                 data-testid="kitchen-rule-delete"
               >
                 Delete
@@ -724,7 +724,7 @@ function RuleEditor({
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               type="button"
-              disabled={pending || Boolean(saveBlockedReason) || numericInvalid || outOfRange || !title.trim()}
+              disabled={pending || numericInvalid || outOfRange || !title.trim()}
               onClick={() => void onSave({
                 settingKey: rule.settingKey,
                 title: title.trim(),
@@ -845,6 +845,7 @@ function RichAnswerEditor({
   onClose,
   onSave,
   onKeepLocal,
+  saveError,
 }: {
   question: KitchenRuleRecord;
   savedAnswer: string | null;
@@ -854,10 +855,15 @@ function RichAnswerEditor({
   onClose: () => void;
   onSave: (answer: string) => Promise<void>;
   onKeepLocal: (answer: string) => void;
+  /** The server's error from the last failed save; only then is "Keep on this computer" offered. */
+  saveError?: string | null;
 }) {
   // Created from THIS question at mount; the dialog is keyed by ruleCode.
   const [answer, setAnswer] = useState(savedAnswer ?? localAnswer ?? "");
   const canSave = saveState.kind === "ready";
+  // Keeping an answer only in this browser is a fallback for a save that failed
+  // (or answers that could not be loaded), never the normal path.
+  const offerKeepLocal = Boolean(saveError) || saveState.kind === "error";
   const unchanged = answer.trim() === (savedAnswer ?? "").trim();
 
   return (
@@ -873,7 +879,13 @@ function RichAnswerEditor({
         <div className="grid gap-3">
           <p className="rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed">{question.ruleDescription}</p>
 
-          {saveState.kind !== "ready" && saveState.kind !== "loading" && (
+          {saveError && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert" data-testid="rich-answer-save-error">
+              {saveError}
+            </p>
+          )}
+
+          {(saveState.kind === "row-missing" || saveState.kind === "error") && (
             <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="rich-answer-save-blocked">
               {saveState.message}
             </p>
@@ -885,6 +897,7 @@ function RichAnswerEditor({
               id="rich-answer-text"
               className="min-h-40"
               rows={7}
+              maxLength={4000}
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
               placeholder="Write what you do on a real job, and any number you use."
@@ -898,7 +911,7 @@ function RichAnswerEditor({
 
         <DialogFooter className="flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          {!canSave && (
+          {offerKeepLocal && (
             <Button type="button" variant="outline" onClick={() => onKeepLocal(answer)} data-testid="rich-answer-keep-local">
               Keep on this computer
             </Button>
@@ -906,7 +919,7 @@ function RichAnswerEditor({
           <Button
             type="button"
             disabled={!canSave || pending || unchanged}
-            title={canSave ? undefined : "Saving is not available yet"}
+            title={saveState.kind === "loading" ? "Loading saved answers" : undefined}
             onClick={() => void onSave(answer)}
             data-testid="rich-answer-save"
           >

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RICH_ANSWER_PROMPT, richQuestionSeeds } from "./kitchenRulesRichQuestions";
 import {
-  isMissingProcedureError,
+  isMissingTableError,
   readLocalRichAnswer,
   richAnswerSaveState,
   richAnswerText,
@@ -47,9 +47,10 @@ describe("Rich answers", () => {
     expect(richAnswerUpdateInput(record, "   ").notesText).toBe(RICH_ANSWER_PROMPT);
   });
 
-  it("tells a missing server API apart from a missing row", () => {
-    expect(isMissingProcedureError('No procedure found on path "kitchenRules.list"')).toBe(true);
-    expect(richAnswerSaveState({ isLoading: false, isError: true, errorMessage: "No procedure found", record: null }).kind).toBe("api-missing");
+  it("tells a load error apart from a missing table or row", () => {
+    expect(isMissingTableError("Table 'cabinet_dealz.kitchen_rules' doesn't exist")).toBe(true);
+    expect(isMissingTableError("You do not have required permission (10002)")).toBe(false);
+    expect(richAnswerSaveState({ isLoading: false, isError: true, errorMessage: "Table 'cabinet_dealz.kitchen_rules' doesn't exist", record: null }).kind).toBe("row-missing");
     expect(richAnswerSaveState({ isLoading: false, isError: true, errorMessage: "boom", record: null }).kind).toBe("error");
     expect(richAnswerSaveState({ isLoading: false, isError: false, record: null }).kind).toBe("row-missing");
     expect(richAnswerSaveState({ isLoading: false, isError: false, record }).kind).toBe("ready");
