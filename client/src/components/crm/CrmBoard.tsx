@@ -39,6 +39,7 @@ import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmM
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
+import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
 import { CrmCustomerLookup } from "@/components/crm/CrmCustomerLookup";
@@ -521,6 +522,7 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       )}
       {deal.contactEmail && <div className="text-[11px] text-muted-foreground truncate">{deal.contactEmail}</div>}
       {deal.contactPhone && <div className="text-[11px] text-muted-foreground">{deal.contactPhone}</div>}
+      <DistributorSiteCompare deal={deal} />
       {deal.firstDesignSavedAt && (
         <div className="text-[10px] text-muted-foreground" data-testid="crm-card-first-design-saved" title={designSavedTitle(deal.firstDesignSavedAt)}>
           {CRM_DESIGN_STAMP_LABELS.first[lang]} {formatDesignSavedDate(deal.firstDesignSavedAt, lang)}
