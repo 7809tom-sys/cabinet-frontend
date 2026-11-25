@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 import { usePortalScopes } from "./usePortalScopes";
 import { fileToCsv } from "./spreadsheetFile";
+import { InventorySyncHowItWorks } from "./InventorySyncHowItWorks";
 
 export function VendorInventory(props: { distributorId?: number; approvedVendorLineId?: number }) {
   const portal = usePortalScopes(props);
@@ -112,6 +113,7 @@ export function VendorInventory(props: { distributorId?: number; approvedVendorL
         <h3 className="font-semibold">Inventory sync key</h3>
         <p className="text-sm text-muted-foreground">The key is shown once. The server stores only its hash. POST JSON or CSV to /api/vendor-inventory/sync with Authorization: Bearer. About 30 requests a minute per key, per server process.</p>
         <Button variant="outline" onClick={() => createKey.mutate({ scope })}>Generate key</Button>
+        <InventorySyncHowItWorks />
         {token && <p className="break-all rounded bg-muted p-2 font-mono text-xs">{token}</p>}
         <ul className="text-sm">
           {(keys.data ?? []).map((key) => (
