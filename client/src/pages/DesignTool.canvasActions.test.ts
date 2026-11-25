@@ -33,10 +33,15 @@ describe("floating canvas action rail wiring", () => {
     expect(picker).toContain("useRef(openSignal ?? 0)");
   });
 
-  it("keeps the existing toolbar buttons and the new rail side by side", () => {
-    // The existing triggers stay exactly where they were — this is additive.
+  it("hides the top-toolbar Add cabinet and Select real hardware duplicates at tablet and computer widths", () => {
+    // The same actions stay on the floor-plan rail and in the 3D column.
+    // The phone still has Catalog in the bottom bar and Cabinet handles.
+    const addStart = designTool.indexOf('data-testid="tablet-add-cabinet"');
+    expect(addStart).toBeGreaterThan(-1);
+    expect(designTool.slice(addStart, addStart + 180)).toContain('className="hidden"');
+    const toolbarPicker = designTool.slice(designTool.indexOf("<HardwareCatalogPicker"), designTool.indexOf("openSignal={hardwarePickerSignal}"));
+    expect(toolbarPicker).toContain('triggerClassName="lg:hidden"');
     expect(picker).toContain('data-testid="designer-real-hardware-trigger"');
-    expect(designTool).toContain('data-testid="tablet-add-cabinet"');
     // The rail's own test ids live in the rail component, built from the caller's
     // prefix so the column copy and this copy stay individually addressable.
     const railSource = readFileSync(new URL("../components/design/CanvasActionRail.tsx", import.meta.url), "utf8");
