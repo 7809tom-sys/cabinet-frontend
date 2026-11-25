@@ -3,6 +3,7 @@ import {
   dialogAfterFixturePick,
   followUpAfterCabinetStyle,
   initialDesignerPopup,
+  nextSinkBasePopup,
   popupsForRestoredDraft,
   shouldPromptFixturePick,
   sinkBasePlacementDialog,
@@ -17,19 +18,27 @@ const sinkBase = {
 };
 
 describe("sink base chooser", () => {
-  it("sends a farm sink base straight to the sink picker and never asks what goes on top", () => {
-    expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: true, explicitSinkProduct: false })).toBe("fixture-pick");
+  it("opens What goes on top first for a farm base and a regular base", () => {
+    expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: true, explicitSinkProduct: false })).toBe("what-goes-on-top");
+    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: false })).toBe("what-goes-on-top");
     expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: false, explicitSinkProduct: false })).toBe("none");
-  });
-
-  it("opens no further popup after the faucet and sink picker is closed", () => {
-    expect(dialogAfterFixturePick()).toBeNull();
-    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: false })).toBe("fixture-pick");
-  });
-
-  it("keeps the range-top chooser for a regular base that is not opening the sink picker", () => {
-    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: false, explicitSinkProduct: false })).toBe("range-top");
     expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: true })).toBe("none");
+  });
+
+  it("follows What goes on top into one sink list, then one faucet list", () => {
+    expect(nextSinkBasePopup({ from: "placement", action: "open" })).toBe("what-goes-on-top");
+    expect(nextSinkBasePopup({ from: "what-goes-on-top", action: "sink" })).toBe("pick-sink");
+    expect(nextSinkBasePopup({ from: "what-goes-on-top", action: "range-top" })).toBe("range-top");
+    expect(nextSinkBasePopup({ from: "pick-sink", action: "pick-sink" })).toBe("pick-faucet");
+    expect(nextSinkBasePopup({ from: "pick-faucet", action: "pick-faucet" })).toBe("none");
+  });
+
+  it("ends the flow when any step is dismissed, with no chooser underneath", () => {
+    expect(dialogAfterFixturePick()).toBeNull();
+    for (const from of ["placement", "what-goes-on-top", "pick-sink", "pick-faucet", "range-top"] as const) {
+      expect(nextSinkBasePopup({ from, action: "dismiss" })).toBe("none");
+    }
+    expect(nextSinkBasePopup({ from: "pick-sink", action: "dismiss" })).not.toBe("what-goes-on-top");
   });
 });
 

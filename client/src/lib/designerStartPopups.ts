@@ -67,22 +67,41 @@ function hasChosenProductId(id: number | null | undefined): boolean {
 /**
  * Which chooser a newly placed sink base opens.
  *
- * A farm sink base is always a sink, so it never asks "What goes on top?".
- * A kitchen base that opens the faucet-and-sink picker ends there too: closing
- * that picker must not reveal the range-top chooser underneath.
+ * Every sink base, farm or regular, starts at "What goes on top?". The sink
+ * list and the faucet list open only after the shopper picks Sink. Closing
+ * any step ends the flow, so a dismissed picker never reveals this chooser.
  */
 export function sinkBasePlacementDialog(input: {
   farmSinkBase: boolean;
   promptFixturePick: boolean;
   explicitSinkProduct: boolean;
-}): "fixture-pick" | "range-top" | "none" {
-  if (input.explicitSinkProduct) return "none";
-  if (input.farmSinkBase) return input.promptFixturePick ? "fixture-pick" : "none";
-  if (input.promptFixturePick) return "fixture-pick";
-  return "range-top";
+}): "what-goes-on-top" | "none" {
+  if (input.explicitSinkProduct || !input.promptFixturePick) return "none";
+  // Farm and regular bases share this first step. The farm flag only filters
+  // the sink list after the shopper picks Sink.
+  return input.farmSinkBase || !input.farmSinkBase ? "what-goes-on-top" : "none";
 }
 
-/** Closing or saving the faucet-and-sink picker ends the flow. No chooser follows. */
+export type SinkBaseFlowStep = "what-goes-on-top" | "pick-sink" | "pick-faucet" | "range-top" | "none";
+
+/**
+ * The single next popup. A click outside, the X, or Skip is `dismiss` and
+ * ends the flow from every step.
+ */
+export function nextSinkBasePopup(input: {
+  from: "placement" | "what-goes-on-top" | "pick-sink" | "pick-faucet" | "range-top";
+  action: "open" | "sink" | "range-top" | "pick-sink" | "pick-faucet" | "dismiss";
+}): SinkBaseFlowStep {
+  if (input.action === "dismiss") return "none";
+  if (input.from === "placement" && input.action === "open") return "what-goes-on-top";
+  if (input.from === "what-goes-on-top" && input.action === "sink") return "pick-sink";
+  if (input.from === "what-goes-on-top" && input.action === "range-top") return "range-top";
+  if (input.from === "pick-sink" && input.action === "pick-sink") return "pick-faucet";
+  if (input.from === "pick-faucet" && input.action === "pick-faucet") return "none";
+  return "none";
+}
+
+/** Closing the sink picker or the faucet picker ends the flow. Nothing follows. */
 export function dialogAfterFixturePick(): null {
   return null;
 }

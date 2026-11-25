@@ -101,7 +101,10 @@ describe("the faucet and sink popup list", () => {
   it("shows no apron-front sinks on a regular sink base", () => {
     const shown = sinksFittingExistingBase(products, sinkBase(36));
     expect(shown.length).toBeGreaterThan(0);
-    expect(shown.every((row) => catalogSinkInstallation(row) !== "farmhouse")).toBe(true);
+    expect(shown.every((row) => {
+      const kind = catalogSinkInstallation(row);
+      return kind === "undermount" || kind === "drop-in";
+    })).toBe(true);
     expect(shown.map((row) => row.pelicanCode)).toContain("PL-HA104 R0 16g");
     expect(shown.map((row) => row.pelicanCode)).not.toContain("PL-GMB135 R0 16g");
   });

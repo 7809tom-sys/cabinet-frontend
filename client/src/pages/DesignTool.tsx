@@ -1598,6 +1598,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   const [fixturePick, setFixturePick] = useState<FixturePick>({ sinkId: null, faucetId: null });
   const fixturePickRef = useRef<FixturePick>({ sinkId: null, faucetId: null });
   const fixturePickTargetUidRef = useRef<string | null>(null);
+  const fixturePickAllowedRef = useRef(false);
   const fixturePickPromptedUidsRef = useRef(new Set<string>());
   /** Sink bases the post-build sink question has already been asked about. */
   const autoDesignSinkPromptedRef = useRef(new Set<string>());
@@ -10438,28 +10439,22 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           explicitSinkProduct: pelicanSinkDraft != null,
           promptedUids: fixturePickPromptedUidsRef.current,
         }) && (roomType === "kitchen" || farmSinkBase);
-        // An FSB is always a sink, so it skips "What goes on top?" and opens the
-        // farm-only picker. A kitchen base that opens that picker ends there too.
+        // One entry for every sink base: "What goes on top?" first. The sink
+        // and faucet popups open only from the Sink choice, never alongside it.
         const placementDialog = sinkBasePlacementDialog({
           farmSinkBase,
           promptFixturePick,
           explicitSinkProduct: pelicanSinkDraft != null,
         });
         setMobilePanel(null);
-        if (placementDialog === "range-top") {
-          setSinkBaseDialog({ cabinetUid: finalCab.uid });
-          setRangeTopStep("choose");
-        } else {
-          setSinkBaseDialog(null);
-        }
-        if (farmSinkBase && placementDialog === "fixture-pick") {
-          toast.info(`${finalCab.masterCode} is a farmhouse / apron-front sink base. Choose its apron-front sink, then its faucet.`);
-        }
-        if (placementDialog === "fixture-pick") {
+        setFixturePickOpen(false);
+        if (placementDialog === "what-goes-on-top") {
           fixturePickPromptedUidsRef.current.add(finalCab.uid);
           fixturePickTargetUidRef.current = finalCab.uid;
-          setFixturePickStep("sink");
-          setFixturePickOpen(true);
+          setRangeTopStep("choose");
+          setSinkBaseDialog({ cabinetUid: finalCab.uid });
+        } else {
+          setSinkBaseDialog(null);
         }
       }
       if (isFloatingShelfItem(finalCab)) {
@@ -11701,25 +11696,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   // Sink bases created by the Peninsula Wizard wait here for the sink/faucet popup, one at a time.
   const [wizardSinkQueue, setWizardSinkQueue] = useState<string[]>([]);
   useEffect(() => {
-    if (sinkBaseDialog || wizardSinkQueue.length === 0) return;
+    // The sink and faucet popups own the screen. Do not open "What goes on top?"
+    // underneath them or the moment they close.
+    if (fixturePickOpen || sinkBaseDialog || wizardSinkQueue.length === 0) return;
     const [next, ...rest] = wizardSinkQueue;
     setWizardSinkQueue(rest);
+    setRangeTopStep("choose");
     setSinkBaseDialog({ cabinetUid: next });
-    setRangeTopStep("choose");
-  }, [sinkBaseDialog, wizardSinkQueue]);
-  // A farm base is a sink. Whichever path opened "What goes on top?" — a restored
-  // plan, the peninsula queue, or the Sink choice — send it to the sink popup.
-  useEffect(() => {
-    if (!sinkBaseDialog) return;
-    const cabinet = placed.find((item) => item.uid === sinkBaseDialog.cabinetUid);
-    if (!cabinet || !isFarmSinkBasePaletteItem(cabinet)) return;
-    setSinkBaseDialog(null);
-    setRangeTopStep("choose");
-    fixturePickPromptedUidsRef.current.add(cabinet.uid);
-    fixturePickTargetUidRef.current = cabinet.uid;
-    setFixturePickStep("sink");
-    setFixturePickOpen(true);
-  }, [placed, sinkBaseDialog]);
+  }, [fixturePickOpen, sinkBaseDialog, wizardSinkQueue]);
   // Range top sub-type selection (shown after user picks "Range Top" in the sink base dialog).
   // Also used for sink/faucet steps: "sink" = sink picker, "faucet" = faucet picker.
   const [rangeTopStep, setRangeTopStep] = useState<"choose" | "sink" | "faucet" | "range-type" | "range-product" | "gas" | "electric" | "induction" | "smooth-top">("choose");
@@ -12010,15 +11994,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     const faucetSink = kind === "faucet" ? sinks.find((sink) => sink.uid === item?.sinkUid && sink.autoDesignFaucet) : null;
     if (faucetSink && autoDesignAvailable) { openAutoDesignFaucetPicker(faucetSink.uid); return; }
     if (item?.cabinetUid) {
-      const cabinet = placed.find((entry) => entry.uid === item.cabinetUid) ?? null;
-      if (cabinet && isFarmSinkBasePaletteItem(cabinet)) {
-        fixturePickTargetUidRef.current = cabinet.uid;
-        setFixturePickStep("sink");
-        setFixturePickOpen(true);
-        return;
-      }
+      setFixturePickOpen(false);
+      fixturePickTargetUidRef.current = item.cabinetUid;
+      setRangeTopStep("choose");
       setSinkBaseDialog({ cabinetUid: item.cabinetUid });
-      setRangeTopStep("sink");
       return;
     }
     toast.info(`Select the sink on the plan to choose its ${kind}.`);
@@ -14756,6 +14735,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     return true;
   }, [room, roomType, setCabAttr, setSinks, setSelectedSinkUid]);
   const pickFixtureSink = useCallback((sinkId: number) => {
+    if (!fixturePickAllowedRef.current) return;
     const pick = { sinkId, faucetId: null as number | null };
     if (!applyFixturePick(pick)) return;
     setFixturePickStep("faucet");
@@ -14771,10 +14751,13 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     toast.success(hadBase ? "Faucet saved for this sink. You can change it later." : "Faucet and sink saved. They are offered first once the layout is built.");
   }, [applyFixturePick]);
   const dismissFixturePick = useCallback(() => {
+    // Outside click, X, and Skip share this. A click that falls through onto a
+    // sink tile after the dialog closes must not open another popup.
+    fixturePickAllowedRef.current = false;
     setFixturePickOpen(false);
     fixturePickTargetUidRef.current = null;
-    setFixturePickStep("sink");
-    // The X or Skip ends this flow. No faucet popup and no range-top chooser follow.
+    setWizardSinkQueue([]);
+    setRangeTopStep("choose");
     if (dialogAfterFixturePick() == null) setSinkBaseDialog(null);
   }, []);
 	  const applyAttachedCabinetFillers = useCallback((uid: string, choice: AttachedFillerChoice) => {
@@ -15239,17 +15222,12 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	  // Set 0–5 roll-out trays inside the exact eligible cabinet. The matching
 	  // same-line RS shelf is resolved by the picker and flows into BOM/cart lines.
   const openSinkAndFaucetPicker = useCallback((uid: string) => {
-    const cabinet = placedRef.current.find((item) => item.uid === uid) ?? null;
     fixturePickPromptedUidsRef.current.add(uid);
     fixturePickTargetUidRef.current = uid;
-    const next = {
-      sinkId: typeof cabinet?.sinkTopProductId === "number" ? cabinet.sinkTopProductId : null,
-      faucetId: typeof cabinet?.faucetProductId === "number" ? cabinet.faucetProductId : null,
-    };
-    fixturePickRef.current = next;
-    setFixturePick(next);
+    setFixturePickOpen(false);
     setFixturePickStep("sink");
-    setFixturePickOpen(true);
+    setRangeTopStep("choose");
+    setSinkBaseDialog({ cabinetUid: uid });
     setAttrOpen(false);
   }, []);
 	  const setRolloutQtyFor = useCallback((uid: string, qty: number) => {
@@ -24222,7 +24200,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	            const base = placed.find((cabinet) => cabinet.uid === fixturePickTargetUidRef.current);
 	            return base && isSinkBaseCabinet(base)
 	              ? sinksFittingExistingBase(autoDesignSinkProducts, base)
-	              : autoDesignSinkProducts;
+	              : [];
 	          })()}
 	          faucetProducts={autoDesignFaucetProducts}
 	          loading={autoDesignSinkCatalogLoading || autoDesignFaucetCatalogLoading}
@@ -24927,6 +24905,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         // popup from reopening on the exact step it was left on, and leaves the
         // next vanity starting from "What goes on top?".
         const closeSinkBaseDialog = () => {
+          setWizardSinkQueue([]);
+          setFixturePickOpen(false);
+          setFixturePickStep("sink");
           setSinkBaseDialog(null);
           setRangeTopStep("choose");
           setPendingRangeTopType(null);
@@ -24969,15 +24950,17 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       className="flex flex-col items-center gap-3 rounded-xl border-2 border-border hover:border-[#a87f33] p-5 transition-colors group"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (sinkBaseCabinet && isFarmSinkBasePaletteItem(sinkBaseCabinet)) {
-                          const uid = sinkBaseCabinet.uid;
-                          setSinkBaseDialog(null);
-                          fixturePickTargetUidRef.current = uid;
-                          setFixturePickStep("sink");
-                          setFixturePickOpen(true);
+                        if (isBathroomVanity || !sinkBaseCabinet) {
+                          setRangeTopStep("sink");
                           return;
                         }
-                        setRangeTopStep("sink");
+                        const uid = sinkBaseCabinet.uid;
+                        fixturePickAllowedRef.current = true;
+                        fixturePickTargetUidRef.current = uid;
+                        setFixturePickStep("sink");
+                        setRangeTopStep("choose");
+                        setSinkBaseDialog(null);
+                        setFixturePickOpen(true);
                       }}
                     >
                       <div className="w-14 h-14 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center group-hover:bg-blue-200 dark:group-hover:bg-blue-900/50 transition-colors">

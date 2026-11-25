@@ -43,12 +43,15 @@ describe("Start from scratch popup chain", () => {
     );
     expect(placement).toContain("shouldPromptFixturePick({");
     expect(placement).toContain("sinkBasePlacementDialog({");
+    expect(placement).toContain("placementDialog === \"what-goes-on-top\"");
+    expect(placement).not.toContain("setFixturePickOpen(true)");
     expect(placement).toContain("setSinkBaseDialog(null)");
     const dismiss = source.slice(source.indexOf("const dismissFixturePick"), source.indexOf("const applyAttachedCabinetFillers"));
     expect(dismiss).toContain("setFixturePickOpen(false)");
-    expect(dismiss).toContain("setFixturePickStep(\"sink\")");
+    expect(dismiss).toContain("fixturePickAllowedRef.current = false");
     expect(dismiss).toContain("setSinkBaseDialog(null)");
     expect(dismiss).not.toContain("setSinkBaseDialog({");
+    expect(dismiss).not.toContain("setFixturePickOpen(true)");
     expect(source).toContain("step={fixturePickStep}");
     expect(source).toContain("onPickSink={pickFixtureSink}");
     expect(source).toContain("onPickFaucet={pickFixtureFaucet}");
