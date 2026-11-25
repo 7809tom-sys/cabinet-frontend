@@ -68,8 +68,13 @@ function api() {
   };
 }
 
-export function useKitchenRulesList() {
-  return api().kitchenRules.list.useQuery(undefined, { retry: false });
+export function useKitchenRulesList(options: { enabled?: boolean } = {}) {
+  return api().kitchenRules.list.useQuery(undefined, { retry: false, throwOnError: false, enabled: options.enabled ?? true });
+}
+
+/** Only the update mutation, for writing one row's Notes (Rich's answers). */
+export function useKitchenRuleUpdate() {
+  return api().kitchenRules.update.useMutation();
 }
 
 export function useKitchenRuleMutations() {

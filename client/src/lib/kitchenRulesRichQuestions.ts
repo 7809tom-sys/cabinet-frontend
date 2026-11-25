@@ -10,7 +10,7 @@ import type { KitchenRuleSeed } from "./kitchenRulesCatalog";
  */
 export const RICH_QUESTIONS_CATEGORY = "Questions for Rich";
 
-const ANSWER_PROMPT = "Rich's answer: (not answered yet). Write what you do on a real job, and any number you use.";
+export const RICH_ANSWER_PROMPT = "Rich's answer: (not answered yet). Write what you do on a real job, and any number you use.";
 
 function question(code: string, title: string, nkba: string, today: string, ask: string): KitchenRuleSeed {
   return {
@@ -23,7 +23,7 @@ function question(code: string, title: string, nkba: string, today: string, ask:
     sourceText: "NKBA planning guidelines, owner rules, question for Rich",
     implementationStatus: "reference",
     readsParameters: false,
-    notesText: ANSWER_PROMPT,
+    notesText: RICH_ANSWER_PROMPT,
   };
 }
 

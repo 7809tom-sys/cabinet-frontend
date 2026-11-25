@@ -38,9 +38,22 @@ import {
   downloadTextFile,
   kitchenRulesToCsv,
   kitchenRulesToMarkdown,
+  useKitchenRuleUpdate,
+  useKitchenRulesList,
   type KitchenRuleRecord,
 } from "@/lib/kitchenRulesApi";
-import { Lock, Pencil, Plus, RotateCcw, Undo2 } from "lucide-react";
+import {
+  isMissingProcedureError,
+  readLocalRichAnswer,
+  richAnswerRecord,
+  richAnswerSaveState,
+  richAnswerText,
+  richAnswerUpdateInput,
+  richAnswersToMarkdown,
+  writeLocalRichAnswer,
+  type RichAnswerSaveState,
+} from "@/lib/kitchenRulesRichAnswers";
+import { Lock, MessageSquareText, Pencil, Plus, RotateCcw, Undo2 } from "lucide-react";
 
 const SETTING_PREFIX = "setting:";
 
@@ -69,8 +82,9 @@ function seedAsRecord(rule: (typeof KITCHEN_RULE_SEED)[number], index: number): 
 const CATALOG: KitchenRuleRecord[] = KITCHEN_RULE_SEED.map(seedAsRecord);
 
 /**
- * "Questions for Rich" are open questions, not settings. They stay a read-only
- * reference list: answering one is a note, and it never changes a plan.
+ * "Questions for Rich" are open questions, not settings. Rich types his answer
+ * on each card; it is saved in that question's Notes (kitchen_rules.notesText)
+ * and never changes a plan, the plan review list, or the AI prompt.
  */
 const RICH_QUESTION_ROWS = CATALOG.filter((rule) => rule.category === RICH_QUESTIONS_CATEGORY);
 
@@ -84,8 +98,20 @@ export default function KitchenRulesAdmin() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<KitchenRuleSetting | null>(null);
   const [richOpen, setRichOpen] = useState(false);
+  const [answering, setAnswering] = useState<KitchenRuleRecord | null>(null);
+  const [localAnswersVersion, setLocalAnswersVersion] = useState(0);
+  const richList = useKitchenRulesList({ enabled: richOpen });
+  const richUpdate = useKitchenRuleUpdate();
 
   const tableUnavailable = query.isError;
+  // A tRPC NOT_FOUND means the server has no kitchenRules API at all, which no
+  // SQL file can fix, so the banner says that instead of blaming the table.
+  const apiMissing = tableUnavailable && isMissingProcedureError(query.error?.message);
+  const saveBlockedReason = tableUnavailable
+    ? apiMissing
+      ? "Saving is not switched on yet: the server does not have the Kitchen Rules save API (kitchenRules.* in cabinet-backend). You can open and read every rule; Save comes on once that ships."
+      : "The kitchen rule settings table is not on the database yet, so nothing can be saved. Run docs/sql/0254_kitchen_rule_settings.tidb.sql in the TiDB editor, then reload."
+    : null;
   const rows = useMemo(() => mergeKitchenRuleSettings(query.data), [query.data]);
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -105,6 +131,21 @@ export default function KitchenRulesAdmin() {
   const activeRows = useMemo(() => visibleKitchenRuleSettings(rows), [rows]);
   const changedCount = activeRows.filter(kitchenRuleDiffers).length;
   const deletedCount = rows.filter((row) => row.deletedAt != null).length;
+
+  // List-level banner: only whether the answers API responds. A missing row is per question (in the editor).
+  const richListState: RichAnswerSaveState = richList.isError
+    ? richAnswerSaveState({ isLoading: false, isError: true, errorMessage: richList.error?.message, record: null })
+    : { kind: richList.isLoading ? "loading" : "ready" };
+
+  /** A saved server answer wins; otherwise one kept on this computer while saving is off. */
+  function richAnswerFor(ruleCode: string): { text: string | null; where: "server" | "this computer" | null } {
+    void localAnswersVersion;
+    const server = richAnswerText(richAnswerRecord(richList.data, ruleCode)?.notesText);
+    if (server) return { text: server, where: "server" };
+    const local = readLocalRichAnswer(ruleCode);
+    if (local) return { text: local, where: "this computer" };
+    return { text: null, where: null };
+  }
 
   async function afterChange(message: string) {
     toast.success(message);
@@ -136,7 +177,17 @@ export default function KitchenRulesAdmin() {
 
       {query.isLoading && <div className="flex justify-center py-8"><Spinner className="h-6 w-6" /></div>}
 
-      {tableUnavailable && (
+      {tableUnavailable && apiMissing && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-api-missing">
+          The server does not have the Kitchen Rules save API yet (the <span className="font-mono">kitchenRules</span> procedures
+          in cabinet-backend), so this list shows the code defaults and nothing can be saved. Running SQL alone will not fix
+          this: the backend change has to ship first, then <span className="font-mono">docs/sql/0254_kitchen_rule_settings.tidb.sql</span> is
+          run in the TiDB editor. The Designer is unaffected: it keeps using the code defaults. Every rule still has an Edit
+          button so you can read it.
+        </p>
+      )}
+
+      {tableUnavailable && !apiMissing && (
         <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rules-table-missing">
           The kitchen rule settings table is not on the database yet, so this list shows the code defaults and nothing can be
           saved. Run <span className="font-mono">docs/sql/0254_kitchen_rule_settings.tidb.sql</span> in the TiDB editor, then
@@ -144,6 +195,11 @@ export default function KitchenRulesAdmin() {
           {query.error ? ` ${query.error.message}` : ""}
         </p>
       )}
+
+      <p className="text-sm text-muted-foreground" data-testid="kitchen-rules-edit-hint">
+        To change a rule, press <span className="font-medium text-foreground">Edit</span> on its row (the Edit column stays
+        pinned on the right).
+      </p>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <SummaryTile label="Rules" value={String(activeRows.length)} note={`${activeRows.filter((row) => row.locked).length} locked`} />
@@ -184,17 +240,63 @@ export default function KitchenRulesAdmin() {
 
       {richOpen && (
         <div className="space-y-2 rounded-lg border p-3" data-testid="kitchen-rules-rich-help">
-          <p className="text-sm text-muted-foreground">
-            Rich: these are open questions, not designer settings. Each one records what NKBA says, what Auto-Design does
-            today, and the answer. They are reference-only and never change the Designer.
-          </p>
-          {RICH_QUESTION_ROWS.map((rule) => (
-            <div key={rule.ruleCode} className="rounded-md border px-3 py-2">
-              <p className="text-sm font-medium">{rule.title}</p>
-              <p className="mt-1 text-xs leading-relaxed">{rule.ruleDescription}</p>
-              {rule.notesText && <p className="mt-1 text-xs text-muted-foreground">{rule.notesText}</p>}
-            </div>
-          ))}
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <p className="max-w-3xl text-sm text-muted-foreground">
+              Rich: these are open questions, not designer settings. Each one records what NKBA says, what Auto-Design does
+              today, and your answer. Press <span className="font-medium text-foreground">Answer</span> on a question to type
+              what you do on a real job. Answers are reference-only and never change the Designer; Tom turns an answer into a
+              rule in a separate change.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => downloadTextFile("rich-answers.md", richAnswersToMarkdown(RICH_QUESTION_ROWS, richAnswerFor), "text/markdown")}
+              data-testid="kitchen-rules-rich-download"
+            >
+              Download answers
+            </Button>
+          </div>
+          {richListState.kind === "api-missing" && (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950" data-testid="kitchen-rules-rich-api-missing">
+              {richListState.message}
+            </p>
+          )}
+          {richListState.kind === "error" && (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950" data-testid="kitchen-rules-rich-error">
+              {richListState.message}
+            </p>
+          )}
+          {RICH_QUESTION_ROWS.map((rule) => {
+            const answer = richAnswerFor(rule.ruleCode);
+            return (
+              <div key={rule.ruleCode} className="rounded-md border px-3 py-2" data-testid={`rich-question:${rule.ruleCode}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium">{rule.title}</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={answer.text ? "outline" : "default"}
+                    className="shrink-0"
+                    onClick={() => setAnswering(rule)}
+                    data-testid={`rich-question:${rule.ruleCode}-answer`}
+                  >
+                    <MessageSquareText className="mr-1 h-3.5 w-3.5" />
+                    {answer.text ? "Edit answer" : "Answer"}
+                  </Button>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed">{rule.ruleDescription}</p>
+                {answer.text ? (
+                  <p className="mt-2 whitespace-pre-wrap rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-950" data-testid={`rich-question:${rule.ruleCode}-saved`}>
+                    <span className="font-medium">Rich's answer{answer.where === "this computer" ? " (kept on this computer only, not saved to the server)" : ""}:</span>{" "}
+                    {answer.text}
+                  </p>
+                ) : (
+                  rule.notesText && <p className="mt-1 text-xs text-muted-foreground">{rule.notesText}</p>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -208,7 +310,7 @@ export default function KitchenRulesAdmin() {
               <th className="px-3 py-2">Default</th>
               <th className="px-3 py-2">Kind</th>
               <th className="px-3 py-2">Last changed</th>
-              <th className="px-3 py-2 text-right">Edit</th>
+              <th className="sticky right-0 z-10 bg-muted px-3 py-2 text-right shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)]">Edit</th>
             </tr>
           </thead>
           <tbody>
@@ -243,7 +345,7 @@ export default function KitchenRulesAdmin() {
                 <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{row.valueType === "toggle" ? (row.defaultValue === "0" ? "Off" : "On") : row.defaultValue}</td>
                 <td className="px-3 py-3 text-xs">{kitchenRuleKindLabel(row)}</td>
                 <td className="px-3 py-3 text-xs">{kitchenRuleLastChanged(row)}</td>
-                <td className="px-3 py-3 text-right">
+                <td className="sticky right-0 z-10 bg-background px-3 py-3 text-right shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.25)]">
                   <div className="flex items-center justify-end gap-1">
                     {row.deletedAt != null ? (
                       <Button
@@ -258,14 +360,14 @@ export default function KitchenRulesAdmin() {
                     ) : (
                       <Button
                         type="button"
-                        size="icon"
-                        variant="ghost"
+                        size="sm"
+                        variant="outline"
                         aria-label={`Edit ${row.title}`}
                         title={`Edit ${row.title}`}
                         onClick={() => setEditing(row)}
                         data-testid={`${SETTING_PREFIX}${row.settingKey}-edit`}
                       >
-                        <Pencil className="h-4 w-4" />
+                        <Pencil className="mr-1 h-3.5 w-3.5" /> Edit
                       </Button>
                     )}
                   </div>
@@ -284,6 +386,7 @@ export default function KitchenRulesAdmin() {
         <RuleEditor
           key={editing.settingKey}
           rule={editing}
+          saveBlockedReason={saveBlockedReason}
           pending={mutations.save.isPending || mutations.reset.isPending}
           onClose={() => setEditing(null)}
           onAskDelete={() => setDeleting(editing)}
@@ -303,6 +406,44 @@ export default function KitchenRulesAdmin() {
               await afterChange("Rule reset to its default");
             } catch (error) {
               toast.error(error instanceof Error ? error.message : "The rule was not reset");
+            }
+          }}
+        />
+      )}
+
+      {answering && (
+        <RichAnswerEditor
+          key={answering.ruleCode}
+          question={answering}
+          savedAnswer={richAnswerText(richAnswerRecord(richList.data, answering.ruleCode)?.notesText)}
+          localAnswer={readLocalRichAnswer(answering.ruleCode)}
+          saveState={richAnswerSaveState({
+            isLoading: richList.isLoading,
+            isError: richList.isError,
+            errorMessage: richList.error?.message,
+            record: richAnswerRecord(richList.data, answering.ruleCode),
+          })}
+          pending={richUpdate.isPending}
+          onClose={() => setAnswering(null)}
+          onKeepLocal={(answer) => {
+            writeLocalRichAnswer(answering.ruleCode, answer);
+            setLocalAnswersVersion((version) => version + 1);
+            setAnswering(null);
+            toast.success(answer.trim() ? "Answer kept on this computer" : "Answer cleared on this computer");
+          }}
+          onSave={async (answer) => {
+            const record = richAnswerRecord(richList.data, answering.ruleCode);
+            if (!record) return;
+            try {
+              await richUpdate.mutateAsync(richAnswerUpdateInput(record, answer));
+              // The server copy is the answer now; drop any copy kept on this computer.
+              writeLocalRichAnswer(answering.ruleCode, "");
+              setLocalAnswersVersion((version) => version + 1);
+              setAnswering(null);
+              toast.success("Rich's answer saved");
+              await richList.refetch();
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : "The answer was not saved");
             }
           }}
         />
@@ -395,6 +536,7 @@ type SaveInput = {
 function RuleEditor({
   rule,
   pending,
+  saveBlockedReason,
   onClose,
   onSave,
   onReset,
@@ -402,6 +544,8 @@ function RuleEditor({
 }: {
   rule: KitchenRuleSetting;
   pending: boolean;
+  /** Set when the server cannot save, so the dialog says why instead of failing on Save. */
+  saveBlockedReason?: string | null;
   onClose: () => void;
   onSave: (input: SaveInput) => Promise<void>;
   onReset: () => Promise<void>;
@@ -441,6 +585,11 @@ function RuleEditor({
         </DialogHeader>
 
         <div className="grid gap-3">
+          {saveBlockedReason && (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="kitchen-rule-save-blocked">
+              {saveBlockedReason}
+            </p>
+          )}
           {locked && (
             <p className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-950" data-testid="kitchen-rule-locked-note">
               This is one of Tom's mandatory rules. It cannot be switched off or deleted, and the Designer always applies it.
@@ -551,7 +700,7 @@ function RuleEditor({
 
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           <div className="flex gap-2">
-            <Button type="button" variant="outline" onClick={() => void onReset()} disabled={pending} data-testid="kitchen-rule-reset">
+            <Button type="button" variant="outline" onClick={() => void onReset()} disabled={pending || Boolean(saveBlockedReason)} data-testid="kitchen-rule-reset">
               <RotateCcw className="mr-1 h-3.5 w-3.5" /> Reset to default
             </Button>
             {locked ? (
@@ -564,7 +713,7 @@ function RuleEditor({
                 variant="outline"
                 className="text-destructive"
                 onClick={onAskDelete}
-                disabled={pending}
+                disabled={pending || Boolean(saveBlockedReason)}
                 data-testid="kitchen-rule-delete"
               >
                 Delete
@@ -575,7 +724,7 @@ function RuleEditor({
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               type="button"
-              disabled={pending || numericInvalid || outOfRange || !title.trim()}
+              disabled={pending || Boolean(saveBlockedReason) || numericInvalid || outOfRange || !title.trim()}
               onClick={() => void onSave({
                 settingKey: rule.settingKey,
                 title: title.trim(),
@@ -680,6 +829,88 @@ function RuleCreator({
             data-testid="kitchen-rule-create"
           >
             Add rule
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RichAnswerEditor({
+  question,
+  savedAnswer,
+  localAnswer,
+  saveState,
+  pending,
+  onClose,
+  onSave,
+  onKeepLocal,
+}: {
+  question: KitchenRuleRecord;
+  savedAnswer: string | null;
+  localAnswer: string | null;
+  saveState: RichAnswerSaveState;
+  pending: boolean;
+  onClose: () => void;
+  onSave: (answer: string) => Promise<void>;
+  onKeepLocal: (answer: string) => void;
+}) {
+  // Created from THIS question at mount; the dialog is keyed by ruleCode.
+  const [answer, setAnswer] = useState(savedAnswer ?? localAnswer ?? "");
+  const canSave = saveState.kind === "ready";
+  const unchanged = answer.trim() === (savedAnswer ?? "").trim();
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl" data-testid="rich-answer-editor">
+        <DialogHeader>
+          <DialogTitle>Rich's answer: {question.title}</DialogTitle>
+          <DialogDescription>
+            <span className="font-mono text-xs">{question.ruleCode}</span> · reference only, never changes the Designer
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3">
+          <p className="rounded-md bg-muted/50 px-3 py-2 text-xs leading-relaxed">{question.ruleDescription}</p>
+
+          {saveState.kind !== "ready" && saveState.kind !== "loading" && (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="rich-answer-save-blocked">
+              {saveState.message}
+            </p>
+          )}
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="rich-answer-text">Your answer</Label>
+            <Textarea
+              id="rich-answer-text"
+              className="min-h-40"
+              rows={7}
+              value={answer}
+              onChange={(event) => setAnswer(event.target.value)}
+              placeholder="Write what you do on a real job, and any number you use."
+              data-testid="rich-answer-text"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Saved in this question's Notes. Leave it blank and save to mark it not answered again.
+          </p>
+        </div>
+
+        <DialogFooter className="flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          {!canSave && (
+            <Button type="button" variant="outline" onClick={() => onKeepLocal(answer)} data-testid="rich-answer-keep-local">
+              Keep on this computer
+            </Button>
+          )}
+          <Button
+            type="button"
+            disabled={!canSave || pending || unchanged}
+            title={canSave ? undefined : "Saving is not available yet"}
+            onClick={() => void onSave(answer)}
+            data-testid="rich-answer-save"
+          >
+            Save answer
           </Button>
         </DialogFooter>
       </DialogContent>
