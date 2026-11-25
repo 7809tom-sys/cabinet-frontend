@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { countertopQuoteStyleDetails, formatQuoteDateCT } from "./countertopQuoteDisplay";
+import {
+  CORIAN_SHEET_SQ_FT,
+  countertopQuoteSlabsNeeded,
+  countertopQuoteStyleDetails,
+  formatQuoteDateCT,
+} from "./countertopQuoteDisplay";
 
 describe("formatQuoteDateCT", () => {
   it("shows the quote date in Central time with a CT label", () => {
@@ -47,5 +52,31 @@ describe("countertopQuoteStyleDetails", () => {
       { label: "Color", value: "White" },
       { label: "Edge", value: "Full Bullnose" },
     ]);
+  });
+});
+
+describe("countertopQuoteSlabsNeeded", () => {
+  it("uses the 30 x 144 inch Corian sheet (30 sq ft)", () => {
+    expect(CORIAN_SHEET_SQ_FT).toBe(30);
+  });
+
+  it("rounds up to whole slabs, no partials", () => {
+    expect(countertopQuoteSlabsNeeded(32.5)).toBe(2);
+    expect(countertopQuoteSlabsNeeded("32.50")).toBe(2); // decimal column arrives as a string
+    expect(countertopQuoteSlabsNeeded(30)).toBe(1);
+    expect(countertopQuoteSlabsNeeded(30.01)).toBe(2);
+    expect(countertopQuoteSlabsNeeded(0.5)).toBe(1);
+    expect(countertopQuoteSlabsNeeded(60)).toBe(2);
+    expect(countertopQuoteSlabsNeeded(91)).toBe(4);
+  });
+
+  it("shows nothing for a missing, zero or bad area", () => {
+    expect(countertopQuoteSlabsNeeded(null)).toBeNull();
+    expect(countertopQuoteSlabsNeeded(undefined)).toBeNull();
+    expect(countertopQuoteSlabsNeeded("")).toBeNull();
+    expect(countertopQuoteSlabsNeeded(0)).toBeNull();
+    expect(countertopQuoteSlabsNeeded("0.00")).toBeNull();
+    expect(countertopQuoteSlabsNeeded(-5)).toBeNull();
+    expect(countertopQuoteSlabsNeeded("abc")).toBeNull();
   });
 });
