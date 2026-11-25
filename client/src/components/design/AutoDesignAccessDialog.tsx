@@ -16,6 +16,7 @@ import {
 } from "@shared/autoDesignAccess";
 import { autoDesignCreditCopy } from "@shared/autoDesignCredit";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 interface Props {
   open: boolean;
   reason: AutoDesignRunBlockReason | null;
@@ -32,6 +33,7 @@ interface Props {
  * store-fee policy: the full fee is credited, store cuts are never passed on.
  */
 export function AutoDesignAccessDialog({ open, reason, message, onOpenChange, onVerified }: Props) {
+  const hidePrices = useDesignerPricesHidden();
   const api = useAutoDesignAccessProcedures();
   const config = autoDesignAccessConfig();
   const requestCode = api.requestPhoneCode.useMutation();
@@ -103,11 +105,11 @@ export function AutoDesignAccessDialog({ open, reason, message, onOpenChange, on
         )}
 
         {reason === "subscribe" && (
-          <Button disabled={checkout.isPending} onClick={subscribe}>Subscribe for {formatUsd(config.accessFeeCents)}</Button>
+          <Button disabled={checkout.isPending} onClick={subscribe}>{hidePrices ? "Subscribe" : <>Subscribe for {formatUsd(config.accessFeeCents)}</>}</Button>
         )}
 
         <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1" data-testid="auto-design-credit-copy">
-          {autoDesignCreditCopy(config.accessFeeCents).map((line) => <li key={line}>{line}</li>)}
+          {autoDesignCreditCopy(config.accessFeeCents).filter((line) => !hidePrices || !/\$\d/.test(line)).map((line) => <li key={line}>{line}</li>)}
         </ul>
 
         <DialogFooter>

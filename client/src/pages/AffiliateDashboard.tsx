@@ -90,6 +90,7 @@ function AffiliateLanding() {
       <nav aria-label="Portal sign in" className="border-b border-border bg-background">
         <div className="container flex flex-wrap items-center justify-end gap-x-6 gap-y-2 py-3">
           <Link href={affiliateHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Affiliate sign in</Link>
+          <Link href="/plans" className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Subscription plans</Link>
           <Link href="/sales-rep/apply" className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Sales rep application</Link>
           <Link href={contractorHref} className="text-sm font-semibold text-[var(--color-navy)] underline underline-offset-4">Contractor sign in</Link>
         </div>

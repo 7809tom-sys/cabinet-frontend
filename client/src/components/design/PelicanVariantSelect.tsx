@@ -8,6 +8,7 @@ import {
   type PelicanVariant,
 } from "@shared/pelicanConfigurationGrouping";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 const stop = (event: MouseEvent | KeyboardEvent) => event.stopPropagation();
 
 /** Small colour dot for metal and wall-panel finishes; omitted when a variant has no finish colour. */
@@ -33,6 +34,7 @@ export function PelicanVariantSelect<T extends PelicanGroupable>({
   onChange: (itemId: number) => void;
   compact?: boolean;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   if (configuration.variants.length < 2) return null;
   return (
     <div onClick={stop} onKeyDown={stop} className="min-w-0">
@@ -49,7 +51,7 @@ export function PelicanVariantSelect<T extends PelicanGroupable>({
             <SelectItem key={variant.item.id} value={String(variant.item.id)}>
               <span className="flex items-center gap-1.5">
                 <PelicanFinishDot swatch={variant.swatch} />
-                <span>{pelicanVariantMenuLabel(configuration, variant, formatPrice)}</span>
+                <span>{hidePrices ? variant.label : pelicanVariantMenuLabel(configuration, variant, formatPrice)}</span>
               </span>
             </SelectItem>
           ))}

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  dialogAfterFixturePick,
   followUpAfterCabinetStyle,
   initialDesignerPopup,
+  nextSinkBasePopup,
+  sinkFlowCoversSelectedCabinetSheet,
   popupsForRestoredDraft,
   shouldPromptFixturePick,
+  sinkBasePlacementDialog,
 } from "./designerStartPopups";
 
 const sinkBase = {
@@ -13,6 +17,37 @@ const sinkBase = {
   subCategory: "Sink Base",
   placement: "base" as const,
 };
+
+describe("sink base chooser", () => {
+  it("opens What goes on top first for a farm base and a regular base", () => {
+    expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: true, explicitSinkProduct: false })).toBe("what-goes-on-top");
+    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: false })).toBe("what-goes-on-top");
+    expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: false, explicitSinkProduct: false })).toBe("none");
+    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: true })).toBe("none");
+  });
+
+  it("follows What goes on top into one sink list, then one faucet list", () => {
+    expect(nextSinkBasePopup({ from: "placement", action: "open" })).toBe("what-goes-on-top");
+    expect(nextSinkBasePopup({ from: "what-goes-on-top", action: "sink" })).toBe("pick-sink");
+    expect(nextSinkBasePopup({ from: "what-goes-on-top", action: "range-top" })).toBe("range-top");
+    expect(nextSinkBasePopup({ from: "pick-sink", action: "pick-sink" })).toBe("pick-faucet");
+    expect(nextSinkBasePopup({ from: "pick-faucet", action: "pick-faucet" })).toBe("none");
+  });
+
+  it("keeps the phone selected-cabinet sheet under every sink-flow step", () => {
+    expect(sinkFlowCoversSelectedCabinetSheet({ fixturePickOpen: false, sinkBaseDialogOpen: true })).toBe(true);
+    expect(sinkFlowCoversSelectedCabinetSheet({ fixturePickOpen: true, sinkBaseDialogOpen: false })).toBe(true);
+    expect(sinkFlowCoversSelectedCabinetSheet({ fixturePickOpen: false, sinkBaseDialogOpen: false })).toBe(false);
+  });
+
+  it("ends the flow when any step is dismissed, with no chooser underneath", () => {
+    expect(dialogAfterFixturePick()).toBeNull();
+    for (const from of ["placement", "what-goes-on-top", "pick-sink", "pick-faucet", "range-top"] as const) {
+      expect(nextSinkBasePopup({ from, action: "dismiss" })).toBe("none");
+    }
+    expect(nextSinkBasePopup({ from: "pick-sink", action: "dismiss" })).not.toBe("what-goes-on-top");
+  });
+});
 
 describe("Start from scratch popup order", () => {
   it("opens the cabinet style and color popup on an empty start", () => {

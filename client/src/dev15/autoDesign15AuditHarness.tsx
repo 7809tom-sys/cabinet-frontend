@@ -264,8 +264,10 @@ function PopupScene({ dismissed }: { dismissed: boolean }) {
         Pop-up open: <b data-testid="popup-state">{open ? "yes" : "no"}</b> · Saved pick: <b>{pick ? `sink ${pick.sinkId ?? "-"}, faucet ${pick.faucetId ?? "-"}` : "none"}</b>
         {dismissed ? " · (this shot is taken after clicking “Skip for now”)" : ""}
       </div>
-      <DesignerFixturePickPopup open={open} sinkProducts={SINKS as never} faucetProducts={FAUCETS as never} loading={false}
-        onSave={(next) => { setPick(next); setOpen(false); }} onDismiss={() => setOpen(false)} />
+      <DesignerFixturePickPopup open={open} step="sink" sinkProducts={SINKS as never} faucetProducts={FAUCETS as never} loading={false}
+        onPickSink={(sinkId) => { setPick({ sinkId, faucetId: null }); setOpen(false); }}
+        onPickFaucet={(faucetId) => { setPick({ sinkId: null, faucetId }); setOpen(false); }}
+        onDismiss={() => setOpen(false)} />
     </div>
   );
 }

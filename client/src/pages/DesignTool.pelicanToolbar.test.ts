@@ -12,7 +12,8 @@ describe("Designer toolbar Pelican entry point", () => {
     expect(pelican).toBeGreaterThan(hardware);
     // Nothing else sits between the two controls, so they read as a pair.
     expect(pelican - hardware).toBeLessThan(1200);
-    expect(source.slice(pelican, pelican + 1600)).toContain(">Pelican</span>");
+    expect(source.slice(pelican, pelican + 1800)).toContain("bathroomFixtureCatalogVendorLabel()");
+    expect(source.slice(pelican, pelican + 1800)).not.toContain(">Pelican</span>");
   });
 
   it("opens the same Surfaces & Fixtures catalog as the lower-right rail button", () => {

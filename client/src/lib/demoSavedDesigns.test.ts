@@ -88,7 +88,7 @@ describe("demo My designs (reuses the designer's local draft)", () => {
   it("needs no DesignTool change: DesignTool does not know about saved designs", () => {
     const src = readFileSync(new URL("../pages/DesignTool.tsx", import.meta.url), "utf8");
     expect(src).not.toContain("demoSavedDesigns");
-    // Props are still only the approved catalogFilter (plus the existing affiliateSlug).
-    expect(src).toContain("export default function DesignTool(props: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter })");
+    // Props are still only the approved catalogFilter and hidePrices (plus the existing affiliateSlug).
+    expect(src).toContain("export default function DesignTool({ hidePrices = false, ...props }: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter; hidePrices?: boolean })");
   });
 });

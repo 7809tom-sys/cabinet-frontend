@@ -31,6 +31,7 @@ import {
   appendCollisionFreePlacements,
   fixtureBelongsToCabinet,
   freeSegmentsOnWall,
+  isFarmSinkBasePaletteItem,
   isSinkBaseCabinet,
   roomWallRunFrames,
   type DesignCabinet,
@@ -181,7 +182,7 @@ export function sinksFittingExistingBase(
   base: Pick<PlacedCabinet, "width" | "masterCode" | "description" | "subCategory">,
 ): AutoDesignSinkProduct[] {
   const openingWidthIn = sinkBaseOpeningWidthIn(base);
-  const farmBase = /^fsb[-_]?\d/i.test(base.masterCode ?? "") || /farm(?:house)?/i.test(`${base.description ?? ""} ${base.subCategory ?? ""}`);
+  const farmBase = isFarmSinkBasePaletteItem(base);
   return products.filter((product) => {
     if (!isAutoDesignSinkProduct(product)) return false;
     const pairing = sinkBasePairing(product);

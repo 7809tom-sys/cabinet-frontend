@@ -324,6 +324,7 @@ export function buildPelicanSinkOnCabinet(
     pelicanProductId: item.id,
     pelicanProductName: item.name,
     pelicanProductImage: item.imageUrl ?? undefined,
+    pelicanCode: item.pelicanCode ?? undefined,
     ...(profile ? {
       pelicanProfileId: profile.id,
       bowlShape: profile.basinShape,

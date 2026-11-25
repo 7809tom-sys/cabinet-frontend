@@ -86,6 +86,7 @@ const AffiliateSetup = lazy(() => import("@/pages/AffiliateSetup"));
 const Account = lazy(() => import("@/pages/Account"));
 const StoreAccount = lazy(() => import("@/pages/StoreAccount"));
 const CustomerFeaturePreview = lazy(() => import("@/pages/CustomerFeaturePreview"));
+const PelicanCadPreview = lazy(() => import("@/pages/PelicanCadPreview"));
 const PlanSheet = lazy(() => import("@/pages/PlanSheet"));
 const FeeSystemDoc = lazy(() => import("@/pages/FeeSystemDoc"));
 const Surfaces = lazy(() => import("@/pages/Surfaces"));
@@ -116,6 +117,7 @@ const Warranty = lazy(() => import("@/pages/Warranty"));
 const AffiliateAgreementPage = lazy(() => import("@/pages/AffiliateAgreementPage"));
 const SalesRepAgreementPage = lazy(() => import("@/pages/SalesRepAgreementPage"));
 const AffiliateMembershipCheckout = lazy(() => import("@/pages/AffiliateMembershipCheckout"));
+const DesignerPlans = lazy(() => import("@/pages/DesignerPlans"));
 const SalesRepApply = lazy(() => import("@/pages/SalesRepApply"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
 const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
@@ -492,6 +494,13 @@ export default function App() {
             </Suspense>
           </Route>
         )}
+        {import.meta.env.DEV && (
+          <Route path="/dev/pelican-cad">
+            <Suspense fallback={<PageLoader />}>
+              <PelicanCadPreview />
+            </Suspense>
+          </Route>
+        )}
         <Route path="/store/:slug/design">
           {(params) => (
             <ErrorBoundary>
@@ -685,14 +694,15 @@ export default function App() {
           )}
         </Route>
         {/* Demo distributor storefront, designer, back office and signup — placeholder data only */}
-        {/* Demo Distributor Designer: the unchanged DesignTool inside the demo distributor shell. */}
+        {/* Demo Distributor Designer: DesignTool (prices hidden) inside the demo distributor shell. */}
         <Route path="/distributor-preview/design">
           <ErrorBoundary>
             <Suspense fallback={<PageLoader />}>
               <DistributorDesignerShell>
                 <DesignerErrorBoundary surface="designer">
-                  {/* Only this route passes catalogFilter: the three demo lines (sinks/faucets unaffected). */}
-                  <DesignTool catalogFilter={demoDesignerCatalogFilter} />
+                  {/* Only this route passes catalogFilter (the three demo lines; sinks/faucets unaffected)
+                      and hidePrices: a distributor's sample never publishes a price. */}
+                  <DesignTool catalogFilter={demoDesignerCatalogFilter} hidePrices />
                 </DesignerErrorBoundary>
               </DistributorDesignerShell>
             </Suspense>
@@ -1011,6 +1021,14 @@ export default function App() {
           <Suspense fallback={<PageLoader />}>
             <AffiliateDashboard />
           </Suspense>
+        </Route>
+
+        <Route path="/plans">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <DesignerPlans />
+            </Suspense>
+          </AppLayout>
         </Route>
 
         <Route path="/affiliate/membership">

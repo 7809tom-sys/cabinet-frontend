@@ -5816,15 +5816,24 @@ export function isSinkBaseCabinet(c: {
 /** True for farm/farmhouse sink bases that must resolve through the active-wall palette path. */
 export function isFarmSinkBasePaletteItem(c: {
   masterCode?: string | null;
+  displayMasterCode?: string | null;
   description?: string | null;
   subCategory?: string | null;
+  category?: string | null;
+  name?: string | null;
+  graphicType?: string | null;
+  customProfile?: string | null;
 }): boolean {
-  if (!isSinkBaseCabinet(c)) return false;
-  const code = `${c.masterCode ?? ""}`.toLowerCase();
-  const hay = `${c.description ?? ""} ${c.subCategory ?? ""}`.toLowerCase();
-  // "Farmer" is the owner's word for the same apron-front base, so a line that
-  // prints it reaches the same farmhouse path.
-  return /^fsb[-_]?\d/.test(code) || /farm(?:house|er)?'?s?\s+sink/.test(hay);
+  // A farm base is recognized from any one of the catalog signals, including a
+  // restored cabinet whose row was filed under a plain "Sink Base" category.
+  // The code may be FSB36, FSB-36, FSB 36, or ADA-FSB-36. The name may be
+  // "Farm Sink Base". The category or subcategory may say the same thing.
+  const codes = `${c.masterCode ?? ""} ${c.displayMasterCode ?? ""}`;
+  if (/(?:^|[^A-Z0-9])(?:ADA[-\s_]?)?FSB[-\s_]?\d/i.test(codes)) return true;
+  const hay = `${c.category ?? ""} ${c.subCategory ?? ""} ${c.description ?? ""} ${c.name ?? ""} ${c.graphicType ?? ""} ${c.customProfile ?? ""}`.toLowerCase();
+  if (/farm\s+sink\s+base/.test(hay)) return true;
+  if (/farm(?:house|er)?'?s?\s+sink/.test(hay)) return true;
+  return /\bapron[-\s]?front\b/.test(hay) && /\bsink\s+base\b/.test(hay);
 }
 
 /** A sink fixture belongs to a sink base when its center lies inside that cabinet's true footprint. */
@@ -15707,6 +15716,8 @@ export interface SinkFixture {
   pelicanProductName?: string;
   /** Pelican product image URL */
   pelicanProductImage?: string;
+  /** Catalog SKU, so a manufacturer drawing can be matched after the sink is placed. */
+  pelicanCode?: string;
   /** Source-verified parametric profile identifier, when a real Pelican fixture has one. */
   pelicanProfileId?: string;
   /**
@@ -16211,6 +16222,7 @@ export function normalizeSinkFixturesToBases(
       pelicanProductId: sink.pelicanProductId,
       pelicanProductName: sink.pelicanProductName,
       pelicanProductImage: sink.pelicanProductImage,
+      pelicanCode: sink.pelicanCode,
       pelicanProfileId: sink.pelicanProfileId,
       bowlWidth: sink.bowlWidth,
       bowlDepth: sink.bowlDepth,

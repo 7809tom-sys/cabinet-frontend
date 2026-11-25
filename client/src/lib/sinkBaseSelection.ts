@@ -294,6 +294,7 @@ export function placeSinkOnBase(input: {
       pelicanProductId: product.id,
       pelicanProductName: product.name,
       pelicanProductImage: product.imageUrl ?? undefined,
+      pelicanCode: product.pelicanCode ?? undefined,
       ...(profile ? {
         pelicanProfileId: profile.id,
         bowlShape: profile.basinShape,

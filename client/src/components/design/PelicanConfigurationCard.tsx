@@ -11,9 +11,11 @@ import { bathroomFixtureCardImage } from "@/lib/bathroomFixtureCatalog";
 import { pelicanToiletCatalogPhoto } from "@/lib/pelicanToiletCatalogPhotos";
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { pelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
+import { PelicanCadDownloads } from "@/components/pelican/PelicanCadDownloads";
 import { PelicanFinishDot, PelicanVariantSelect } from "./PelicanVariantSelect";
 import { customerFacingProductName, ProductPhoto } from "./ProductPhotoGrid";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 /**
  * One Pelican model as a card, the same way the Hardware picker shows one
  * hardware model: product photo, small collection line, a clean title, a
@@ -39,6 +41,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
   note?: ReactNode;
   testIdPrefix?: string;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   const [chosenId, setChosenId] = useState<number | null>(null);
   const variant = pelicanDisplayVariant(configuration, selectedIds, chosenId);
   const item = variant.item;
@@ -97,6 +100,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
         <p className="truncate text-[9px] text-muted-foreground">
           {item.pelicanCode}{item.size && multiple ? ` · ${item.size}` : ""}
         </p>
+        <PelicanCadDownloads pelicanCode={item.pelicanCode} compact />
         {pelicanSinkCatalogDescription(item.pelicanCode) && (
           <p data-testid={`${testIdPrefix}-catalog-description-${item.id}`} className="line-clamp-4 text-[10px] leading-snug text-muted-foreground">
             {pelicanSinkCatalogDescription(item.pelicanCode)}
@@ -108,7 +112,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
         )}
         {note}
         <div className="mt-auto flex items-center justify-between gap-1 pt-0.5">
-          <span className="text-[11px] font-bold text-[#1a2744] dark:text-foreground">{formatPrice(item.sellPrice)}</span>
+          <span className="text-[11px] font-bold text-[#1a2744] dark:text-foreground">{hidePrices ? null : formatPrice(item.sellPrice)}</span>
           <button
             type="button"
             aria-pressed={isSelected}

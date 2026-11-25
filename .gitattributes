@@ -7,5 +7,11 @@
 *.ico binary
 *.pdf binary
 *.glb binary
+*.igs binary
+*.iges binary
+*.stp binary
+*.step binary
+*.dwg binary
+*.dxf binary
 *.woff binary
 *.woff2 binary

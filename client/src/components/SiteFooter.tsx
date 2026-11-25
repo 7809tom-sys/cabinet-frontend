@@ -83,6 +83,7 @@ export function SiteFooter() {
                 { label: t("nav_supplier_portal"), href: "/distributor" },
                 { label: t("nav_become_vendor"), href: "/become-a-vendor" },
                 { label: t("home_aud_affiliates_cta"), href: "/affiliate" },
+                { label: "Subscription Plans", href: "/plans" },
                 { label: t("nav_admin"), href: "/admin" },
                 { label: "About CabinetDealz", href: "/about" },
                 { label: "Contact Us", href: "/contact" },
