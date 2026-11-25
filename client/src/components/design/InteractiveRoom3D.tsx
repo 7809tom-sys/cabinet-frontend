@@ -11406,6 +11406,23 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       default: return { x: bowlX + rightOffset, z: bowlZ - backOffset };
     }
   };
+  // A farm apron is a thin front wall. The bowl starts at the back of that wall
+  // so the top is only the wall thickness, not a flat ledge in front of the basin.
+  const farmApronWall = (7 / 8) * INCH;
+  const farmFrontRim = farmSink
+    ? apronFrontRimDepthIn({
+      type: sink.type,
+      apronFront: sink.apronFront,
+      x: sink.x,
+      y: sink.y,
+      width: sink.width,
+      depth: sink.depth,
+      wallSide: sink.wallSide,
+      bowlDepth: sink.bowlDepth,
+      sourceDepth: sink.sourceDepth,
+    }) * INCH
+    : 0;
+  const farmBowlReach = Math.max(0, farmFrontRim - farmApronWall);
   bowlOffsets.forEach((lateralOffset, bowlIndex) => {
     const bowlX = centerX + (lateralIsX ? lateralOffset : 0);
     const bowlZ = centerZ + (lateralIsX ? 0 : lateralOffset);
@@ -11415,7 +11432,21 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     const bowlHeightForIndex = bowlHeights[bowlIndex] ?? bowlHeight;
     const bowlInnerWidth = bowlDimensionsForIndex.width;
     const bowlInnerDepth = bowlDimensionsForIndex.depth;
-    const bowlRadius = Math.min(0.12, bowlInnerWidth * 0.09, bowlInnerDepth * 0.09);
+    let basinWidth = bowlInnerWidth;
+    let basinDepth = bowlInnerDepth;
+    let basinX = bowlX;
+    let basinZ = bowlZ;
+    if (farmBowlReach > 0.001) {
+      const halfReach = farmBowlReach / 2;
+      if (wallSide === "left" || wallSide === "right") {
+        basinWidth += farmBowlReach;
+        basinX += (wallSide === "left" ? 1 : -1) * halfReach;
+      } else {
+        basinDepth += farmBowlReach;
+        basinZ += (wallSide === "bottom" ? -1 : 1) * halfReach;
+      }
+    }
+    const bowlRadius = Math.min(0.12, basinWidth * 0.09, basinDepth * 0.09);
     // A vanity basin is drawn in the shape its specification sheet publishes.
     // Without this every basin was a rounded rectangle, which is why the round
     // PL-3608 appeared rectangular in the drawing.
@@ -11423,9 +11454,9 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     const drawEllipticalBowl = vanityBowlShape === "oval" || vanityBowlShape === "circle";
     const bowlGeometry = drawEllipticalBowl
       ? ellipticalSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, 72)
-      : recessedSinkBowlGeometry(bowlInnerWidth, bowlInnerDepth, bowlHeightForIndex, bowlRadius);
+      : recessedSinkBowlGeometry(basinWidth, basinDepth, bowlHeightForIndex, bowlRadius);
     const bowl = new THREE.Mesh(bowlGeometry, basinInterior);
-    bowl.position.set(bowlX, sinkBodyTopY, bowlZ);
+    bowl.position.set(basinX, sinkBodyTopY, basinZ);
     bowl.renderOrder = 20;
     bowl.userData = { sinkBowl: true, recessedSinkBowl: true, openSinkBowl: true, visibleInteriorDepth: true, bowlDepthIn: bowlHeightForIndex / INCH, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId, sinkBowlIndex: bowlIndex + 1 };
     addFixtureNode(bowl);
@@ -11437,7 +11468,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       new RoundedBoxGeometry(floorInset.bottomWidth, 0.025, floorInset.bottomDepth, 4, Math.min(0.08, floorInset.bottomWidth * 0.07, floorInset.bottomDepth * 0.07)),
       bowlFloorMaterial,
     );
-    bowlFloor.position.set(bowlX, sinkBodyTopY - bowlHeightForIndex + 0.014, bowlZ);
+    bowlFloor.position.set(basinX, sinkBodyTopY - bowlHeightForIndex + 0.014, basinZ);
     bowlFloor.renderOrder = 21;
     bowlFloor.userData = { sinkBowlFloor: true, visibleSinkBowlBottom: true, recessedDepthIn: bowlHeightForIndex / INCH, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId, sinkBowlIndex: bowlIndex + 1 };
     addFixtureNode(bowlFloor);
@@ -11447,7 +11478,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     drainMaterial.metalness = 0.66;
     drainMaterial.roughness = 0.34;
     const drain = new THREE.Mesh(new THREE.CylinderGeometry(drainRadius * 0.82, drainRadius * 0.82, 0.022, 32), drainMaterial);
-    const drainPosition = documentedDrainPosition(bowlX, bowlZ, sourceBowlWidthForIndex, sourceBowlDepthForIndex);
+    const drainPosition = documentedDrainPosition(basinX, basinZ, sourceBowlWidthForIndex, sourceBowlDepthForIndex);
     drain.position.set(drainPosition.x, sinkBodyTopY - bowlHeightForIndex + 0.03, drainPosition.z);
     drain.renderOrder = 22;
     drain.userData = { sinkDrain: true, drainAtBowlBottom: true, fixtureDetail: true, sinkBowlIndex: bowlIndex + 1, documentedDrainInset: hasMeasuredDrainInset };
@@ -11471,20 +11502,9 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   });
   if (isApronFrontSink(sink)) {
     const exteriorHeight = Math.max((sink.exteriorHeight ?? (sink.bowlHeight ?? 10)) * INCH, bowlHeight + 0.025, 0.18);
-    // The apron has to reach the bowl. A short slab leaves the carcass edge
-    // visible as a wood line between the apron and the rim.
-    const frontRim = apronFrontRimDepthIn({
-      type: sink.type,
-      apronFront: sink.apronFront,
-      x: sink.x,
-      y: sink.y,
-      width: sink.width,
-      depth: sink.depth,
-      wallSide: sink.wallSide,
-      bowlDepth: sink.bowlDepth,
-      sourceDepth: sink.sourceDepth,
-    }) * INCH;
-    const apronThickness = Math.max(Math.min(0.12, depth * 0.2), frontRim + 0.02);
+    // A thin front wall with a small rounded top. The basin begins at its back
+    // face, so there is no flat ledge between the apron and the bowl.
+    const apronThickness = farmApronWall;
     const side = sink.wallSide ?? "top";
     const isSourceMeasuredStainlessApron = sink.pelicanProfileId === "pelican-pl-ha135-r0-retrofit-stainless-farmhouse";
     const apronMaterial = isGunmetalBlack
@@ -11498,7 +11518,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
         exteriorHeight,
         side === "left" || side === "right" ? depth : apronThickness,
         4,
-        Math.min(0.04, apronThickness * 0.25),
+        Math.min((1 / 8) * INCH, apronThickness * 0.3),
       ),
       apronMaterial,
     );
@@ -11519,27 +11539,24 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     );
     apron.userData = { sinkApronFront: true, sinkApronMaterial: isGunmetalBlack ? "gunmetal-black" : isSourceMeasuredStainlessApron ? "stainless-steel" : "fireclay", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
     addFixtureNode(apron);
-    // A manufacturer mesh replaces the apron face. This deck stays, in the sink
-    // material, and fills the front rim back to the bowl so the cabinet cannot
-    // show through that gap.
-    const deckDepth = Math.max(0.04, apronThickness - 0.01);
-    const deckHeight = Math.min(exteriorHeight * 0.45, 2.25 * INCH);
-    const deck = new THREE.Mesh(
+    // The inside of the wall, straight down, in the sink material. It covers the
+    // carcass behind the apron without adding a horizontal surface.
+    const innerFace = new THREE.Mesh(
       new THREE.BoxGeometry(
-        side === "left" || side === "right" ? deckDepth : width,
-        deckHeight,
-        side === "left" || side === "right" ? depth : deckDepth,
+        side === "left" || side === "right" ? 0.012 : width * 0.992,
+        exteriorHeight,
+        side === "left" || side === "right" ? depth * 0.992 : 0.012,
       ),
       apronMaterial,
     );
-    const deckInset = (apronThickness - deckDepth) / 2;
-    deck.position.set(
-      apron.position.x - sidewaysDirection * deckInset,
-      farmhouseApronTopY(countertopTop) - deckHeight / 2 - 0.004,
-      apron.position.z - direction * deckInset,
+    const innerShift = apronThickness / 2 - 0.008;
+    innerFace.position.set(
+      apron.position.x - sidewaysDirection * innerShift,
+      apron.position.y,
+      apron.position.z - direction * innerShift,
     );
-    deck.userData = { sinkApronDeck: true, sinkApronMaterial: apron.userData.sinkApronMaterial, fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
-    addFixtureNode(deck);
+    innerFace.userData = { sinkApronInner: true, sinkApronMaterial: apron.userData.sinkApronMaterial, fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
+    addFixtureNode(innerFace);
   }
   if (sink.type === "double" || measuredDoubleBowl) {
     const dividerMaterial = sinkInteriorStencilMaterial(steel.clone(), sinkStencilRef);
