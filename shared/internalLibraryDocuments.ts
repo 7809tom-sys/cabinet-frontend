@@ -72,7 +72,7 @@ export const INTERNAL_LIBRARY_DOCUMENTS: readonly InternalLibraryDocument[] = [
   internalDocument({
     title: "How to Create an App for an Affiliate",
     description:
-      "Internal ops guide for Tom. Affiliates get their white-label web storefront, which a customer installs with Add to Home Screen under the affiliate's own name and icon from a per-store web manifest. Separate App Store or Google Play apps per affiliate are not recommended (Apple guidelines 4.2.6 and 4.3(a)); one Cabinetdealz store app with a dealer picker is a future option only. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.",
+      "Internal ops guide for Tom. Affiliates get their white-label web storefront, which a customer installs with Add to Home Screen under the affiliate's own name and icon from a per-store web manifest. Separate App Store or Google Play apps per affiliate are not recommended (Apple guidelines 4.2.6 and 4.3(a)). One Cabinetdealz store app with a dealer picker is a future option only. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.",
     category: "Internal",
     file: "how-to-create-an-app-for-an-affiliate.md",
     mimeType: "text/plain",
