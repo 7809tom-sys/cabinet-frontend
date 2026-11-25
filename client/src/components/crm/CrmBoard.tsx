@@ -56,6 +56,7 @@ import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/Cr
 import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
 import { CustomerListImportAdminDialog } from "@/components/crm/outreach/CustomerListImportAdminDialog";
 import { OutreachPanel } from "@/components/crm/outreach/OutreachPanel";
+import { OutreachViewButton } from "@/components/crm/outreach/OutreachExplainer";
 import { CustomerActivityLine } from "@/components/crm/CustomerActivityLine";
 
 // Kept as a re-export so existing imports from CrmBoard keep working.
@@ -338,14 +339,16 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)).map((view) => (
+        {(isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
+          <OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />
+        ) : (
           <button
             key={view}
             type="button"
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : view === "outreach" ? "Outreach" : `Distributors (${distributorDeals.length})`}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : `Distributors (${distributorDeals.length})`}
           </button>
         ))}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
