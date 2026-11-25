@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { OutreachTip } from "./OutreachTip";
+import type { OutreachTipId } from "./outreachTips";
 import {
   OUTREACH_CAP_LIMITS,
   OUTREACH_ENROLLMENT_STATUS_LABELS,
@@ -39,10 +41,13 @@ function when(value: unknown): string {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" }) + " ET";
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, tip, children }: { title: string; tip?: OutreachTipId; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4 space-y-3">
-      <h4 className="font-semibold text-foreground">{title}</h4>
+      <div className="flex items-center gap-1">
+        <h4 className="font-semibold text-foreground">{title}</h4>
+        {tip && <OutreachTip id={tip} />}
+      </div>
       {children}
     </section>
   );
@@ -70,7 +75,7 @@ export function OutreachPanel() {
 
   return (
     <div className="space-y-4">
-      <Section title="Status">
+      <Section title="Status" tip="status">
         <div className="flex flex-wrap items-center gap-2">
           <Badge className={data.sendingLive ? "bg-green-600 text-white" : "bg-slate-200 text-slate-800"}>{data.sendingLive ? "Sending is live" : "Not sending"}</Badge>
           <Badge variant="outline">Mode in effect: {data.effectiveMode}</Badge>
@@ -98,18 +103,18 @@ export function OutreachPanel() {
         </div>
         <div className="grid gap-3 md:grid-cols-4">
           <div className="space-y-1 md:col-span-2">
-            <Label>Mode</Label>
+            <div className="flex items-center gap-1"><Label>Mode</Label><OutreachTip id="mode" /></div>
             <Select value={form.mode} onValueChange={(mode) => setForm({ ...form, mode: mode as OutreachSettings["mode"] })}>
               <SelectTrigger className="bg-white"><SelectValue /></SelectTrigger>
               <SelectContent>{OUTREACH_MODES.map((mode) => <SelectItem key={mode} value={mode}>{OUTREACH_MODE_LABELS[mode]}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="outreach-daily">Daily cap (emails / 24 h)</Label>
+            <div className="flex items-center gap-1"><Label htmlFor="outreach-daily">Daily cap (emails / 24 h)</Label><OutreachTip id="dailyCap" /></div>
             <Input id="outreach-daily" type="number" min={0} max={OUTREACH_CAP_LIMITS.dailyCapMax} value={form.dailyCap} onChange={(e) => setForm({ ...form, dailyCap: Number(e.target.value) })} />
           </div>
           <div className="space-y-1">
-            <Label htmlFor="outreach-per-contact">Max emails per contact</Label>
+            <div className="flex items-center gap-1"><Label htmlFor="outreach-per-contact">Max emails per contact</Label><OutreachTip id="perContactCap" /></div>
             <Input id="outreach-per-contact" type="number" min={1} max={OUTREACH_CAP_LIMITS.perContactCapMax} value={form.perContactCap} onChange={(e) => setForm({ ...form, perContactCap: Number(e.target.value) })} />
           </div>
           <div className="space-y-1 md:col-span-2">
@@ -121,9 +126,9 @@ export function OutreachPanel() {
           <p className="text-sm font-medium">Sequence</p>
           {form.sequence.map((step, index) => (
             <div key={index} className="grid gap-2 rounded border border-border p-3 md:grid-cols-6">
-              <div className="space-y-1 md:col-span-2"><Label className="text-xs">Step {index + 1} name</Label><Input value={step.label} maxLength={64} onChange={(e) => updateStep(index, { label: e.target.value })} /></div>
+              <div className="space-y-1 md:col-span-2"><div className="flex items-center gap-1"><Label className="text-xs">Step {index + 1} name</Label>{index === 0 && <OutreachTip id="firstContact" />}{index === 1 && <OutreachTip id="followUp" />}</div><Input value={step.label} maxLength={64} onChange={(e) => updateStep(index, { label: e.target.value })} /></div>
               <div className="space-y-1"><Label className="text-xs">{index === 0 ? "Days after enrolling" : "Days after previous"}</Label><Input type="number" min={0} max={OUTREACH_CAP_LIMITS.maxDelayDays} value={step.delayDays} onChange={(e) => updateStep(index, { delayDays: Number(e.target.value) })} /></div>
-              <div className="space-y-1 md:col-span-3"><Label className="text-xs">Offer (your exact words; leave blank for none)</Label><Input value={step.offerText} maxLength={200} placeholder="e.g. a free design consultation" onChange={(e) => updateStep(index, { offerText: e.target.value })} /></div>
+              <div className="space-y-1 md:col-span-3"><div className="flex items-center gap-1"><Label className="text-xs">Offer (your exact words; leave blank for none)</Label>{index === 0 && <OutreachTip id="offer" />}</div><Input value={step.offerText} maxLength={200} placeholder="e.g. a free design consultation" onChange={(e) => updateStep(index, { offerText: e.target.value })} /></div>
               <div className="space-y-1 md:col-span-6"><Label className="text-xs">What this email is for (the AI's brief)</Label><Textarea rows={2} value={step.goal} maxLength={600} onChange={(e) => updateStep(index, { goal: e.target.value })} /></div>
               <div className="md:col-span-6 flex justify-end"><Button type="button" size="sm" variant="ghost" disabled={form.sequence.length <= 1} onClick={() => setForm({ ...form, sequence: form.sequence.filter((_, i) => i !== index) })}>Remove step</Button></div>
             </div>
@@ -154,7 +159,7 @@ function EnrollSection({ sourceTags }: { sourceTags: Array<{ sourceTag: string; 
     onError: (error) => toast.error(error.message),
   });
   return (
-    <Section title="Enrol a customer list">
+    <Section title="Enrol a customer list" tip="enroll">
       <p className="text-sm text-muted-foreground">Enrolling schedules the sequence. Nothing is sent until outreach is on and the mode allows it.</p>
       <div className="flex flex-wrap items-center gap-2">
         <Select value={tag} onValueChange={setTag}>
@@ -180,7 +185,7 @@ function QueueSection() {
   const rows = queue.data ?? [];
   const actionable = queueStatus === "pending_approval" || queueStatus === "preview";
   return (
-    <Section title="Drafts and approval queue">
+    <Section title="Drafts and approval queue" tip="approveQueue">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={queueStatus} onValueChange={(v) => setQueueStatus(v as QueueStatus)}>
           <SelectTrigger className="w-64 bg-white" aria-label="Queue filter"><SelectValue /></SelectTrigger>
@@ -233,7 +238,7 @@ function ContactsSection() {
   const setStatus = trpc.crmOutreach.setEnrollmentStatus.useMutation({ onSuccess: () => utils.crmOutreach.invalidate(), onError: (e) => toast.error(e.message) });
   const preview = trpc.crmOutreach.preview.useMutation({ onError: (e) => toast.error(e.message) });
   return (
-    <Section title="Enrolled contacts">
+    <Section title="Enrolled contacts" tip="afterQuote">
       <Select value={filter} onValueChange={setFilter}>
         <SelectTrigger className="w-64 bg-white" aria-label="Contact status filter"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -243,7 +248,7 @@ function ContactsSection() {
       </Select>
       <div className="max-h-80 overflow-auto rounded border border-border">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-muted text-left"><tr><th className="p-2">Contact</th><th className="p-2">Status</th><th className="p-2">Step</th><th className="p-2">Sent</th><th className="p-2">Next</th><th className="p-2">CRM stage</th><th className="p-2" /></tr></thead>
+          <thead className="sticky top-0 bg-muted text-left"><tr><th className="p-2">Contact</th><th className="p-2"><span className="inline-flex items-center gap-1">Status<OutreachTip id="replied" /></span></th><th className="p-2">Step</th><th className="p-2">Sent</th><th className="p-2">Next</th><th className="p-2"><span className="inline-flex items-center gap-1">CRM stage<OutreachTip id="moveCard" /></span></th><th className="p-2" /></tr></thead>
           <tbody>
             {(list.data ?? []).map((row: { id: number; dealId: number; email: string; contactName: string | null; status: string; currentStep: number; sentCount: number; nextSendAt: unknown; stage: string | null; stopReason: string | null }) => (
               <tr key={row.id} className="border-t border-border">
@@ -281,7 +286,7 @@ function SuppressionSection() {
   const list = trpc.crmOutreach.suppressions.useQuery({ limit: 100 });
   const add = trpc.crmOutreach.addSuppression.useMutation({ onSuccess: () => { setEmail(""); toast.success("Added. That address will never get outreach email."); utils.crmOutreach.invalidate(); }, onError: (e) => toast.error(e.message) });
   return (
-    <Section title="Suppression list (never emailed)">
+    <Section title="Suppression list (never emailed)" tip="suppression">
       <div className="flex gap-2">
         <Input value={email} placeholder="name@example.com" onChange={(e) => setEmail(e.target.value)} className="max-w-xs bg-white" aria-label="Email to suppress" />
         <Button variant="outline" disabled={!email.trim() || add.isPending} onClick={() => add.mutate({ email })}>Add</Button>
