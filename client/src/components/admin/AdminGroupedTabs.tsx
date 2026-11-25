@@ -95,6 +95,7 @@ import PendingDistributorConnectionsAdmin from "@/components/admin/PendingDistri
 import GenericCabinetsAdmin from "@/components/admin/GenericCabinetsAdmin";
 import { BulkDimensionsAdmin } from "@/components/admin/BulkDimensionsAdmin";
 import { CORIAN_SHEET_LENGTH_IN, CORIAN_SHEET_SQ_FT, CORIAN_SHEET_WIDTH_IN, countertopQuoteSlabsNeeded, countertopQuoteStyleDetails, formatQuoteDateCT } from "@/components/admin/countertopQuoteDisplay";
+import { buildCountertopSlabInvoiceLine, QUOTED_PRICE_IS_PER_SLAB } from "@shared/countertopSlabBilling";
 import BundleDealsAdmin from "@/components/admin/BundleDealsAdmin";
 import PriceShop10x10 from "@/pages/PriceShop10x10";
 import MediaLibraryAdmin from "@/components/admin/MediaLibraryAdmin";
