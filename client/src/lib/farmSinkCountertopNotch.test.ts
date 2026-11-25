@@ -69,6 +69,8 @@ describe("apron-front countertop notch", () => {
 
   it("notches only apron-front sinks, exactly the sink width and the front rim", () => {
     expect(isApronFrontSink({ type: "farmhouse", x: 0, y: 0, width: 30, depth: 20 })).toBe(true);
+    const seeded = { type: "farmhouse" as const, apronFront: undefined, x: 0, y: 0, width: 36, depth: 20, wallSide: "top" as const };
+    expect(apronFrontNotchRect(seeded)?.width).toBe(36);
     expect(isApronFrontSink({ type: "single", apronFront: false, x: 0, y: 0, width: 30, depth: 18 })).toBe(false);
     expect(rim).toBeCloseTo((21 - 18) / 2, 5);
     const notch = apronFrontNotchRect(farm);

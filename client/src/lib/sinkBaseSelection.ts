@@ -23,6 +23,7 @@ import {
   isFarmSinkBasePaletteItem,
   isSinkBaseCabinet,
   makeSinkForCabinet,
+  SINK_PRESETS,
   type PlacedCabinet,
   type RoomData,
   type SinkFixture,
@@ -113,10 +114,12 @@ export function faucetCatalogRoleForBase(base: SinkBaseIdentity | null | undefin
 export function sinkRowFitsBase(row: SinkBaseSinkRow, base: SinkBaseIdentity | null | undefined, roomType?: string | null): boolean {
   if (!base) return false;
   const profile = verifiedPelicanSinkProfile(row.pelicanCode);
-  if (!profile) return false;
+  const family = sinkFamilyForBase(base, roomType);
+  const describedAsFarm = /farm(?:house)?|apron[-\s]?front/i.test(`${row.name ?? ""} ${row.description ?? ""}`);
+  if (!profile) return family === "farmhouse" && describedAsFarm;
   const openingWidthIn = sinkBaseOpeningWidthIn({ width: Number(base.width ?? 0) });
   if (!verifiedPelicanSinkFitsCabinet(profile, openingWidthIn)) return false;
-  switch (sinkFamilyForBase(base, roomType)) {
+  switch (family) {
     case "vanity":
       return isBathroomVanitySinkRow(row) && vanitySinkFitsVanityWidth(row, openingWidthIn);
     case "farmhouse":
@@ -249,7 +252,8 @@ export function placeSinkOnBase(input: {
 
   const profile = product ? verifiedPelicanSinkProfile(product.pelicanCode) : null;
   const apronProduct = Boolean(profile && (profile.sinkType === "farmhouse" || profile.apronFront === true));
-  if (product && !profile) {
+  const describedAsFarm = /farm(?:house)?|apron[-\s]?front/i.test(`${product?.name ?? ""} ${product?.description ?? ""}`);
+  if (product && !profile && !(family === "farmhouse" && describedAsFarm)) {
     return { ok: false, reason: `${product.name} is not a source-verified Pelican sink, so it cannot be measured and drawn.` };
   }
   if (profile && !verifiedPelicanSinkFitsCabinet(profile, sinkBaseOpeningWidthIn(base))) {
@@ -269,11 +273,19 @@ export function placeSinkOnBase(input: {
     };
   }
 
+  const cabinetWidth = Number(base.width);
+  const farmFallback = Number.isFinite(cabinetWidth) && cabinetWidth > 0
+    ? { width: cabinetWidth, depth: SINK_PRESETS.farmhouse.depth }
+    : undefined;
   const measured = makeSinkForCabinet(
     ((family === "farmhouse" || allowApronOnStraightBase) ? "farmhouse" : "single") as SinkType,
     base,
     room,
-    profile ? { width: profile.exteriorWidthIn, depth: profile.exteriorDepthIn } : defaultSinkDimensions(family),
+    profile
+      ? { width: profile.exteriorWidthIn, depth: profile.exteriorDepthIn }
+      : family === "farmhouse"
+        ? farmFallback
+        : defaultSinkDimensions(family),
   );
 
   const withProduct: SinkFixture = product
@@ -311,6 +323,9 @@ export function placeSinkOnBase(input: {
     ...withProduct,
     surfaceFinish: finishForFamily,
     bathroomVanitySink: family === "vanity" ? true : undefined,
+    // A farm base is an apron sink even when nothing was picked and the row has
+    // no measured bowl. The apron flag is what the 3D notch and apron height read.
+    ...(family === "farmhouse" || allowApronOnStraightBase ? { apronFront: withProduct.apronFront ?? true, type: "farmhouse" as const } : {}),
     ...(!product && defaultBasinProfile ? {
       pelicanProfileId: defaultBasinProfile.id,
       bowlShape: defaultBasinProfile.basinShape,

@@ -63,7 +63,7 @@ export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout, FARMHOUSE_SINK_APRON_PROUD_IN } from "@/lib/farmhouseSinkBaseFace";
-import { applyApronFrontCountertopNotches } from "@/lib/farmSinkCountertopNotch";
+import { applyApronFrontCountertopNotches, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShellVertices, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
@@ -11288,8 +11288,9 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
           : "front";
     // The apron is the front of a farm sink. A rim bar here sits on the apron
     // and reads as a gray strip past the sink sides, so it is not drawn.
-    if (sink.apronFront && segment.side === roomFacingRimSide) return;
-    const rimCenterY = sink.apronFront
+    const farmSink = isApronFrontSink(sink);
+    if (farmSink && segment.side === roomFacingRimSide) return;
+    const rimCenterY = farmSink
       ? farmhouseUndermountTopY(countertopTop) - rimHeight / 2
       : countertopTop + 0.018;
     rimSegment.position.set(
@@ -11298,7 +11299,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       centerZ + segment.z,
     );
     rimSegment.renderOrder = 24;
-    rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, undermountedFarmhouseRim: sink.apronFront === true, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
+    rimSegment.userData = { sinkRim: true, sinkRimFrameSegment: true, sinkRimSide: segment.side, undermountedFarmhouseRim: farmSink, sinkMaterial: isVitreousChina ? "vitreous-china" : isGunmetalBlack ? "gunmetal-black" : "stainless-steel", openSinkCutout: true, fixtureDetail: true };
     addFixtureNode(rimSegment);
   });
   const openingWidth = Math.max(0.04, openingMaxX - openingMinX);
@@ -11406,7 +11407,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       addFixtureNode(strainerRing);
     });
   });
-  if (sink.apronFront) {
+  if (isApronFrontSink(sink)) {
     const exteriorHeight = Math.max((sink.exteriorHeight ?? (sink.bowlHeight ?? 10)) * INCH, bowlHeight + 0.025, 0.18);
     const apronThickness = Math.min(0.12, depth * 0.2);
     const side = sink.wallSide ?? "top";
@@ -15160,8 +15161,7 @@ export function InteractiveRoom3D({ scene, placed = NO_ITEMS, crown = false, toe
           : existingCabinetTransform(cabinet, room, renderedPlaced);
 	        const hasExactFarmhouseFixture = sinks.some((sink) => (
 	          sink.cabinetUid === cabinet.uid
-	          && sink.type === "farmhouse"
-	          && Boolean(sink.pelicanProfileId)
+	          && (sink.type === "farmhouse" || sink.apronFront === true)
 	        ));
 		        // Every saved counter-bearing base is rendered once from
 		        // `countertopSurfaces` below. That shared source preserves complete

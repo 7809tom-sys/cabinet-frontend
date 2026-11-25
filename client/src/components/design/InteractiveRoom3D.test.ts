@@ -7919,6 +7919,22 @@ describe("interactive 3D room scene helpers", () => {
     expect(apron?.position.x).toBeGreaterThan(sinkFixtureTransform({ x: 24, y: 48, width: 18, depth: 24 } as never).x);
   });
 
+  it("treats a default farmhouse sink with no profile and no bowl as an apron under the counter", () => {
+    const root = new THREE.Group();
+    const sink = {
+      uid: "default-fsb", type: "farmhouse", x: 0, y: 0, width: 36, depth: 20, faucet: false, wallSide: "top",
+    } as never;
+    addSinkFixture(root, sink);
+    let apron: THREE.Object3D | null = null;
+    root.traverse((node) => { if (node.userData.sinkApronFront) apron = node; });
+    const countertopTop = sinkFixtureTransform(sink).countertopTop;
+    expect(apron).not.toBeNull();
+    const apronBounds = new THREE.Box3().setFromObject(apron!);
+    expect(apronBounds.max.y).toBeCloseTo(farmhouseApronTopY(countertopTop), 5);
+    expect(root.children.find((node) => node.userData.sinkRimSide === "front")).toBeUndefined();
+    expect((apronBounds.max.x - apronBounds.min.x) * 12).toBeLessThanOrEqual(36.05);
+  });
+
   it("seats a farmhouse apron at the counter underside and does not draw a front rim past the sink", () => {
     const root = new THREE.Group();
     const sink = {

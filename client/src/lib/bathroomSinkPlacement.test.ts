@@ -191,6 +191,25 @@ describe("a freshly placed sink base is seeded with a sink, never left bare", ()
   it("seeds an apron-front apron zone on a farmhouse base", () => {
     const seeded = autoSeedSinkForBase({ base: farmBase, room: DEFAULT_ROOM, roomType: "bathroom" });
     expect(seeded.type).toBe("farmhouse");
+    expect(seeded.apronFront).toBe(true);
+    expect(seeded.pelicanProfileId).toBeUndefined();
+    expect(seeded.width).toBe(farmBase.width);
+    expect(seeded.bowlWidth).toBeUndefined();
+  });
+
+  it("places an unverified fireclay apron sink on a farm base using the cabinet width", () => {
+    const fireclay = row({
+      id: 9104,
+      pelicanCode: "PL-FC3318SB White",
+      name: "PL-FC3318SB White",
+      description: "33 inch Farmhouse Apron-Front fireclay sink",
+    });
+    const placed = placeSinkOnBase({ base: farmBase, room: DEFAULT_ROOM, roomType: "kitchen", product: fireclay, faucet: null });
+    expect(placed.ok).toBe(true);
+    if (!placed.ok) return;
+    expect(placed.sink.apronFront).toBe(true);
+    expect(placed.sink.type).toBe("farmhouse");
+    expect(placed.sink.width).toBe(farmBase.width);
   });
 });
 
