@@ -72,12 +72,12 @@ export const INTERNAL_LIBRARY_DOCUMENTS: readonly InternalLibraryDocument[] = [
   internalDocument({
     title: "How to Create an App for an Affiliate",
     description:
-      "Internal ops guide for Tom. One shared Cabinetdealz codebase for every affiliate, with a separate Google Play listing and a separate Apple App Store listing per affiliate brand (own name, icon, screenshots). The app resolves the affiliate at login from the signed-in account and that affiliate custom domain, not from which store listing was installed. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.",
+      "Internal ops guide for Tom. Affiliates get their white-label web storefront, which a customer installs with Add to Home Screen under the affiliate's own name and icon from a per-store web manifest. Separate App Store or Google Play apps per affiliate are not recommended (Apple guidelines 4.2.6 and 4.3(a)); one Cabinetdealz store app with a dealer picker is a future option only. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.",
     category: "Internal",
     file: "how-to-create-an-app-for-an-affiliate.md",
     mimeType: "text/plain",
-    sizeBytes: 8025,
-    sha256: "66c0e9043fb15caad4d57283be87692c412ba66c80f2ab33d029617780579336",
+    sizeBytes: 6714,
+    sha256: "a1508ffa79195ed9258eb7f792de61e66369a761f3acc267c6d51793881111bf",
     sortOrder: 901,
   }),
 ];
@@ -124,6 +124,19 @@ export function internalLibraryRowValues(document: InternalLibraryDocument): str
     sqlLiteral("internal"),
     String(document.sortOrder),
   ].join(", ");
+}
+
+/**
+ * The UPDATE that brings an already-registered row in line with a revised file:
+ * description and sizeBytes only. It never touches visibility or isPublished,
+ * so an internal document stays internal.
+ */
+export function internalLibraryContentUpdateSql(document: InternalLibraryDocument): string {
+  return (
+    "UPDATE cabinet_dealz.affiliate_literature " +
+    `SET description = ${sqlLiteral(document.description)}, sizeBytes = ${document.sizeBytes} ` +
+    `WHERE fileKey = ${sqlLiteral(document.storageKey)};`
+  );
 }
 
 /** The INSERT statement that registers one document, guarded on its fileKey. */
