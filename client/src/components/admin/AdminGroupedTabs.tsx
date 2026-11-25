@@ -117,6 +117,8 @@ import KitchenRulesAdmin from "@/components/admin/KitchenRulesAdmin";
 import ContractorAccessAdmin from "@/components/admin/ContractorAccessAdmin";
 import { AdminHelperRequests } from "@/components/admin/AdminHelperRequests";
 import { AdminTabErrorBoundary } from "@/components/admin/AdminTabErrorBoundary";
+import FabricationShopsAdmin from "@/components/admin/FabricationShopsAdmin";
+import { CountertopQuoteFabShops, CountertopQuoteLineArt, useQuoteFabShops } from "@/components/admin/CountertopQuoteFabPanel";
 
 // ─── Group definitions ────────────────────────────────────────────────────────
 const GROUPS = [
@@ -136,6 +138,7 @@ const GROUPS = [
       { value: "consultations", label: "Consultations" },
       { value: "design-leads", label: "Design Leads" },
       { value: "quotes", label: "Countertop Quotes" },
+      { value: "fab-shops", label: "Fabrication Shops" },
       { value: "payments", label: "Payments" },
       { value: "stripe-invoices", label: "Stripe Invoices" },
     ],
@@ -365,6 +368,8 @@ function CountertopQuotes() {
     onSuccess: () => { utils.design.listCountertopQuotes.invalidate(); toast.success("Quote updated"); },
     onError: (e: any) => toast.error(e.message),
   });
+  const quoteIds = useMemo(() => (quotes ?? []).map((q: any) => Number(q.id)).filter((id: number) => Number.isFinite(id)), [quotes]);
+  const fabShops = useQuoteFabShops(quoteIds);
 
   if (isLoading) return <div className="flex justify-center py-12"><Spinner className="h-6 w-6 text-primary" /></div>;
   if (error) return <div className="text-center py-12 space-y-3"><p className="text-destructive">Couldn't load quotes: {error.message}</p><Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button></div>;
@@ -425,6 +430,8 @@ function CountertopQuotes() {
               );
             })()}
             {activeQuoteId === q.id && <ProMatcher zip={matchZip} onZipChange={setMatchZip} />}
+            <CountertopQuoteFabShops quote={q} shops={fabShops.byQuote[q.id] ?? []} ready={fabShops.ready} />
+            <CountertopQuoteLineArt quote={q} />
           </CardContent>
         </Card>
       ))}
@@ -638,6 +645,7 @@ export default function AdminGroupedTabs() {
         <TabsContent value="consultations" className="mt-6"><AdminTabErrorBoundary tabName="Consultations"><AdminTabHelp tab="consultations" /><ConsultationsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="design-leads" className="mt-6"><AdminTabErrorBoundary tabName="Design Leads"><AdminTabHelp tab="design-leads" /><DesignLeadsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="quotes" className="mt-6"><AdminTabErrorBoundary tabName="Countertop Quotes"><AdminTabHelp tab="quotes" /><CountertopQuotes /></AdminTabErrorBoundary></TabsContent>
+        <TabsContent value="fab-shops" className="mt-6"><AdminTabErrorBoundary tabName="Fabrication Shops"><AdminTabHelp tab="fab-shops" /><FabricationShopsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="payments" className="mt-6"><AdminTabErrorBoundary tabName="Payments"><AdminTabHelp tab="payments" /><PaymentsAdmin /></AdminTabErrorBoundary></TabsContent>
         <TabsContent value="stripe-invoices" className="mt-6"><AdminTabErrorBoundary tabName="Stripe Invoices"><AdminTabHelp tab="stripe-invoices" /><StripeInvoicesAdmin /></AdminTabErrorBoundary></TabsContent>
 

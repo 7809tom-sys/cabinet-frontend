@@ -72,6 +72,8 @@ export type FabricationCutout = {
   /** Where the sizes came from, so the shop knows what is measured vs. placed. */
   sizeSource: "product-outside-dims" | "design-footprint";
   notes: string[];
+  /** Opening center in room plan inches (same frame as the run's planOutline); null when not placed on a slab. */
+  planCenter?: FabricationPoint | null;
 };
 
 export type FabricationRun = {
@@ -87,6 +89,8 @@ export type FabricationRun = {
   hasPolygon: boolean;
   /** Slab outline in the run's own frame, starting at the front-left corner. */
   outline: FabricationPoint[];
+  /** The same outline in room plan inches (top-down, origin at the room's top-left), index-aligned with `outline`. */
+  planOutline: FabricationPoint[];
   /** Every outline edge, with the finished edges marked. */
   edges: FabricationEdge[];
   /** Front/back/left/right view of the edges; null for a non-rectangular slab. */
@@ -713,6 +717,7 @@ export function buildCountertopFabricationSheet(input: CountertopFabricationInpu
         centerFromFrontIn: round(local.y),
         sizeSource: candidate.sizeSource,
         notes: candidate.notes,
+        planCenter: { x: round(candidate.centre.x, 3), y: round(candidate.centre.y, 3) },
       });
       matched.add(candidate);
     }
@@ -724,6 +729,7 @@ export function buildCountertopFabricationSheet(input: CountertopFabricationInpu
       depthIn: round(piece.measurement.depthIn),
       hasPolygon: piece.measurement.hasPolygon,
       outline: piece.measurement.outline.map((point) => ({ x: round(point.x, 3), y: round(point.y, 3) })),
+      planOutline: piece.measurement.world.map((point) => ({ x: round(point.x, 3), y: round(point.y, 3) })),
       edges,
       edgeSummary: summarizeEdges(piece.measurement, edges),
       finishedEdgeLengthIn: round(edges.filter((edge) => edge.exposed).reduce((sum, edge) => sum + edge.lengthIn, 0)),

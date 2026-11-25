@@ -13,6 +13,8 @@ import {
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Loader2, CheckCircle2 } from "lucide-react";
+import type { CountertopFabricationInput } from "@/lib/countertopFabricationSheet";
+import { quoteRoomSnapshot } from "@/lib/countertopQuoteSnapshot";
 
 interface Props {
   open: boolean;
@@ -26,6 +28,12 @@ interface Props {
   // Snapshot of the current design so the team can see what's being quoted.
   roomData?: unknown;
   placedCabinets?: unknown;
+  /**
+   * Optional: the Designer's full countertop input (island, sinks, pony walls,
+   * chosen stone, edge, backsplash). When given, it is saved inside roomData so
+   * the admin line drawing for this quote shows every slab and cutout.
+   */
+  fabricationInput?: CountertopFabricationInput | null;
 }
 
 const MATERIAL_KEYS = [
@@ -41,7 +49,7 @@ const MATERIAL_KEYS = [
 const MATERIAL_VALUES = ["Quartz", "Granite", "Laminate", "Solid Surface", "Butcher Block", "Marble", "Not sure yet"];
 
 export function CountertopQuoteDialog({
-  open, onOpenChange, squareFeet, linearFeet, hasIsland, defaultEmail, defaultName, defaultPhone, roomData, placedCabinets,
+  open, onOpenChange, squareFeet, linearFeet, hasIsland, defaultEmail, defaultName, defaultPhone, roomData, placedCabinets, fabricationInput,
 }: Props) {
   const { t } = useLanguage();
   const [name, setName] = useState(defaultName ?? "");
@@ -76,7 +84,7 @@ export function CountertopQuoteDialog({
       squareFeet,
       linearFeet,
       hasIsland,
-      roomData: roomData ?? undefined,
+      roomData: quoteRoomSnapshot(roomData, fabricationInput) ?? undefined,
       placedCabinets: placedCabinets ?? undefined,
       notes: notes || undefined,
     });

@@ -74,6 +74,10 @@ const TAB_HELP: Record<string, { en: string; zh: string; link?: { label: string;
     en: "Review countertop quote requests submitted by customers. Respond with pricing and lead times.",
     zh: "審查客戶提交的檯面報價請求。回覆定價及交貨時間。",
   },
+  "fab-shops": {
+    en: "Countertop fabrication shops, one state at a time. Upload a state's list (CSV or XLSX); each countertop quote then shows the shops nearest its ZIP. Nothing is sent to a shop from here.",
+    zh: "檯面加工廠名單，按州檢視。上傳某州的名單（CSV 或 XLSX）後，每筆檯面報價會顯示離其郵遞區號最近的加工廠。此處不會向任何加工廠發送訊息。",
+  },
   featured: {
     en: "Curate up to six style-matched room scenes for the public homepage. Their order controls the rotation priority for signed-in shoppers. This authorized view shows the internal source record for each scene, but source names never appear publicly. Set alias names and edit/crop door or drawer images before uploading with:",
     zh: "為公開首頁精選最多六張與門板樣式相符的房間場景。排序決定已登入訪客的輪播優先順序。此授權檢視會顯示每張場景的內部來源記錄，但來源名稱不會公開顯示。設定別名，以及在上傳前使用以下工具編輯或裁切門板／抽屜圖片：",
