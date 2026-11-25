@@ -36,12 +36,17 @@ describe("Start from scratch popup chain", () => {
 
   it("asks for a faucet and sink only when a sink base is placed", () => {
     expect(source).toContain("shouldPromptFixturePick({");
-    expect(source).toContain('roomType === "kitchen" && shouldPromptFixturePick({');
+    expect(source).toContain('(roomType === "kitchen" || farmSinkBase)');
     const placement = source.slice(
       source.indexOf("if (isSinkBaseCabinet(finalCab)) {"),
       source.indexOf("if (isFloatingShelfItem(finalCab)) {"),
     );
     expect(placement).toContain("shouldPromptFixturePick({");
-    expect(placement).toContain("setSinkBaseDialog({ cabinetUid: finalCab.uid });");
+    expect(placement).toContain("sinkBasePlacementDialog({");
+    expect(placement).toContain("setSinkBaseDialog(null)");
+    const dismiss = source.slice(source.indexOf("const dismissFixturePick"), source.indexOf("const applyAttachedCabinetFillers"));
+    expect(dismiss).toContain("setFixturePickOpen(false)");
+    expect(dismiss).toContain("setSinkBaseDialog(null)");
+    expect(dismiss).not.toContain("setSinkBaseDialog({");
   });
 });

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  dialogAfterFixturePick,
   followUpAfterCabinetStyle,
   initialDesignerPopup,
   popupsForRestoredDraft,
   shouldPromptFixturePick,
+  sinkBasePlacementDialog,
 } from "./designerStartPopups";
 
 const sinkBase = {
@@ -13,6 +15,23 @@ const sinkBase = {
   subCategory: "Sink Base",
   placement: "base" as const,
 };
+
+describe("sink base chooser", () => {
+  it("sends a farm sink base straight to the sink picker and never asks what goes on top", () => {
+    expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: true, explicitSinkProduct: false })).toBe("fixture-pick");
+    expect(sinkBasePlacementDialog({ farmSinkBase: true, promptFixturePick: false, explicitSinkProduct: false })).toBe("none");
+  });
+
+  it("opens no further popup after the faucet and sink picker is closed", () => {
+    expect(dialogAfterFixturePick()).toBeNull();
+    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: false })).toBe("fixture-pick");
+  });
+
+  it("keeps the range-top chooser for a regular base that is not opening the sink picker", () => {
+    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: false, explicitSinkProduct: false })).toBe("range-top");
+    expect(sinkBasePlacementDialog({ farmSinkBase: false, promptFixturePick: true, explicitSinkProduct: true })).toBe("none");
+  });
+});
 
 describe("Start from scratch popup order", () => {
   it("opens the cabinet style and color popup on an empty start", () => {

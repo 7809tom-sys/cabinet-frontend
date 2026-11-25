@@ -64,6 +64,29 @@ function hasChosenProductId(id: number | null | undefined): boolean {
  * asked once. A base that already has a catalog sink, faucet, or cooktop
  * product is not asked again, so reloading a saved room does not reopen it.
  */
+/**
+ * Which chooser a newly placed sink base opens.
+ *
+ * A farm sink base is always a sink, so it never asks "What goes on top?".
+ * A kitchen base that opens the faucet-and-sink picker ends there too: closing
+ * that picker must not reveal the range-top chooser underneath.
+ */
+export function sinkBasePlacementDialog(input: {
+  farmSinkBase: boolean;
+  promptFixturePick: boolean;
+  explicitSinkProduct: boolean;
+}): "fixture-pick" | "range-top" | "none" {
+  if (input.explicitSinkProduct) return "none";
+  if (input.farmSinkBase) return input.promptFixturePick ? "fixture-pick" : "none";
+  if (input.promptFixturePick) return "fixture-pick";
+  return "range-top";
+}
+
+/** Closing or saving the faucet-and-sink picker ends the flow. No chooser follows. */
+export function dialogAfterFixturePick(): null {
+  return null;
+}
+
 export function shouldPromptFixturePick(input: {
   cabinet: FixturePickCabinet;
   existingSink?: FixturePickSink | null;
