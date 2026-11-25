@@ -47,11 +47,12 @@ describe("example kitchens and My designs pages", () => {
     expect(html).toContain('href="/distributor-preview/designs"');
   });
 
-  it("designer shell has Save design, My designs and the Start from an example strip", () => {
+  it("designer shell shows the Start from an example strip under the email form (Save design waits for the designer)", () => {
     const html = render("/distributor-preview/design", <DistributorDesignerShell><div>designer</div></DistributorDesignerShell>);
-    expect(html).toContain('data-testid="designer-save"');
-    expect(html).toContain('data-testid="designer-my-designs"');
+    expect(html).not.toContain('data-testid="designer-save"');
+    expect(html).not.toContain('data-testid="designer-my-designs"');
     expect(html).toContain(EXAMPLE_KITCHENS_COPY.strip);
+    expect(html).not.toContain(EXAMPLE_KITCHENS_COPY.stripNote.replace(/'/g, "&#x27;"));
     for (const k of EXAMPLE_KITCHENS) expect(html).toContain(`/distributor-preview/examples/${k.id}`);
   });
 });

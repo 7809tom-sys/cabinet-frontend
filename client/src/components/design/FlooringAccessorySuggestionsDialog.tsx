@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { formatPrice } from "@/lib/pelican";
 import type { SelectedSurface } from "./SurfacesPickerDialog";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 export function FlooringAccessorySuggestionsDialog({
   floor,
   accessories,
@@ -18,6 +19,7 @@ export function FlooringAccessorySuggestionsDialog({
   onAddAccessory: (item: SelectedSurface) => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   const open = floor != null;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -54,7 +56,7 @@ export function FlooringAccessorySuggestionsDialog({
                         <p className="line-clamp-2 text-sm font-semibold text-foreground">{accessory.name}</p>
                         <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{accessory.pelicanCode ?? "Pelican code on file"}</p>
                         {accessory.size && <p className="text-[11px] text-muted-foreground">{accessory.size}</p>}
-                        <p className="mt-1 text-sm font-bold text-foreground">{formatPrice(accessory.sellPrice)}</p>
+                        {!hidePrices && <p className="mt-1 text-sm font-bold text-foreground">{formatPrice(accessory.sellPrice)}</p>}
                       </div>
                     </div>
                     <div className="border-t border-border px-3 py-2.5">

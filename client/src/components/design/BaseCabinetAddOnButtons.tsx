@@ -9,6 +9,7 @@ import {
   type BaseCabinetAddOnTarget,
 } from "@/lib/baseCabinetAttributeAddOns";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 export function attributeAddOnTarget(cabinet: PlacedCabinet): BaseCabinetAddOnTarget {
   return {
     placement: cabinet.placement,
@@ -57,6 +58,7 @@ export function BaseCabinetAddOnButtons({
   onSetQty: (qty: number) => void;
   onAddSinkAndFaucet?: (uid: string) => void;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   const { t } = useLanguage();
   if (!isBaseCabinetAttributeAddOnEligible(attributeAddOnTarget(cabinet))) return null;
   const maxQty = maxRollOutTraysForCabinet({
@@ -100,7 +102,7 @@ export function BaseCabinetAddOnButtons({
           {tray && (
             <span className="font-mono text-[11px] text-muted-foreground" data-testid="rollout-tray-sku">
               {tray.masterCode}
-              {eachNum != null && Number.isFinite(eachNum) ? ` · $${eachNum.toFixed(2)} ${t("dt_ca_rollout_each")}` : ""}
+              {eachNum != null && Number.isFinite(eachNum) && !hidePrices ? ` · $${eachNum.toFixed(2)} ${t("dt_ca_rollout_each")}` : ""}
             </span>
           )}
         </div>

@@ -122,7 +122,8 @@ export function MyDesignsSection() {
 }
 
 /** Shell controls: Save design (named) and a My designs panel with rename/delete/open. */
-export function DesignerSaveControls() {
+/** `showMyDesigns={false}`: the designer header already links My designs in its menu. */
+export function DesignerSaveControls({ showMyDesigns = true }: { showMyDesigns?: boolean } = {}) {
   const [saveOpen, setSaveOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
   const [name, setName] = useState("");
@@ -137,7 +138,7 @@ export function DesignerSaveControls() {
   return (
     <>
       <Button size="sm" variant="outline" className="gap-1" onClick={() => { setStatus(null); setSaveOpen(true); }} data-testid="designer-save"><Save className="h-4 w-4" aria-hidden /> {MY_DESIGNS_COPY.save}</Button>
-      <Button size="sm" variant="outline" onClick={() => setListOpen(true)} data-testid="designer-my-designs">{MY_DESIGNS_COPY.title}</Button>
+      {showMyDesigns && <Button size="sm" variant="outline" onClick={() => setListOpen(true)} data-testid="designer-my-designs">{MY_DESIGNS_COPY.title}</Button>}
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>

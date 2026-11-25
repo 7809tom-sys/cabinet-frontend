@@ -28,6 +28,7 @@ import { DesignerSaveControls, MyDesignsSection } from "./DistributorMyDesigns";
 import { DesignerExamplesStrip, ExampleKitchensSection, ExampleKitchensStrip, LineCardExamples } from "./DistributorExampleKitchens";
 import { DealerGateDialog, DealersSection, createDealerGatedLocationHook } from "./DistributorDealerGate";
 import { DEALER_GATE_COPY } from "@/lib/demoDealers";
+import { DesignerOpenReporterProvider } from "@/lib/designerPriceVisibility";
 import { useDemoPublicPricing } from "@/lib/demoPricing";
 import { ArrowRight, Lock, Bot, HardHat, Handshake, Sparkles, Camera, CheckCircle2, ScanLine, ShoppingCart, Droplets, FileSpreadsheet, LayoutDashboard, PenTool, Store, Users, Wrench, Contact } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,8 @@ export const PITCH_COPY = {
   headline: "We can build a site like this for your distributorship.",
   body: "This is a working example of the website Cabinet Deals can build for a cabinet distributor: your brand, your full catalog, your own 3D designer, and leads and orders that come straight to you.",
   cta: "Get a site like this",
+  // Tom's selling point (Nov 25): the commission range is his figure, no other numbers.
+  addOns: `Cabinetdealz is also your hub for add-on sales: cross-sell countertops and other accessories through the same platform and earn extra revenue beyond the ${COMMISSION_RANGE_LABEL} commission on cabinet sales.`,
 } as const;
 
 export const DEMO_NOTICE = "Example site with demo data. Names, prices, orders and leads are placeholders, not real records or quotes.";
@@ -150,7 +153,7 @@ function useDistributorPreviewSeo() {
 }
 
 /** One slim sticky bar for every demo page (brand, sections, CTA), including the designer. */
-export function DistributorPreviewBanner({ active }: { active: NavId | null }) {
+export function DistributorPreviewBanner({ active, actions }: { active: NavId | null; actions?: ReactNode }) {
   return (
     <header className="sticky top-0 z-[100] border-b bg-white/95 backdrop-blur shadow-sm" style={{ borderBottomColor: DEMO_DISTRIBUTOR.accentColor, borderBottomWidth: 2 }}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2">
@@ -174,6 +177,7 @@ export function DistributorPreviewBanner({ active }: { active: NavId | null }) {
             </Link>
           ))}
         </nav>
+        {actions ? <div className="flex items-center gap-2" data-testid="banner-actions">{actions}</div> : null}
       </div>
     </header>
   );
@@ -405,6 +409,7 @@ function PitchBanner() {
           <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>{PITCH_COPY.eyebrow}</p>
           <h2 className="text-lg sm:text-xl font-semibold">{PITCH_COPY.headline}</h2>
           <p className="max-w-3xl text-sm text-muted-foreground">{PITCH_COPY.body}</p>
+          <p className="max-w-3xl text-sm font-medium" data-testid="pitch-add-ons">{PITCH_COPY.addOns}</p>
           <p className="text-xs text-[#7a5f10]">{DEMO_NOTICE}</p>
         </div>
         <Link href="/distributor-preview/signup">
@@ -717,44 +722,49 @@ function SinksAndFaucetsSection() {
   );
 }
 
-// ─── Designer shell: wraps the unchanged DesignTool at /distributor-preview/design ──
+// ─── Designer shell: wraps DesignTool at /distributor-preview/design ──────────
+// One header bar only: the demo menu (single logo). Save design and Get my
+// price join that bar once the customer is past the email form (DesignTool
+// reports it through DesignerOpenReporterProvider); before that, "Start from an
+// example" sits under the email form. The designer itself runs with
+// hidePrices (App.tsx), so this sample never publishes a price.
 
+/** Kept for reference by the demo copy; no longer printed in the designer header. */
 export const DESIGNER_LINES_NOTE = "Showing only this site's three lines: White Shaker, Gray Shaker and Raised Panel, plus sinks and faucets.";
 
 export function DistributorDesignerShell({ children }: { children: ReactNode }) {
-  const search = useSearch();
-  const lineParam = new URLSearchParams(search).get("line");
-  const line = isDemoLineId(lineParam) ? DEMO_LINES.find((l) => l.id === lineParam) ?? null : null;
   useDistributorPreviewSeo();
   // Dealer-only purchasing: any cart / checkout / order navigation from inside
   // the designer opens the dealer gate instead (nested router, no DesignTool change).
   const [gateOpen, setGateOpen] = useState(false);
   const gatedLocationHook = useMemo(() => createDealerGatedLocationHook(() => setGateOpen(true)), []);
+  // False while the email form shows; true once the designer itself is open.
+  const [designerOpen, setDesignerOpen] = useState(false);
+
+  const actions = designerOpen ? (
+    <>
+      <DesignerSaveControls showMyDesigns={false} />
+      <Button size="sm" className="text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }} onClick={() => setGateOpen(true)} data-testid="designer-get-price">
+        {DEALER_GATE_COPY.shellButton}
+      </Button>
+    </>
+  ) : null;
 
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
-      <DistributorPreviewBanner active="design" />
-      <DistributorGuideStrip active="design" compact />
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 sm:px-4 py-2" style={{ borderBottomColor: DEMO_DISTRIBUTOR.accentColor, borderBottomWidth: 2 }}>
-        <div className="flex items-center gap-2 min-w-0">
-          <img src={DEMO_DISTRIBUTOR.logoUrl} alt={`${DEMO_BRAND_NAME} logo (placeholder)`} className="h-7 sm:h-8 w-auto" />
-          <h1 className="text-sm sm:text-base font-semibold truncate" style={{ color: DEMO_DISTRIBUTOR.primaryColor }}>{DEMO_DESIGNER_LABEL}</h1>
-          {line ? <Badge variant="outline" className="hidden sm:inline-flex">Line: {line.name}</Badge> : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <p className="hidden md:block text-[11px] text-muted-foreground max-w-md">
-            {DESIGNER_LINES_NOTE}
-          </p>
-          <DesignerSaveControls />
-          <Button size="sm" className="text-white" style={{ backgroundColor: DEMO_DISTRIBUTOR.primaryColor }} onClick={() => setGateOpen(true)} data-testid="designer-get-price">
-            {DEALER_GATE_COPY.shellButton}
-          </Button>
-        </div>
-      </div>
-      <DesignerExamplesStrip />
+      <DistributorPreviewBanner active="design" actions={actions} />
+      <h1 className="sr-only">{DEMO_DESIGNER_LABEL}</h1>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <Router hook={gatedLocationHook}>{children}</Router>
+        <DesignerOpenReporterProvider onOpenChange={setDesignerOpen}>
+          <Router hook={gatedLocationHook}>{children}</Router>
+        </DesignerOpenReporterProvider>
       </div>
+      {!designerOpen && (
+        <>
+          <DesignerExamplesStrip placement="below" />
+          <p className="bg-muted/30 px-3 sm:px-4 pb-1.5 text-[11px] text-muted-foreground" data-testid="designer-add-ons-pitch">{PITCH_COPY.addOns}</p>
+        </>
+      )}
       <DealerGateDialog open={gateOpen} onOpenChange={setGateOpen} />
     </div>
   );
@@ -824,6 +834,10 @@ function SignupSection() {
               <li className="flex gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" aria-hidden />
                 <span><strong>Direct CSV orders:</strong> no commission on orders you upload directly by CSV.</span>
+              </li>
+              <li className="flex gap-2">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" aria-hidden />
+                <span><strong>Add-on sales:</strong> {PITCH_COPY.addOns}</span>
               </li>
               <li className="flex gap-2">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" aria-hidden />

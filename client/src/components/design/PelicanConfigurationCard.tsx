@@ -15,6 +15,7 @@ import { PelicanCadDownloads } from "@/components/pelican/PelicanCadDownloads";
 import { PelicanFinishDot, PelicanVariantSelect } from "./PelicanVariantSelect";
 import { customerFacingProductName, ProductPhoto } from "./ProductPhotoGrid";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 /**
  * One Pelican model as a card, the same way the Hardware picker shows one
  * hardware model: product photo, small collection line, a clean title, a
@@ -40,6 +41,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
   note?: ReactNode;
   testIdPrefix?: string;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   const [chosenId, setChosenId] = useState<number | null>(null);
   const variant = pelicanDisplayVariant(configuration, selectedIds, chosenId);
   const item = variant.item;
@@ -110,7 +112,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
         )}
         {note}
         <div className="mt-auto flex items-center justify-between gap-1 pt-0.5">
-          <span className="text-[11px] font-bold text-[#1a2744] dark:text-foreground">{formatPrice(item.sellPrice)}</span>
+          <span className="text-[11px] font-bold text-[#1a2744] dark:text-foreground">{hidePrices ? null : formatPrice(item.sellPrice)}</span>
           <button
             type="button"
             aria-pressed={isSelected}
