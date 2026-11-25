@@ -2,153 +2,105 @@
 
 **Internal only.** Admin library document for Cabinetdealz. Do not publish to the affiliate portal until Tom checks the Affiliate library box.
 
-This guide explains how Cabinetdealz ships a mobile app for an affiliate brand without forking the product for every store.
+This guide explains how an affiliate's customers get an "app" for that affiliate's store: the affiliate's branded web storefront, installed to the phone's home screen under the affiliate's own name and icon. No app store listing is involved.
 
 ---
 
 ## The model in one sentence
 
-One shared codebase for every affiliate. A separate Google Play listing and a separate Apple App Store listing for each affiliate brand. The app figures out which affiliate it belongs to at login, from the signed-in account and that affiliate's custom domain — not from which store listing the user installed.
+Every affiliate already has a white-label web storefront at `/store/<slug>` (and at `<slug>.cabinetdealz.com`), and a customer who taps "Add to Home Screen" on that storefront gets an icon with the affiliate's name and logo that opens the store full screen.
 
 ---
 
 ## Why this model
 
-| Approach | What it means | Why we use / avoid it |
+| Approach | What it means | Our position |
 |---|---|---|
-| One shared app binary | All affiliates run the same Cabinetdealz app build | Fixes, catalog, designer, and checkout ship once |
-| Separate store listings | Each brand has its own name, icon, and screenshots on Google Play and on the App Store | The customer sees the affiliate's brand in the store, not "Cabinetdealz" |
-| Identity at login | After install, the user signs in; the backend resolves the affiliate from account + custom domain | Avoids rebuilding or rebranding the binary per affiliate |
-| Identity at install | Hard-coding the affiliate into the download | Forces a separate binary (or heavy config) per brand; we do not do this |
+| Branded web storefront + Add to Home Screen | The affiliate's storefront, installed from the phone's browser, under the affiliate's name and icon | **Recommended.** Works today on iPhone and Android, no review, no store fees, every fix ships to every affiliate at once |
+| One Cabinetdealz store app with a dealer picker | A single Cabinetdealz app in the stores; the customer picks or signs into an affiliate's store inside it | **Future option only.** See the last section |
+| A separate store app per affiliate | One App Store and one Google Play listing for each affiliate brand, built from the same template | **Not recommended.** Apple rejects it (see below) |
 
-Google Play and Apple each require their own branded listing. A Play listing does not cover iOS, and an App Store listing does not cover Android. Plan both when an affiliate wants a phone app under their name.
+### Why per-affiliate store apps are not recommended
 
----
+Apple's App Review Guidelines (developer.apple.com/app-store/review/guidelines):
 
-## What stays shared
+- **4.2.6:** apps created from a commercialized template or app generation service are rejected unless they are submitted directly by the provider of the app's content. Template services should not submit apps on behalf of their clients. Apple's acceptable alternative is a single app that hosts all clients in an aggregated or "picker" model.
+- **4.3(a):** do not create multiple Bundle IDs of the same app. Apple asks for one app with the variations inside it.
+- **4.2:** an app must offer more than a repackaged website.
 
-- The Cabinetdealz frontend / mobile shell codebase
-- Catalog, design tool, cart, checkout, and order flows
-- Backend APIs and authentication
-- Release pipeline, versioning, and crash / analytics wiring (where already in place)
-
-Do not create a new repository per affiliate. Brand differences live in store listing assets and in runtime resolution after login.
+A branded copy of the same storefront for each affiliate is exactly the template case 4.2.6 describes, and submitting those copies from Cabinetdealz accounts is what it forbids. Do not plan, build, or submit per-affiliate store listings.
 
 ---
 
-## What is unique per affiliate
+## What the customer sees
 
-For **each** affiliate brand that gets an app:
+On the affiliate's storefront (`/store/<slug>` or `<slug>.cabinetdealz.com`):
 
-1. **App name** — the name shown on Google Play and on the App Store (the affiliate's store / company name).
-2. **App icon** — brand icon that meets each store's size and format rules.
-3. **Screenshots** — phone (and tablet if you submit tablet) screens that show that affiliate's branding, not a generic Cabinetdealz capture unless Tom approves it.
-4. **Store listing copy** — short and long description written for that brand.
-5. **Developer / publisher listing** — submitted under the correct Google Play Console and Apple Developer account Tom designates for that brand (or under Cabinetdealz accounts if that is the chosen ops model — confirm before first submit).
-6. **Custom domain** — the affiliate's connected domain, used after login so the session resolves to the right storefront and branding.
+- **iPhone (Safari):** Share, then "Add to Home Screen." The suggested name is the affiliate's store name and the icon is the affiliate's icon. It opens full screen on the affiliate's storefront.
+- **Android (Chrome):** menu, then "Add to Home screen" or "Install app." The name, icon, and theme color are the affiliate's. It opens full screen inside the affiliate's store.
+- Nothing on the home screen says Cabinetdealz. The main cabinetdealz.com site still installs as CabinetDealz.
 
-Privacy policy URL, support URL, and contact email must be valid for that listing. Prefer the affiliate's support contact when the listing is fully white-labeled.
+How it works: each storefront page links its own web manifest at `/store/<slug>/manifest.webmanifest` (store name, colors, start page and scope `/store/<slug>/`) and PNG icons at `/store/<slug>/app-icon-180.png`, `-192.png` and `-512.png`. The backend builds them from the affiliate's settings, so there is nothing to file or build per affiliate.
 
 ---
 
-## How identity is resolved (login, not install)
+## What the affiliate sets up
 
-1. Customer installs the app from that affiliate's store listing (or from a shared listing if Tom has not yet cut a branded listing).
-2. Customer opens the app and signs in (or creates an account) against Cabinetdealz auth.
-3. Backend / app shell resolves the affiliate from:
-   - the signed-in account's affiliate association, and/or
-   - the affiliate custom domain configured for that store.
-4. UI then shows that affiliate's storefront branding, catalog scope, and links.
+All of this is in the affiliate dashboard, under the storefront branding settings:
 
-**Do not** bake the affiliate id into the install package as the only source of truth. Listing branding is for the store page; runtime branding comes from account + domain after login.
+1. **Store name** — the name under the home-screen icon. Short names read best; long names are cut off by the phone.
+2. **Favicon** (this is also the app icon) — upload a square PNG or JPG, ideally 512 x 512 or larger. This is the home-screen icon.
+3. **Logo** — used for the icon only when there is no favicon. A wide logo is fitted into a square on the store's background color, which can look small.
+4. **Primary and background colors** — the theme color and the launch background.
 
-If a user installs Brand A's listing but somehow signs into Brand B's account, follow existing product rules for account / domain mismatch — do not invent a new rule here. Escalate to Tom if the product does not already define the behavior.
+If there is no usable favicon or logo (none uploaded, or only an SVG), the store gets a clean letter icon: the first letter of the store name on the primary color.
 
 ---
 
-## Checklist — before you start a listing
+## Checklist — before telling an affiliate their store is "installable"
 
-- [ ] Affiliate account is live and can sign in
-- [ ] Custom domain is connected and working for the web storefront
-- [ ] Logo / icon source files are on hand (high resolution)
-- [ ] Brand display name is final (what appears under the icon)
-- [ ] Screenshot source material exists (or a plan to capture from the branded web / staging app)
-- [ ] Privacy policy and support URLs exist and load
-- [ ] Tom has said which Google Play Console and which Apple Developer team to use
-- [ ] Tom has said whether this listing stays internal-only for testing or goes public
+- [ ] Affiliate account is live and the storefront opens at `/store/<slug>`
+- [ ] Store name is final
+- [ ] A square favicon (PNG or JPG) is uploaded, or the letter icon is acceptable
+- [ ] Primary color is set
+- [ ] On an iPhone: open the storefront in Safari, Share, Add to Home Screen. The name and icon are the affiliate's
+- [ ] On an Android phone: open the storefront in Chrome, Add to Home screen. The name, icon, and color are the affiliate's
 
----
+Give the affiliate these two steps for their customers:
 
-## Checklist — Google Play (Android)
-
-Each affiliate brand needs its own Play Store listing when the brand must appear under its own name.
-
-- [ ] Create or select the app entry in Google Play Console
-- [ ] Set the application name to the affiliate brand
-- [ ] Upload the adaptive / high-res icon for that brand
-- [ ] Add phone screenshots that show that brand
-- [ ] Fill short description and full description
-- [ ] Attach privacy policy URL
-- [ ] Complete content rating, target audience, and store presence questionnaires as required by Play at submit time
-- [ ] Upload the shared Android build (AAB) for that release track
-- [ ] Use internal / closed testing first when Tom wants a dry run
-- [ ] Submit for review only after Tom says go
-
-Store policies and required forms change; follow the Console checklist on the day you submit. Do not invent fee amounts or review SLAs in this doc.
+- **iPhone:** open the store in Safari, tap Share, then Add to Home Screen.
+- **Android:** open the store in Chrome, tap the menu (three dots), then Add to Home screen or Install app.
 
 ---
 
-## Checklist — Apple App Store (iOS)
+## Known follow-up: custom domains
 
-Each affiliate brand needs its own App Store listing when the brand must appear under its own name.
-
-- [ ] Create or select the app record in App Store Connect
-- [ ] Set the app name to the affiliate brand (within Apple's length limits)
-- [ ] Upload the brand app icon
-- [ ] Add iPhone screenshots (and iPad if you declare iPad support)
-- [ ] Fill subtitle / description / keywords as needed for that brand
-- [ ] Attach privacy policy URL and complete App Privacy answers truthfully for what the shared app collects
-- [ ] Complete age rating and export compliance answers as required at submit time
-- [ ] Upload the shared iOS build
-- [ ] Use TestFlight for internal or external testers when Tom wants a dry run
-- [ ] Submit for review only after Tom says go
-
-Apple and Google are separate reviews. Passing one does not pass the other.
+The home-screen install is built for `/store/<slug>` and `<slug>.cabinetdealz.com`. An affiliate's own custom domain (for example `reaveswaycabinets.com`) still needs a routing check before it is promised as installable: confirm on the live site that the custom domain's home page opens the affiliate's storefront and links the affiliate's manifest. Connecting a custom domain remains a separate step that needs Tom's OK.
 
 ---
 
-## Branding asset list (hand to design)
+## Future option: one Cabinetdealz store app with a dealer picker
 
-Per affiliate, gather at least:
-
-- App icon master (square, large source; export to each store's required sizes)
-- Feature graphic / promo image if Play requires one for that listing
-- 3–8 screenshots per phone size you support, with the affiliate name / logo visible where appropriate
-- Optional: short promo video (only if Tom wants one)
-- Store description (plain language, no unverified claims)
-
-Never snap door colors to the Cabinetdealz brand palette when capturing kitchen screenshots. Use the affiliate's real finishes.
+If Cabinetdealz ever wants to be in the App Store and Google Play, the model Apple accepts is **one** Cabinetdealz app, submitted by Cabinetdealz, in which the customer picks or signs into an affiliate's store. That app would need real phone features beyond the website (for example camera measuring or order-status notifications) to pass guideline 4.2, and digital purchases inside it may need Apple's in-app purchase. It is several weeks of work and needs Tom's decision first. It is not planned today.
 
 ---
 
 ## Ops notes
 
-- **One PR / one feature still applies** to code changes that enable branded listings or login resolution. Do not sneak store-config into unrelated branches.
-- **No production DB writes** and **no DNS changes** without Tom's OK. Connecting an affiliate custom domain for web remains a separate, approved step.
-- **Do not change passwords** or rotate store console credentials in docs or chat.
+- **One PR / one feature still applies** to any code change for storefront branding or install behavior.
+- **No production DB writes** and **no DNS changes** without Tom's OK.
+- **Do not change passwords** or share store-console or hosting credentials in docs or chat.
 - Publishing this document to affiliates requires Tom to set visibility to affiliate and publish in the library UI. Until then it stays `visibility = internal` and `isPublished = 0`.
 
 ---
 
 ## Done means
 
-An affiliate has:
+An affiliate's storefront:
 
-1. A Google Play listing under their brand (when Android is in scope), and
-2. An App Store listing under their brand (when iOS is in scope), and
-3. Installs of the **shared** app that, after login, resolve to that affiliate via account and custom domain.
-
-If any of those three is missing, the branded app work is not finished.
+1. Opens at `/store/<slug>` (and at `<slug>.cabinetdealz.com`), and
+2. Installs from Safari and Chrome under the affiliate's own name and icon, and
+3. Shows no Cabinetdealz name or icon on the customer's home screen.
 
 ---
 

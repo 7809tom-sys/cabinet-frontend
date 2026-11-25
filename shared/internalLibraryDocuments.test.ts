@@ -6,6 +6,7 @@ import {
   INTERNAL_LIBRARY_DOCUMENTS,
   internalLibraryDocumentByFile,
   internalLibraryDocumentPath,
+  internalLibraryContentUpdateSql,
   internalLibraryInsertSql,
   internalLibraryRowValues,
 } from "./internalLibraryDocuments";
@@ -24,6 +25,22 @@ const admin = read("client/src/components/admin/AffiliateLiteratureAdmin.tsx");
 const vercelIgnore = read(".vercelignore").split("\n").map((line) => line.trim());
 
 const guide = internalLibraryDocumentByFile("how-to-create-an-app-for-an-affiliate.md")!;
+
+const UPDATE_SQL_FILE = "docs/sql/0289_affiliate_app_guide_whitelabel_web.tidb.sql";
+const updateSql = read(UPDATE_SQL_FILE);
+
+/**
+ * The guide exactly as 0268 registered it and the backend patch shipped it.
+ * Both files are history and are never edited; 0289 moves the row to the
+ * current manifest values.
+ */
+const GUIDE_AS_REGISTERED_IN_0268 = {
+  ...guide,
+  description:
+    "Internal ops guide for Tom. One shared Cabinetdealz codebase for every affiliate, with a separate Google Play listing and a separate Apple App Store listing per affiliate brand (own name, icon, screenshots). The app resolves the affiliate at login from the signed-in account and that affiliate custom domain, not from which store listing was installed. Internal only: never shown on the public site or in an affiliate portal until Tom adds it to the affiliate library.",
+  sizeBytes: 8025,
+  sha256: "66c0e9043fb15caad4d57283be87692c412ba66c80f2ab33d029617780579336",
+};
 
 /** The SQL file's numbered statements, without comment lines. */
 function sqlStatements(source: string): string[] {
@@ -95,13 +112,13 @@ describe("the internal library manifest", () => {
     expect(internalLibraryRowValues(guide)).toBe(
       [
         `'${guide.title}'`,
-        `'${guide.description}'`,
+        `'${guide.description.replace(/'/g, "''")}'`,
         "'Internal'",
         "'how-to-create-an-app-for-an-affiliate.md'",
         "'library-documents/internal/how-to-create-an-app-for-an-affiliate.md'",
         "'/manus-storage/library-documents/internal/how-to-create-an-app-for-an-affiliate.md'",
         "'text/plain'",
-        "8025",
+        String(guide.sizeBytes),
         "0",
         "'internal'",
         "901",
@@ -152,7 +169,7 @@ describe("docs/sql/0268_affiliate_app_guide_internal.tidb.sql", () => {
   it("registers the guide exactly as the manifest describes it, internal and unpublished", () => {
     const insert = STATEMENTS.find((statement) => /^INSERT\b/.test(statement));
     expect(insert).toBeTruthy();
-    expect(insert).toBe(internalLibraryInsertSql(guide));
+    expect(insert).toBe(internalLibraryInsertSql(GUIDE_AS_REGISTERED_IN_0268));
     expect(insert).toContain(", 0, 'internal', 901 FROM DUAL WHERE NOT EXISTS");
     // The two values that keep it out of an affiliate portal, spelled out.
     expect(insert).not.toMatch(/'affiliate'/);
@@ -168,16 +185,30 @@ describe("docs/sql/0268_affiliate_app_guide_internal.tidb.sql", () => {
 });
 
 describe("the affiliate app guide document", () => {
-  it("is the markdown Tom was given, unchanged in meaning and size", () => {
+  it("recommends the white-label web storefront and keeps the library framing", () => {
     const bytes = readFileSync(resolve(root, GUIDE_FILE));
     const text = bytes.toString("utf8");
     expect(text.startsWith("# How to Create an App for an Affiliate")).toBe(true);
     expect(text).toContain("**Internal only.** Admin library document for Cabinetdealz.");
-    expect(text).toContain("## Checklist — Google Play (Android)");
-    expect(text).toContain("## Checklist — Apple App Store (iOS)");
+    expect(text).toContain("Add to Home Screen");
+    expect(text).toContain("/store/<slug>/manifest.webmanifest");
+    expect(text).toContain("### Why per-affiliate store apps are not recommended");
+    expect(text).toContain("**4.2.6:**");
+    expect(text).toContain("**4.3(a):**");
+    expect(text).toContain("## Future option: one Cabinetdealz store app with a dealer picker");
     expect(text.trimEnd().endsWith("*Cabinetdealz internal — affiliate_literature library*")).toBe(true);
     // Stored as text/plain, so it must be valid UTF-8 with no NUL bytes.
     expect(text.includes("\u0000")).toBe(false);
+  });
+
+  it("no longer tells anyone to cut per-affiliate store listings or submit them from Cabinetdealz accounts", () => {
+    const text = read(GUIDE_FILE);
+    expect(text).not.toMatch(/under Cabinetdealz accounts/i);
+    expect(text).not.toContain("## Checklist — Google Play (Android)");
+    expect(text).not.toContain("## Checklist — Apple App Store (iOS)");
+    expect(text).not.toMatch(/Upload the shared (Android|iOS) build/);
+    expect(guide.description).toContain("not recommended");
+    expect(guide.description).not.toMatch(/separate Google Play listing and a separate Apple App Store listing per affiliate/);
   });
 
   it("is never served by the site", () => {
@@ -209,8 +240,10 @@ describe("the backend patch", () => {
     // The key is built from the shared private prefix, so the patch cannot invent
     // a path: `${LIBRARY_DOCUMENT_FILE_PREFIX}internal/${seed.file}`.
     expect(patchCode).toContain("${LIBRARY_DOCUMENT_FILE_PREFIX}internal/${seed.file}");
-    // The manifest in the patch carries the same files and numbers as this copy.
-    for (const document of INTERNAL_LIBRARY_DOCUMENTS) {
+    // The patch carries the files and numbers as they were when it shipped; the
+    // guide has since been revised (0289), so it is checked at its 0268 values.
+    for (const current of INTERNAL_LIBRARY_DOCUMENTS) {
+      const document = current.file === guide.file ? GUIDE_AS_REGISTERED_IN_0268 : current;
       expect(patchCode).toContain(document.file);
       expect(patchCode).toContain(`"${document.title}"`);
       expect(patchCode).toContain(String(document.sizeBytes));
@@ -241,5 +274,36 @@ describe("the backend patch", () => {
     expect(preamble).toContain("import-internal-library-documents.ts");
     expect(preamble).not.toMatch(/\bTODO\b|\bFIXME\b/);
     expect((patch.match(/^@@ /gm) ?? []).length).toBeGreaterThan(5);
+  });
+});
+
+describe("docs/sql/0289_affiliate_app_guide_whitelabel_web.tidb.sql", () => {
+  const statements = sqlStatements(updateSql);
+
+  it("is numbered after 0288, one statement per line, and leaves 0268 alone", () => {
+    expect(updateSql).toContain("Numbered 0289. Run after 0288.");
+    expect(updateSql).toContain("One statement per line");
+    expect(updateSql).toContain("Requires 0268 first");
+    for (const line of updateSql.split("\n").filter((entry) => entry.trim() && !entry.trimStart().startsWith("--"))) {
+      expect(line.trimEnd().endsWith(";"), line).toBe(true);
+    }
+    expect(sql).toContain("Numbered 0268");
+  });
+
+  it("updates only description and size of the guide row to the current manifest", () => {
+    const updates = statements.filter((statement) => /^UPDATE\b/.test(statement));
+    expect(updates).toEqual([internalLibraryContentUpdateSql(guide)]);
+    expect(updates[0]).toContain(`sizeBytes = ${guide.sizeBytes} `);
+    expect(updates[0]).toContain("WHERE fileKey = 'library-documents/internal/how-to-create-an-app-for-an-affiliate.md';");
+    expect(updates[0]).not.toMatch(/visibility|isPublished|title =|fileKey =.*,/);
+    expect(updateSql).not.toMatch(/\b(INSERT|DELETE|DROP|ALTER)\b/);
+  });
+
+  it("previews and verifies around the update, and names the upload-first run order", () => {
+    expect(statements.map((statement) => statement.split(" ")[0])).toEqual(["SELECT", "UPDATE", "SELECT"]);
+    expect(updateSql).toContain("Run order: upload the file FIRST");
+    expect(updateSql.indexOf("upload the file FIRST")).toBeLessThan(updateSql.indexOf("-- 1. PREVIEW"));
+    expect(updateSql).toContain(`${guide.sizeBytes} bytes`);
+    expect(updateSql).toContain(guide.sha256);
   });
 });
