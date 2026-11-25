@@ -8,8 +8,13 @@ const panel = readFileSync(new URL("./OutreachPanel.tsx", import.meta.url), "utf
 describe("admin CRM import + outreach wiring", () => {
   it("shows the admin import and the Outreach view only in the admin master CRM", () => {
     expect(board).toContain("{isMasterView && <CustomerListImportAdminDialog />}");
-    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)');
+    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)');
     expect(board).toContain('crmView === "outreach" && isMasterView ? (');
+  });
+
+  it("adds a master-only Distributors view that narrows the stage board to distributor prospects", () => {
+    expect(board).toContain('crmView === "distributors" && (data as any)?.isMasterView === true ? distributorDeals : mondayDeals');
+    expect(board).toContain("`Distributors (${distributorDeals.length})`");
   });
 
   it("keeps the existing affiliate customer-list import untouched", () => {

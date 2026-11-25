@@ -37,6 +37,7 @@ import { designOpenPath } from "@/lib/designOwnerScope";
 import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
+import { filterDistributorProspects } from "@/lib/crmDistributorFilter";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
@@ -192,7 +193,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach">("board");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors">("board");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
@@ -227,7 +228,10 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     due: dueFilter,
     affiliate: masterAffiliateFilter === "house" ? "house" : "all",
   }), [search, stageFilter, priorityFilter, dueFilter, masterAffiliateFilter]);
-  const viewDeals = useMemo(() => filterMondayDeals(filteredDeals, mondayFilters), [filteredDeals, mondayFilters]);
+  const mondayDeals = useMemo(() => filterMondayDeals(filteredDeals, mondayFilters), [filteredDeals, mondayFilters]);
+  // Distributors view (master only): same filters, narrowed to distributor prospects.
+  const distributorDeals = useMemo(() => filterDistributorProspects(mondayDeals), [mondayDeals]);
+  const viewDeals = crmView === "distributors" && (data as any)?.isMasterView === true ? distributorDeals : mondayDeals;
   const affiliateNames = (data as any)?.affiliateNames as Record<number, string> | undefined;
   const affiliateBranding = (data as any)?.affiliateBranding as Record<number, CrmAffiliateBrand> | undefined;
   const isMasterView = (data as any)?.isMasterView === true;
@@ -333,14 +337,14 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)).map((view) => (
+        {(isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)).map((view) => (
           <button
             key={view}
             type="button"
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : "Outreach"}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : view === "outreach" ? "Outreach" : `Distributors (${distributorDeals.length})`}
           </button>
         ))}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
