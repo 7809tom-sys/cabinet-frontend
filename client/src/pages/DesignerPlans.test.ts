@@ -13,7 +13,12 @@ describe("designer subscription plans page", () => {
 
   it("takes every price from the shared tier constant, never a typed dollar amount", () => {
     expect(page).toContain("@shared/designerSubscriptionTiers");
-    expect(page).not.toMatch(/\$1[15]\.99/);
+    expect(page).not.toMatch(/\$1,?[15]99|\$1[15]\.99/);
+  });
+
+  it("is yearly copy only, never monthly", () => {
+    expect(page).toContain("Billed yearly.");
+    expect(page).not.toMatch(/\/month|billed monthly|paid month|month already paid/i);
   });
 
   it("never shows covered supplier names", () => {

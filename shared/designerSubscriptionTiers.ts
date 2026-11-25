@@ -1,9 +1,9 @@
 // Designer subscription tiers. Requested by Tom by voice on Nov 25, 2026,
-// 9:05 AM CT. Two monthly plans:
+// 9:05 AM CT; corrected to yearly prices at 9:53 AM CT. Two annual plans:
 //
-//   designer_website  $11.99/month  Designer + your own custom website, and the
+//   designer_website  $1,199/year   Designer + your own custom website, and the
 //                                   purchasing club is included.
-//   designer_only     $15.99/month  Designer only. No website, no purchasing
+//   designer_only     $1,599/year   Designer only. No website, no purchasing
 //                                   club. Priced higher on purpose: the website
 //                                   plan is the one we want people to pick.
 //
@@ -20,7 +20,7 @@ export interface DesignerSubscriptionTierOption {
   id: DesignerSubscriptionTier;
   name: string;
   amountCents: number;
-  interval: "month";
+  interval: "year";
   /** Short line under the price. */
   tagline: string;
   /** What the plan includes, in display order. */
@@ -37,8 +37,8 @@ export const DESIGNER_SUBSCRIPTION_TIERS: Record<DesignerSubscriptionTier, Desig
   designer_website: {
     id: "designer_website",
     name: "Designer + Website",
-    amountCents: 1199,
-    interval: "month",
+    amountCents: 119900,
+    interval: "year",
     tagline: "The kitchen designer plus your own custom website, with the purchasing club included.",
     includes: ["Kitchen designer", "Your own custom website", "Purchasing club"],
     excludes: [],
@@ -49,8 +49,8 @@ export const DESIGNER_SUBSCRIPTION_TIERS: Record<DesignerSubscriptionTier, Desig
   designer_only: {
     id: "designer_only",
     name: "Designer only",
-    amountCents: 1599,
-    interval: "month",
+    amountCents: 159900,
+    interval: "year",
     tagline: "The kitchen designer on its own. No website and no purchasing club.",
     includes: ["Kitchen designer"],
     excludes: ["Custom website", "Purchasing club"],
@@ -73,13 +73,17 @@ export function designerSubscriptionTierChoices(): DesignerSubscriptionTierOptio
   return DESIGNER_SUBSCRIPTION_TIER_IDS.map((id) => DESIGNER_SUBSCRIPTION_TIERS[id]);
 }
 
-/** "$11.99". Always two decimals, since both prices have cents. */
+/** "$1,199". Whole dollars drop the cents; any cents show two decimals. */
 export function formatTierAmount(amountCents: number): string {
-  if (!Number.isFinite(amountCents) || amountCents <= 0) return "$0.00";
-  return `$${(amountCents / 100).toFixed(2)}`;
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return "$0";
+  const whole = amountCents % 100 === 0;
+  return `$${(amountCents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: whole ? 0 : 2,
+  })}`;
 }
 
-/** "$11.99/month". */
+/** "$1,199/year". */
 export function formatTierPrice(tier: DesignerSubscriptionTier): string {
   const option = DESIGNER_SUBSCRIPTION_TIERS[tier];
   return `${formatTierAmount(option.amountCents)}/${option.interval}`;

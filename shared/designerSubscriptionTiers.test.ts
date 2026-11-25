@@ -9,18 +9,23 @@ import {
 import { MEMBERSHIP_PLAN_OPTIONS } from "./affiliateMembershipPlans";
 
 describe("designer subscription tiers", () => {
-  it("prices Designer + Website at $11.99/month and Designer only at $15.99/month", () => {
-    expect(DESIGNER_SUBSCRIPTION_TIERS.designer_website.amountCents).toBe(1199);
-    expect(DESIGNER_SUBSCRIPTION_TIERS.designer_only.amountCents).toBe(1599);
-    expect(formatTierPrice("designer_website")).toBe("$11.99/month");
-    expect(formatTierPrice("designer_only")).toBe("$15.99/month");
+  it("prices Designer + Website at $1,199/year and Designer only at $1,599/year", () => {
+    expect(DESIGNER_SUBSCRIPTION_TIERS.designer_website.amountCents).toBe(119900);
+    expect(DESIGNER_SUBSCRIPTION_TIERS.designer_only.amountCents).toBe(159900);
+    expect(formatTierPrice("designer_website")).toBe("$1,199/year");
+    expect(formatTierPrice("designer_only")).toBe("$1,599/year");
   });
 
-  it("puts the website and purchasing club only on the $11.99 plan", () => {
+  it("puts the website and purchasing club only on the $1,199 plan", () => {
     expect(DESIGNER_SUBSCRIPTION_TIERS.designer_website.includesWebsite).toBe(true);
     expect(DESIGNER_SUBSCRIPTION_TIERS.designer_website.includesPurchasingClub).toBe(true);
     expect(DESIGNER_SUBSCRIPTION_TIERS.designer_only.includesWebsite).toBe(false);
     expect(DESIGNER_SUBSCRIPTION_TIERS.designer_only.includesPurchasingClub).toBe(false);
+  });
+
+  it("bills both plans yearly", () => {
+    expect(DESIGNER_SUBSCRIPTION_TIERS.designer_website.interval).toBe("year");
+    expect(DESIGNER_SUBSCRIPTION_TIERS.designer_only.interval).toBe("year");
   });
 
   it("keeps Designer only as the higher-priced option", () => {

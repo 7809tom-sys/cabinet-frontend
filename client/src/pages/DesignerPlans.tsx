@@ -22,7 +22,7 @@ function formatDate(iso: string | null): string | null {
 }
 
 /**
- * /plans: the two monthly designer subscriptions Tom set on Nov 25, 2026.
+ * /plans: the two yearly designer subscriptions Tom set on Nov 25, 2026.
  * Prices come only from shared/designerSubscriptionTiers.ts.
  */
 export default function DesignerPlans() {
@@ -61,7 +61,7 @@ export default function DesignerPlans() {
       <div className="text-center max-w-2xl mx-auto">
         <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Subscription plans</p>
         <h1 className="font-serif text-4xl md:text-5xl font-bold mt-2">Pick your plan</h1>
-        <p className="mt-4 text-muted-foreground text-lg">Billed monthly. Cancel any time.</p>
+        <p className="mt-4 text-muted-foreground text-lg">Billed yearly. Cancel any time.</p>
       </div>
 
       {current ? (
@@ -72,7 +72,7 @@ export default function DesignerPlans() {
           </p>
           {current.cancelAtPeriodEnd ? (
             <p className="mt-1 text-muted-foreground">
-              Cancelled. It stays on until {formatDate(current.currentPeriodEnd) ?? "the end of the paid month"}.
+              Cancelled. It stays on until {formatDate(current.currentPeriodEnd) ?? "the end of the paid year"}.
             </p>
           ) : (
             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -147,7 +147,7 @@ export default function DesignerPlans() {
       </div>
 
       <p className="text-xs text-center text-muted-foreground">
-        Card payment opens Stripe. Cabinet Dealz does not see the card number. Cancelling stops the next charge; your plan stays on until the end of the month already paid.
+        Card payment opens Stripe. Cabinet Dealz does not see the card number. Cancelling stops the next charge; your plan stays on until the end of the year already paid.
       </p>
     </div>
   );
