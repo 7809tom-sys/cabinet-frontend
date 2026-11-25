@@ -26,14 +26,14 @@ const viewerSource = readFileSync(resolve(import.meta.dirname, "../components/de
 const elevationSource = readFileSync(resolve(import.meta.dirname, "../components/design/ElevationView.tsx"), "utf8");
 const designToolSource = readFileSync(resolve(import.meta.dirname, "../pages/DesignTool.tsx"), "utf8");
 
-/** The distributor's own Tile & Mosaic listing: 51 rows, 43 of them mosaic sheets. */
-const CATALOG_ROW_COUNT = 51;
-const MOSAIC_SHEET_COUNT = 43;
+/** The distributor's own Tile & Mosaic listing: 53 rows, 45 of them mosaic sheets. */
+const CATALOG_ROW_COUNT = 53;
+const MOSAIC_SHEET_COUNT = 45;
 
 describe("the mosaic catalog covers the distributor's whole Tile & Mosaic list", () => {
-  it("accounts for all 51 listed rows, with no row dropped and no invented row", () => {
+  it("accounts for all 53 listed rows, with no row dropped and no invented row", () => {
     expect(MOSAIC_CATALOG.length + NON_MOSAIC_TILE_ROWS.length + UNRESOLVED_MOSAICS.length).toBe(CATALOG_ROW_COUNT);
-    // 8 of the 51 are vanity tops and prefab slabs, not mosaic sheets.
+    // 8 of the 53 are vanity tops and prefab slabs, not mosaic sheets.
     expect(NON_MOSAIC_TILE_ROWS).toHaveLength(8);
     expect(MOSAIC_CATALOG.length + UNRESOLVED_MOSAICS.length).toBe(MOSAIC_SHEET_COUNT);
   });
@@ -44,7 +44,7 @@ describe("the mosaic catalog covers the distributor's whole Tile & Mosaic list",
     expect(skus.every((sku) => sku.length > 0)).toBe(true);
   });
 
-  it("resolves every single one of the 43 mosaic sheets to a distributor SKU and a pattern", () => {
+  it("resolves every single one of the 45 mosaic sheets to a distributor SKU and a pattern", () => {
     for (const entry of MOSAIC_CATALOG) {
       expect(entry.sku.trim(), entry.name).not.toBe("");
       expect(entry.pattern, entry.sku).toBeTruthy();
@@ -144,7 +144,7 @@ describe("sizes, grout and colours come from the product, never invented", () =>
       hex: [0.7, 3.2], square: [0.35, 2.4], subway: [1.0, 3.4], brick: [0.45, 1.8],
       linear: [0.25, 2.2], picket: [0.9, 2.8], diamond: [0.6, 2.4], chevron: [0.7, 2.4],
       "framed-square": [1.1, 2.8], bloom: [0.7, 2.6], lantern: [1.1, 3.2],
-      floral: [0.5, 1.8], lattice: [0.45, 1.8], clover: [1.1, 2.8],
+      floral: [0.5, 1.8], lattice: [0.45, 1.8], clover: [1.1, 2.8], penny: [0.45, 1.4],
     };
     for (const entry of MOSAIC_CATALOG) {
       const [low, high] = band[entry.pattern];
@@ -256,10 +256,21 @@ describe("the catalog spec is what both views render", () => {
   });
 
   it("never resolves a name it does not actually sell", () => {
-    for (const name of ["", "   ", "Penny Round Mosaic", "Picket Mosaic", "Herringbone Mosaic", "Generic Marble", "Calacatta Gold Penny Round"]) {
+    for (const name of ["", "   ", "Penny Round Mosaic", "Picket Mosaic", "Herringbone Mosaic", "Generic Marble", "Penny Round Marble"]) {
       expect(mosaicCatalogFor({ name }), name).toBeNull();
     }
     expect(mosaicCatalogFor({ name: "Moonstone Hex" })?.sku).toBe("Moonstone Hex");
+  });
+
+  it("carries the two Elemental penny rounds with the distributor's own sheet size", () => {
+    for (const sku of ["Carrara Penny Round", "Calacatta Gold Penny Round"]) {
+      const entry = mosaicCatalogFor({ name: sku });
+      expect(entry?.sku, sku).toBe(sku);
+      expect(entry?.pattern, sku).toBe("penny");
+      expect(entry?.family, sku).toBe("marble");
+      expect(entry?.sizeIn, sku).toEqual([11.14, 12.09]);
+      expect(entry?.source, sku).toMatch(/^https:\/\/buildpelican\.com\/products\//);
+    }
   });
 
   it("keeps a vanity top or prefab slab out of the mosaic path entirely", () => {
