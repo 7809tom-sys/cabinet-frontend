@@ -400,7 +400,7 @@ function CountertopQuotes() {
               );
             })()}
             <div className="flex flex-wrap items-center gap-2">
-              <Input type="number" placeholder="Quoted price" className="w-40" defaultValue={q.quotedPrice ? Number(q.quotedPrice) : undefined} id={`qp-${q.id}`} />
+              <Input type="number" placeholder={QUOTED_PRICE_IS_PER_SLAB ? "Price per slab" : "Quoted price"} className="w-40" defaultValue={q.quotedPrice ? Number(q.quotedPrice) : undefined} id={`qp-${q.id}`} />
               <Button size="sm" variant="outline" onClick={() => { const el = document.getElementById(`qp-${q.id}`) as HTMLInputElement | null; const price = el?.value ? Number(el.value) : undefined; update.mutate({ id: q.id, status: "quoted", quotedPrice: price }); }}>Save Quote</Button>
               <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: q.id, status: "won" })}>Mark Won</Button>
               <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: q.id, status: "lost" })}>Mark Lost</Button>
@@ -408,11 +408,22 @@ function CountertopQuotes() {
                 <Search className="h-3.5 w-3.5 mr-1" /> Find Pros
               </Button>
             </div>
-            {q.quotedPrice && (
-              <div className="text-sm rounded-md bg-muted px-3 py-2">
-                Quoted: <strong>${Number(q.quotedPrice).toLocaleString()}</strong> · Est. platform fee (15%): <strong>${(Number(q.quotedPrice) * 0.15).toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong>
-              </div>
-            )}
+            {(q.status === "quoted" || q.status === "won" || q.quotedPrice) && (() => {
+              // Saved or won: the slab invoice line, built exactly as the CRM invoice builds it.
+              const billing = buildCountertopSlabInvoiceLine(q);
+              return billing.ok ? (
+                <div className="text-sm rounded-md bg-muted px-3 py-2 space-y-1" data-testid={`countertop-quote-invoice-line-${q.id}`}>
+                  <div><span className="text-muted-foreground">Invoice line:</span> <strong>{billing.line.description}</strong></div>
+                  <div className="text-xs text-muted-foreground">
+                    {QUOTED_PRICE_IS_PER_SLAB ? "Quoted price is per slab." : "Quoted price is the job total."} Est. platform fee (15%): ${(billing.total * 0.15).toLocaleString(undefined, { maximumFractionDigits: 2 })}. Bill it from the CRM deal's Quick PDF Invoice (shipping address required).
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900" data-testid={`countertop-quote-invoice-blocked-${q.id}`}>
+                  No invoice line: {billing.message}
+                </div>
+              );
+            })()}
             {activeQuoteId === q.id && <ProMatcher zip={matchZip} onZipChange={setMatchZip} />}
           </CardContent>
         </Card>
