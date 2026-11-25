@@ -202,12 +202,37 @@ export function readInventorySimulation(search: string, stored: string | null): 
  * Production and every non-admin session get the unknown provider, even if
  * the simulation query or localStorage flag is present.
  */
+/**
+ * Owner decision (Nov 2026): shoppers never see stock status. That covers out
+ * of stock, low, back ordered, discontinued, restock dates, and lead time from
+ * the vendor inventory sync. Shoppers just keep designing. Stock data stays in
+ * the vendor portal and admin. Keep this `false`. Any future live feed (for
+ * example VendorApiInventoryProvider) must still pass through
+ * `guardShopperInventoryProvider`, so wiring a feed can't show status to
+ * shoppers by accident.
+ */
+export const SHOPPER_STOCK_STATUS_VISIBLE = false as const;
+
+/** True only when this viewer may see stock status. Shoppers never may. */
+export function canViewerSeeStockStatus(isAdmin: boolean): boolean {
+  return isAdmin || (SHOPPER_STOCK_STATUS_VISIBLE as boolean);
+}
+
+/**
+ * Replaces any provider with the unknown provider for shoppers. The Designer
+ * shows nothing for `unknown`, so no stock badge, notice, or prompt appears.
+ */
+export function guardShopperInventoryProvider(provider: InventoryProvider, isAdmin: boolean): InventoryProvider {
+  if (canViewerSeeStockStatus(isAdmin)) return provider;
+  return provider.id === "unknown" ? provider : new UnknownInventoryProvider();
+}
+
 export function resolveDesignerInventoryProvider(input: {
   isAdmin: boolean;
   search: string;
   storedFlag: string | null;
 }): InventoryProvider {
-  if (!input.isAdmin) return new UnknownInventoryProvider();
+  if (!canViewerSeeStockStatus(input.isAdmin)) return new UnknownInventoryProvider();
   const request = readInventorySimulation(input.search, input.storedFlag);
   if (!request.enabled) return new UnknownInventoryProvider();
   return new StubInventoryProvider({

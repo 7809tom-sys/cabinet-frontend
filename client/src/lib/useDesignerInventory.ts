@@ -12,6 +12,7 @@ import {
   INVENTORY_SIM_FIXTURE_OUT_OF_STOCK,
   INVENTORY_SIM_STORAGE_KEY,
   readInventorySimulation,
+  guardShopperInventoryProvider,
   resolveDesignerInventoryProvider,
   type InventoryProvider,
   type StockStatusResult,
@@ -84,11 +85,13 @@ export function useDesignerInventory(input: {
     [input.search, storedFlag],
   );
   const provider = useMemo(
-    () => resolveDesignerInventoryProvider({
+    // The guard is applied again here so a future change to the resolver can't
+    // show stock status to shoppers. See SHOPPER_STOCK_STATUS_VISIBLE.
+    () => guardShopperInventoryProvider(resolveDesignerInventoryProvider({
       isAdmin: input.isAdmin,
       search: input.search,
       storedFlag,
-    }),
+    }), input.isAdmin),
     [input.isAdmin, input.search, storedFlag],
   );
 
