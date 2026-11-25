@@ -55,21 +55,12 @@ import { CrmEmailWorkspace, type EmailPrefill } from "@/components/crm/monday/Cr
 import { CrmDealFiles, CrmDueBanner } from "@/components/crm/monday/CrmDealExtras";
 import { CustomerListImportAdminDialog } from "@/components/crm/outreach/CustomerListImportAdminDialog";
 import { OutreachPanel } from "@/components/crm/outreach/OutreachPanel";
+import { CustomerActivityLine } from "@/components/crm/CustomerActivityLine";
+
+// Kept as a re-export so existing imports from CrmBoard keep working.
+export { CustomerActivityLine };
 
 type CustomerSummary = { text: string; href: string; customerKey: string };
-
-export function CustomerActivityLine({ text, href, nested = false }: { text: string; href: string; nested?: boolean }) {
-  return (
-    <div className="mt-2 text-[11px] leading-snug text-muted-foreground" data-testid="customer-activity-summary">
-      <p>{text}</p>
-      {nested ? (
-        <span role="link" className="text-primary underline" onClick={(event) => { event.stopPropagation(); window.location.assign(href); }}>Open customer page</span>
-      ) : (
-        <a className="text-primary underline" href={href}>Open customer page</a>
-      )}
-    </div>
-  );
-}
 
 type Lang = CrmLanguage;
 const L = (lang: Lang) => ({
