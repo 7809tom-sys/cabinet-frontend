@@ -8,8 +8,21 @@ const panel = readFileSync(new URL("./OutreachPanel.tsx", import.meta.url), "utf
 describe("admin CRM import + outreach wiring", () => {
   it("shows the admin import and the Outreach view only in the admin master CRM", () => {
     expect(board).toContain("{isMasterView && <CustomerListImportAdminDialog />}");
-    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach"] as const) : (["board", "table", "email"] as const)');
+    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)');
     expect(board).toContain('crmView === "outreach" && isMasterView ? (');
+  });
+
+  it("adds a master-only Distributors view that narrows the stage board to distributor prospects", () => {
+    expect(board).toContain('const distributorsViewOpen = crmView === "distributors" && (data as any)?.isMasterView === true;');
+    expect(board).toContain("const viewDeals = distributorsViewOpen ? distributorDeals : mondayDeals;");
+    expect(board).toContain("`Distributors (${distributorDeals.length})`");
+  });
+
+  it("relabels the New column as Distributor only while the Distributors view is open", () => {
+    expect(board).toContain('DISTRIBUTORS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Distributor" }');
+    expect(board).toContain("distributorsViewOpen ? DISTRIBUTORS_VIEW_STAGE_LABELS : undefined");
+    expect(board).toContain("stageLabels={stageLabelOverrides}");
+    expect(board).toContain("stageLabelOverrides?.[stage] ?? CRM_STAGE_LABELS[stage][lang]");
   });
 
   it("keeps the existing affiliate customer-list import untouched", () => {
