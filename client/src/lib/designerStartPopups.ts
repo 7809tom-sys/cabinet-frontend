@@ -106,6 +106,17 @@ export function dialogAfterFixturePick(): null {
   return null;
 }
 
+/**
+ * On a phone, the selected-cabinet sheet must not cover What goes on top,
+ * Pick your sink, or Pick your faucet. Other sheets are unchanged.
+ */
+export function sinkFlowCoversSelectedCabinetSheet(input: {
+  fixturePickOpen: boolean;
+  sinkBaseDialogOpen: boolean;
+}): boolean {
+  return input.fixturePickOpen || input.sinkBaseDialogOpen;
+}
+
 export function shouldPromptFixturePick(input: {
   cabinet: FixturePickCabinet;
   existingSink?: FixturePickSink | null;

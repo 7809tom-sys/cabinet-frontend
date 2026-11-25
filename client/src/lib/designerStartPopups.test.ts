@@ -4,6 +4,7 @@ import {
   followUpAfterCabinetStyle,
   initialDesignerPopup,
   nextSinkBasePopup,
+  sinkFlowCoversSelectedCabinetSheet,
   popupsForRestoredDraft,
   shouldPromptFixturePick,
   sinkBasePlacementDialog,
@@ -31,6 +32,12 @@ describe("sink base chooser", () => {
     expect(nextSinkBasePopup({ from: "what-goes-on-top", action: "range-top" })).toBe("range-top");
     expect(nextSinkBasePopup({ from: "pick-sink", action: "pick-sink" })).toBe("pick-faucet");
     expect(nextSinkBasePopup({ from: "pick-faucet", action: "pick-faucet" })).toBe("none");
+  });
+
+  it("keeps the phone selected-cabinet sheet under every sink-flow step", () => {
+    expect(sinkFlowCoversSelectedCabinetSheet({ fixturePickOpen: false, sinkBaseDialogOpen: true })).toBe(true);
+    expect(sinkFlowCoversSelectedCabinetSheet({ fixturePickOpen: true, sinkBaseDialogOpen: false })).toBe(true);
+    expect(sinkFlowCoversSelectedCabinetSheet({ fixturePickOpen: false, sinkBaseDialogOpen: false })).toBe(false);
   });
 
   it("ends the flow when any step is dismissed, with no chooser underneath", () => {

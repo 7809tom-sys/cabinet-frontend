@@ -52,6 +52,7 @@ describe("Start from scratch popup chain", () => {
     expect(dismiss).toContain("setSinkBaseDialog(null)");
     expect(dismiss).not.toContain("setSinkBaseDialog({");
     expect(dismiss).not.toContain("setFixturePickOpen(true)");
+    expect(source).toContain("sinkFlowCoversSelectedCabinetSheet({");
     expect(source).toContain("step={fixturePickStep}");
     expect(source).toContain("onPickSink={pickFixtureSink}");
     expect(source).toContain("onPickFaucet={pickFixtureFaucet}");

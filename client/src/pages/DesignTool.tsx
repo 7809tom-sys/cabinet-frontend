@@ -326,7 +326,7 @@ import { useTransientNotice } from "@/components/design/useTransientNotice";
 import { autoDesignSinkWindow, windowOverlapsReservation } from "@/lib/autoDesignSinkWindow";
 import { catalogSinkInstallation, isAutoDesignSinkProduct, planAutoDesignSinkPlacement, sinkBasePairing, sinksFittingExistingBase, type AutoDesignSinkProduct } from "@/lib/autoDesignSink";
 import { postBuildFixturePrompts, productFromOpeningPick } from "@/lib/autoDesignOpeningFixturePick";
-import { dialogAfterFixturePick, followUpAfterCabinetStyle, initialDesignerPopup, popupsForRestoredDraft, shouldPromptFixturePick, sinkBasePlacementDialog } from "@/lib/designerStartPopups";
+import { dialogAfterFixturePick, followUpAfterCabinetStyle, initialDesignerPopup, popupsForRestoredDraft, shouldPromptFixturePick, sinkBasePlacementDialog, sinkFlowCoversSelectedCabinetSheet } from "@/lib/designerStartPopups";
 import { cabinetStyleStepCopy, followUpAfterAutoDesignStyle, styleStepVendor, type CabinetStylePopupPurpose } from "@/lib/cabinetStyleStep";
 import { autoDesignTallProducts, autoDesignKitchenWallIds, defaultAutoDesignRange, autoDesignRangeChoices, type AutoDesignApplianceChoice, type AutoDesignTallProduct } from "@/lib/autoDesignTallCabinets";
 import { autoDesignRangeHood, autoDesignRangeNeedsVentilation } from "@/lib/autoDesignRangeHood";
@@ -20341,7 +20341,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
         </section>
       )}
 
-      {isMobile && selectedCab && !drawMode && !measureMode && (
+      {isMobile && selectedCab && !drawMode && !measureMode && !sinkFlowCoversSelectedCabinetSheet({
+        fixturePickOpen,
+        sinkBaseDialogOpen: sinkBaseDialog != null,
+      }) && (
         <Sheet open={cabEditSheetOpen} onOpenChange={setCabEditSheetOpen}>
           <SheetContent
             side="bottom"
