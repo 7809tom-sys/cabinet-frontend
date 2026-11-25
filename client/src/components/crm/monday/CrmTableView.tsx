@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { CRM_PRIORITIES, CRM_PRIORITY_LABELS, CRM_STAGES, CRM_STAGE_LABELS, type CrmPriority, type CrmStage } from "@shared/crm";
 import { CRM_STAGE_COLORS, crmDueState, type MondayDeal } from "@shared/crmMailbox";
+import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
+import { isDistributorProspect } from "@/lib/crmDistributorFilter";
 import { CRM_DESIGN_STAMP_LABELS, designSavedTitle, formatDesignSavedDate, type CrmDesignStampFields } from "@/lib/crmDesignStamps";
 
 type Lang = "en" | "es";
 
 export type TableDeal = MondayDeal & CrmDesignStampFields & {
   ownerName?: string | null;
+  notes?: string | null;
   lastActivityAt?: Date | string | null;
 };
 
@@ -37,6 +40,9 @@ export function CrmTableView({
   onOpen: (id: number) => void;
   onPatch: (id: number, patch: { title?: string; stage?: CrmStage; priority?: CrmPriority; estimatedValue?: number | null; nextFollowUpAt?: number | null }) => void;
 }) {
+  // The site comparison column only appears when distributor prospects are listed.
+  const showSiteCompare = deals.some(isDistributorProspect);
+  const columns = 9 + (showAffiliate ? 1 : 0) + (showSiteCompare ? 1 : 0);
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white" data-testid="crm-table-view">
       <table className="w-full min-w-[1120px] text-sm">
@@ -52,13 +58,14 @@ export function CrmTableView({
             <th className="px-3 py-2">Last activity</th>
             <th className="px-3 py-2">{CRM_DESIGN_STAMP_LABELS.first[lang]}</th>
             <th className="px-3 py-2">{CRM_DESIGN_STAMP_LABELS.last[lang]}</th>
+            {showSiteCompare && <th className="px-3 py-2">Site vs Cabinetdealz</th>}
           </tr>
         </thead>
         <tbody>
           {deals.length === 0 ? (
-            <tr><td colSpan={showAffiliate ? 10 : 9} className="px-3 py-8 text-center text-slate-500">No deals match this view.</td></tr>
+            <tr><td colSpan={columns} className="px-3 py-8 text-center text-slate-500">No deals match this view.</td></tr>
           ) : deals.map((deal) => (
-            <CrmTableRow key={deal.id} deal={deal} lang={lang} showAffiliate={showAffiliate} affiliateNames={affiliateNames} onOpen={onOpen} onPatch={onPatch} />
+            <CrmTableRow key={deal.id} deal={deal} lang={lang} showAffiliate={showAffiliate} showSiteCompare={showSiteCompare} affiliateNames={affiliateNames} onOpen={onOpen} onPatch={onPatch} />
           ))}
         </tbody>
       </table>
@@ -70,6 +77,7 @@ function CrmTableRow({
   deal,
   lang,
   showAffiliate,
+  showSiteCompare = false,
   affiliateNames,
   onOpen,
   onPatch,
@@ -77,6 +85,7 @@ function CrmTableRow({
   deal: TableDeal;
   lang: Lang;
   showAffiliate: boolean;
+  showSiteCompare?: boolean;
   affiliateNames?: Record<number, string>;
   onOpen: (id: number) => void;
   onPatch: (id: number, patch: { title?: string; stage?: CrmStage; priority?: CrmPriority; estimatedValue?: number | null; nextFollowUpAt?: number | null }) => void;
@@ -143,6 +152,11 @@ function CrmTableRow({
       {/* Read-only: stamped by the server when a linked design is saved. */}
       <td className="px-3 py-2 text-xs text-slate-500" data-testid="crm-first-design-saved" title={designSavedTitle(deal.firstDesignSavedAt)}>{formatDesignSavedDate(deal.firstDesignSavedAt, lang)}</td>
       <td className="px-3 py-2 text-xs text-slate-500" data-testid="crm-last-design-saved" title={designSavedTitle(deal.lastDesignSavedAt)}>{formatDesignSavedDate(deal.lastDesignSavedAt, lang)}</td>
+      {showSiteCompare && (
+        <td className="px-3 py-2 min-w-[260px] align-top" data-testid="crm-site-compare-cell">
+          {isDistributorProspect(deal) ? <DistributorSiteCompare deal={deal} /> : <span className="text-xs text-slate-400">—</span>}
+        </td>
+      )}
     </tr>
   );
 }
