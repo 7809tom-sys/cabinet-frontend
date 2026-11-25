@@ -223,7 +223,8 @@ import { useDesignerInventory } from "@/lib/useDesignerInventory";
 import { InventoryDesignStockControl, InventoryStockBadge, OutOfStockChoiceDialog, SinkBaseSubstitutionNotice } from "@/components/design/InventoryStockNotice";
 import { sessionSellableStyleIds, unavailableSavedStyleIds } from "@/lib/unavailableSavedStyles";
 import { applyGlassStackerBulkPlacement as applyBulkGlassStackerPlacements, glassStackerBulkCeilingBlocksAtHeight, glassStackerBulkHeightOptions, glassStackerBulkPlacementCandidates, glassStackerUidsForRemoval, type GlassStackerBulkPlacementCandidate } from "@/lib/glassStackerBulkPlacement";
-import { toast } from "sonner";
+import { toast as sonnerToast } from "sonner";
+import { createPriceSafeToast, stripPriceText } from "@/lib/designerPriceVisibility";
 import { DESIGNER_ROOM_FEATURE, designerRoomOffered } from "@shared/affiliateFeaturePublish";
 import { useAffiliateFeaturePublish } from "@/lib/useAffiliateFeaturePublish";
 import { cn } from "@/lib/utils";
@@ -408,6 +409,7 @@ import { AutoDesignTallDialog } from "@/components/design/AutoDesignTallDialog";
 import { AutoDesignRangeDialog } from "@/components/design/AutoDesignRangeDialog";
 import { findClosestPlanCabinet } from "@/lib/planImportMapper";
 import { EmailGate, type LeadContact } from "@/components/design/EmailGate";
+import { DesignerPriceVisibilityProvider, useDesignerOpenReporter, useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 import { handOffDesignerContact, takeDesignerContactHandoff } from "@/lib/designerReloadHandoff";
 import { OptionalContactNudge } from "@/components/design/OptionalContactNudge";
 import { DesignDeliveryDialog } from "@/components/design/DesignDeliveryDialog";
@@ -668,14 +670,35 @@ export function designerRoomLabel(roomType: RoomType): string {
   return "Kitchen";
 }
 
-export default function DesignTool(props: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter }) {
+// Every designer toast goes through this wrapper. While the demo distributor
+// designer (hidePrices) is mounted, dollar amounts are removed from toast text
+// (Auto Design notes, swaps, MasterTrac summaries); everywhere else it is the
+// plain sonner toast.
+let designerToastHidesPrices = false;
+const toast = createPriceSafeToast(sonnerToast, () => designerToastHidesPrices);
+
+export default function DesignTool({ hidePrices = false, ...props }: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter; hidePrices?: boolean }) {
   const search = useSearch();
   const scope = resolvedDesignToolStoreScope(props.affiliateSlug, search);
-  return <ScopedDesignTool key={scope} {...props} />;
+  // hidePrices (demo distributor designer only): no price, total or
+  // price-derived number anywhere in the designer. Default false = unchanged.
+  return (
+    <DesignerPriceVisibilityProvider hidePrices={hidePrices}>
+      <ScopedDesignTool key={scope} {...props} />
+    </DesignerPriceVisibilityProvider>
+  );
 }
 
 function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter }) {
   const { t, lang } = useLanguage();
+  const hidePrices = useDesignerPricesHidden();
+  // Same flag for callbacks / toasts (constant per mount: it comes from the route).
+  const hidePricesRef = useRef(hidePrices);
+  hidePricesRef.current = hidePrices;
+  useEffect(() => {
+    designerToastHidesPrices = hidePrices;
+    return () => { designerToastHidesPrices = false; };
+  }, [hidePrices]);
   const { user, isAuthenticated } = useAuth();
   const signedInRole = (user as { role?: string | null } | null)?.role ?? null;
   const isAdmin = signedInRole === "admin";
@@ -790,6 +813,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   const [verifiedEmail, setVerifiedEmail] = useState(contactHandoff?.email ?? "");
   const [verifiedName, setVerifiedName] = useState(contactHandoff?.name ?? "");
   const [verifiedPhone, setVerifiedPhone] = useState(contactHandoff?.phone ?? "");
+  // The demo distributor shell shows its Save / Get my price buttons only once
+  // the designer is open (past the email form). No-op on every other route.
+  const reportDesignerOpen = useDesignerOpenReporter();
+  useEffect(() => { reportDesignerOpen?.(verified); }, [reportDesignerOpen, verified]);
   // Chrome lifts a WebGL block only when the customer reloads; that reload must
   // not ask a guest for their email again before their draft comes back.
   const threeDBlockedRef = useRef(false);
@@ -6473,8 +6500,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setPlaced(next);
     setSelectedUid(uid);
     setDismissedMissingPricePopoverUid(null);
-    toast.success(`${target.masterCode} replaced with priced ${alternative.masterCode} ($${alternative.customerPrice.toFixed(2)}). Placement, fillers, and countertops were re-run.`);
-  }, [room]);
+    toast.success(hidePrices
+      ? `${target.masterCode} replaced with ${alternative.masterCode}. Placement, fillers, and countertops were re-run.`
+      : `${target.masterCode} replaced with priced ${alternative.masterCode} ($${alternative.customerPrice.toFixed(2)}). Placement, fillers, and countertops were re-run.`);
+  }, [hidePrices, room]);
   const missingPricePopoverTarget = useMemo(() => {
     if (!selectedUid || !designStyleId) return null;
     if (!missingPriceUids.has(selectedUid)) return null;
@@ -7239,7 +7268,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     if (customCount > 0) {
       rows.push({
         code: "CUSTOM-ADJ",
-        description: `Custom size adjustment ($${CUSTOM_SIZE_FEE} per resized cabinet)`,
+        description: hidePricesRef.current ? "Custom size adjustment (per resized cabinet)" : `Custom size adjustment ($${CUSTOM_SIZE_FEE} per resized cabinet)`,
         widthIn: 0,
         heightIn: 0,
         depthIn: 0,
@@ -7813,7 +7842,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
     setPlacementWarning(null);
     setTowerDialog(null);
     if (panelDrawerMode) setMobilePanel(null);
-    toast.success(`${config.bays.length} connected MasterTrac bays · ${result.plan.count} exact SKU boards${result.plan.conceptualItems.length ? ` + ${result.plan.conceptualItems.reduce((sum, item) => sum + item.quantity, 0)} illustrated storage parts` : ""} · $${result.plan.listSubtotal.toFixed(2)} March 2022 List reference, not checkout.`);
+    toast.success(`${config.bays.length} connected MasterTrac bays · ${result.plan.count} exact SKU boards${result.plan.conceptualItems.length ? ` + ${result.plan.conceptualItems.reduce((sum, item) => sum + item.quantity, 0)} illustrated storage parts` : ""}${hidePricesRef.current ? "" : ` · $${result.plan.listSubtotal.toFixed(2)} March 2022 List reference, not checkout.`}`);
     return { ok: true };
   }, [cabinetsLocked, isMobile, layoutLocked, openings, panelDrawerMode, room, setPlaced]);
 
@@ -7835,7 +7864,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
   }, [interactive3dPricingLines]);
 
   const interactive3dOrderLines = useMemo<InteractiveRoomOrderLine[]>(() => interactive3dPricingLines.map((line, index) => {
-    const unitPrice = line.unitPrice == null || !Number.isFinite(Number(line.unitPrice)) ? null : Number(line.unitPrice);
+    // hidePrices (demo designer): the 3D view gets no prices at all; its frozen
+    // pricing sheet / quote PDF then fall back to "Quote" text.
+    const unitPrice = hidePrices || line.unitPrice == null || !Number.isFinite(Number(line.unitPrice)) ? null : Number(line.unitPrice);
     return {
       id: `${line.masterCode}:${line.styleId}:${line.tier}:${unitPrice ?? "pending"}:${index}`,
       label: line.masterCode,
@@ -7845,7 +7876,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       lineTotal: unitPrice == null ? null : unitPrice * line.qty,
       placementUids: line.placementUids,
     };
-  }), [interactive3dPricingLines]);
+  }), [hidePrices, interactive3dPricingLines]);
 
 	  const interactive3dCatalogItems = useMemo<InteractiveRoomCatalogItem[]>(() => {
 	    const activeCabinets = withWallWineRacks(
@@ -10209,7 +10240,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 		            committedRun = resolution.placed;
 		            setFillerInsertionTransition({ uids: angledFiller.fillers.map((filler) => filler.uid), key: Date.now() });
 		            if (sourcePrices.every((sourcePrice) => sourcePrice != null && Number.isFinite(sourcePrice) && sourcePrice > 0)) {
-		              toast.success(`${angledFiller.fillers[0].masterCode} front filler A (${formatInches(angledFiller.ownerGapIn)}) and B (${formatInches(angledFiller.neighborGapIn)}) are each cut at 22.5° to form one tight 45° turn. Both real selected-line pieces are price-locked at $${sourcePrices.map((sourcePrice) => sourcePrice!.toFixed(2)).join(" + $")}; both cabinets remain independently supported.`);
+		              toast.success(`${angledFiller.fillers[0].masterCode} front filler A (${formatInches(angledFiller.ownerGapIn)}) and B (${formatInches(angledFiller.neighborGapIn)}) are each cut at 22.5° to form one tight 45° turn. Both real selected-line pieces are price-locked${hidePricesRef.current ? "" : ` at $${sourcePrices.map((sourcePrice) => sourcePrice!.toFixed(2)).join(" + $")}`}; both cabinets remain independently supported.`);
 		            } else {
 		              toast.warning(`${angledFiller.fillers[0].masterCode} filler boards were added to close the 45° turn, but their active-line price is missing. They are red-flagged in the design and checkout is blocked until the catalog price is supplied.`);
 		            }
@@ -17859,7 +17890,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       }}
       onRotateFurniture={rotateFurniture}
       ponyWalls={deferredCountertopGeometry.ponyWalls}
-      orderSummary={interactive3dOrderSummary}
+      orderSummary={hidePrices ? undefined : interactive3dOrderSummary}
       orderLines={interactive3dOrderLines}
 	      catalogItems={interactive3dCatalogItems}
 	      onAddCatalogItem={addFromInteractive3d}
@@ -18419,7 +18450,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               onClick={() => setMobilePanel((panel) => panel === "cart" ? null : "cart")}
               title={paletteType === "closetparts" ? "MasterTrac March 2022 List prices are reference only, not added to checkout" : undefined}
             >
-              {paletteType === "closetparts" ? <FileText className="mr-1.5 h-3.5 w-3.5" /> : <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />} {isTabletWorkspace ? paletteType === "closetparts" ? <>2022 List · reference <span data-testid="tablet-mastertrac-reference-total" className="font-serif text-sm font-bold text-[#1a2744]">${masterTracListSubtotal.toFixed(2)}</span></> : <>Price &amp; cart <span data-testid="tablet-running-total" className="font-serif text-sm font-bold text-[#1a2744]">${total.toFixed(2)}</span></> : paletteType === "closetparts" ? <>MasterTrac List · reference</> : <>Price &amp; cart</>}
+              {paletteType === "closetparts" ? <FileText className="mr-1.5 h-3.5 w-3.5" /> : <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />} {isTabletWorkspace ? paletteType === "closetparts" ? <>2022 List · reference {!hidePrices && <span data-testid="tablet-mastertrac-reference-total" className="font-serif text-sm font-bold text-[#1a2744]">${masterTracListSubtotal.toFixed(2)}</span>}</> : hidePrices ? <>Cabinet list</> : <>Price &amp; cart <span data-testid="tablet-running-total" className="font-serif text-sm font-bold text-[#1a2744]">${total.toFixed(2)}</span></> : paletteType === "closetparts" ? <>MasterTrac List · reference</> : hidePrices ? <>Cabinet list</> : <>Price &amp; cart</>}
             </Button>
             <Button
               variant="outline"
@@ -19217,9 +19248,11 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                                 </div>
                               )}
                             </div>
-                            <span className="shrink-0 font-medium text-foreground">
-                              {line.unitPrice != null ? `$${(line.unitPrice * line.qty).toFixed(2)}` : "—"}
-                            </span>
+                            {!hidePrices && (
+                              <span className="shrink-0 font-medium text-foreground">
+                                {line.unitPrice != null ? `$${(line.unitPrice * line.qty).toFixed(2)}` : "—"}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -19777,7 +19810,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               }
             }
           />
-          <Dialog open={affiliatePriceListOpen} onOpenChange={setAffiliatePriceListOpen}>
+          <Dialog open={affiliatePriceListOpen && !hidePrices} onOpenChange={setAffiliatePriceListOpen}>
             <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Customer &amp; Affiliate Price List</DialogTitle>
@@ -19826,7 +19859,8 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             <FileText className="h-4 w-4" />
           </Button>
           <CsvImportDialog open={csvImportOpen} onOpenChange={setCsvImportOpen} />
-          <Button
+          {/* Delivery is a shipping + price quote: the demo designer (hidePrices) leaves it out. */}
+          {!hidePrices && <Button
             variant="outline"
             size="sm"
             onClick={() => setDeliveryOpen(true)}
@@ -19835,9 +19869,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
             data-testid="open-delivery-dialog"
           >
             <MapPin className="mr-1 h-4 w-4" /> Delivery
-          </Button>
+          </Button>}
           <DesignDeliveryDialog
-            open={deliveryOpen}
+            open={deliveryOpen && !hidePrices}
             onOpenChange={setDeliveryOpen}
             designId={currentSavedDesignId ?? null}
             designName={savedDesign?.name ?? null}
@@ -20564,7 +20598,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                   </div>
                   {(isCustomWidth(selectedCab) || isCustomHeight(selectedCab) || isCustomDepth(selectedCab)) && (
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary" className="text-[10px]">{t("dt_cx_custom_fee", { fee: CUSTOM_SIZE_FEE })}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">{hidePrices ? "Custom size" : t("dt_cx_custom_fee", { fee: CUSTOM_SIZE_FEE })}</Badge>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -21348,7 +21382,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                             <span className="block font-mono text-[11px] font-semibold text-stone-900">{product.sku}</span>
                             <span className="block text-[10px] leading-snug text-stone-700">{product.description}</span>
                             <span className="block text-[9px] text-stone-500">{product.finish}{product.placeable ? ` · ${product.widthIn}″W × ${product.heightIn}″H × ${product.depthIn}″D` : ""}</span>
-                            <span className="block text-[10px] font-semibold text-primary">{product.packQty > 1 ? `$${product.listPackUsd.toFixed(2)} List / pack of ${product.packQty}` : `$${product.listEachUsd.toFixed(2)} List / each`}</span>
+                            {!hidePrices && <span className="block text-[10px] font-semibold text-primary">{product.packQty > 1 ? `$${product.listPackUsd.toFixed(2)} List / pack of ${product.packQty}` : `$${product.listEachUsd.toFixed(2)} List / each`}</span>}
 	                            <span className="block text-[9px] text-stone-500">{cornerSku ? "Plan corner + shared-upright bays · illustrative curved edge" : product.placeable ? product.shape === "shelf" ? "Place shelf · adjust elevation in Attributes" : "Place ¾″ panel" : "Reference only · no verified 3D model"}</span>
 	                          </span>
 	                          {(product.placeable || cornerSku) && <Plus className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />}
@@ -21582,7 +21616,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	          )}
 	          {autoDesignReviewFindings.length > 0 && (
 	            <AutoDesignReviewList
-	              findings={autoDesignReviewFindings}
+	              findings={hidePrices ? autoDesignReviewFindings.map((finding) => ({ ...finding, title: stripPriceText(finding.title), detail: stripPriceText(finding.detail) })) : autoDesignReviewFindings}
 	              open={autoDesignReportOpen}
 	              hidden={isMobile}
 	              onDismiss={() => setAutoDesignReportOpen(false)}
@@ -21620,7 +21654,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	              )}
 	              <div className="flex items-start gap-2">
 		                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-		                <p className="min-w-0 flex-1">{placementWarning}</p>
+		                <p className="min-w-0 flex-1">{hidePrices ? stripPriceText(placementWarning) : placementWarning}</p>
 		                {failedWallFit && <Tooltip>
 		                  <TooltipTrigger asChild><button type="button" data-testid="failed-fit-dimensions-trigger" className="rounded p-0.5 text-amber-800 hover:bg-amber-100" aria-label="Compare selected cabinet with available space"><Info className="h-4 w-4" /></button></TooltipTrigger>
 		                  <TooltipContent side="bottom" align="end" className="z-[100] w-[min(22rem,calc(100vw-2rem))] p-0">
@@ -21655,7 +21689,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	                  const choices = failedWallAlternativeOptions.map((choice) => ({ cabinet: choice.cabinet, needsFiller: choice.needsFiller }));
 		                  return <div key={option.cabinet.id} className="rounded-md border border-[#e7d7b7] bg-white p-1.5">
 		                    <button type="button" data-testid={`closest-fit-option-${option.cabinet.id}`} onClick={() => { if (option.needsFiller) fillGapWithCabAndFiller(failedWallFit.gap, option.cabinet); else fillGap(failedWallFit.gap, option.cabinet); setPlacementWarning(null); setFailedWallFit(null); }} className="block w-full rounded-md p-1 text-left transition hover:bg-[#fff8e8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1a2744] active:scale-[0.99]" aria-label={`Replace ${failedWallFit.requested.masterCode} with ${option.cabinet.masterCode}${filler ? ` and ${filler.masterCode} filler` : ""}`}>
-		                      <span className="flex items-start justify-between gap-2"><span className="min-w-0"><span className="flex items-center gap-1.5"><span className="truncate font-semibold text-[#49381a]">{option.cabinet.masterCode} · {formatEighthInches(Number(option.cabinet.width) || 0)} cabinet</span>{optionIndex === 0 && <span data-testid="closest-fit-badge" className="shrink-0 rounded bg-[#e8f1e7] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#315b32]">Closest fit</span>}</span><span className="block text-[11px] text-muted-foreground">{filler ? `${filler.masterCode} catalog filler cut to ${formatEighthInches(option.remaining)}` : "Exact fit — no filler required"}</span></span><span className={`shrink-0 text-xs font-semibold ${unitPrice != null && unitPrice > 0 ? "text-[#49381a]" : "text-rose-700"}`}>{unitPrice != null && unitPrice > 0 ? `$${unitPrice.toFixed(2)}` : "Unavailable"}</span></span>
+		                      <span className="flex items-start justify-between gap-2"><span className="min-w-0"><span className="flex items-center gap-1.5"><span className="truncate font-semibold text-[#49381a]">{option.cabinet.masterCode} · {formatEighthInches(Number(option.cabinet.width) || 0)} cabinet</span>{optionIndex === 0 && <span data-testid="closest-fit-badge" className="shrink-0 rounded bg-[#e8f1e7] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#315b32]">Closest fit</span>}</span><span className="block text-[11px] text-muted-foreground">{filler ? `${filler.masterCode} catalog filler cut to ${formatEighthInches(option.remaining)}` : "Exact fit — no filler required"}</span></span><span className={`shrink-0 text-xs font-semibold ${unitPrice != null && unitPrice > 0 ? "text-[#49381a]" : "text-rose-700"}`}>{unitPrice != null && unitPrice > 0 ? (hidePrices ? null : `$${unitPrice.toFixed(2)}`) : "Unavailable"}</span></span>
 		                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-[#315b32]">Select to replace and place</span>
 		                    </button>
 	                    <div className="mt-1 flex"><button type="button" onClick={() => previewSmartGap(failedWallFit.gap, option.cabinet, option.needsFiller, choices, optionIndex)} className="rounded-md border border-[#1a2744] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1a2744] active:scale-95">Preview in 3D</button></div>
@@ -23212,9 +23246,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                         )}
                       </div>
 
-                      {/* Price + edit/delete controls */}
+                      {/* Price + edit/delete controls (no price / discount in the demo designer) */}
                       <div className="flex items-center gap-1 shrink-0">
-                        <div className="text-right">
+                        {!hidePrices && <div className="text-right">
 	                          <div
 	                              className={`font-semibold leading-none ${(styleId || isClosetPart(g.sample.masterCode)) && lineTotal == null && !isLayoutAppliance && !cabinetPricingInFlight ? "text-rose-700" : ""}`}
                               title={isLayoutAppliance ? "Appliance price is not included in the cabinet estimate." : undefined}
@@ -23245,9 +23279,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                               {g.discountPct > 0 ? "+" : ""}{g.discountPct}%
                             </div>
                           )}
-                        </div>
+                        </div>}
 	                        {/* Discount/surcharge quick-set */}
-	                        {!isLayoutAppliance && <Popover>
+	                        {!isLayoutAppliance && !hidePrices && <Popover>
                           <PopoverTrigger asChild>
                             <button
                               type="button"
@@ -23398,7 +23432,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                   const crownCode = TRIM_MASTER_CODES.crown;
                   const p = crownCode ? trimPriceByCode.get(crownCode) : undefined;
                   const pcs = effectiveTrimPieces.crown;
-                  const ext = p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
+                  const ext = !hidePrices && p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
                   return (
                   <div className="flex items-center justify-between gap-2 p-2 rounded-lg text-xs bg-amber-500/10 border border-amber-500/30">
                     <div className="min-w-0">
@@ -23411,14 +23445,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </div>
                       <TrimQtyStepper kind="crown" value={pcs} auto={crownOrder.pieces} override={trimQtyOverride.crown} setOverride={setTrimQtyOverride} />
                     </div>
-                    <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_quote")}</span>
+                    {!hidePrices && <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_quote")}</span>}
                   </div>
                   );
                 })()}
                 {toeKick && toeKickOrder && effectiveTrimPieces.toeKick > 0 && (() => {
                   const p = trimPriceForKind("toeKick", trimPriceByCode);
                   const pcs = effectiveTrimPieces.toeKick;
-                  const ext = p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
+                  const ext = !hidePrices && p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
                   return (
                   <div className="flex items-center justify-between gap-2 p-2 rounded-lg text-xs bg-muted/30">
                     <div className="min-w-0">
@@ -23431,14 +23465,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </div>
                       <TrimQtyStepper kind="toeKick" value={pcs} auto={toeKickOrder.pieces} override={trimQtyOverride.toeKick} setOverride={setTrimQtyOverride} />
                     </div>
-                    <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_quote")}</span>
+                    {!hidePrices && <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_quote")}</span>}
                   </div>
                   );
                 })()}
                 {batten && battenOrder && effectiveTrimPieces.batten > 0 && (() => {
                   const p = trimPriceByCode.get("BAM");
                   const pcs = effectiveTrimPieces.batten;
-                  const ext = p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
+                  const ext = !hidePrices && p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
                   return (
                   <div className="flex items-center justify-between gap-2 p-2 rounded-lg text-xs bg-muted/30">
                     <div className="min-w-0">
@@ -23451,14 +23485,14 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </div>
                       <TrimQtyStepper kind="batten" value={pcs} auto={battenOrder.pieces} override={trimQtyOverride.batten} setOverride={setTrimQtyOverride} />
                     </div>
-                    <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_incl")}</span>
+                    {!hidePrices && <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_incl")}</span>}
                   </div>
                   );
                 })()}
                 {lightRail && lightRailOrder && effectiveTrimPieces.lightRail > 0 && (() => {
                   const p = trimPriceByCode.get("LRM-8");
                   const pcs = effectiveTrimPieces.lightRail;
-                  const ext = p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
+                  const ext = !hidePrices && p && p.unitPrice > 0 ? p.unitPrice * pcs : null;
                   return (
                   <div className="flex items-center justify-between gap-2 p-2 rounded-lg text-xs bg-muted/30">
                     <div className="min-w-0">
@@ -23471,7 +23505,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </div>
                       <TrimQtyStepper kind="lightRail" value={pcs} auto={lightRailOrder.pieces} override={trimQtyOverride.lightRail} setOverride={setTrimQtyOverride} />
                     </div>
-                    <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_incl")}</span>
+                    {!hidePrices && <span className="font-semibold shrink-0">{ext != null ? `$${ext.toFixed(2)}` : t("dt_bs_incl")}</span>}
                   </div>
                   );
                 })()}
@@ -23489,7 +23523,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </div>
                       <TrimQtyStepper kind="valance" value={pcs} auto={valanceOrder.length} override={trimQtyOverride.valance} setOverride={setTrimQtyOverride} />
                     </div>
-                    <span className="font-semibold shrink-0">{hasPricing ? `$${totalPrice.toFixed(2)}` : t("dt_bs_incl")}</span>
+                    {!hidePrices && <span className="font-semibold shrink-0">{hasPricing ? `$${totalPrice.toFixed(2)}` : t("dt_bs_incl")}</span>}
                   </div>
                   );
                 })()}
@@ -23557,7 +23591,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                   if (toeKick && effectiveTrimPieces.toeKick > 0 && tk && tk.unitPrice > 0) sub += tk.unitPrice * effectiveTrimPieces.toeKick;
                   if (batten && effectiveTrimPieces.batten > 0 && bam && bam.unitPrice > 0) sub += bam.unitPrice * effectiveTrimPieces.batten;
                   if (lightRail && effectiveTrimPieces.lightRail > 0 && lrm && lrm.unitPrice > 0) sub += lrm.unitPrice * effectiveTrimPieces.lightRail;
-                  if (sub <= 0) return null;
+                  if (sub <= 0 || hidePrices) return null;
                   return (
                     <div className="flex items-center justify-between gap-2 px-2 pt-1.5 text-xs">
                       <span className="text-muted-foreground">{t("dt_bs_trim_subtotal")}</span>
@@ -23693,9 +23727,10 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
               }
               return (
                 <>
-                <div className="flex items-center justify-between mb-3">
+                {/* Demo designer (hidePrices): no total; the row stays only for its notes. */}
+                {(!hidePrices || noteItems.length > 0) && <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-medium text-muted-foreground">{activeBundlePriceLock ? "Verified bundle price" : masterTracListSubtotal > 0 ? "Checkout-ready total" : t("dt_bs_estimated_total")}</span>
+                    <span className="text-sm font-medium text-muted-foreground">{hidePrices ? "Design notes" : activeBundlePriceLock ? "Verified bundle price" : masterTracListSubtotal > 0 ? "Checkout-ready total" : t("dt_bs_estimated_total")}</span>
                     {noteItems.length > 0 && (
                       <Popover>
                         <PopoverTrigger asChild>
@@ -23720,9 +23755,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                       </Popover>
                     )}
                   </div>
-                  <span className="font-serif text-2xl font-bold text-foreground">${total.toFixed(2)}</span>
-                </div>
-	                {masterTracListSubtotal > 0 && (
+                  {!hidePrices && <span className="font-serif text-2xl font-bold text-foreground">${total.toFixed(2)}</span>}
+                </div>}
+	                {masterTracListSubtotal > 0 && !hidePrices && (
 	                  <div data-testid="mastertrac-list-subtotal" className="mb-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
 	                    <div className="flex items-start justify-between gap-2"><span><strong>MasterTrac materials</strong><br />{MASTERTRAC_PRICE_DATE} List · reference, not added to checkout</span><strong>${masterTracListSubtotal.toFixed(2)}</strong></div>
 	                    {placed.some(isMasterTracCornerBoard) && <div className="mt-2 space-y-1 border-t border-amber-200 pt-2" data-testid="mastertrac-corner-reference-cart"><strong>Corner reference cart · not checkout</strong>{towerCornerReferenceItems(placed).map((item) => <p key={`${item.kind}-${item.sku}`}>{item.quantity}× SKU {item.sku} · {item.description} · {item.finish} · {item.kind === "shelf" ? "29.5 × 29.5″ · " : ""}${item.listEachUsd.toFixed(2)} List each · ${(item.quantity * item.listEachUsd).toFixed(2)} reference</p>)}<small>Curve and join position illustrative; supplier installation and current sell prices unverified.</small></div>}
@@ -24639,7 +24674,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                               <div className="min-w-0">
                                 <p className="line-clamp-2 text-xs font-semibold text-foreground">{product.name}</p>
                                 <p className="mt-1 text-[11px] text-muted-foreground">{formatEighthInches(profile.spoutReachIn)} reach · {profile.finish.replaceAll("-", " ")}</p>
-                                <p className="mt-1 text-xs font-bold text-[#1a2744]">{formatPrice(product.sellPrice)}</p>
+                                {!hidePrices && <p className="mt-1 text-xs font-bold text-[#1a2744]">{formatPrice(product.sellPrice)}</p>}
                               </div>
                             </div>
                           </button>
@@ -24667,7 +24702,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
 	        replacementCabinetCode={refrigeratorCabinetToReplace?.masterCode ?? null}
 	        initialChoice={fridgeDialogInitialChoice}
 	        matchWallHeightIn={framelessFortyWallHeightIn}
-		        errorMessage={placementWarning}
+		        errorMessage={hidePrices && placementWarning ? stripPriceText(placementWarning) : placementWarning}
         onApply={applyFridgeSurround}
 	        onSkip={() => setFridgeDialog(null)}
 	      />
@@ -25051,7 +25086,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                             className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-colors ${pendingBottomGrid == null ? "border-[#a87f33] bg-[#a87f33]/5 font-semibold" : "border-border hover:border-[#a87f33]/60"}`}
                           >
                             <span className="flex-1">No grid — sink only</span>
-                            <span className="text-muted-foreground">$0</span>
+                            {!hidePrices && <span className="text-muted-foreground">$0</span>}
                           </button>
                           {pendingSinkBottomGrids.map((gridProduct) => {
                             const chosen = pendingBottomGrid?.id === gridProduct.id;
@@ -25071,7 +25106,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                                   <span className="block truncate text-xs font-semibold">{gridProduct.pelicanCode}</span>
                                   <span className="block truncate text-[10px] text-muted-foreground">Stainless steel · sits inside the bowl</span>
                                 </span>
-                                <span className="shrink-0 text-xs font-bold text-[var(--color-navy)] dark:text-foreground">{formatPrice(gridProduct.sellPrice)}</span>
+                                {!hidePrices && <span className="shrink-0 text-xs font-bold text-[var(--color-navy)] dark:text-foreground">{formatPrice(gridProduct.sellPrice)}</span>}
                                 <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${chosen ? "bg-[#a87f33] text-white" : "bg-[#1a2744] text-white"}`}>{chosen ? "Added" : "Add"}</span>
                               </button>
                             );
@@ -25184,7 +25219,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                                   never shown here — the label says so instead. */}
                               {rangeTopPriceLabel(p)
                                 ? <div data-testid={`range-top-display-only-${p.id}`} className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{RANGE_TOP_DISPLAY_ONLY_PRICE_LABEL}</div>
-                                : p.sellPrice != null && <div className="text-[11px] font-bold text-[#1a2744] dark:text-foreground mt-0.5">${p.sellPrice.toFixed(2)}</div>}
+                                : p.sellPrice != null && !hidePrices && <div className="text-[11px] font-bold text-[#1a2744] dark:text-foreground mt-0.5">${p.sellPrice.toFixed(2)}</div>}
                             </div>
                           </button>
                         ))}
@@ -25482,7 +25517,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                           <SelectItem value="__choose__" disabled>Choose an approved alternative</SelectItem>
                           {item.alternatives.map((alternative) => (
                             <SelectItem key={alternative.cabinetId} value={String(alternative.cabinetId)}>
-                              {alternative.masterCode} — {alternative.explanation} — ${alternative.customerPrice.toFixed(2)}
+                              {alternative.masterCode} — {alternative.explanation}{hidePrices ? null : <> — ${alternative.customerPrice.toFixed(2)}</>}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -26619,7 +26654,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
                 }}
                 onRotateFurniture={rotateFurniture}
                 ponyWalls={ponyWalls}
-                orderSummary={interactive3dOrderSummary}
+                orderSummary={hidePrices ? undefined : interactive3dOrderSummary}
                 orderLines={interactive3dOrderLines}
                 catalogItems={interactive3dCatalogItems}
                 onAddCatalogItem={addFromInteractive3d}
@@ -26843,7 +26878,7 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
       </Dialog>
 
       {/* Kitchen Package publication is limited to its originating affiliate or admin. */}
-      {canPublishKitchenPackage && (
+      {canPublishKitchenPackage && !hidePrices && (
         <Dialog open={bundleDialogOpen} onOpenChange={setBundleDialogOpen}>
           <DialogContent className="max-w-lg max-h-[85svh] overflow-y-auto">
             <DialogHeader>

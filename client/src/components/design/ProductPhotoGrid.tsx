@@ -14,6 +14,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { Check, Droplets } from "lucide-react";
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 
 /**
  * Customer-facing wording for a catalog brand. StoneCreek is the store's own
@@ -98,6 +99,8 @@ export function ProductPhotoTile({
 }: ProductPhotoTileProps) {
   const displayName = customerFacingProductName(name);
   const showCode = Boolean(code && !displayName.includes(code));
+  // Demo distributor designer: the tile shows no price line at all.
+  const hidePrices = useDesignerPricesHidden();
   return (
     <button
       type="button"
@@ -123,7 +126,7 @@ export function ProductPhotoTile({
         </span>
         {showCode && <span className="block truncate text-[9px] text-muted-foreground">{code}</span>}
         {detail && <span className="block truncate text-[10px] text-muted-foreground">{detail}</span>}
-        <span className="mt-0.5 block text-[11px] font-bold text-[#1a2744] dark:text-foreground">{price}</span>
+        {!hidePrices && <span className="mt-0.5 block text-[11px] font-bold text-[#1a2744] dark:text-foreground">{price}</span>}
       </span>
       {selected && (
         <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#d4a75a] text-white shadow">

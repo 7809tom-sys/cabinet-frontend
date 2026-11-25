@@ -152,17 +152,36 @@ describe("DistributorPreview render", () => {
     expect(html).not.toContain("/become-a-vendor?type=distributor");
   });
 
-  it("wraps the designer in the demo distributor shell with the designer label", () => {
+  it("wraps the designer in one demo header bar; nothing but the menu before the email form", () => {
     const html = renderToStaticMarkup(
       <Router ssrPath="/distributor-preview/design" ssrSearch="line=gray-shaker">
         <DistributorDesignerShell><div id="designer-slot" /></DistributorDesignerShell>
       </Router>,
     );
     expect(html).toContain("Demo Distributor Designer");
-    expect(html).toContain("Line: Gray Shaker");
     expect(html).toContain('id="designer-slot"');
-    expect(html).toContain(DESIGNER_LINES_NOTE.replace(/'/g, "&#x27;"));
-    expect(html).toContain("Get my price");
-    expect(html).toContain(GUIDE_STEPS[1].text);
+    // One header bar, one logo.
+    expect(html.match(/<header/g)).toHaveLength(1);
+    expect(html.match(/logo \(placeholder\)/g)).toHaveLength(1);
+    // The old second bar and guide sentence are gone.
+    expect(html).not.toContain("Line: Gray Shaker");
+    expect(html).not.toContain(DESIGNER_LINES_NOTE.replace(/'/g, "&#x27;"));
+    expect(html).not.toContain(GUIDE_STEPS[1].text);
+    // Save design / Get my price wait until the designer is open (past the email form).
+    expect(html).not.toContain('data-testid="designer-get-price"');
+    expect(html).not.toContain('data-testid="designer-save"');
+    // "Start from an example" sits under the designer slot (the email form), not above it.
+    expect(html.indexOf('id="designer-slot"')).toBeLessThan(html.indexOf('data-testid="designer-examples"'));
+    // The add-on sales pitch sits with the example strip, under the email form.
+    expect(html).toContain(PITCH_COPY.addOns);
+  });
+
+  it("pitches add-on sales (countertops and accessories) beyond the 3%–4% cabinet commission", () => {
+    expect(PITCH_COPY.addOns).toContain("3%–4% commission on cabinet sales");
+    expect(PITCH_COPY.addOns).toContain("countertops and other accessories");
+    expect(PITCH_COPY.addOns).not.toMatch(/Pelican|US Cabinet Depot/i);
+    expect(PITCH_COPY.addOns.match(/\d+/g)).toEqual(["3", "4"]);
+    expect(render("storefront")).toContain(PITCH_COPY.addOns);
+    expect(render("signup")).toContain(PITCH_COPY.addOns);
   });
 });

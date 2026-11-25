@@ -8,7 +8,7 @@ describe("Design Tool failed wall-fit guidance", () => {
     expect(source).toContain('data-testid="closest-fit-badge"');
     expect(source).toContain("Closest fit");
     expect(source).toContain("smartGapCandidatePrices.get(option.cabinet.id)");
-    expect(source).toContain('unitPrice != null && unitPrice > 0 ? `$${unitPrice.toFixed(2)}` : "Unavailable"');
+    expect(source).toContain('unitPrice != null && unitPrice > 0 ? (hidePrices ? null : `$${unitPrice.toFixed(2)}`) : "Unavailable"');
     expect(source).not.toContain('unitPrice != null && unitPrice > 0 ? `$${unitPrice.toFixed(2)}` : "Price pending"');
   });
 

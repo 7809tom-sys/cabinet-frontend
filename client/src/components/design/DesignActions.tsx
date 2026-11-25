@@ -15,6 +15,7 @@ import type { PlacedCabinet, RoomData, WallOpening, SinkFixture, PotFillerFixtur
 import { roomWithPersistedEntities } from "@/lib/design";
 import type { PreSavePlanReview, PreSavePlanReviewFinding } from "@/lib/preSavePlanReview";
 import { normalizeStoreScope } from "@/lib/affiliateContext";
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 import { designOpenPath, designStoreLabel, designStoreScope, designWriteScope } from "@/lib/designOwnerScope";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -199,18 +200,23 @@ export interface BuildSheetArgs {
    * affiliate's store name so the export carries no platform branding.
    */
   brandName?: string | null;
+  /** Demo distributor designer: leave every price column and total out. */
+  hidePrices?: boolean;
 }
 
 // Pure: build the CSV text for a design build sheet. No DOM / side effects so it
 // can be unit-tested directly. Returns null if there are no cabinet rows.
 export function buildSheetCsv(args: BuildSheetArgs): string | null {
-  const { room, styleName, tier, total, buildRows, extraLines, brandName } = args;
+  const { room, styleName, tier, total, buildRows, extraLines, brandName, hidePrices = false } = args;
   if (buildRows.length === 0) return null;
-  const header = ["Item Code", "Description", "Color / Finish", "Size (W x H x D)", "W (in)", "H (in)", "D (in)", "Type", "Swing", "Qty", "Unit Price", "Adj %", "Line Total"];
+  // hidePrices (demo distributor designer): same sheet without the pricing
+  // tier, Unit Price / Adj % / Line Total columns or the estimated total.
+  const priceColumns = hidePrices ? [] : ["Unit Price", "Adj %", "Line Total"];
+  const header = ["Item Code", "Description", "Color / Finish", "Size (W x H x D)", "W (in)", "H (in)", "D (in)", "Type", "Swing", "Qty", ...priceColumns];
   const lines: string[] = [];
   lines.push(`${brandName?.trim() || "CabinetDealz"} Build Sheet`);
   lines.push(`Door Style:,${csvEscape(styleName ?? "(not selected)")}`);
-  lines.push(`Pricing Tier:,${csvEscape(tier)}`);
+  if (!hidePrices) lines.push(`Pricing Tier:,${csvEscape(tier)}`);
   lines.push(`Room:,${csvEscape(`${room.width}in x ${room.depth}in`)}`);
   lines.push("");
   lines.push(header.map(csvEscape).join(","));
@@ -223,14 +229,16 @@ export function buildSheetCsv(args: BuildSheetArgs): string | null {
       r.code, r.description, r.color ?? "", sizeCell(r),
       fmtIn(r.widthIn), fmtIn(r.heightIn), fmtIn(r.depthIn),
       r.placement, swingCell(r.swing), r.qty,
-      r.unitPrice != null ? r.unitPrice.toFixed(2) : "", adjStr, lineTotal,
+      ...(hidePrices ? [] : [r.unitPrice != null ? r.unitPrice.toFixed(2) : "", adjStr, lineTotal]),
     ].map(csvEscape).join(","));
   }
   for (const e of extraLines) {
-    lines.push([e.label, e.detail, "", "", "", "", "", "", "", "", "", "", "incl."].map(csvEscape).join(","));
+    lines.push([e.label, e.detail, "", "", "", "", "", "", "", "", ...(hidePrices ? [] : ["", "", "incl."])].map(csvEscape).join(","));
   }
-  lines.push("");
-  lines.push(`Estimated Total,,,,,,,,,,,,${total.toFixed(2)}`);
+  if (!hidePrices) {
+    lines.push("");
+    lines.push(`Estimated Total,,,,,,,,,,,,${total.toFixed(2)}`);
+  }
   return lines.join("\n");
 }
 
@@ -341,10 +349,13 @@ function downloadProjectCsv(
 function ProjectTotals({ projectName, affiliateSlug, brandName }: { projectName: string; affiliateSlug?: string | null; brandName?: string | null }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
+  const hidePrices = useDesignerPricesHidden();
   const summary = trpc.design.projectSummary.useQuery(
     { projectName, affiliateSlug: normalizeStoreScope(affiliateSlug) },
-    { enabled: open },
+    { enabled: open && !hidePrices },
   );
+  // Project totals are prices: the demo distributor designer leaves them out.
+  if (hidePrices) return null;
   return (
     <div className="px-1 pb-1.5">
       <button
@@ -437,6 +448,7 @@ export function DesignActions({
 }: Props) {
   const { user, isAuthenticated, loading: isAuthLoading, error: authError, refresh } = useAuth();
   const { t } = useLanguage();
+  const hidePrices = useDesignerPricesHidden();
   const storeScope = normalizeStoreScope(affiliateSlug);
   // The same Save dialog serves every room, so its title follows the room the
   // plan is in instead of always saying "kitchen". `roomLabel` below is the
@@ -739,7 +751,7 @@ export function DesignActions({
       });
       return;
     }
-    exportBuildSheet({ room, styleName, tier, total, buildRows, extraLines, brandName });
+    exportBuildSheet({ room, styleName, tier, total, buildRows, extraLines, brandName, hidePrices });
   };
 
   const openPresentation = () => {
@@ -925,7 +937,7 @@ export function DesignActions({
                   </span>
                   <span className="text-muted-foreground">
                     {t("dt_act_send_rep_desc")}
-                    {total > 0 ? t("dt_act_send_rep_est", { total: total.toLocaleString() }) : "."}
+                    {total > 0 && !hidePrices ? t("dt_act_send_rep_est", { total: total.toLocaleString() }) : "."}
                   </span>
                 </span>
               </label>

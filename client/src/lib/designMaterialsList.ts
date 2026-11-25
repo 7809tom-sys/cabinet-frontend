@@ -308,14 +308,16 @@ function csvEscape(value: string | number): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-export function materialsListCsv(rows: readonly MaterialsListRow[]): string {
-  const header = ["No.", "Section", "Item Code", "Description", "Category", "Distributor", "Color / Style", "Dimensions", "Qty", "Unit Price", "Line Total", "Notes"];
+/** `hidePrices` (demo distributor designer) leaves out the Unit Price / Line Total columns. */
+export function materialsListCsv(rows: readonly MaterialsListRow[], options: { hidePrices?: boolean } = {}): string {
+  const hidePrices = options.hidePrices === true;
+  const header = ["No.", "Section", "Item Code", "Description", "Category", "Distributor", "Color / Style", "Dimensions", "Qty", ...(hidePrices ? [] : ["Unit Price", "Line Total"]), "Notes"];
   const lines = [header.map(csvEscape).join(",")];
   for (const row of rows) {
     lines.push([
       row.label, row.section === "cabinet" ? "Cabinets & cabinet parts" : "Other materials", row.code, row.description, canonicalMouldingLabel(row.category),
       row.supplier, row.styleColor, row.dimensions, row.qty,
-      row.unitPrice == null ? "" : row.unitPrice.toFixed(2), row.lineTotal == null ? "" : row.lineTotal.toFixed(2), row.notes,
+      ...(hidePrices ? [] : [row.unitPrice == null ? "" : row.unitPrice.toFixed(2), row.lineTotal == null ? "" : row.lineTotal.toFixed(2)]), row.notes,
     ].map(csvEscape).join(","));
   }
   return lines.join("\n");
@@ -340,7 +342,10 @@ export function materialsListPrintHtml(args: {
   roomLabel?: string | null;
   styleName?: string | null;
   generatedAt?: string | null;
+  /** Demo distributor designer: no price columns and no priced total. */
+  hidePrices?: boolean;
 }): string {
+  const hidePrices = args.hidePrices === true;
   const title = args.title?.trim() || "Kitchen Design Materials & Parts List";
   const meta = [args.roomLabel?.trim(), args.styleName?.trim() ? `Cabinet color / style: ${args.styleName.trim()}` : null, args.generatedAt?.trim()]
     .filter(Boolean).join(" · ");
@@ -350,9 +355,9 @@ export function materialsListPrintHtml(args: {
     const priceLabel = (row: MaterialsListRow, value: number | null) => value == null
       ? (row.priceStatus === "unavailable" ? "Unavailable" : "Quote required")
       : `$${value.toFixed(2)}`;
-    return `<h2>${htmlEscape(heading)}</h2><table><thead><tr><th>No.</th><th>Item code</th><th>Description</th><th>Category</th><th>Distributor</th><th>Color / style</th><th>Dimensions</th><th>Qty</th><th>Unit price</th><th>Line total</th><th>Notes</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.code)}</td><td>${htmlEscape(row.description)}</td><td>${htmlEscape(canonicalMouldingLabel(row.category))}</td><td>${htmlEscape(row.supplier)}</td><td>${htmlEscape(row.styleColor)}</td><td>${htmlEscape(row.dimensions)}</td><td class="number">${row.qty}</td><td class="number">${priceLabel(row, row.unitPrice)}</td><td class="number">${priceLabel(row, row.lineTotal)}</td><td>${htmlEscape(row.notes)}</td></tr>`).join("")}</tbody></table>`;
+    return `<h2>${htmlEscape(heading)}</h2><table><thead><tr><th>No.</th><th>Item code</th><th>Description</th><th>Category</th><th>Distributor</th><th>Color / style</th><th>Dimensions</th><th>Qty</th>${hidePrices ? "" : "<th>Unit price</th><th>Line total</th>"}<th>Notes</th></tr></thead><tbody>${rows.map((row) => `<tr><td>${htmlEscape(row.label)}</td><td>${htmlEscape(row.code)}</td><td>${htmlEscape(row.description)}</td><td>${htmlEscape(canonicalMouldingLabel(row.category))}</td><td>${htmlEscape(row.supplier)}</td><td>${htmlEscape(row.styleColor)}</td><td>${htmlEscape(row.dimensions)}</td><td class="number">${row.qty}</td>${hidePrices ? "" : `<td class="number">${priceLabel(row, row.unitPrice)}</td><td class="number">${priceLabel(row, row.lineTotal)}</td>`}<td>${htmlEscape(row.notes)}</td></tr>`).join("")}</tbody></table>`;
   };
   const unavailable = args.rows.filter((row) => row.priceStatus === "unavailable").length;
   const quoteRequired = args.rows.filter((row) => row.priceStatus === "quote_required").length;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscape(title)}</title><style>@page{size:letter landscape;margin:.35in}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0}h1{font-size:18px;margin:0 0 4px;color:#1a2744}p{font-size:9px;margin:0 0 12px;color:#5b6472}h2{font-size:12px;margin:12px 0 4px;color:#8a6422}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.5px;margin-bottom:10px}th,td{border:1px solid #c8ced8;padding:4px;vertical-align:top;overflow-wrap:anywhere}th{background:#e9edf3;text-align:left;font-size:7px;text-transform:uppercase}.number{text-align:right;white-space:nowrap}.summary{display:flex;justify-content:flex-end;gap:18px;font-size:10px;font-weight:700}.unavailable{color:#9f1239}.quote{color:#8a6422}@media print{button{display:none}}</style></head><body><h1>${htmlEscape(title)}</h1><p>${htmlEscape(meta)}</p>${table("cabinet", "Numbered Cabinets & Cabinet Parts")}${table("other", "Other Materials & Parts — Alphabetical")}<div class="summary"><span>Priced total: $${materialsListPricedTotal(args.rows).toFixed(2)}</span>${unavailable ? `<span class="unavailable">Unavailable cabinet lines: ${unavailable}</span>` : ""}${quoteRequired ? `<span class="quote">Quote-required lines: ${quoteRequired}</span>` : ""}</div></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${htmlEscape(title)}</title><style>@page{size:letter landscape;margin:.35in}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;margin:0}h1{font-size:18px;margin:0 0 4px;color:#1a2744}p{font-size:9px;margin:0 0 12px;color:#5b6472}h2{font-size:12px;margin:12px 0 4px;color:#8a6422}table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.5px;margin-bottom:10px}th,td{border:1px solid #c8ced8;padding:4px;vertical-align:top;overflow-wrap:anywhere}th{background:#e9edf3;text-align:left;font-size:7px;text-transform:uppercase}.number{text-align:right;white-space:nowrap}.summary{display:flex;justify-content:flex-end;gap:18px;font-size:10px;font-weight:700}.unavailable{color:#9f1239}.quote{color:#8a6422}@media print{button{display:none}}</style></head><body><h1>${htmlEscape(title)}</h1><p>${htmlEscape(meta)}</p>${table("cabinet", "Numbered Cabinets & Cabinet Parts")}${table("other", "Other Materials & Parts — Alphabetical")}<div class="summary">${hidePrices ? "" : `<span>Priced total: $${materialsListPricedTotal(args.rows).toFixed(2)}</span>`}${unavailable ? `<span class="unavailable">Unavailable cabinet lines: ${unavailable}</span>` : ""}${quoteRequired ? `<span class="quote">Quote-required lines: ${quoteRequired}</span>` : ""}</div></body></html>`;
 }

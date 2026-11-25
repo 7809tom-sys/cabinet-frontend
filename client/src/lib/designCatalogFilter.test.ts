@@ -33,7 +33,7 @@ describe("DesignTool optional catalogFilter", () => {
 
   it("is a single optional prop passed only by the demo designer route", () => {
     const tool = readFileSync(resolve(root, "client/src/pages/DesignTool.tsx"), "utf8");
-    expect(tool).toContain("export default function DesignTool(props: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter })");
+    expect(tool).toContain("export default function DesignTool({ hidePrices = false, ...props }: { affiliateSlug?: string; catalogFilter?: DesignCatalogFilter; hidePrices?: boolean })");
     const callers: string[] = [];
     const walk = (dir: string) => {
       for (const name of readdirSync(dir)) {
@@ -46,7 +46,7 @@ describe("DesignTool optional catalogFilter", () => {
     expect(callers).toEqual(["client/src/App.tsx"]);
     const app = readFileSync(resolve(root, "client/src/App.tsx"), "utf8");
     expect(app.match(/catalogFilter=\{/g)).toHaveLength(1);
-    expect(app).toContain("<DesignTool catalogFilter={demoDesignerCatalogFilter} />");
+    expect(app).toContain("<DesignTool catalogFilter={demoDesignerCatalogFilter} hidePrices />");
     expect(app.indexOf("<DesignTool catalogFilter")).toBeGreaterThan(app.indexOf('<Route path="/distributor-preview/design">'));
     expect(app.indexOf("<DesignTool catalogFilter")).toBeLessThan(app.indexOf('<Route path="/distributor-preview/designer">'));
   });

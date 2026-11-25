@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -159,6 +160,7 @@ function PartCard({
   selected: boolean;
   onSelect: () => void;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   return (
     <button
       type="button"
@@ -184,7 +186,7 @@ function PartCard({
         <span className="line-clamp-2 text-sm font-medium">{part.name}</span>
         <span className="mt-auto flex items-baseline justify-between gap-2 pt-2">
           <span className="font-mono text-[11px] text-muted-foreground">{part.code}</span>
-          <span className="text-sm font-semibold" data-testid={`shower-price-${part.code}`}>{money(part.price)}</span>
+          {!hidePrices && <span className="text-sm font-semibold" data-testid={`shower-price-${part.code}`}>{money(part.price)}</span>}
         </span>
       </div>
     </button>
@@ -294,6 +296,7 @@ export function ShowerBuilderWizard({
   onClose,
   alcoveWidthsByWall,
 }: ShowerWizardProps) {
+  const hidePrices = useDesignerPricesHidden();
   const [stepIndex, setStepIndex] = useState(0);
   const [selection, setSelection] = useState<ShowerSelection>({});
   const [wallByStep, setWallByStep] = useState<Partial<Record<ShowerStepId, ShowerWall>>>({});
@@ -658,9 +661,11 @@ export function ShowerBuilderWizard({
                           )}
                           <span className="mt-auto flex items-baseline justify-between gap-2 pt-1">
                             <span className="font-mono text-[11px] text-muted-foreground">{part.code}</span>
-                            <span className="text-sm font-semibold" data-testid={`shower-price-${part.code}`}>
-                              {money(part.price)}
-                            </span>
+                            {!hidePrices && (
+                              <span className="text-sm font-semibold" data-testid={`shower-price-${part.code}`}>
+                                {money(part.price)}
+                              </span>
+                            )}
                           </span>
                         </span>
                       </button>
@@ -743,15 +748,17 @@ export function ShowerBuilderWizard({
                   {line.name}
                   {line.wall && <span className="ml-2 text-xs text-muted-foreground">on the {SHOWER_WALL_LABELS[line.wall].toLowerCase()}</span>}
                 </span>
-                <span className="shrink-0 font-medium" data-testid={`shower-line-price-${line.masterCode}`}>{money(line.unitPrice)}</span>
+                {!hidePrices && <span className="shrink-0 font-medium" data-testid={`shower-line-price-${line.masterCode}`}>{money(line.unitPrice)}</span>}
               </li>
             ))}
           </ul>
         )}
-        <div className="mt-2 flex items-center justify-between border-t pt-2 text-sm font-semibold">
-          <span>Subtotal</span>
-          <span data-testid="shower-subtotal">{money(showerSubtotal(selection))}</span>
-        </div>
+        {!hidePrices && (
+          <div className="mt-2 flex items-center justify-between border-t pt-2 text-sm font-semibold">
+            <span>Subtotal</span>
+            <span data-testid="shower-subtotal">{money(showerSubtotal(selection))}</span>
+          </div>
+        )}
       </Card>
     </div>
   );

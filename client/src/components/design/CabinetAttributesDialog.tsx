@@ -74,6 +74,7 @@ import { masterTracProduct, MASTERTRAC_PRICE_DATE } from "@/lib/closet";
 import { trpc } from "@/lib/trpc";
 import type { PricingTier } from "@shared/pricingTier";
 
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 export const MIN_CABINET_DEPTH_MOVE_IN = 0.125;
 export const MAX_CABINET_DEPTH_MOVE_IN = 120;
 const DEPTH_MOVE_FRACTION_GLYPHS: Record<string, number> = {
@@ -652,6 +653,7 @@ export function CabinetAttributesDialog({
   exposedSidePanelOptions,
   onToggleExposedSidePanel,
 }: CabinetAttributesDialogProps) {
+  const hidePrices = useDesignerPricesHidden();
 	  const { t } = useLanguage();
   const isMobile = useIsMobile();
   const [pendingMasterId, setPendingMasterId] = useState<number | null>(null);
@@ -713,7 +715,7 @@ export function CabinetAttributesDialog({
           <div className="font-semibold">{masterTrac.description} · {masterTrac.finish}</div>
           <div className="mt-1 text-xs text-stone-600">Purchased stock: {masterTrac.widthIn}″ W × {masterTrac.heightIn}″ H × {masterTrac.depthIn}″ D · ¾″ board</div>
           {cabinet.masterTracShelfCut ? <div data-testid="mastertrac-attributes-cut" className="mt-1 text-xs font-semibold text-amber-900">Installed clear width: {cabinet.masterTracShelfCut.installedWidthIn}″ · offcut {cabinet.masterTracShelfCut.offcutIn}″. Edit the connected tower to change the stock SKU or cut. Manufacturer templates and field reboring are required; this 3D view is not a cutting guide.</div> : <div className="mt-1 text-xs text-stone-600">SKU dimensions are fixed; select a different material number to change the board size.</div>}
-          <div className="mt-2 text-xs font-semibold">${masterTrac.listEachUsd.toFixed(2)} List / each <span className="font-normal text-stone-500">({MASTERTRAC_PRICE_DATE})</span></div>
+          {!hidePrices && <div className="mt-2 text-xs font-semibold">${masterTrac.listEachUsd.toFixed(2)} List / each <span className="font-normal text-stone-500">({MASTERTRAC_PRICE_DATE})</span></div>}
         </div>
         {canMoveBoard && (
           <div className="space-y-2" data-testid="mastertrac-shelf-height">
@@ -840,7 +842,7 @@ export function CabinetAttributesDialog({
               {custom && (
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-[10px]">
-                    {t("dt_ca_custom_fee", { fee: customFee })}
+                    {hidePrices ? "Custom size" : t("dt_ca_custom_fee", { fee: customFee })}
                   </Badge>
                   <Button
                     type="button"

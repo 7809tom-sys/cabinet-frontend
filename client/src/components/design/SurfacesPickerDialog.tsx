@@ -70,6 +70,7 @@ import {
 } from "@/lib/designerTileMosaicCatalog";
 import { floorCapableMosaics, isMosaicCatalogItem } from "@/lib/mosaicFloorTile";
 import type { CountertopScope } from "@/lib/surfaceSelection";
+import { useDesignerPricesHidden } from "@/lib/designerPriceVisibility";
 
 export type SelectedSurface = {
   id: number;
@@ -304,6 +305,7 @@ export function SurfacesPickerDialog({
    */
   injectedBathroomRows?: Partial<Record<RecommendedRole, SelectedSurface[]>>;
 }) {
+  const hidePrices = useDesignerPricesHidden();
   const isBathroom = roomType === "bathroom";
   const [category, setCategory] = useState<PelicanCategory | "Preferred">(PELICAN_STOREFRONT_CATEGORIES[0]);
   const [bathroomRole, setBathroomRole] = useState<RecommendedRole>("bathroom-sink");
@@ -829,7 +831,7 @@ export function SurfacesPickerDialog({
                   <p className="sm:col-span-2 text-[10px] leading-relaxed text-muted-foreground">12-inch wall tile is continuous only above countertop-supported cabinet and appliance runs. Standard ends at upper cabinets; a range continues to its hood. Full-height coverage increases material quantity and price.</p>
                 </div>
               )}
-              {((!isBathroom && category === "Quartz Slabs (Countertops)") || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "countertop")) && countertopPriceLines.length > 0 && (
+              {((!isBathroom && category === "Quartz Slabs (Countertops)") || (isBathroom && bathroomPaletteMode === "surfaces" && activeBathroomRole === "countertop")) && countertopPriceLines.length > 0 && !hidePrices && (
                 <div data-testid="countertop-priced-coverage" className="rounded-lg border border-[#a87f33]/30 bg-[#fffaf0] p-2.5 text-xs">
                   <div className="mb-1 font-semibold text-[#60491b]">Measured countertop pricing</div>
                   <div className="space-y-1 text-muted-foreground">
@@ -866,7 +868,7 @@ export function SurfacesPickerDialog({
                     </div>
                     <p className="mt-0.5 line-clamp-2 text-sm font-semibold leading-snug text-[var(--color-navy)]">{selectedBathroomFixture.name}</p>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">{selectedBathroomFixture.size ?? "Source size on file"}{selectedBathroomFixture.pelicanCode ? ` · ${selectedBathroomFixture.pelicanCode}` : ""}</p>
-                    <p className="mt-1 text-xs font-bold text-[var(--color-navy)]">{formatPrice(selectedBathroomFixture.sellPrice)}</p>
+                    {!hidePrices && <p className="mt-1 text-xs font-bold text-[var(--color-navy)]">{formatPrice(selectedBathroomFixture.sellPrice)}</p>}
                   </div>
                 </section>
               )}
@@ -1017,7 +1019,7 @@ export function SurfacesPickerDialog({
                         )}
                         <div className="flex items-center justify-between pt-1">
                           <span className="text-sm font-bold text-[var(--color-navy)] dark:text-foreground">
-                            {formatPrice(p.sellPrice)}
+                            {hidePrices ? null : formatPrice(p.sellPrice)}
                           </span>
                           <Button
                             size="sm"
@@ -1079,10 +1081,15 @@ export function SurfacesPickerDialog({
             ) : (
               <span className="flex items-center gap-2">
                 <Badge variant="secondary">{addedItemCount ?? selected.length}</Badge>
-                added ·{" "}
-                <span className="font-semibold text-foreground">
-                  {formatPrice(estimatedSubtotal ?? selected.reduce((sum, s) => sum + (s.sellPrice ?? 0), 0))}
-                </span>
+                added
+                {!hidePrices && (
+                  <>
+                    {" "}·{" "}
+                    <span className="font-semibold text-foreground">
+                      {formatPrice(estimatedSubtotal ?? selected.reduce((sum, s) => sum + (s.sellPrice ?? 0), 0))}
+                    </span>
+                  </>
+                )}
               </span>
             )}
           </div>

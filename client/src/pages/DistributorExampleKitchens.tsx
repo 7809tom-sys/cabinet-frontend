@@ -76,14 +76,19 @@ export function LineCardExamples({ lineId }: { lineId: DemoLineId }) {
 }
 
 /** Compact "Start from an example" strip in the designer shell. */
-export function DesignerExamplesStrip() {
+/**
+ * "Start from an example" chips. `placement="below"` is the demo designer's
+ * version: it sits under the email form (top border, no explanation sentence).
+ */
+export function DesignerExamplesStrip({ placement = "above" }: { placement?: "above" | "below" } = {}) {
+  const below = placement === "below";
   return (
-    <div className="flex items-center gap-2 overflow-x-auto border-b bg-muted/30 px-3 sm:px-4 py-1.5 text-xs" data-testid="designer-examples">
+    <div className={`flex items-center gap-2 overflow-x-auto ${below ? "border-t" : "border-b"} bg-muted/30 px-3 sm:px-4 py-1.5 text-xs`} data-testid="designer-examples">
       <span className="shrink-0 font-semibold">{EXAMPLE_KITCHENS_COPY.strip}:</span>
       {EXAMPLE_KITCHENS.map((k) => (
         <Link key={k.id} href={exampleKitchenPath(k.id)} className="shrink-0 rounded-full border bg-white px-2.5 py-0.5 hover:bg-muted">{k.name}</Link>
       ))}
-      <span className="hidden lg:inline shrink-0 text-muted-foreground">{EXAMPLE_KITCHENS_COPY.stripNote}</span>
+      {!below && <span className="hidden lg:inline shrink-0 text-muted-foreground">{EXAMPLE_KITCHENS_COPY.stripNote}</span>}
     </div>
   );
 }

@@ -693,14 +693,15 @@ export default function App() {
           )}
         </Route>
         {/* Demo distributor storefront, designer, back office and signup — placeholder data only */}
-        {/* Demo Distributor Designer: the unchanged DesignTool inside the demo distributor shell. */}
+        {/* Demo Distributor Designer: DesignTool (prices hidden) inside the demo distributor shell. */}
         <Route path="/distributor-preview/design">
           <ErrorBoundary>
             <Suspense fallback={<PageLoader />}>
               <DistributorDesignerShell>
                 <DesignerErrorBoundary surface="designer">
-                  {/* Only this route passes catalogFilter: the three demo lines (sinks/faucets unaffected). */}
-                  <DesignTool catalogFilter={demoDesignerCatalogFilter} />
+                  {/* Only this route passes catalogFilter (the three demo lines; sinks/faucets unaffected)
+                      and hidePrices: a distributor's sample never publishes a price. */}
+                  <DesignTool catalogFilter={demoDesignerCatalogFilter} hidePrices />
                 </DesignerErrorBoundary>
               </DistributorDesignerShell>
             </Suspense>
