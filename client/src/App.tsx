@@ -117,6 +117,7 @@ const Warranty = lazy(() => import("@/pages/Warranty"));
 const AffiliateAgreementPage = lazy(() => import("@/pages/AffiliateAgreementPage"));
 const SalesRepAgreementPage = lazy(() => import("@/pages/SalesRepAgreementPage"));
 const AffiliateMembershipCheckout = lazy(() => import("@/pages/AffiliateMembershipCheckout"));
+const DesignerPlans = lazy(() => import("@/pages/DesignerPlans"));
 const SalesRepApply = lazy(() => import("@/pages/SalesRepApply"));
 const CrmMondayPreview = lazy(() => import("@/pages/CrmMondayPreview"));
 const CrmCustomerDesignPreview = lazy(() => import("@/pages/CrmCustomerDesignPreview"));
@@ -1020,6 +1021,14 @@ export default function App() {
           <Suspense fallback={<PageLoader />}>
             <AffiliateDashboard />
           </Suspense>
+        </Route>
+
+        <Route path="/plans">
+          <AppLayout>
+            <Suspense fallback={<PageLoader />}>
+              <DesignerPlans />
+            </Suspense>
+          </AppLayout>
         </Route>
 
         <Route path="/affiliate/membership">
