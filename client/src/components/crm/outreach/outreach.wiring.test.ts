@@ -32,6 +32,7 @@ describe("admin CRM import + outreach wiring", () => {
     expect(board).toContain("`Cabinet Shops (${cabinetShopDeals.length})`");
     expect(board).toContain('CABINET_SHOPS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Cabinet shop" }');
     expect(board).toContain('aria-label="Filter cabinet shops by state"');
+    expect(board).toContain("{isMasterView && <CabinetShopUploadDialog />}");
   });
 
   it("keeps the existing affiliate customer-list import untouched", () => {

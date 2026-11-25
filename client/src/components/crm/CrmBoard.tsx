@@ -44,6 +44,7 @@ import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
+import { CabinetShopUploadDialog } from "@/components/crm/CabinetShopUploadDialog";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
 import { CrmCustomerLookup } from "@/components/crm/CrmCustomerLookup";
@@ -364,6 +365,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
             {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : view === "cabinetShops" ? `Cabinet Shops (${cabinetShopDeals.length})` : `Distributors (${distributorDeals.length})`}
           </button>
         ))}
+        {isMasterView && <CabinetShopUploadDialog />}
         {cabinetShopsViewOpen && (
           <Select value={cabinetShopState} onValueChange={setCabinetShopState}>
             <SelectTrigger className="h-9 w-[150px] bg-white" aria-label="Filter cabinet shops by state"><SelectValue /></SelectTrigger>
