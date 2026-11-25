@@ -879,17 +879,18 @@ function RichAnswerEditor({
             </p>
           )}
 
-          <Label>
-            Your answer
+          <div className="grid gap-1.5">
+            <Label htmlFor="rich-answer-text">Your answer</Label>
             <Textarea
-              className="mt-1"
+              id="rich-answer-text"
+              className="min-h-40"
               rows={7}
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
               placeholder="Write what you do on a real job, and any number you use."
               data-testid="rich-answer-text"
             />
-          </Label>
+          </div>
           <p className="text-xs text-muted-foreground">
             Saved in this question's Notes. Leave it blank and save to mark it not answered again.
           </p>
