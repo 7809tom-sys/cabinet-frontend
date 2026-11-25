@@ -27,7 +27,7 @@ import { addThreeDMeasuredWallMiterCountertops, addThreeDStandardCountertops } f
 import { threeDMiteredRoomWallGeometry, threeDMiteredRoomWallOutlines, threeDWallOpeningHoles } from "./InteractiveRoom3D";
 import { normalizedThreeDCabinetMoveIncrement, parsedThreeDCabinetMoveIncrement, THREE_D_MAX_MOVE_INCREMENT_IN, THREE_D_MIN_MOVE_INCREMENT_IN } from "./InteractiveRoom3D";
 import { addThreeDContinuousToeKicks, threeDContinuousToeKickSegments } from "./InteractiveRoom3D";
-import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, nextAvailableRoomCornerPlacement, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, wallPlacementAt } from "@/lib/design";
+import { COUNTERTOP_DEPTH_IN, DEFAULT_ROOM, STD, cornerLegRatioForPlaced, countertopRunFaceNormal, countertopSurfacePlanPolygon, countertopSurfaces, makeSinkForCabinet, nextAvailableRoomCornerPlacement, peninsulaRunEndpoints, placedCornerGeometryKind, placedFootprint, wallPlacementAt } from "@/lib/design";
 import { wallOpenShelfShelfCenters } from "@/lib/wallOpenShelf";
 import { AEF_PRINTED_GEOMETRY_MARKER } from "@shared/aefFramelessGeometry";
 import { ovenOpeningGeometry } from "@/lib/ovenOpening";
@@ -7985,10 +7985,78 @@ describe("interactive 3D room scene helpers", () => {
     expect(shell).not.toBeNull();
     const normal = shell!.geometry.getAttribute("normal");
     let upward = 0;
+    let forward = 0;
     for (let index = 0; index < normal.count; index += 1) {
       if (normal.getY(index) > 0.85) upward += 1;
+      if (normal.getZ(index) > 0.85) forward += 1;
     }
     expect(upward).toBe(0);
+    expect(forward).toBe(0);
+    expect(shell!.userData.farmhouseOpenFront).toBe(true);
+    const rails: THREE.Object3D[] = [];
+    root.traverse((node) => { if (node.userData.faceFrameEdge) rails.push(node); });
+    const topRail = rails.find((node) => node.userData.faceFrameEdge === "top");
+    expect(topRail?.visible).toBe(false);
+    expect(topRail?.userData.farmhouseTopRailHidden).toBe(true);
+    const stile = rails.find((node) => node.userData.faceFrameEdge === "left");
+    expect(stile).toBeDefined();
+    const shellTop = new THREE.Box3().setFromObject(shell!).max.y;
+    expect(new THREE.Box3().setFromObject(stile!).max.y).toBeLessThan(shellTop - 0.5);
+  });
+
+  it("keeps countertop meshes behind the farm apron and returns them at the apron's sides", () => {
+    const room = { width: 144, depth: 120, ceilingHeight: 96 } as RoomData;
+    const placed = [
+      { uid: "b24a", cabinetId: 1, masterCode: "B24", description: "Base", placement: "base", category: "Base", x: 0, y: 0, width: 24, depth: 24, height: 34.5, rotation: 0, wallId: "top" },
+      { uid: "fsb", cabinetId: 2, masterCode: "FSB36", description: "Farm Sink Base", placement: "base", category: "Base", subCategory: "Sink Base", x: 24, y: 0, width: 36, depth: 24, height: 34.5, rotation: 0, wallId: "top" },
+      { uid: "b24b", cabinetId: 3, masterCode: "B24", description: "Base", placement: "base", category: "Base", x: 60, y: 0, width: 24, depth: 24, height: 34.5, rotation: 0, wallId: "top" },
+    ] as PlacedCabinet[];
+    const sink = {
+      ...makeSinkForCabinet("farmhouse", placed[1]!, room, { width: 36, depth: 20 }),
+      apronFront: true,
+      bowlWidth: 33,
+      bowlDepth: 17,
+      sourceWidth: 36,
+      sourceDepth: 20,
+    };
+    const root = new THREE.Group();
+    addThreeDStandardCountertops(root, room, placed, "#ffffff", null, null, [], [sink]);
+    addSinkFixture(root, sink as never);
+    root.updateMatrixWorld(true);
+    let apron: THREE.Object3D | null = null;
+    const counters: THREE.Mesh[] = [];
+    root.traverse((node) => {
+      if (node.userData.sinkApronFront) apron = node;
+      if (node instanceof THREE.Mesh && (node.userData.standardRunCountertop || node.userData.selectedSurfaceRole === "countertop" || node.userData.countertopUpstand)) {
+        counters.push(node);
+      }
+    });
+    expect(apron).not.toBeNull();
+    const apronBox = new THREE.Box3().setFromObject(apron!);
+    const front = apronBox.max.z;
+    let maxAcross = -Infinity;
+    let maxBeside = -Infinity;
+    let counterMeshes = 0;
+    for (const mesh of counters) {
+      const position = mesh.geometry.getAttribute("position");
+      if (!position) continue;
+      counterMeshes += 1;
+      mesh.updateWorldMatrix(true, true);
+      const e = mesh.matrixWorld.elements;
+      for (let index = 0; index < position.count; index += 1) {
+        const x = e[0] * position.getX(index) + e[4] * position.getY(index) + e[8] * position.getZ(index) + e[12];
+        const y = e[1] * position.getX(index) + e[5] * position.getY(index) + e[9] * position.getZ(index) + e[13];
+        const z = e[2] * position.getX(index) + e[6] * position.getY(index) + e[10] * position.getZ(index) + e[14];
+        if (y < apronBox.max.y - 0.04) continue;
+        const across = x > apronBox.min.x + 0.04 && x < apronBox.max.x - 0.04;
+        const beside = x < apronBox.min.x - 0.08;
+        if (across) maxAcross = Math.max(maxAcross, z);
+        if (beside) maxBeside = Math.max(maxBeside, z);
+      }
+    }
+    expect(counterMeshes).toBeGreaterThan(0);
+    expect(maxAcross).toBeLessThan(front - 0.01);
+    expect(maxBeside).toBeGreaterThan(front - 0.02);
   });
 
   it("seats a farmhouse apron at the counter underside and does not draw a front rim past the sink", () => {

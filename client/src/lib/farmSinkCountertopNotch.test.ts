@@ -89,6 +89,33 @@ describe("apron-front countertop notch", () => {
     expect(apronFrontNotchRect({ type: "double", apronFront: false, x: 1, y: 2, width: 33, depth: 20, wallSide: "top", bathroomVanity: true } as never)).toBeNull();
   });
 
+  it("clears the finished front across the apron so no lip remains in front of it", () => {
+    const sink = {
+      type: "farmhouse" as const,
+      apronFront: true,
+      x: 24,
+      y: 0,
+      width: 36,
+      depth: 24,
+      wallSide: "top" as const,
+      sourceDepth: 24,
+      bowlDepth: 20,
+    };
+    const slab: ApronNotchSurface = { x: 0, y: 0, width: 120, depth: 25.5, kind: "base" };
+    const notch = apronFrontNotchRect(sink);
+    expect(notch).not.toBeNull();
+    expect(notch!.y + notch!.depth).toBeGreaterThan(25.5);
+    const [notched] = applyApronFrontCountertopNotches([slab], [sink]);
+    const outline = worldOutline(notched!);
+    for (const x of [sink.x + 2, sink.x + 18, sink.x + 34]) {
+      expect(pointInside(outline, { x, y: 25.2 })).toBe(false);
+      expect(pointInside(outline, { x, y: 24.2 })).toBe(false);
+    }
+    expect(pointInside(outline, { x: 8, y: 25.2 })).toBe(true);
+    expect(pointInside(outline, { x: 110, y: 25.2 })).toBe(true);
+    expect(pointInside(outline, { x: sink.x + 18, y: 2 })).toBe(true);
+  });
+
   it("removes the counter from the bowl front through the slab front and keeps the side and back rims", () => {
     const [notched] = applyApronFrontCountertopNotches([slab], [farm]);
     const outline = worldOutline(notched!);

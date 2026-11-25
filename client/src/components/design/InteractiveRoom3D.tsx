@@ -64,7 +64,7 @@ export { threeDLatticeRackLayout };
 import { islandCountertopRects, islandCountertopVisibleRects, islandRaisedBarRects, islandFaceFitMeasure } from "@/lib/islandScene";
 import { furniturePlanFrame, resolvedFurnitureDimensions } from "@/lib/design";
 import { farmhouseSinkBaseFaceLayout, FARMHOUSE_SINK_APRON_PROUD_IN } from "@/lib/farmhouseSinkBaseFace";
-import { applyApronFrontCountertopNotches, FARM_COUNTER_REVEAL_IN, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
+import { applyApronFrontCountertopNotches, apronFrontRimDepthIn, FARM_COUNTER_REVEAL_IN, isApronFrontSink } from "@/lib/farmSinkCountertopNotch";
 import { angledWallTransitionFootprint } from "@/lib/angledWallFiller";
 import { miteredWallOutlinesFromInteriorFaces, ROOM_WALL_THICKNESS_IN, roomShellVertices, wallAngle as polygonWallAngle } from "@/lib/polygonRoom";
 import { deckFaucetWindowWarning, resolveDeckFaucetPlacement, type DeckFaucetPlacement } from "@/lib/faucetPlacement";
@@ -6581,12 +6581,13 @@ export function addCabinet(
     cabinet.add(body);
     bodyMeshes.push(body);
     if (specialty.kind === "farmhouse-sink") {
-      // The carcass is a closed box. Its wood top shows through the bowl as a
-      // tan panel. A farm sink base is open on top; the bowl is the interior.
-      const openTop = withoutFaces(body.geometry.toNonIndexed(), (normal) => normal.y > 0.85);
+      // The carcass is a closed box. Its wood top shows through the bowl, and
+      // its front face shows as a tan line between the apron and the rim.
+      // A farm sink base is open on top and open across the apron.
+      const openShell = withoutFaces(body.geometry.toNonIndexed(), (normal) => normal.y > 0.85 || normal.z > 0.85);
       body.geometry.dispose();
-      body.geometry = openTop;
-      body.userData = { ...body.userData, farmhouseOpenTop: true };
+      body.geometry = openShell;
+      body.userData = { ...body.userData, farmhouseOpenTop: true, farmhouseOpenFront: true };
     }
   }
 
@@ -7228,9 +7229,14 @@ export function addCabinet(
     const frameGroup = new THREE.Group();
     frameGroup.position.z = faceDepth - frameDepth * 0.65;
     frameGroup.userData = { cabinetFaceFrame: true, constructedCarcassDetail: true, faceFrameWidthIn: frameWidth / INCH };
-    const hideTopRail = hideDuplicateFaceFrameRail("top", placement, woodDoorPhotograph);
+    // A farmhouse base has no top rail. The apron is the top of the face, and a
+    // rail left in that opening reads as a wood line between the apron and the rim.
+    const farmhouseFrame = specialty.kind === "farmhouse-sink"
+      ? farmhouseSinkBaseFaceLayout(widthIn, bodyHeight / INCH)
+      : null;
+    const hideTopRail = Boolean(farmhouseFrame) || hideDuplicateFaceFrameRail("top", placement, woodDoorPhotograph);
     const hideBottomRail = hideDuplicateFaceFrameRail("bottom", placement, woodDoorPhotograph);
-    const stileTopCut = hideTopRail ? 0 : frameWidth;
+    const stileTopCut = farmhouseFrame ? farmhouseFrame.apronZoneIn * INCH : (hideTopRail ? 0 : frameWidth);
     const stileBottomCut = hideBottomRail ? 0 : frameWidth;
     const stileHeight = Math.max(0.02, bodyHeight - stileTopCut - stileBottomCut);
     const stileCenterY = (stileBottomCut - stileTopCut) / 2;
@@ -7244,12 +7250,14 @@ export function addCabinet(
       const frame = new THREE.Mesh(new THREE.BoxGeometry(pieceWidth, pieceHeight, frameDepth), frameMaterial);
       frame.position.set(x, y, 0);
       const duplicate = hideDuplicateFaceFrameRail(edge, placement, woodDoorPhotograph);
-      frame.visible = !duplicate;
+      const hiddenFarmhouseRail = Boolean(farmhouseFrame) && edge === "top";
+      frame.visible = !duplicate && !hiddenFarmhouseRail;
       frame.userData = {
         cabinetFaceFrame: true,
         constructedCarcassDetail: true,
         faceFrameEdge: edge,
-        ...(duplicate ? { duplicateFrontRailHidden: true } : {}),
+        ...(duplicate || hiddenFarmhouseRail ? { duplicateFrontRailHidden: true } : {}),
+        ...(hiddenFarmhouseRail ? { farmhouseTopRailHidden: true } : {}),
       };
       frameGroup.add(frame);
     }
@@ -11452,7 +11460,20 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   });
   if (isApronFrontSink(sink)) {
     const exteriorHeight = Math.max((sink.exteriorHeight ?? (sink.bowlHeight ?? 10)) * INCH, bowlHeight + 0.025, 0.18);
-    const apronThickness = Math.min(0.12, depth * 0.2);
+    // The apron has to reach the bowl. A short slab leaves the carcass edge
+    // visible as a wood line between the apron and the rim.
+    const frontRim = apronFrontRimDepthIn({
+      type: sink.type,
+      apronFront: sink.apronFront,
+      x: sink.x,
+      y: sink.y,
+      width: sink.width,
+      depth: sink.depth,
+      wallSide: sink.wallSide,
+      bowlDepth: sink.bowlDepth,
+      sourceDepth: sink.sourceDepth,
+    }) * INCH;
+    const apronThickness = Math.max(Math.min(0.12, depth * 0.2), frontRim + 0.02);
     const side = sink.wallSide ?? "top";
     const isSourceMeasuredStainlessApron = sink.pelicanProfileId === "pelican-pl-ha135-r0-retrofit-stainless-farmhouse";
     const apronMaterial = isGunmetalBlack

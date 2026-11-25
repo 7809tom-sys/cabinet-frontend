@@ -99,7 +99,10 @@ export function farmCounterOpening(sink: ApronNotchSink): {
 }
 
 function notchPastFrontIn(): number {
-  return Math.max(0, STANDARD_FRONT_OVERHANG_IN - farmhouseSinkApronPastCarcassIn()) + NOTCH_OPENS_THROUGH_FRONT_IN;
+  // The finished counter hangs 1.5" past the carcass, and the apron stands proud
+  // of that box. The bite has to clear both, plus a margin, or a thin front lip
+  // stays in front of the apron. The edge that meets the bowl does not move.
+  return STANDARD_FRONT_OVERHANG_IN + farmhouseSinkApronPastCarcassIn() + NOTCH_OPENS_THROUGH_FRONT_IN;
 }
 
 /**
