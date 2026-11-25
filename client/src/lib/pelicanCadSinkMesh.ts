@@ -4,6 +4,11 @@
  * The GLB keeps the CAD coordinate system. This turns it upright (the short
  * axis is the bowl depth), puts the longer plan axis across the cabinet, and
  * sits the rim on the countertop. A failed load leaves the parametric basin.
+ *
+ * The rim is lifted a hair above the stone, the way the built-in basin's rim
+ * is, so the two surfaces never share a depth and flicker. An apron-front
+ * drawing is turned and slid so its apron face lands on the same plane as the
+ * built-in apron, which is the cabinet front.
  */
 
 import * as THREE from "three";
@@ -11,6 +16,13 @@ import { designerPelicanCadModel, pelicanCadInchesPerUnit } from "./pelicanCadMo
 import type { PelicanCadAsset } from "./pelicanCadCatalog";
 
 const INCH = 1 / 12;
+
+/**
+ * Height of the drawing's rim above the countertop, in feet. Matches the lift
+ * the built-in basin gives its rim; a rim exactly flush with the stone
+ * z-fights with it.
+ */
+export const MANUFACTURER_SINK_RIM_LIFT_FT = 0.018;
 
 const prepared = new Map<string, THREE.Object3D>();
 const pending = new Map<string, Promise<THREE.Object3D>>();
@@ -90,6 +102,40 @@ export function orientManufacturerSink(root: THREE.Object3D, inchesPerUnit: numb
     root.rotateX(Math.PI);
     seatOnCounter(root);
   }
+  root.userData.manufacturerApronSign = apronSideOf(root);
+}
+
+/**
+ * Which plan side of an oriented drawing carries a full-height apron: +1 for
+ * +Z, -1 for -Z, 0 when neither side does (a drop-in or undermount basin).
+ * The apron is the Z edge whose geometry runs most of the way down to the
+ * bottom; the back edge of a fireclay apron-front sink only carries the top
+ * flange. A drop-in or undermount basin hangs inside its flange, so neither
+ * edge reaches down.
+ */
+export function apronSideOf(root: THREE.Object3D): -1 | 0 | 1 {
+  const points = worldPoints(root);
+  if (points.length < 12) return 0;
+  const bounds = new THREE.Box3().setFromPoints(points);
+  const height = bounds.max.y - bounds.min.y;
+  const depth = bounds.max.z - bounds.min.z;
+  if (height < 1e-6 || depth < 1e-6) return 0;
+  const band = Math.min(INCH, depth * 0.1);
+  let lowFront = Infinity;
+  let lowBack = Infinity;
+  for (const point of points) {
+    if (point.z > bounds.max.z - band) lowFront = Math.min(lowFront, point.y);
+    if (point.z < bounds.min.z + band) lowBack = Math.min(lowBack, point.y);
+  }
+  const reach = (low: number) => (Number.isFinite(low) ? (bounds.max.y - low) / height : 0);
+  const front = reach(lowFront);
+  const back = reach(lowBack);
+  if (front > 0.75 && front - back > 0.4) return 1;
+  if (back > 0.75 && back - front > 0.4) return -1;
+  // A box-shaped apron sink (the stainless farmhouse drawings) is full height
+  // front and back; either long face can be the apron.
+  if (front > 0.75 && back > 0.75) return 1;
+  return 0;
 }
 
 function finishMaterial(asset: PelicanCadAsset): THREE.MeshPhysicalMaterial {
@@ -99,7 +145,13 @@ function finishMaterial(asset: PelicanCadAsset): THREE.MeshPhysicalMaterial {
     metalness: granite ? 0.04 : 0.45,
     roughness: granite ? 0.42 : 0.32,
     clearcoat: granite ? 0.08 : 0.2,
+    // The converted STEP/DWG meshes do not have reliable winding, so both
+    // sides stay drawn. The offset lets the sink win any depth tie with the
+    // countertop edge or the cabinet face it sits against.
     side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 }
 
@@ -109,8 +161,11 @@ function paint(root: THREE.Object3D, asset: PelicanCadAsset): void {
     const mesh = node as THREE.Mesh;
     if (!mesh.isMesh) return;
     mesh.material = material;
+    // The sink still shades the cabinet and floor, but it does not take shadow
+    // on its own double-sided faces: that self-shadow is the shimmer on the
+    // apron and rim.
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = false;
   });
 }
 
@@ -160,6 +215,70 @@ function hideParametricBasin(holder: THREE.Object3D, ownedNodes: readonly THREE.
   }
 }
 
+/**
+ * The built-in apron slab, in the holder's frame. Holder and apron share a
+ * parent and the holder is never rotated, so the apron's local matrix minus
+ * the holder's position is enough.
+ */
+function parametricApronBox(holderPosition: THREE.Vector3, ownedNodes: readonly THREE.Object3D[]): THREE.Box3 | null {
+  for (const node of ownedNodes) {
+    const mesh = node as THREE.Mesh;
+    if (!mesh.isMesh || (mesh.userData as Record<string, unknown>).sinkApronFront !== true) continue;
+    const geometry = mesh.geometry;
+    if (!geometry) continue;
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    if (!geometry.boundingBox) continue;
+    mesh.updateMatrix();
+    return geometry.boundingBox.clone().applyMatrix4(mesh.matrix).translate(holderPosition.clone().negate());
+  }
+  return null;
+}
+
+type FrontDirection = { axis: "x" | "z"; sign: 1 | -1 };
+
+/** The apron's thin axis is the one that points into the room. */
+function apronFrontDirection(apron: THREE.Box3): FrontDirection {
+  const size = apron.getSize(new THREE.Vector3());
+  const center = apron.getCenter(new THREE.Vector3());
+  const axis = size.x < size.z ? "x" : "z";
+  return { axis, sign: center[axis] < -1e-6 ? -1 : 1 };
+}
+
+/**
+ * Wraps a prepared drawing so it faces the cabinet front. An apron-front
+ * drawing is turned until its apron points the way the built-in apron does,
+ * then slid along that axis until the two apron faces are on one plane. The
+ * lateral centering stays on the sink center. Any other drawing stays as it
+ * was oriented.
+ */
+export function placeManufacturerSink(
+  template: THREE.Object3D,
+  holderPosition: THREE.Vector3,
+  ownedNodes: readonly THREE.Object3D[],
+): THREE.Object3D {
+  const pivot = new THREE.Group();
+  pivot.name = "pelican-manufacturer-cad-pivot";
+  pivot.add(template.clone(true));
+  const apronSign = (template.userData as Record<string, unknown>).manufacturerApronSign;
+  const apron = parametricApronBox(holderPosition, ownedNodes);
+  if (!apron || (apronSign !== 1 && apronSign !== -1)) return pivot;
+  const front = apronFrontDirection(apron);
+  // Turning by t about Y sends +Z to (sin t, 0, cos t).
+  const facing = front.axis === "z"
+    ? (front.sign === 1 ? 0 : Math.PI)
+    : (front.sign === 1 ? Math.PI / 2 : -Math.PI / 2);
+  pivot.rotation.y = facing + (apronSign === -1 ? Math.PI : 0);
+  pivot.updateMatrixWorld(true);
+  const drawn = new THREE.Box3().setFromObject(pivot);
+  const drawnFace = front.sign === 1 ? drawn.max[front.axis] : drawn.min[front.axis];
+  const apronFace = front.sign === 1 ? apron.max[front.axis] : apron.min[front.axis];
+  const lateral = front.axis === "z" ? "x" : "z";
+  pivot.position[front.axis] += apronFace - drawnFace;
+  pivot.position[lateral] -= (drawn.min[lateral] + drawn.max[lateral]) / 2;
+  pivot.userData = { manufacturerApronAligned: true, apronAxis: front.axis, apronSign: front.sign };
+  return pivot;
+}
+
 export type ManufacturerSinkAnchor = {
   pelicanCode?: string | null;
   pelicanProfileId?: string | null;
@@ -185,7 +304,7 @@ export function attachPelicanManufacturerSink(
   if (!asset?.glbUrl) return null;
   const holder = new THREE.Group();
   holder.name = "pelican-manufacturer-cad";
-  holder.position.set(sink.x, sink.y, sink.z);
+  holder.position.set(sink.x, sink.y + MANUFACTURER_SINK_RIM_LIFT_FT, sink.z);
   holder.userData = {
     manufacturerCadSink: true,
     pelicanCadSku: asset.sku,
@@ -196,8 +315,7 @@ export function attachPelicanManufacturerSink(
   addNode(holder);
   const show = (template: THREE.Object3D) => {
     if (!holder.parent) return;
-    const clone = template.clone(true);
-    holder.add(clone);
+    holder.add(placeManufacturerSink(template, holder.position, ownedNodes));
     holder.userData.manufacturerCadLoaded = true;
     hideParametricBasin(holder, ownedNodes);
   };
