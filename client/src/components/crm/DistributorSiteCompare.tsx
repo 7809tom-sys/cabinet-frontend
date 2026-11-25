@@ -1,6 +1,7 @@
 import { CABINETDEALZ_SITE_SNAPSHOT } from "@/lib/cabinetdealzSiteSnapshot";
 import { compareWithCabinetdealz, parseDistributorSiteStats, type SiteComparison } from "@/lib/crmDistributorSiteStats";
 import { isDistributorProspect } from "@/lib/crmDistributorFilter";
+import { isCabinetShopProspect } from "@/lib/crmCabinetShopFilter";
 
 type CompareDeal = { company?: string | null; notes?: string | null };
 
@@ -20,11 +21,13 @@ function needsLabel(value: boolean | null, rank: number | null) {
 
 /**
  * Distributor prospect's own site stats from the notes, with a Cabinetdealz.com
- * comparison row underneath. Renders nothing for regular sales contacts.
+ * comparison row underneath. Also used for cabinet shop prospects, whose
+ * notes may not carry site stats yet ("not measured" / "not assessed").
+ * Renders nothing for regular sales contacts.
  * Arrows sit on the Cabinetdealz row: ▲ ahead, ▼ behind, = even.
  */
 export function DistributorSiteCompare({ deal }: { deal: CompareDeal }) {
-  if (!isDistributorProspect(deal)) return null;
+  if (!isDistributorProspect(deal) && !isCabinetShopProspect(deal)) return null;
   const stats = parseDistributorSiteStats(deal.notes, deal.company);
   const compare = compareWithCabinetdealz(stats);
   const cd = CABINETDEALZ_SITE_SNAPSHOT;

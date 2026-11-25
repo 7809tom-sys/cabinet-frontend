@@ -39,10 +39,20 @@ import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
 import { filterDistributorProspects } from "@/lib/crmDistributorFilter";
+import {
+  CABINET_SHOP_VIEW_PREFS_KEY,
+  countCabinetShopsByState,
+  filterCabinetShopProspects,
+  filterCabinetShopsByState,
+  parseCabinetShopViewPrefs,
+  resolveCabinetShopState,
+  type CabinetShopLayout,
+} from "@/lib/crmCabinetShopFilter";
 import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
+import { CabinetShopUploadDialog } from "@/components/crm/CabinetShopUploadDialog";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
 import { CustomerLinkedDesigns } from "@/components/crm/CustomerLinkedDesigns";
 import { CrmCustomerLookup } from "@/components/crm/CrmCustomerLookup";
@@ -68,6 +78,8 @@ type Lang = CrmLanguage;
 
 /** Column header overrides used only while the Distributors view is open. */
 export const DISTRIBUTORS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Distributor" };
+/** Column header overrides used only while the Cabinet Shops view is open. */
+export const CABINET_SHOPS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Cabinet shop" };
 const L = (lang: Lang) => ({
   title: lang === "es" ? "CRM de ventas" : "Sales CRM",
   subtitle: lang === "es"
@@ -191,7 +203,19 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors">("board");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors" | "cabinetShops">("board");
+  // Cabinet Shops view: the picked state (null until picked, then FL first) and
+  // list/board layout, remembered on this browser.
+  const [cabinetShopPrefs, setCabinetShopPrefs] = useState<{ state: string | null; layout: CabinetShopLayout }>(() =>
+    parseCabinetShopViewPrefs(typeof window === "undefined" ? null : window.localStorage.getItem(CABINET_SHOP_VIEW_PREFS_KEY)),
+  );
+  const updateCabinetShopPrefs = (patch: Partial<{ state: string; layout: CabinetShopLayout }>) => {
+    setCabinetShopPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      try { window.localStorage.setItem(CABINET_SHOP_VIEW_PREFS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      return next;
+    });
+  };
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<"all" | CrmStage>("all");
   const [priorityFilter, setPriorityFilter] = useState<"all" | CrmPriority>("all");
@@ -230,10 +254,21 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
   // Distributors view (master only): same filters, narrowed to distributor prospects.
   const distributorDeals = useMemo(() => filterDistributorProspects(mondayDeals), [mondayDeals]);
   const distributorsViewOpen = crmView === "distributors" && (data as any)?.isMasterView === true;
-  const viewDeals = distributorsViewOpen ? distributorDeals : mondayDeals;
-  // Display-only: in the Distributors view the "new" stage column reads "Distributor".
-  // The stage value stays "new", and the main Board keeps "New".
-  const stageLabelOverrides: Partial<Record<CrmStage, string>> | undefined = distributorsViewOpen ? DISTRIBUTORS_VIEW_STAGE_LABELS : undefined;
+  // Cabinet Shops view (master only): same filters, narrowed to cabinet shop prospects,
+  // with an optional state filter (FL and GA listed first).
+  const cabinetShopDeals = useMemo(() => filterCabinetShopProspects(mondayDeals), [mondayDeals]);
+  const cabinetShopStates = useMemo(() => countCabinetShopsByState(cabinetShopDeals), [cabinetShopDeals]);
+  const cabinetShopsViewOpen = crmView === "cabinetShops" && (data as any)?.isMasterView === true;
+  const cabinetShopState = resolveCabinetShopState(cabinetShopPrefs.state, cabinetShopStates);
+  const cabinetShopListOpen = cabinetShopsViewOpen && cabinetShopPrefs.layout === "list";
+  const cabinetShopStateDeals = useMemo(() => filterCabinetShopsByState(cabinetShopDeals, cabinetShopState), [cabinetShopDeals, cabinetShopState]);
+  const viewDeals = distributorsViewOpen ? distributorDeals : cabinetShopsViewOpen ? cabinetShopStateDeals : mondayDeals;
+  // Display-only: in the Distributors view the "new" stage column reads "Distributor"
+  // (and "Cabinet shop" in the Cabinet Shops view). The stage value stays "new",
+  // and the main Board keeps "New".
+  const stageLabelOverrides: Partial<Record<CrmStage, string>> | undefined = distributorsViewOpen
+    ? DISTRIBUTORS_VIEW_STAGE_LABELS
+    : cabinetShopsViewOpen ? CABINET_SHOPS_VIEW_STAGE_LABELS : undefined;
   const affiliateNames = (data as any)?.affiliateNames as Record<number, string> | undefined;
   const affiliateBranding = (data as any)?.affiliateBranding as Record<number, CrmAffiliateBrand> | undefined;
   const isMasterView = (data as any)?.isMasterView === true;
@@ -339,7 +374,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(isMasterView ? (["board", "table", "email", "outreach", "distributors"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
+        {(isMasterView ? (["board", "table", "email", "outreach", "distributors", "cabinetShops"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
           <OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />
         ) : (
           <button
@@ -348,9 +383,36 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : `Distributors (${distributorDeals.length})`}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : view === "cabinetShops" ? `Cabinet Shops (${cabinetShopDeals.length})` : `Distributors (${distributorDeals.length})`}
           </button>
         ))}
+        {isMasterView && <CabinetShopUploadDialog />}
+        {cabinetShopsViewOpen && (
+          <Select value={cabinetShopState} onValueChange={(state) => updateCabinetShopPrefs({ state })}>
+            <SelectTrigger className="h-9 w-[150px] bg-white" aria-label="Filter cabinet shops by state"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All states ({cabinetShopDeals.length})</SelectItem>
+              {cabinetShopStates.map(({ state, count }) => (
+                <SelectItem key={state ?? "unknown"} value={state ?? "unknown"}>{state ?? "State unknown"} ({count})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {cabinetShopsViewOpen && (
+          <div className="inline-flex overflow-hidden rounded-full border border-slate-200 bg-white text-sm" role="group" aria-label="Cabinet shops layout">
+            {(["list", "board"] as const).map((layout) => (
+              <button
+                key={layout}
+                type="button"
+                aria-pressed={cabinetShopPrefs.layout === layout}
+                onClick={() => updateCabinetShopPrefs({ layout })}
+                className={`px-3 py-1 font-medium ${cabinetShopPrefs.layout === layout ? "bg-[#1a2b4a] text-white" : "text-[#1a2b4a]"}`}
+              >
+                {layout === "list" ? "Follow-up list" : "Board"}
+              </button>
+            ))}
+          </div>
+        )}
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={lang === "es" ? "Buscar" : "Search deals"} aria-label="Search deals" className="h-9 max-w-xs bg-white" />
         <Select value={stageFilter} onValueChange={(value) => setStageFilter(value as typeof stageFilter)}>
           <SelectTrigger className="h-9 w-[140px] bg-white" aria-label="Filter by stage"><SelectValue /></SelectTrigger>
@@ -413,7 +475,9 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
         <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-64 rounded-lg" />)}
         </div>
-      ) : crmView === "table" ? (
+      ) : crmView === "table" || cabinetShopListOpen ? (
+        // The Table view, and the Cabinet Shops "Follow-up list": status, due date
+        // (next follow-up), priority and value edit inline; a row opens the deal for notes and email.
         <CrmTableView
           deals={viewDeals.map((deal): TableDeal => ({
             ...deal,
