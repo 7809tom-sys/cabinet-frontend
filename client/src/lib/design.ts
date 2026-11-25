@@ -15707,6 +15707,8 @@ export interface SinkFixture {
   pelicanProductName?: string;
   /** Pelican product image URL */
   pelicanProductImage?: string;
+  /** Catalog SKU, so a manufacturer drawing can be matched after the sink is placed. */
+  pelicanCode?: string;
   /** Source-verified parametric profile identifier, when a real Pelican fixture has one. */
   pelicanProfileId?: string;
   /**
@@ -16211,6 +16213,7 @@ export function normalizeSinkFixturesToBases(
       pelicanProductId: sink.pelicanProductId,
       pelicanProductName: sink.pelicanProductName,
       pelicanProductImage: sink.pelicanProductImage,
+      pelicanCode: sink.pelicanCode,
       pelicanProfileId: sink.pelicanProfileId,
       bowlWidth: sink.bowlWidth,
       bowlDepth: sink.bowlDepth,

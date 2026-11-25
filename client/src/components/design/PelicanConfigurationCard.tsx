@@ -11,6 +11,7 @@ import { bathroomFixtureCardImage } from "@/lib/bathroomFixtureCatalog";
 import { pelicanToiletCatalogPhoto } from "@/lib/pelicanToiletCatalogPhotos";
 import { FlooringCartonFacts } from "./FlooringCartonFacts";
 import { pelicanSinkCatalogDescription } from "@/lib/pelicanSinkCatalogDescriptions";
+import { PelicanCadDownloads } from "@/components/pelican/PelicanCadDownloads";
 import { PelicanFinishDot, PelicanVariantSelect } from "./PelicanVariantSelect";
 import { customerFacingProductName, ProductPhoto } from "./ProductPhotoGrid";
 
@@ -97,6 +98,7 @@ export function PelicanConfigurationCard<T extends PelicanGroupable>({
         <p className="truncate text-[9px] text-muted-foreground">
           {item.pelicanCode}{item.size && multiple ? ` · ${item.size}` : ""}
         </p>
+        <PelicanCadDownloads pelicanCode={item.pelicanCode} compact />
         {pelicanSinkCatalogDescription(item.pelicanCode) && (
           <p data-testid={`${testIdPrefix}-catalog-description-${item.id}`} className="line-clamp-4 text-[10px] leading-snug text-muted-foreground">
             {pelicanSinkCatalogDescription(item.pelicanCode)}

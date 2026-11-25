@@ -370,6 +370,7 @@ function reSeatSinkFixtures(
       pelicanProductId: sink.pelicanProductId,
       pelicanProductName: sink.pelicanProductName,
       pelicanProductImage: sink.pelicanProductImage,
+      pelicanCode: sink.pelicanCode,
       pelicanProfileId: sink.pelicanProfileId,
       bowlWidth: sink.bowlWidth,
       bowlDepth: sink.bowlDepth,

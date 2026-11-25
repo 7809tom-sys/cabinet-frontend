@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
+import { attachPelicanManufacturerSink } from "@/lib/pelicanCadSinkMesh";
 import { THREE_D_BLOCKED_MESSAGE, THREE_D_RECONNECTING_MESSAGE, THREE_D_STARTING_MESSAGE, THREE_D_UNAVAILABLE_MESSAGE, ThreeDRendererHost, sizeThreeDRenderer } from "./threeDRendererHost";
 import { useThreeDRendererRecovery } from "./useThreeDRendererRecovery";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
@@ -11158,7 +11159,9 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
   fixtureRoot.rotation.y = rotation;
   fixtureRoot.userData = { sinkFixtureGroup: true, sinkUid: sink.uid, planRotation: sink.planRotation ?? 0 };
   if (rotatesFixture) root.add(fixtureRoot);
+  const ownedFixtureNodes: THREE.Object3D[] = [];
   const addFixtureNode = (node: THREE.Object3D) => {
+    ownedFixtureNodes.push(node);
     if (!rotatesFixture) {
       root.add(node);
       return;
@@ -11438,6 +11441,21 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     divider.userData = { sinkBowlDivider: true, visibleInsideSinkCutout: true, fixtureDetail: true };
     addFixtureNode(divider);
   }
+  // A converted manufacturer drawing replaces the parametric basin once it
+  // loads. The measured basin stays in place until then, and stays for good
+  // when this SKU has no usable mesh.
+  attachPelicanManufacturerSink(
+    {
+      pelicanCode: sink.pelicanCode,
+      pelicanProfileId: sink.pelicanProfileId,
+      pelicanProductName: sink.pelicanProductName,
+      x: centerX,
+      y: countertopTop,
+      z: centerZ,
+    },
+    addFixtureNode,
+    ownedFixtureNodes,
+  );
   // A faucet is drawn from its measured dimensions. The profile id names which
   // source fixture it is; the built-in default carries a real Pelican profile id
   // too, so a default faucet renders exactly like a catalog one. Missing
