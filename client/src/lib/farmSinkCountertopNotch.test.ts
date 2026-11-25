@@ -96,7 +96,7 @@ describe("apron-front countertop notch", () => {
     expect(removed).toBeLessThan(farm.width * farm.depth);
   });
 
-  it("leaves undermount, drop-in, and vanity slabs whole", () => {
+  it("gives an undermount, drop-in, or vanity sink no front notch", () => {
     const undermount = {
       ...makeSinkForCabinet("single", { ...cabinet, masterCode: "SB36", description: "Sink Base 36" }, room, { width: 30, depth: 18 }),
       apronFront: false,
@@ -105,9 +105,13 @@ describe("apron-front countertop notch", () => {
     const dropIn = { ...undermount, type: "double" as const, apronFront: false };
     const vanity = { ...undermount, type: "single" as const, apronFront: false, wallSide: "top" as const };
     for (const sink of [undermount, dropIn, vanity]) {
+      expect(apronFrontNotchRect(sink)).toBeNull();
       const [only] = applyApronFrontCountertopNotches([slab], [sink]);
       expect(only).toEqual(slab);
       expect(apronFrontRemovedArea([slab], [sink]).straight).toBe(0);
+      const front = { x: sink.x + sink.width / 2, y: sink.y + sink.depth - 0.1 };
+      expect(front.x).toBeGreaterThanOrEqual(slab.x);
+      expect(front.y).toBeLessThanOrEqual(slab.y + slab.depth);
     }
   });
 
