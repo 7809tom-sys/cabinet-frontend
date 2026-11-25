@@ -95,6 +95,7 @@ export function FabricationShopUploadDialog() {
       if (!dryRun) {
         toast.success(`Imported ${result.inserted} fabrication shop${result.inserted === 1 ? "" : "s"}.`);
         await utils.fabShops.list.invalidate();
+        await utils.fabShops.imports.invalidate();
         await utils.fabShops.forQuotes.invalidate();
       }
     } catch (error) {

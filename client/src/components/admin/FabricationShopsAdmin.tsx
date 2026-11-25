@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FabricationShopUploadDialog } from "@/components/admin/FabricationShopUploadDialog";
+import { FabShopPastUploads } from "@/components/admin/FabShopPastUploads";
 
 type Shop = {
   id: number; name: string; state: string; zip: string | null; zipSource: string | null; city: string | null; address: string | null;
@@ -48,6 +49,7 @@ export default function FabricationShopsAdmin() {
       {data && !data.ready && (
         <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">The fabrication shop list isn't set up yet. Run docs/sql/0291 in the TiDB SQL editor, then reload. Countertop quotes keep working in the meantime.</p>
       )}
+      <FabShopPastUploads />
       {data?.ready && shops.length === 0 && <p className="py-8 text-center text-muted-foreground">No fabrication shops{state !== "all" ? ` in ${state}` : ""} yet. Use Upload shops to add a state's list.</p>}
       {shops.length > 0 && (
         <div className="overflow-x-auto rounded-md border">
