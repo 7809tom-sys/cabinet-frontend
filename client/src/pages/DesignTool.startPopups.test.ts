@@ -36,12 +36,26 @@ describe("Start from scratch popup chain", () => {
 
   it("asks for a faucet and sink only when a sink base is placed", () => {
     expect(source).toContain("shouldPromptFixturePick({");
-    expect(source).toContain('roomType === "kitchen" && shouldPromptFixturePick({');
+    expect(source).toContain('(roomType === "kitchen" || farmSinkBase)');
     const placement = source.slice(
       source.indexOf("if (isSinkBaseCabinet(finalCab)) {"),
       source.indexOf("if (isFloatingShelfItem(finalCab)) {"),
     );
     expect(placement).toContain("shouldPromptFixturePick({");
-    expect(placement).toContain("setSinkBaseDialog({ cabinetUid: finalCab.uid });");
+    expect(placement).toContain("sinkBasePlacementDialog({");
+    expect(placement).toContain("placementDialog === \"what-goes-on-top\"");
+    expect(placement).not.toContain("setFixturePickOpen(true)");
+    expect(placement).toContain("setSinkBaseDialog(null)");
+    const dismiss = source.slice(source.indexOf("const dismissFixturePick"), source.indexOf("const applyAttachedCabinetFillers"));
+    expect(dismiss).toContain("setFixturePickOpen(false)");
+    expect(dismiss).toContain("fixturePickAllowedRef.current = false");
+    expect(dismiss).toContain("setSinkBaseDialog(null)");
+    expect(dismiss).not.toContain("setSinkBaseDialog({");
+    expect(dismiss).not.toContain("setFixturePickOpen(true)");
+    expect(source).toContain("sinkFlowCoversSelectedCabinetSheet({");
+    expect(source).toContain("step={fixturePickStep}");
+    expect(source).toContain("onPickSink={pickFixtureSink}");
+    expect(source).toContain("onPickFaucet={pickFixtureFaucet}");
+    expect(source).not.toContain("Pick your faucet and sink");
   });
 });
