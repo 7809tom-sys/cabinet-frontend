@@ -28,6 +28,7 @@ import {
 import {
   Plus, Phone, Mail, MapPin, Building2, ChevronRight, Inbox,
   CircleDollarSign, Languages, Trash2, Send, AlertTriangle, Settings2, FileText, Upload, Download, Image,
+  Globe,
 } from "lucide-react";
 import { CRM_CUSTOMER_LIST_TEMPLATE, crmCustomerFileReadProgress, parseCrmCustomerListCsv, type CrmCustomerImportRow, type CrmCustomerImportSkippedRow } from "@shared/crmCustomerListImport";
 import { affiliateCardColor, type CrmAffiliateBrand } from "@/lib/crmAffiliateBrand";
@@ -37,6 +38,7 @@ import { designOpenPath } from "@/lib/designOwnerScope";
 import { withCrmDealContext } from "@/lib/crmLinkedDesignPath";
 import { MASTER_AFFILIATE_FILTER_ALL, masterAffiliateFilterId } from "@/lib/crmMasterFilter";
 import { filterDealsByHelpType, type CrmHelpFilter } from "@/lib/crmHelpFilter";
+import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { CustomerGeneratedImages } from "@/components/imageCustomer/CustomerGeneratedImages";
@@ -463,6 +465,7 @@ function StatChip({ icon, label, value }: { icon: React.ReactNode; label: string
 
 function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }: { deal: DealRow; lang: Lang; onOpen: () => void; affiliateName?: string; affiliateBrand?: CrmAffiliateBrand; summary?: CustomerSummary }) {
   const brandColor = affiliateCardColor(affiliateBrand);
+  const website = crmDealWebsite(deal.notes);
   return (
     <button
       draggable
@@ -518,6 +521,25 @@ function DealCard({ deal, lang, onOpen, affiliateName, affiliateBrand, summary }
       )}
       {deal.company && deal.company !== deal.contactName && (
         <div className="flex items-center gap-1 text-xs text-muted-foreground"><Building2 className="h-3 w-3" />{deal.company}</div>
+      )}
+      {website && (
+        // The card is a <button>, so a real <a> can't nest inside it; this follows CustomerActivityLine's nested link.
+        <span
+          role="link"
+          tabIndex={0}
+          title={website.url}
+          data-testid="crm-card-website"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline cursor-pointer truncate"
+          onClick={(event) => { event.stopPropagation(); window.open(website.url, "_blank", "noopener,noreferrer"); }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            event.stopPropagation();
+            window.open(website.url, "_blank", "noopener,noreferrer");
+          }}
+        >
+          <Globe className="h-3 w-3 shrink-0" />{website.label}
+        </span>
       )}
       {deal.contactEmail && <div className="text-[11px] text-muted-foreground truncate">{deal.contactEmail}</div>}
       {deal.contactPhone && <div className="text-[11px] text-muted-foreground">{deal.contactPhone}</div>}
