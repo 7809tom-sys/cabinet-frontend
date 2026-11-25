@@ -94,6 +94,7 @@ import PendingReviewAdmin from "@/components/admin/PendingReviewAdmin";
 import PendingDistributorConnectionsAdmin from "@/components/admin/PendingDistributorConnectionsAdmin";
 import GenericCabinetsAdmin from "@/components/admin/GenericCabinetsAdmin";
 import { BulkDimensionsAdmin } from "@/components/admin/BulkDimensionsAdmin";
+import { countertopQuoteStyleDetails, formatQuoteDateCT } from "@/components/admin/countertopQuoteDisplay";
 import BundleDealsAdmin from "@/components/admin/BundleDealsAdmin";
 import PriceShop10x10 from "@/pages/PriceShop10x10";
 import MediaLibraryAdmin from "@/components/admin/MediaLibraryAdmin";
@@ -382,10 +383,21 @@ function CountertopQuotes() {
               <div className="text-sm text-muted-foreground">
                 {Number(q.squareFeet).toFixed(1)} sq ft · {Number(q.linearFeet).toFixed(1)} lin ft
                 {q.hasIsland ? " · island" : ""}
-                {q.material ? ` · ${q.material}` : ""}
                 {q.zip ? ` · ZIP ${q.zip}` : ""}
               </div>
             </div>
+            {(() => {
+              const date = formatQuoteDateCT(q.createdAt);
+              const style = countertopQuoteStyleDetails(q);
+              return (
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm" data-testid={`countertop-quote-meta-${q.id}`}>
+                  <span><span className="text-muted-foreground">Requested:</span> {date ?? "—"}</span>
+                  {style.length > 0
+                    ? style.map((s) => <span key={s.label}><span className="text-muted-foreground">{s.label}:</span> {s.value}</span>)
+                    : <span><span className="text-muted-foreground">Style of top:</span> not specified</span>}
+                </div>
+              );
+            })()}
             <div className="flex flex-wrap items-center gap-2">
               <Input type="number" placeholder="Quoted price" className="w-40" defaultValue={q.quotedPrice ? Number(q.quotedPrice) : undefined} id={`qp-${q.id}`} />
               <Button size="sm" variant="outline" onClick={() => { const el = document.getElementById(`qp-${q.id}`) as HTMLInputElement | null; const price = el?.value ? Number(el.value) : undefined; update.mutate({ id: q.id, status: "quoted", quotedPrice: price }); }}>Save Quote</Button>
