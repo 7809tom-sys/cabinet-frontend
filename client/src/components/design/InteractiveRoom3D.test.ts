@@ -7966,6 +7966,13 @@ describe("interactive 3D room scene helpers", () => {
     root.traverse((node) => { if (node.userData.sinkBowl) bowlTop = Math.max(bowlTop, new THREE.Box3().setFromObject(node).max.y); });
     expect(bowlTop).toBeLessThanOrEqual(countertopTop - STD.COUNTERTOP_THICKNESS / 12 + 1e-4);
     expect(root.children.find((node) => node.userData.sinkRimSide === "front")).toBeUndefined();
+    const deck = root.children.find((node) => node.userData.sinkApronDeck);
+    expect(deck).toBeDefined();
+    const deckBounds = new THREE.Box3().setFromObject(deck!);
+    expect(deckBounds.max.y).toBeLessThanOrEqual(apronBounds.max.y + 1e-4);
+    expect(deckBounds.min.z).toBeGreaterThanOrEqual(apronBounds.min.z - 1e-3);
+    expect(deckBounds.max.z).toBeLessThanOrEqual(apronBounds.max.z + 1e-3);
+    expect(deck?.userData.sinkApronFront).toBeUndefined();
     expect((apronBounds.max.x - apronBounds.min.x) * 12).toBeLessThanOrEqual(36.05);
     expect(farmhouseManufacturerSeatY(countertopTop, true)).toBeCloseTo(farmhouseApronTopY(countertopTop), 8);
     expect(farmhouseManufacturerSeatY(countertopTop, true)).toBeLessThan(countertopTop);
@@ -7993,15 +8000,29 @@ describe("interactive 3D room scene helpers", () => {
     expect(upward).toBe(0);
     expect(forward).toBe(0);
     expect(shell!.userData.farmhouseOpenFront).toBe(true);
+    expect(shell!.userData.farmhouseApronZoneClear).toBe(true);
     const rails: THREE.Object3D[] = [];
-    root.traverse((node) => { if (node.userData.faceFrameEdge) rails.push(node); });
+    const edgeLines: THREE.Object3D[] = [];
+    root.traverse((node) => {
+      if (node.userData.faceFrameEdge) rails.push(node);
+      if (node.userData.carcassEdgeLines) edgeLines.push(node);
+    });
+    const shellTopForEdges = new THREE.Box3().setFromObject(shell!).max.y;
+    const apronZoneEdges = edgeLines.filter((node) => new THREE.Box3().setFromObject(node).max.y > shellTopForEdges - 0.05);
+    expect(apronZoneEdges).toHaveLength(0);
     const topRail = rails.find((node) => node.userData.faceFrameEdge === "top");
     expect(topRail?.visible).toBe(false);
     expect(topRail?.userData.farmhouseTopRailHidden).toBe(true);
     const stile = rails.find((node) => node.userData.faceFrameEdge === "left");
     expect(stile).toBeDefined();
     const shellTop = new THREE.Box3().setFromObject(shell!).max.y;
-    expect(new THREE.Box3().setFromObject(stile!).max.y).toBeLessThan(shellTop - 0.5);
+    const stileTop = new THREE.Box3().setFromObject(stile!).max.y;
+    expect(stileTop).toBeLessThanOrEqual(shellTop + 0.05);
+    let door: THREE.Object3D | null = null;
+    root.traverse((node) => { if (node.userData.farmhouseBaseDoor === 1) door = node; });
+    expect(door).not.toBeNull();
+    const doorTop = new THREE.Box3().setFromObject(door!).max.y;
+    expect(shellTop).toBeLessThan(doorTop + 0.2);
   });
 
   it("keeps countertop meshes behind the farm apron and returns them at the apron's sides", () => {

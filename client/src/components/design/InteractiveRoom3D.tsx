@@ -641,20 +641,25 @@ function concatGeometries(parts: THREE.BufferGeometry[]) {
 }
 
 /** Drop triangles whose average normal matches. The geometry is non-indexed. */
-function withoutFaces(geometry: THREE.BufferGeometry, reject: (normal: THREE.Vector3) => boolean) {
+function withoutFaces(geometry: THREE.BufferGeometry, reject: (normal: THREE.Vector3, centroid: THREE.Vector3) => boolean) {
   const position = geometry.getAttribute("position");
   const normal = geometry.getAttribute("normal");
   const uv = geometry.getAttribute("uv");
   const kept: number[] = [];
   const face = new THREE.Vector3();
+  const centroid = new THREE.Vector3();
+  const cornerPoint = new THREE.Vector3();
   for (let index = 0; index < position.count; index += 3) {
     face.set(0, 0, 0);
+    centroid.set(0, 0, 0);
     for (let corner = 0; corner < 3; corner += 1) {
       face.x += normal.getX(index + corner);
       face.y += normal.getY(index + corner);
       face.z += normal.getZ(index + corner);
+      cornerPoint.set(position.getX(index + corner), position.getY(index + corner), position.getZ(index + corner));
+      centroid.add(cornerPoint);
     }
-    if (reject(face.multiplyScalar(1 / 3))) continue;
+    if (reject(face.multiplyScalar(1 / 3), centroid.multiplyScalar(1 / 3))) continue;
     kept.push(index, index + 1, index + 2);
   }
   const next = new THREE.BufferGeometry();
@@ -6581,13 +6586,17 @@ export function addCabinet(
     cabinet.add(body);
     bodyMeshes.push(body);
     if (specialty.kind === "farmhouse-sink") {
-      // The carcass is a closed box. Its wood top shows through the bowl, and
-      // its front face shows as a tan line between the apron and the rim.
-      // A farm sink base is open on top and open across the apron.
-      const openShell = withoutFaces(body.geometry.toNonIndexed(), (normal) => normal.y > 0.85 || normal.z > 0.85);
+      // The apron owns everything above its bottom edge. A full-height side or
+      // back panel leaves its top edge showing as a wood line between the apron
+      // and the bowl, so the carcass stops where the apron starts.
+      const apronZoneFt = farmhouseSinkBaseFaceLayout(widthIn, bodyHeight / INCH).apronZoneIn * INCH;
+      const lowerHeight = Math.max(0.2, bodyHeight - apronZoneFt);
+      const shortened = new THREE.BoxGeometry(bodyWidth, lowerHeight, fillerBodyDepth);
       body.geometry.dispose();
-      body.geometry = openShell;
-      body.userData = { ...body.userData, farmhouseOpenTop: true, farmhouseOpenFront: true };
+      body.geometry = withoutFaces(shortened.toNonIndexed(), (normal) => normal.y > 0.85 || normal.z > 0.85);
+      shortened.dispose();
+      body.position.y -= apronZoneFt / 2;
+      body.userData = { ...body.userData, farmhouseOpenTop: true, farmhouseOpenFront: true, farmhouseApronZoneClear: true };
     }
   }
 
@@ -9274,6 +9283,8 @@ export function addCabinet(
     // the opening that reads as a face frame (the reported WEOS defect), so the
     // carcass relies on its own shaded panel faces instead.
     if (isWallOpenShelf || isCurvedOpenShelf) continue;
+    // The open farmhouse shell's remaining edges are the tan line behind the apron.
+    if (bodyMesh.userData?.farmhouseApronZoneClear) continue;
     const edges = new THREE.LineSegments(
       new THREE.EdgesGeometry(bodyMesh.geometry),
       new THREE.LineBasicMaterial({ color: "#332d25", transparent: true, opacity: 0.34 }),
@@ -11508,6 +11519,27 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     );
     apron.userData = { sinkApronFront: true, sinkApronMaterial: isGunmetalBlack ? "gunmetal-black" : isSourceMeasuredStainlessApron ? "stainless-steel" : "fireclay", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
     addFixtureNode(apron);
+    // A manufacturer mesh replaces the apron face. This deck stays, in the sink
+    // material, and fills the front rim back to the bowl so the cabinet cannot
+    // show through that gap.
+    const deckDepth = Math.max(0.04, apronThickness - 0.01);
+    const deckHeight = Math.min(exteriorHeight * 0.45, 2.25 * INCH);
+    const deck = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        side === "left" || side === "right" ? deckDepth : width,
+        deckHeight,
+        side === "left" || side === "right" ? depth : deckDepth,
+      ),
+      apronMaterial,
+    );
+    const deckInset = (apronThickness - deckDepth) / 2;
+    deck.position.set(
+      apron.position.x - sidewaysDirection * deckInset,
+      farmhouseApronTopY(countertopTop) - deckHeight / 2 - 0.004,
+      apron.position.z - direction * deckInset,
+    );
+    deck.userData = { sinkApronDeck: true, sinkApronMaterial: apron.userData.sinkApronMaterial, fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
+    addFixtureNode(deck);
   }
   if (sink.type === "double" || measuredDoubleBowl) {
     const dividerMaterial = sinkInteriorStencilMaterial(steel.clone(), sinkStencilRef);
