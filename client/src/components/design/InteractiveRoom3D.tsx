@@ -6591,11 +6591,15 @@ export function addCabinet(
       // and the bowl, so the carcass stops where the apron starts.
       const apronZoneFt = farmhouseSinkBaseFaceLayout(widthIn, bodyHeight / INCH).apronZoneIn * INCH;
       const lowerHeight = Math.max(0.2, bodyHeight - apronZoneFt);
-      const shortened = new THREE.BoxGeometry(bodyWidth, lowerHeight, fillerBodyDepth);
+      // Pull the box back from the apron. Anything left at the front shows as a
+      // wood band between the apron wall and the bowl.
+      const frontCut = 4 * INCH;
+      const shortened = new THREE.BoxGeometry(bodyWidth, lowerHeight, Math.max(0.2, fillerBodyDepth - frontCut));
       body.geometry.dispose();
       body.geometry = withoutFaces(shortened.toNonIndexed(), (normal) => normal.y > 0.85 || normal.z > 0.85);
       shortened.dispose();
       body.position.y -= apronZoneFt / 2;
+      body.position.z -= frontCut / 2;
       body.userData = { ...body.userData, farmhouseOpenTop: true, farmhouseOpenFront: true, farmhouseApronZoneClear: true };
     }
   }
@@ -11539,24 +11543,40 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
     );
     apron.userData = { sinkApronFront: true, sinkApronMaterial: isGunmetalBlack ? "gunmetal-black" : isSourceMeasuredStainlessApron ? "stainless-steel" : "fireclay", fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
     addFixtureNode(apron);
-    // The inside of the wall, straight down, in the sink material. It covers the
-    // carcass behind the apron without adding a horizontal surface.
-    const innerFace = new THREE.Mesh(
-      new THREE.BoxGeometry(
-        side === "left" || side === "right" ? 0.012 : width * 0.992,
-        exteriorHeight,
-        side === "left" || side === "right" ? depth * 0.992 : 0.012,
-      ),
-      apronMaterial,
+    // Full-width basin wall welded to the inside of the apron. Its top is the
+    // bowl color, not a counter, and it closes the cabinet that otherwise shows
+    // between the thin wall and the bowl.
+    const lateral = side === "left" || side === "right" ? depth : width;
+    const shellDepth = Math.max(farmBowlReach + 0.06, 0.08);
+    const shellHeight = Math.max(0.2, bowlHeight + (1 / 16) * INCH);
+    const shellBox = new THREE.BoxGeometry(
+      side === "left" || side === "right" ? shellDepth : lateral,
+      shellHeight,
+      side === "left" || side === "right" ? lateral : shellDepth,
     );
-    const innerShift = apronThickness / 2 - 0.008;
-    innerFace.position.set(
-      apron.position.x - sidewaysDirection * innerShift,
-      apron.position.y,
-      apron.position.z - direction * innerShift,
+    const shellMaterial = new THREE.MeshPhysicalMaterial({
+      color: basinInterior.color.clone(),
+      metalness: basinInterior.metalness,
+      roughness: basinInterior.roughness,
+      side: THREE.DoubleSide,
+    });
+    const shell = new THREE.Mesh(withoutFaces(shellBox.toNonIndexed(), (normal) => {
+      if (side === "left") return normal.x < -0.5;
+      if (side === "right") return normal.x > 0.5;
+      if (side === "bottom") return normal.z > 0.5;
+      return normal.z < -0.5;
+    }), shellMaterial);
+    shellBox.dispose();
+    shell.geometry.computeVertexNormals();
+    const overlap = 0.02;
+    shell.position.set(
+      apron.position.x - sidewaysDirection * (apronThickness / 2 - overlap + shellDepth / 2),
+      farmhouseApronTopY(countertopTop) - shellHeight / 2,
+      apron.position.z - direction * (apronThickness / 2 - overlap + shellDepth / 2),
     );
-    innerFace.userData = { sinkApronInner: true, sinkApronMaterial: apron.userData.sinkApronMaterial, fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
-    addFixtureNode(innerFace);
+    shell.renderOrder = 19;
+    shell.userData = { sinkApronBasin: true, fixtureDetail: true, pelicanProfileId: sink.pelicanProfileId };
+    addFixtureNode(shell);
   }
   if (sink.type === "double" || measuredDoubleBowl) {
     const dividerMaterial = sinkInteriorStencilMaterial(steel.clone(), sinkStencilRef);
