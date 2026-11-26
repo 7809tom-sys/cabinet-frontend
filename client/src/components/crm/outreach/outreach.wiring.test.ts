@@ -8,7 +8,7 @@ const panel = readFileSync(new URL("./OutreachPanel.tsx", import.meta.url), "utf
 describe("admin CRM import + outreach wiring", () => {
   it("shows the admin import and the Outreach view only in the admin master CRM", () => {
     expect(board).toContain("{isMasterView && <CustomerListImportAdminDialog />}");
-    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors", "cabinetShops"] as const) : (["board", "table", "email"] as const)');
+    expect(board).toContain('isMasterView ? (["board", "table", "email", "outreach", "distributors", "cabinetShops", "fabricators"] as const) : (["board", "table", "email"] as const)');
     expect(board).toContain('crmView === "outreach" && isMasterView ? (');
     // The Outreach pill (with its explainer) still switches to the Outreach view.
     expect(board).toContain("<OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />");
