@@ -64,6 +64,10 @@ export default function Countertops() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [line1, setLine1] = useState("");
+  const [line2, setLine2] = useState("");
+  const [city, setCity] = useState("");
+  const [stateCode, setStateCode] = useState("");
   const [zip, setZip] = useState("");
   const [material, setMaterial] = useState<string>(countertopMaterial(selectedId).name);
   const [sqft, setSqft] = useState("");
@@ -79,6 +83,11 @@ export default function Countertops() {
   });
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  // The fabrication shop has to deliver the finished top, so the address is required.
+  const addressComplete = line1.trim().length >= 4
+    && city.trim().length >= 2
+    && stateCode.trim().length === 2
+    && zip.replace(/\D/g, "").length >= 5;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -86,12 +95,23 @@ export default function Countertops() {
       toast.error(t("ct_valid_email_err"));
       return;
     }
+    if (!addressComplete) {
+      toast.error("Add the homeowner's full address: street, city, state and ZIP.");
+      return;
+    }
     const sqftNum = Number(sqft);
     submit.mutate({
       contactName: name || undefined,
       contactEmail: email,
       contactPhone: phone || undefined,
-      zip: zip || undefined,
+      zip: zip.trim(),
+      jobSiteAddress: {
+        line1: line1.trim(),
+        line2: line2.trim() || undefined,
+        city: city.trim(),
+        state: stateCode.trim().toUpperCase(),
+        zip: zip.trim(),
+      },
       material: material || undefined,
       squareFeet: Number.isFinite(sqftNum) && sqftNum > 0 ? sqftNum : 0,
       linearFeet: 0,
@@ -211,15 +231,33 @@ export default function Countertops() {
                         <Input id="ct-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("ct_optional")} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="ct-zip">{t("ct_zip")}</Label>
-                        <Input id="ct-zip" value={zip} onChange={(e) => setZip(e.target.value)} placeholder={t("ct_optional")} />
+                    <div className="grid gap-3 rounded-lg border border-border p-3">
+                      <div>
+                        <p className="text-sm font-medium">Installation address (homeowner) *</p>
+                        <p className="text-xs text-muted-foreground">The fabrication shop needs a real address to deliver to.</p>
                       </div>
-                      <div className="grid gap-1.5">
-                        <Label htmlFor="ct-sqft">{t("ct_approx_sqft")}</Label>
-                        <Input id="ct-sqft" inputMode="decimal" value={sqft} onChange={(e) => setSqft(e.target.value)} placeholder="e.g. 45" />
+                      <Input value={line1} onChange={(e) => setLine1(e.target.value)} placeholder="Street address" aria-label="Street address" required />
+                      <Input value={line2} onChange={(e) => setLine2(e.target.value)} placeholder="Apt, suite, unit (optional)" aria-label="Address line 2" />
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="grid gap-1.5">
+                          <Label htmlFor="ct-city">City</Label>
+                          <Input id="ct-city" value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" required />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="grid gap-1.5">
+                            <Label htmlFor="ct-state">State</Label>
+                            <Input id="ct-state" value={stateCode} onChange={(e) => setStateCode(e.target.value.toUpperCase().slice(0, 2))} placeholder="WI" maxLength={2} required />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <Label htmlFor="ct-zip">ZIP</Label>
+                            <Input id="ct-zip" value={zip} onChange={(e) => setZip(e.target.value)} placeholder="53186" inputMode="numeric" required />
+                          </div>
+                        </div>
                       </div>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="ct-sqft">{t("ct_approx_sqft")}</Label>
+                      <Input id="ct-sqft" inputMode="decimal" value={sqft} onChange={(e) => setSqft(e.target.value)} placeholder="e.g. 45" />
                     </div>
                     <div className="grid gap-1.5">
                       <Label htmlFor="ct-material">{t("ct_material")}</Label>
