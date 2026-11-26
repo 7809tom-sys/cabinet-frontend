@@ -52,6 +52,7 @@ import { crmDealWebsite } from "@/lib/crmDealWebsite";
 import { crmQuickInvoiceTotal, openCrmQuickInvoicePdf, type CrmQuickInvoiceBrand, type CrmQuickInvoiceLine } from "@/lib/crmQuickInvoice";
 import { invoiceEmailButtonDisabled, invoiceEmailSourceLabel, suggestedInvoiceEmail, usableInvoiceEmail, type CrmInvoiceRecipient } from "@/lib/crmInvoiceEmail";
 import { DistributorSiteCompare } from "@/components/crm/DistributorSiteCompare";
+import { FabricatorsView } from "@/components/crm/FabricatorsView";
 import { CountertopQuoteInvoicePicker } from "@/components/crm/CountertopQuoteInvoicePicker";
 import { countertopInvoiceErrorMessage, countertopInvoiceGate, type CountertopQuoteInvoiceOption } from "@/lib/countertopInvoiceGate";
 import { CabinetShopUploadDialog } from "@/components/crm/CabinetShopUploadDialog";
@@ -205,7 +206,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
     const requested = Number(new URLSearchParams(window.location.search).get("deal"));
     return Number.isInteger(requested) && requested > 0 ? requested : null;
   });
-  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors" | "cabinetShops">("board");
+  const [crmView, setCrmView] = useState<"board" | "table" | "email" | "outreach" | "distributors" | "cabinetShops" | "fabricators">("board");
   // Cabinet Shops view: the picked state (null until picked, then FL first) and
   // list/board layout, remembered on this browser.
   const [cabinetShopPrefs, setCabinetShopPrefs] = useState<{ state: string | null; layout: CabinetShopLayout }>(() =>
@@ -376,7 +377,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {(isMasterView ? (["board", "table", "email", "outreach", "distributors", "cabinetShops"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
+        {(isMasterView ? (["board", "table", "email", "outreach", "distributors", "cabinetShops", "fabricators"] as const) : (["board", "table", "email"] as const)).map((view) => view === "outreach" ? (
           <OutreachViewButton key={view} active={crmView === view} onSelect={() => setCrmView(view)} />
         ) : (
           <button
@@ -385,7 +386,7 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
             onClick={() => setCrmView(view)}
             className={`rounded-full px-3 py-1 text-sm font-medium ${crmView === view ? "bg-[#1a2b4a] text-white" : "bg-white text-[#1a2b4a] border border-slate-200"}`}
           >
-            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : view === "cabinetShops" ? `Cabinet Shops (${cabinetShopDeals.length})` : `Distributors (${distributorDeals.length})`}
+            {view === "board" ? "Board" : view === "table" ? "Table" : view === "email" ? "Email" : view === "cabinetShops" ? `Cabinet Shops (${cabinetShopDeals.length})` : view === "fabricators" ? "Fabricators" : `Distributors (${distributorDeals.length})`}
           </button>
         ))}
         {isMasterView && <CabinetShopUploadDialog />}
@@ -467,16 +468,21 @@ export function CrmBoard({ lang = "en", affiliateId, contractorUserId }: { lang?
 
       {isMasterView && <CrmPipelineTotals totals={summarizeAffiliatePipelines(deals, affiliateNames ?? {})} />}
 
+      {/* Deal stats describe the deal views; the Fabricators view has no deals, so they would read as a false pipeline. */}
+      {crmView !== "fabricators" && (
       <div className="grid grid-cols-3 gap-3 mb-6 max-w-lg">
         <StatChip icon={<CircleDollarSign className="h-4 w-4" />} label={t.pipelineValue} value={money(String(openValue))} />
         <StatChip icon={<Inbox className="h-4 w-4" />} label={t.openDeals} value={String(openCount)} />
         <StatChip icon={<CircleDollarSign className="h-4 w-4" />} label={t.won} value={String(wonCount)} />
       </div>
+      )}
 
       {isLoading ? (
         <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-64 rounded-lg" />)}
         </div>
+      ) : crmView === "fabricators" && isMasterView ? (
+        <FabricatorsView lang={lang} />
       ) : crmView === "table" || cabinetShopListOpen ? (
         // The Table view, and the Cabinet Shops "Follow-up list": status, due date
         // (next follow-up), priority and value edit inline; a row opens the deal for notes and email.
