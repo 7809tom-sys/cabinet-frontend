@@ -19,6 +19,7 @@ import {
   Mail,
   Phone,
   MapPin,
+  Trash2,
   ShieldCheck,
   Hammer,
   Layers,
@@ -360,6 +361,16 @@ function VendorApplications() {
   );
 }
 
+/**
+ * Mirrors shared/countertopQuoteJunk.ts in cabinet-backend, which decides junk
+ * server-side. The admin only labels what the server already flagged.
+ */
+const COUNTERTOP_QUOTE_JUNK_LABELS: Record<string, string> = {
+  test_email_domain: "test email domain",
+  test_note: "test note",
+  incomplete_address: "no delivery address",
+};
+
 function CountertopQuotes() {
   const utils = trpc.useUtils();
   const { data: quotes, isLoading, error, refetch } = trpc.design.listCountertopQuotes.useQuery();
@@ -367,6 +378,11 @@ function CountertopQuotes() {
   const [activeQuoteId, setActiveQuoteId] = useState<number | null>(null);
   const update = trpc.design.updateCountertopQuote.useMutation({
     onSuccess: () => { utils.design.listCountertopQuotes.invalidate(); toast.success("Quote updated"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  // Server decides which rows are junk (canDelete/junkReason); the button only reflects it.
+  const deleteQuote = trpc.design.deleteCountertopQuote.useMutation({
+    onSuccess: () => { utils.design.listCountertopQuotes.invalidate(); toast.success("Junk quote deleted"); },
     onError: (e: any) => toast.error(e.message),
   });
   const quoteIds = useMemo(() => (quotes ?? []).map((q: any) => Number(q.id)).filter((id: number) => Number.isFinite(id)), [quotes]);
@@ -385,6 +401,11 @@ function CountertopQuotes() {
               <div className="flex items-center gap-2">
                 <span className="font-semibold">{q.contactEmail}</span>
                 <Badge variant={statusVariant(q.status)} className="capitalize">{q.status}</Badge>
+                {q.canDelete && (
+                  <Badge variant="outline" className="text-xs font-normal text-muted-foreground">
+                    {COUNTERTOP_QUOTE_JUNK_LABELS[q.junkReason as keyof typeof COUNTERTOP_QUOTE_JUNK_LABELS] ?? "junk"}
+                  </Badge>
+                )}
               </div>
               <div className="text-sm text-muted-foreground">
                 {Number(q.squareFeet).toFixed(1)} sq ft · {Number(q.linearFeet).toFixed(1)} lin ft
@@ -405,11 +426,39 @@ function CountertopQuotes() {
                 </div>
               );
             })()}
+            <div className="flex items-start gap-1.5 text-sm">
+              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Homeowner / job site</span>
+              {q.jobSiteAddress ? (
+                <span>{q.jobSiteAddress}</span>
+              ) : (
+                <span className="italic text-muted-foreground">not collected</span>
+              )}
+              {q.jobSiteAddress && !q.jobSiteAddressVerified && (
+                <Badge variant="outline" className="text-[10px] font-normal text-amber-700">unverified</Badge>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Input type="number" placeholder={QUOTED_PRICE_IS_PER_SLAB ? "Price per slab" : "Quoted price"} className="w-40" defaultValue={q.quotedPrice ? Number(q.quotedPrice) : undefined} id={`qp-${q.id}`} />
               <Button size="sm" variant="outline" onClick={() => { const el = document.getElementById(`qp-${q.id}`) as HTMLInputElement | null; const price = el?.value ? Number(el.value) : undefined; update.mutate({ id: q.id, status: "quoted", quotedPrice: price }); }}>Save Quote</Button>
               <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: q.id, status: "won" })}>Mark Won</Button>
               <Button size="sm" variant="ghost" onClick={() => update.mutate({ id: q.id, status: "lost" })}>Mark Lost</Button>
+              {q.canDelete && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  disabled={deleteQuote.isPending}
+                  onClick={() => {
+                    const reason = COUNTERTOP_QUOTE_JUNK_LABELS[q.junkReason as keyof typeof COUNTERTOP_QUOTE_JUNK_LABELS] ?? "junk";
+                    if (window.confirm(`Delete this quote from ${q.contactEmail}?\n\nFlagged as: ${reason}.\n\nThis removes the row permanently. A quote with a real email and a complete address is not deletable here - mark it lost instead.`)) {
+                      deleteQuote.mutate({ id: q.id });
+                    }
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete junk quote
+                </Button>
+              )}
               <Button size="sm" variant="secondary" className="ml-auto" onClick={() => { setActiveQuoteId(activeQuoteId === q.id ? null : q.id); setMatchZip(q.zip ?? ""); }}>
                 <Search className="h-3.5 w-3.5 mr-1" /> Find Pros
               </Button>
