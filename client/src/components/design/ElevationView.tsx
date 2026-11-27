@@ -3364,29 +3364,49 @@ export function DoorFront({ kind, edge, face, doors, drawers, isWall, doorSample
     // historic single false tilt-out front so an unconfigured sink base looks
     // exactly as it always did.
     const authoredDrawerCount = numberOfDrawers != null || drawerLayout != null;
-    const drawerRowCount = authoredDrawerCount
+    const drawerFrontCount = authoredDrawerCount
       ? Math.max(0, drawers ?? numberOfDrawers ?? 0)
       : 1;
     const falseFrontPct = 20;
     const cols = Math.max(1, doorCount || 2);
     const colW = 100 / cols;
-    // A single drawer (or the historic false tilt-out front) keeps the full 20%
-    // row. More rows split that same band so the door region is unchanged.
-    const rowPct = drawerRowCount > 1 ? falseFrontPct / drawerRowCount : falseFrontPct;
+    // A sink base's false fronts are ONE row over its doors, one per door
+    // column, the same as the side-by-side drawers of a B33-and-wider door base.
+    // Two fronts stacked full width made the sink base look like a different
+    // cabinet from the base beside it (owner, Nov 26 2026).
+    const frontCols = drawerFrontCount > 0 ? Math.min(drawerFrontCount, cols) : 0;
+    const frontW = frontCols > 0 ? 100 / frontCols : 100;
     return withFace(
       <>
-        {drawerRowCount > 0 && Array.from({ length: drawerRowCount }).map((_, row) => (
+        {frontCols > 0 && (
           <div
-            key={`sink-drawer-${row}`}
-            data-sink-base-false-front={drawerRowCount === 1 ? "true" : undefined}
-            data-sink-base-drawer-row={row + 1}
+            data-sink-base-false-front="true"
+            data-sink-base-drawer-row="1"
+            data-sink-base-false-front-columns={frontCols}
             className="absolute left-0 right-0"
-            style={{ top: `${rowPct * row}%`, height: `${rowPct}%` }}
+            style={{ top: 0, height: `${falseFrontPct}%` }}
           >
-            <StylePanel kind={kind} edge={edge} face={face} drawer doorSampleUrl={doorSampleUrl} drawerSampleUrl={drawerSampleUrl} frameInsetPx={frameInsetPx} faceWidthIn={cabinetWidthIn ?? 24} faceHeightIn={(cabinetHeightIn ?? 34.5) * (rowPct / 100)} />
+            {Array.from({ length: frontCols }).map((_, column) => (
+              <div key={`sink-drawer-${column}`} className="absolute top-0 bottom-0" style={{ left: `${frontW * column}%`, width: `${frontW}%` }}>
+                {column > 0 && (
+                  <div className="absolute top-0 bottom-0 left-0" style={{ width: 2, background: stroke }} />
+                )}
+                <StylePanel
+                  kind={kind}
+                  edge={edge}
+                  face={face}
+                  drawer
+                  doorSampleUrl={doorSampleUrl}
+                  drawerSampleUrl={drawerSampleUrl}
+                  frameInsetPx={frameInsetPx}
+                  faceWidthIn={(cabinetWidthIn ?? 24) / frontCols}
+                  faceHeightIn={(cabinetHeightIn ?? 34.5) * (falseFrontPct / 100)}
+                />
+              </div>
+            ))}
           </div>
-        ))}
-        {/* rail between the drawer row(s) and the doors */}
+        )}
+        {/* rail between the drawer row and the doors */}
         <div className="absolute left-0 right-0" style={{ top: `${falseFrontPct}%`, height: 2, background: stroke }} />
         {/* door region: N side-by-side doors */}
         {Array.from({ length: cols }).map((_, i) => (

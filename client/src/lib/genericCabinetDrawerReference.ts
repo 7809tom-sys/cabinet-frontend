@@ -4,6 +4,7 @@ export {
   STANDARD_BASE_SINGLE_DRAWER_GENERIC_IMAGE,
   isStandardDoorBase,
   parsedDrawerLayoutRows,
+  sinkBaseFalseFrontColumns,
   standardBaseDoorCount,
   standardBaseDoorSaveError,
   standardBaseFaceReference,

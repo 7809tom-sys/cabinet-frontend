@@ -137,7 +137,15 @@ describe("farmhouse sink base 3D front composition (real meshes)", () => {
       placement: "base", x: 51, y: 0, width: 36, depth: 24, height: 34.5, rotation: 0, numberOfDoors: 2, numberOfDrawers: 0,
     } as never;
     const { nodes } = build(placed);
-    expect(nodes.filter((node) => node.userData.falseDrawerFront)).toHaveLength(2);
+    const fronts = nodes.filter((node) => node.userData.falseDrawerFront).map(boxIn);
+    expect(fronts).toHaveLength(2);
+    // Two false fronts over a door pair sit SIDE BY SIDE in one row, the same
+    // way a B36's two drawers do, never stacked full width (owner, Nov 26 2026).
+    expect(Math.abs(fronts[0]!.minY - fronts[1]!.minY)).toBeLessThan(0.02);
+    expect(Math.abs(fronts[0]!.height - fronts[1]!.height)).toBeLessThan(0.02);
+    expect(Math.min(fronts[0]!.maxX, fronts[1]!.maxX)).toBeLessThanOrEqual(Math.max(fronts[0]!.minX, fronts[1]!.minX) + 1.5);
+    expect(fronts[0]!.width).toBeLessThan(19);
+    expect(fronts[1]!.width).toBeLessThan(19);
     expect(nodes.filter((node) => node.userData.farmhouseBaseDoor)).toHaveLength(0);
     expect(nodes.filter((node) => node.userData.farmhouseApronFront)).toHaveLength(0);
   });

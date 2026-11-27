@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveDoorDrawerCounts } from "@/lib/cabinetGraphics";
 import {
   isStandardDoorBase,
+  sinkBaseFalseFrontColumns,
   standardBaseDoorCount,
   standardBaseDoorSaveError,
   standardBaseFaceReference,
@@ -87,5 +88,21 @@ describe("standard base door and drawer reference", () => {
     expect(standardBaseDoorSaveError("B-18", 1)).toBeNull();
     expect(standardBaseDoorSaveError("B30", 2)).toBeNull();
     expect(standardBaseDoorSaveError("W2130", 2)).toBeNull();
+  });
+
+  it("puts a sink base's two false fronts side by side, one per door, not stacked", () => {
+    // SB36 over a door pair: one row of two fronts, like the B36 beside it.
+    expect(sinkBaseFalseFrontColumns("SB36", 2, 2)).toBe(2);
+    expect(sinkBaseFalseFrontColumns("SB-33", 2, 2)).toBe(2);
+    // One front stays full width.
+    expect(sinkBaseFalseFrontColumns("SB30", 2, 1)).toBe(1);
+    // A full-height sink base has no false fronts.
+    expect(sinkBaseFalseFrontColumns("SB36FH", 2, 0)).toBe(0);
+    // Never more fronts than doors.
+    expect(sinkBaseFalseFrontColumns("SB21", 1, 2)).toBe(1);
+    // Every other family keeps its own face.
+    for (const masterCode of ["B36", "VSB36", "FSB36", "DB36", "CSB36"]) {
+      expect(sinkBaseFalseFrontColumns(masterCode, 2, 2)).toBe(masterCode === "CSB36" ? 2 : null);
+    }
   });
 });
