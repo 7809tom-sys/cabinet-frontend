@@ -71,29 +71,26 @@ export function placeSinkBridges(input: {
   const sinks = working.filter((item) => item.placement === "base" && isSinkBaseCabinet(item));
   for (const sink of sinks) {
     if (sinkHasWindowAbove(sink, input.openings, input.room)) continue;
-    // A later retile may have laid a full-height upper over the sink. Clear it
-    // so the short matching bridge can sit on the 72 in datum.
-    if (!alreadyBridged(working, sink, input.room)) {
-      const wall = cabinetWall(sink, input.room);
-      const start = wallRunOffset(sink, wall, input.room);
-      const end = start + wallRunSpan(sink, wall, input.room);
-      const before = working.length;
-      working = working.filter((item) => {
-        if (item.placement !== "wall" || cabinetWall(item, input.room) !== wall) return true;
-        if (Math.abs((item.mountBottom ?? 0) - OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM) <= 0.6) return true;
-        const itemStart = wallRunOffset(item, wall, input.room);
-        const itemEnd = itemStart + wallRunSpan(item, wall, input.room);
-        const overlap = Math.min(end, itemEnd) - Math.max(start, itemStart);
-        return overlap < 1;
-      });
-      if (working.length !== before) {
-        notes.push(`A full-height wall cabinet was removed over ${sink.masterCode} so a short bridge could be placed for headroom at the sink.`);
-      }
-    }
     if (alreadyBridged(working, sink, input.room)) continue;
-    const widthIn = wallRunSpan(sink, cabinetWall(sink, input.room), input.room);
+    const wall = cabinetWall(sink, input.room);
+    const start = wallRunOffset(sink, wall, input.room);
+    const end = start + wallRunSpan(sink, wall, input.room);
+    const widthIn = wallRunSpan(sink, wall, input.room);
     const neighborHeight = input.wallCabinetHeightIn;
     const mapped = microwaveBridgeHeightForNeighbor(neighborHeight);
+    // What fills the span over this sink right now. Clearing it before a bridge
+    // is known to exist is what left a sink with no wall cabinet over it (owner
+    // report, Nov 26 2026). A bridge never turns a closed run into an open one.
+    const covering = working.filter((item) => {
+      if (item.placement !== "wall" || cabinetWall(item, input.room) !== wall) return false;
+      if (Math.abs((item.mountBottom ?? 0) - OVER_RANGE_MICROWAVE_BRIDGE_MOUNT_BOTTOM) <= 0.6) return false;
+      const itemStart = wallRunOffset(item, wall, input.room);
+      const itemEnd = itemStart + wallRunSpan(item, wall, input.room);
+      return Math.min(end, itemEnd) - Math.max(start, itemStart) >= 1;
+    });
+    const spanState = covering.length > 0
+      ? `the ${covering.map((item) => item.masterCode).join(" + ")} over ${sink.masterCode} was kept, which keeps the run closed`
+      : `no wall cabinet was over ${sink.masterCode}, so the span stays open`;
     const source = overRangeBridgeFor({
       rangeWidthIn: widthIn,
       wallCabinetHeightIn: neighborHeight,
@@ -106,23 +103,22 @@ export function placeSinkBridges(input: {
         code: "sink-bridge-unavailable",
         severity: "warning",
         title: `No bridge over ${sink.masterCode}`,
-        detail: `The selected line sells no ${Math.round(widthIn)}″-wide bridge (or a single-door cabinet that can turn horizontal) to match the ${neighborHeight}″ wall cabinets, so nothing was invented above the sink. A window is not checked, so a short bridge was required for headroom.`,
+        detail: `The selected line sells no ${Math.round(widthIn)}″-wide bridge (or a single-door cabinet that can turn horizontal) to match the ${neighborHeight}″ wall cabinets, so nothing was invented above the sink. A window is not checked, so a short bridge was required for headroom; ${spanState}.`,
       });
-      notes.push(`No catalog bridge matches the ${Math.round(widthIn)}″ ${sink.masterCode}, so the span over the sink was left open.`);
+      notes.push(`No catalog bridge matches the ${Math.round(widthIn)}″ ${sink.masterCode}, so ${spanState}.`);
       continue;
     }
-    const wall = cabinetWall(sink, input.room);
-    const start = wallRunOffset(sink, wall, input.room) + widthIn / 2 - dim(source.width, widthIn) / 2;
+    const bridgeStart = wallRunOffset(sink, wall, input.room) + widthIn / 2 - dim(source.width, widthIn) / 2;
     const depth = dim(source.depth, 12);
     const boxWidth = dim(source.width, widthIn);
-    const spot = wallPlacementAt(start, boxWidth, depth, wall as WallSide, input.room);
+    const spot = wallPlacementAt(bridgeStart, boxWidth, depth, wall as WallSide, input.room);
     if (!spot) {
       findings.push({
         ruleId: "sink-bridge-over-base",
         code: "sink-bridge-blocked",
         severity: "warning",
         title: `No bridge over ${sink.masterCode}`,
-        detail: `${source.masterCode} could not be seated over the sink.`,
+        detail: `${source.masterCode} could not be seated over the sink; ${spanState}.`,
       });
       continue;
     }
@@ -146,16 +142,24 @@ export function placeSinkBridges(input: {
       styleId: input.styleId,
       ...(source.turnedSideways ? { turnedSideways: true } : {}),
     };
-    const accepted = appendCollisionFreePlacements(working, [bridge], input.room);
+    // The full-height upper over the sink steps aside only once the bridge is
+    // known to seat there. A blocked bridge keeps it, so the run never opens.
+    const cleared = covering.length > 0
+      ? working.filter((item) => !covering.some((cover) => cover.uid === item.uid))
+      : working;
+    const accepted = appendCollisionFreePlacements(cleared, [bridge], input.room);
     if (accepted.rejected.length > 0) {
       findings.push({
         ruleId: "sink-bridge-over-base",
         code: "sink-bridge-blocked",
         severity: "warning",
         title: `No bridge over ${sink.masterCode}`,
-        detail: `${source.masterCode} overlaps another cabinet or opening over the sink.`,
+        detail: `${source.masterCode} overlaps another cabinet or opening over the sink; ${spanState}.`,
       });
       continue;
+    }
+    if (cleared.length !== working.length) {
+      notes.push(`A full-height wall cabinet was removed over ${sink.masterCode} so a short bridge could be placed for headroom at the sink.`);
     }
     working = accepted.placed;
     added = true;
