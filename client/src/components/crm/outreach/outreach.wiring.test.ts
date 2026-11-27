@@ -16,13 +16,21 @@ describe("admin CRM import + outreach wiring", () => {
 
   it("adds a master-only Distributors view that narrows the stage board to distributor prospects", () => {
     expect(board).toContain('const distributorsViewOpen = crmView === "distributors" && (data as any)?.isMasterView === true;');
-    expect(board).toContain("const viewDeals = distributorsViewOpen ? distributorDeals : cabinetShopsViewOpen ? cabinetShopStateDeals : mondayDeals;");
+    // Each prospect view narrows the same board; the last one listed wins when a
+    // view is open, and the plain board is the fallback.
+    expect(board).toContain("const viewDeals = distributorsViewOpen");
+    expect(board).toContain("? distributorDeals");
+    expect(board).toContain(": cabinetShopsViewOpen");
+    expect(board).toContain("? cabinetShopStateDeals");
+    expect(board).toContain(": fabricatorsViewOpen");
+    expect(board).toContain("? fabricatorStateDeals");
+    expect(board).toContain(": mondayDeals;");
     expect(board).toContain("`Distributors (${distributorDeals.length})`");
   });
 
   it("relabels the New column as Distributor only while the Distributors view is open", () => {
     expect(board).toContain('DISTRIBUTORS_VIEW_STAGE_LABELS: Partial<Record<CrmStage, string>> = { new: "Distributor" }');
-    expect(board).toContain("distributorsViewOpen\n    ? DISTRIBUTORS_VIEW_STAGE_LABELS\n    : cabinetShopsViewOpen ? CABINET_SHOPS_VIEW_STAGE_LABELS : undefined");
+    expect(board).toContain("distributorsViewOpen\n    ? DISTRIBUTORS_VIEW_STAGE_LABELS\n    : cabinetShopsViewOpen\n      ? CABINET_SHOPS_VIEW_STAGE_LABELS\n      : fabricatorsViewOpen ? FABRICATORS_VIEW_STAGE_LABELS : undefined");
     expect(board).toContain("stageLabels={stageLabelOverrides}");
     expect(board).toContain("stageLabelOverrides?.[stage] ?? CRM_STAGE_LABELS[stage][lang]");
   });
