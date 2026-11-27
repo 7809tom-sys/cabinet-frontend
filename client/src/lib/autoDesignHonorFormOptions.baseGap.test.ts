@@ -102,4 +102,19 @@ describe("Auto Design closes a base opening with the largest base plus filler", 
     const beside = added.filter((entry) => entry.at >= 63 - 0.01 && entry.at < 77.5 - 0.01);
     expect(beside).toEqual([{ code: "B12", at: 63, width: 12 }, { code: "TEST-BF3", at: 75, width: 2.5 }]);
   });
+
+  it("closes a trimmed 15 in opening beside a reserved span with the B15 that fits exactly", () => {
+    // 15 in is outside the narrow-base-plus-filler band (12-14.5), so the gap
+    // used to be skipped and left as bare wall next to the sink or corner.
+    let n = 0;
+    const result = closeRemainingRunGaps({
+      placed: [], room: ROOM, openings: [], wallIds: ["top"], baseCatalog: BASES, wallCatalog: [], fillers: FILLERS,
+      styleId: 1, makeUid: () => `e-${++n}`,
+      reservedSpans: [{ wallId: "top", start: 0, end: 30 }, { wallId: "top", start: 45, end: ROOM.width }],
+    });
+    const added = result.placed
+      .filter((p) => cabinetWall(p, ROOM) === "top")
+      .map((p) => ({ code: p.masterCode, at: Math.round(wallRunOffset(p, "top", ROOM) * 100) / 100, width: p.width }));
+    expect(added).toEqual([{ code: "B15", at: 30, width: 15 }]);
+  });
 });
