@@ -6,6 +6,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   MANUFACTURER_SINK_RIM_LIFT_FT,
   apronSideOf,
+  hideParametricBasin,
   orientManufacturerSink,
   placeManufacturerSink,
 } from "./pelicanCadSinkMesh";
@@ -116,5 +117,23 @@ describe("manufacturer sink seating", () => {
     placed.updateMatrixWorld(true);
     const drawn = new THREE.Box3().setFromObject(placed);
     expect(drawn.max.z).toBeCloseTo((20.75 * INCH) / 2, 5);
+  });
+});
+
+describe("a manufacturer drawing never leaves a hole where the basin was", () => {
+  it("keeps the measured bowl, floor and drain so the cabinet cannot show through, and replaces only the rim and apron", () => {
+    const flags = ["sinkBowl", "sinkBowlFloor", "sinkDrain", "sinkRim", "sinkApronFront"] as const;
+    const nodes = flags.map((flag) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.userData = { [flag]: true };
+      return mesh;
+    });
+    hideParametricBasin(new THREE.Group(), nodes);
+
+    expect(nodes[flags.indexOf("sinkBowl")]!.visible).toBe(true);
+    expect(nodes[flags.indexOf("sinkBowlFloor")]!.visible).toBe(true);
+    expect(nodes[flags.indexOf("sinkDrain")]!.visible).toBe(true);
+    expect(nodes[flags.indexOf("sinkRim")]!.visible).toBe(false);
+    expect(nodes[flags.indexOf("sinkApronFront")]!.visible).toBe(false);
   });
 });

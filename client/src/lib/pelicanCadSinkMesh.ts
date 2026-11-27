@@ -194,23 +194,25 @@ async function loadPrepared(asset: PelicanCadAsset): Promise<THREE.Object3D> {
   return task;
 }
 
-const PARAMETRIC_SINK_FLAGS = [
+const PARAMETRIC_SINK_REPLACED_FLAGS = [
   "sinkRim",
-  "sinkBowl",
-  "sinkBowlFloor",
-  "sinkDrain",
-  "sinkDrainRing",
-  "sinkDrainStrainer",
   "sinkApronFront",
-  "sinkBowlDivider",
 ] as const;
 
-function hideParametricBasin(holder: THREE.Object3D, ownedNodes: readonly THREE.Object3D[]): void {
+/**
+ * The drawing supplies the rim and the apron, which sit on or above the stone.
+ * Its basin hangs below the countertop and inside the closed cabinet box, so
+ * normal depth testing hides it: replacing the measured bowl as well leaves the
+ * sink reading as an empty hole with the cabinet's wood top showing through it
+ * (owner report, Nov 26 2026). The measured bowl, floor and drain stay, clipped
+ * to the counter opening, so the sink keeps its interior.
+ */
+export function hideParametricBasin(holder: THREE.Object3D, ownedNodes: readonly THREE.Object3D[]): void {
   for (const node of ownedNodes) {
     if (node === holder) continue;
     node.traverse((child) => {
       const data = child.userData as Record<string, unknown>;
-      if (PARAMETRIC_SINK_FLAGS.some((flag) => data[flag] === true)) child.visible = false;
+      if (PARAMETRIC_SINK_REPLACED_FLAGS.some((flag) => data[flag] === true)) child.visible = false;
     });
   }
 }
