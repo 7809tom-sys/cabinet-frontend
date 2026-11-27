@@ -27,6 +27,24 @@ describe("public Auto-Design Designer wiring", () => {
     expect(pageSource).toContain("runAutoDesignLayout");
   });
 
+  it("keeps one Auto-Design trigger at the left end of the toolbar, left of the view switch", () => {
+    const toolbar = pageSource.indexOf('data-testid="designer-toolbar"');
+    const button = pageSource.indexOf('data-testid="toolbar-auto-design-auto-build"', toolbar);
+    const viewSwitch = pageSource.indexOf('data-testid="primary-floor-plan-3d-switch"', toolbar);
+    expect(toolbar).toBeGreaterThan(-1);
+    expect(button).toBeGreaterThan(toolbar);
+    expect(viewSwitch).toBeGreaterThan(button);
+    // Kitchen only, on the one shared gate every other Auto-Design surface uses.
+    const gate = pageSource.lastIndexOf("{autoDesignAvailable && (", button);
+    expect(gate).toBeGreaterThan(-1);
+    expect(button - gate).toBeLessThan(200);
+    const control = pageSource.slice(button, button + 700);
+    expect(control).toContain("onClick={openAutoDesign}");
+    expect(control).toContain("disabled={!autoDesignControl.enabled}");
+    expect(control).toContain("title={autoDesignControl.title}");
+    expect(control).toContain('aria-label="Auto-Design"');
+  });
+
   it("keeps the empty-plan rule as the only way to gray it out", () => {
     expect(availabilitySource).toContain("export function autoDesignControlState(input: {");
     expect(availabilitySource).toContain("if (!input.audienceAllowed) {");

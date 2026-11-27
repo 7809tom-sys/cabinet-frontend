@@ -18151,6 +18151,28 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           )}
           <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{t("dt_sh_items", { n: placed.length })}</Badge>
         </div>
+        {/* Auto-Design sits at the LEFT of the toolbar (Tom, Nov 26 2026). The
+            room plan and the door style are already chosen by the time this bar
+            is in use, so the measured build is one click away instead of only
+            inside Room layout > Kitchen. It is the first control in the compact
+            (tablet-tier) toolbar, where the title is hidden, and it uses the
+            same shared `autoDesignControl` gate and title as every other
+            surface. Phones keep their own top-actions trigger. */}
+        {autoDesignAvailable && (
+          <button
+            type="button"
+            data-testid="toolbar-auto-design-auto-build"
+            data-auto-design-trigger="true"
+            onClick={openAutoDesign}
+            disabled={!autoDesignControl.enabled}
+            title={autoDesignControl.title}
+            aria-label="Auto-Design"
+            className="hidden h-8 shrink-0 items-center gap-1.5 rounded-md border border-[#d4a75a] bg-white px-2.5 text-xs font-semibold text-[#765416] transition-colors hover:bg-[#fff8e8] disabled:opacity-60 lg:inline-flex"
+          >
+            <Ruler className="h-3.5 w-3.5 shrink-0" />
+            <span>Auto-Design</span>
+          </button>
+        )}
         <InventoryDesignStockControl
           simulationActive={inventory.simulationActive}
           forcedOutOfStock={inventory.forcedOutOfStock}
@@ -18659,8 +18681,9 @@ function ScopedDesignTool({ affiliateSlug: affiliateSlugProp, catalogFilter }: {
           <FileText className="h-3.5 w-3.5" />
         </button>
 	        {/* Mobile: icon-only compact buttons in top bar. The Auto-Design trio comes
-	            first so a phone or tablet gets the same trigger, dishwasher-side
-	            picker, and blocked note the desktop toolbar has at 1024px+. Its row
+	            first so a phone gets the trigger, dishwasher-side picker, and blocked
+	            note beside it; the tablet and desktop toolbar keep the one Auto-Design
+	            button on the left and ask those questions in the dialog. Its row
 	            takes the full basis at 375px and folds back into the icon row at
 	            768px, so the two never overflow sideways. */}
 	        <div data-testid="mobile-designer-top-actions" className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 lg:hidden">
