@@ -284,6 +284,18 @@ describe("Auto-Design after the toolbar cleanup, on phone, tablet, and desktop",
     expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen from four fixed fixture anchors");
   });
 
+  it("keeps the Auto-Design trigger on the LEFT of the toolbar, before the view switch, at 1280px", async () => {
+    await renderDesigner(1280);
+    const trigger = screen.getByTestId("toolbar-auto-design-auto-build") as HTMLButtonElement;
+    expect(visibleAt(trigger, 1280)).toBe(true);
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.getAttribute("aria-label")).toBe("Auto-Design");
+    expect(trigger.getAttribute("title")).toBe("Auto-Design a kitchen from four fixed fixture anchors");
+    const viewSwitch = screen.getByTestId("primary-floor-plan-3d-switch");
+    // The room plan + door style live to the right; Auto-Design is the first action.
+    expect(Boolean(trigger.compareDocumentPosition(viewSwitch) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+  });
+
   for (const width of [375, 768, 1280]) {
     it(`the old desktop toolbar button, desktop dishwasher picker, More-sheet row and 3D button are gone at ${width}px`, async () => {
       await renderDesigner(width);
@@ -324,6 +336,9 @@ describe("Auto-Design after the toolbar cleanup, on phone, tablet, and desktop",
     await act(async () => {});
     expect(within(await screen.findByRole("dialog")).queryByText("Room layout")).toBeNull();
     expect(visibleAt(screen.getByTestId("mobile-auto-design-auto-build"), 768)).toBe(true);
+    // The tablet/desktop toolbar trigger is CSS-hidden at this width, so the
+    // phone row is the only Auto-Design route.
+    expect(visibleAt(screen.getByTestId("toolbar-auto-design-auto-build"), 768)).toBe(false);
   });
 
   it("the popup Auto-Design button closes the popup and opens the same measured-build dialog", async () => {

@@ -49,8 +49,12 @@ describe("Auto-Design moved into the room layout popup (tablet and phone)", () =
     expect(pageSource).toMatch(/\{autoDesignAvailable && autoDesignCornerStage && \(\s*<AutoDesignCornerDialog/);
   });
 
-  it("only the fullscreen (canvas-only) rail and 3D button still open Auto-Design directly", () => {
+  it("the fullscreen (canvas-only) rail, the 3D button and the toolbar-left trigger open Auto-Design directly", () => {
     expect(pageSource).toContain("onAutoDesign={autoDesignAvailable && canvasOnly ? openAutoDesign : undefined}");
     expect(pageSource).toContain("floatingAutoDesignAction={canvasOnly ? threeDFloatingAutoDesignAction : undefined}");
+    // The desktop / tablet toolbar keeps its own trigger on the left; phones use
+    // the top-actions button. Both call the same opener as the rail.
+    expect(pageSource).toContain('data-testid="toolbar-auto-design-auto-build"');
+    expect(pageSource).toContain('data-testid="mobile-auto-design-auto-build"');
   });
 });

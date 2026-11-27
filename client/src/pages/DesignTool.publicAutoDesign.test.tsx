@@ -305,6 +305,7 @@ describe("Auto-Design is public", () => {
     await signInAsVisitor();
 
     expect(screen.queryByTestId("admin-auto-design-auto-build")).toBeNull();
+    expect(screen.queryByTestId("toolbar-auto-design-auto-build")).toBeNull();
     expect(screen.queryByTestId("mobile-auto-design-auto-build")).toBeNull();
     expect(screen.queryByTestId("three-d-floating-auto-design")).toBeNull();
   });
