@@ -22,8 +22,10 @@ interface Props {
 
 /**
  * Opens collapsed: only Bathroom, Kitchen and Closet buttons. Choosing one
- * expands that room's existing layout choices. Auto-Design (kitchen only) lives
- * in the Kitchen section and calls the designer's existing opener.
+ * expands that room's existing layout choices. Auto-Design (kitchen only) is the
+ * LAST step of the Kitchen section: it sits under the room shapes and starter
+ * layouts, so the room plan and the door style come first and Auto-Design lays
+ * out the cabinets and the outline on that plan (Tom, Nov 26 2026).
  */
 export function RoomLayoutPopupPicker({ bathroom, kitchen, closet, autoDesign }: Props) {
   const [open, setOpen] = useState<RoomLayoutPopupRoom | null>(null);
@@ -62,25 +64,28 @@ export function RoomLayoutPopupPicker({ bathroom, kitchen, closet, autoDesign }:
       </div>
       {open && (
         <div id={`room-layout-popup-panel-${open}`} data-testid={`room-layout-popup-panel-${open}`} role="region" aria-label={`${ROOM_LAYOUT_POPUP_ROOMS.find((r) => r.id === open)?.label} layouts`} className="space-y-2">
+          {body[open]}
           {open === "kitchen" && autoDesign && (
             <div data-testid="room-layout-popup-auto-design-wrap" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-[#d4a75a]/70 bg-[#fff8e8]/60 px-2.5 py-1.5">
-              <button
-                type="button"
-                data-testid="room-layout-popup-auto-design"
-                onClick={autoDesign.onClick}
-                disabled={!autoDesign.enabled}
-                title={autoDesign.title}
-                aria-label="Auto-Design"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#d4a75a] bg-white px-2.5 py-1 text-sm font-semibold text-[#765416] transition-colors hover:bg-[#fff8e8] disabled:opacity-60"
-              >
-                <Ruler className="h-4 w-4" aria-hidden="true" /> Auto-Design
-              </button>
-              <p className="min-w-0 flex-1 text-xs leading-4 text-[#765416]">Answer a few questions about your kitchen and Auto-Design lays out a first draft you can adjust.</p>
+              <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="shrink-0 rounded bg-[#d4a75a]/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#765416]">Last step</span>
+                <button
+                  type="button"
+                  data-testid="room-layout-popup-auto-design"
+                  onClick={autoDesign.onClick}
+                  disabled={!autoDesign.enabled}
+                  title={autoDesign.title}
+                  aria-label="Auto-Design"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#d4a75a] bg-white px-2.5 py-1 text-sm font-semibold text-[#765416] transition-colors hover:bg-[#fff8e8] disabled:opacity-60"
+                >
+                  <Ruler className="h-4 w-4" aria-hidden="true" /> Auto-Design
+                </button>
+                <p className="min-w-0 flex-1 text-xs leading-4 text-[#765416]">Your room shape above makes the outline; once the plan and your door style are set, Auto-Design fills it with cabinets and hands you a draft to adjust.</p>
+              </div>
               {autoDesign.anchorNote && <p data-testid="room-layout-popup-auto-design-anchor-note" className="basis-full text-xs text-[#765416]">{autoDesign.anchorNote}</p>}
               {!autoDesign.enabled && autoDesign.note && <p className="basis-full text-xs font-medium text-amber-800">{autoDesign.note}</p>}
             </div>
           )}
-          {body[open]}
         </div>
       )}
     </div>
