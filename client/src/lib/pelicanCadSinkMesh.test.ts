@@ -6,9 +6,11 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   MANUFACTURER_SINK_RIM_LIFT_FT,
   apronSideOf,
+  hideParametricBasin,
   orientManufacturerSink,
   placeManufacturerSink,
 } from "./pelicanCadSinkMesh";
+import { pelicanCadInchesPerUnit } from "./pelicanCadModels";
 
 const INCH = 1 / 12;
 
@@ -96,6 +98,30 @@ describe("manufacturer sink seating", () => {
     expect(placed.position.toArray()).toEqual([0, 0, 0]);
   });
 
+  it("turns a drawing without an apron to lie along a side wall", () => {
+    // The drawing is authored long-on-X, which is the run direction on a top
+    // wall. A left or right wall runs on Z, so leaving it unturned put the sink
+    // across the counter and out of the cabinet (owner report, Nov 28 2026).
+    const template = dropInDrawing();
+    const top = placeManufacturerSink(template, new THREE.Vector3(), [], "top");
+    const left = placeManufacturerSink(template, new THREE.Vector3(), [], "left");
+    const right = placeManufacturerSink(template, new THREE.Vector3(), [], "right");
+    top.updateMatrixWorld(true);
+    left.updateMatrixWorld(true);
+    right.updateMatrixWorld(true);
+    const size = (object: THREE.Object3D) => new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());
+    const topSize = size(top);
+    const leftSize = size(left);
+    const rightSize = size(right);
+    expect(topSize.x).toBeGreaterThan(topSize.z);
+    expect(leftSize.z).toBeGreaterThan(leftSize.x);
+    expect(rightSize.z).toBeGreaterThan(rightSize.x);
+    expect(leftSize.z).toBeCloseTo(topSize.x, 5);
+    expect(leftSize.x).toBeCloseTo(topSize.z, 5);
+    expect(left.rotation.y).toBeCloseTo(Math.PI / 2, 6);
+    expect(right.rotation.y).toBeCloseTo(Math.PI / 2, 6);
+  });
+
   it("lifts the rim the same height as the built-in rim", () => {
     expect(MANUFACTURER_SINK_RIM_LIFT_FT).toBeCloseTo(0.018, 6);
   });
@@ -116,5 +142,58 @@ describe("manufacturer sink seating", () => {
     placed.updateMatrixWorld(true);
     const drawn = new THREE.Box3().setFromObject(placed);
     expect(drawn.max.z).toBeCloseTo((20.75 * INCH) / 2, 5);
+  });
+
+  /** The built-in apron slab for a left/right wall, in the holder's world frame. */
+  function sideApron(side: "left" | "right", widthIn = 32, depthIn = 18): THREE.Mesh {
+    const thickness = Math.min(0.12, depthIn * INCH * 0.2);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(thickness, 10 * INCH, widthIn * INCH));
+    mesh.position.set(5 + (side === "left" ? 1 : -1) * (depthIn * INCH / 2 - thickness / 2), 3 - 5 * INCH, 7);
+    mesh.userData = { sinkApronFront: true };
+    return mesh;
+  }
+
+  it("reads PL-HA117 R0's apron past its flange and turns the drawing along a side wall", async () => {
+    // PL-HA117 R0 16g: the top flange overhangs the body, so a 1 inch edge band
+    // read as "no apron" and the drawing stayed across the counter on a left
+    // wall (owner report, Nov 28 2026).
+    const file = path.resolve("client/public/models/pelican/pl-ha117-r0.glb");
+    if (!fs.existsSync(file)) return;
+    const buffer = fs.readFileSync(file);
+    const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+    const gltf = await new Promise<{ scene: THREE.Object3D }>((resolve, reject) => new GLTFLoader().parse(data, "", resolve as never, reject));
+    const root = new THREE.Group();
+    root.add(gltf.scene);
+    orientManufacturerSink(root, pelicanCadInchesPerUnit("mm"));
+    expect(apronSideOf(root)).toBe(1);
+
+    const holder = new THREE.Vector3(5, 3, 7);
+    const placed = placeManufacturerSink(root, holder, [sideApron("left")], "left");
+    placed.updateMatrixWorld(true);
+    const drawn = new THREE.Box3().setFromObject(placed);
+    const size = drawn.getSize(new THREE.Vector3());
+    // The 32 inch side now runs along the wall, not across the counter.
+    expect(size.z).toBeGreaterThan(size.x);
+    expect(size.z).toBeCloseTo(32 * INCH, 2);
+    // The apron face lands on the built-in apron plane, 9 inches off the sink center.
+    expect(drawn.max.x).toBeCloseTo((18 * INCH) / 2, 3);
+  });
+});
+
+describe("a manufacturer drawing never leaves a hole where the basin was", () => {
+  it("keeps the measured bowl, floor and drain so the cabinet cannot show through, and replaces only the rim and apron", () => {
+    const flags = ["sinkBowl", "sinkBowlFloor", "sinkDrain", "sinkRim", "sinkApronFront"] as const;
+    const nodes = flags.map((flag) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+      mesh.userData = { [flag]: true };
+      return mesh;
+    });
+    hideParametricBasin(new THREE.Group(), nodes);
+
+    expect(nodes[flags.indexOf("sinkBowl")]!.visible).toBe(true);
+    expect(nodes[flags.indexOf("sinkBowlFloor")]!.visible).toBe(true);
+    expect(nodes[flags.indexOf("sinkDrain")]!.visible).toBe(true);
+    expect(nodes[flags.indexOf("sinkRim")]!.visible).toBe(false);
+    expect(nodes[flags.indexOf("sinkApronFront")]!.visible).toBe(false);
   });
 });

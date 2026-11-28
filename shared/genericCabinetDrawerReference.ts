@@ -122,6 +122,28 @@ export function standardBaseFaceReference(masterCode: string | null | undefined)
   };
 }
 
+/**
+ * Sink bases are door bases with non-operable fronts above the doors. Those
+ * fronts sit in ONE row, one per door column, exactly like the two side-by-side
+ * drawers of a B33-and-wider door base. Stacking two full-width fronts made a
+ * 36" sink base read as a different cabinet from the B36 beside it (owner,
+ * Nov 26 2026). Returns null for every code that is not a sink base, and 0 when
+ * the sink base has no fronts at all (SB36FH, CSB36).
+ */
+export function sinkBaseFalseFrontColumns(
+  masterCode: string | null | undefined,
+  doorCount: number,
+  drawerCount: number,
+): number | null {
+  const code = stripHandedness(masterCode ?? "").code.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  // SB/CSB only. VSB (vanity sink base) and FSB (farm sink base) keep their own
+  // faces, and a drawerbase keeps its stacked drawer rows.
+  if (!/^(?:SB|CSB)\d{2}/.test(code)) return null;
+  const fronts = Math.max(0, Math.round(drawerCount));
+  if (fronts === 0) return 0;
+  return Math.min(fronts, Math.max(1, Math.round(doorCount)));
+}
+
 /** Usable Edit Config drawer rows, or null when the JSON is empty or invalid. */
 export function parsedDrawerLayoutRows(drawerLayout: string | null | undefined): DrawerLayoutRow[] | null {
   if (drawerLayout == null) return null;

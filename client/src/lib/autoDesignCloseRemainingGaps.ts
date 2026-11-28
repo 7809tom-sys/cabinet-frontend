@@ -438,14 +438,22 @@ export function closeRemainingRunGaps(input: {
             detail: `This line sells no base cabinet that leaves ${formatFillerInches(autoDesignFillerMaxIn())} or less for a filler in a ${formatFillerInches(span)} opening, so the narrow-base-plus-filler rule could not close it.`,
           });
         }
-        if (gap.trimmed && narrowWidth == null) {
+        const packed = narrowWidth != null ? [narrowWidth] : packWidths(span, catalog, layer);
+        const packedTotal = packed.reduce((sum, width) => sum + width, 0);
+        // A gap cut down by a reserved corner, range or sink span used to be
+        // left open unless the narrow-base-plus-filler band matched it, which
+        // is how a 15 or 18 inch opening beside the sink stayed bare wall. A
+        // catalog pack that closes the gap exactly is allowed (owner spec:
+        // never leave a leftover that a real cabinet fits).
+        const packedClosesGap = layer === "base" && packed.length > 0 && Math.abs(packedTotal - span) <= MIN_GAP_IN;
+        if (gap.trimmed && narrowWidth == null && !packedClosesGap) {
           // Beside a reserved corner square, range or sink span only the
-          // narrow-base-plus-filler rule fills; anything else keeps the old
-          // behaviour (left for the earlier passes and the review).
+          // narrow-base-plus-filler rule or an exact catalog pack fills;
+          // anything else keeps the old behaviour (left for the earlier passes
+          // and the review).
           failedGaps.add(`${gap.start}:${gap.length}`);
           continue;
         }
-        const packed = narrowWidth != null ? [narrowWidth] : packWidths(span, catalog, layer);
         let along = start;
         let placedAny = false;
         for (const width of packed) {

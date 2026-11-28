@@ -120,7 +120,12 @@ export function apronSideOf(root: THREE.Object3D): -1 | 0 | 1 {
   const height = bounds.max.y - bounds.min.y;
   const depth = bounds.max.z - bounds.min.z;
   if (height < 1e-6 || depth < 1e-6) return 0;
-  const band = Math.min(INCH, depth * 0.1);
+  // A manufacturer sink's top flange overhangs its body, so the extreme 1 inch
+  // is only flange and every edge read there looks like it stops at the rim.
+  // PL-HA117 R0 16g was read as "no apron" exactly that way, which left its
+  // drawing unturned on a side wall. The band reaches past the overhang to the
+  // body it is meant to measure.
+  const band = Math.min(2.5 * INCH, depth * 0.2);
   let lowFront = Infinity;
   let lowBack = Infinity;
   for (const point of points) {
@@ -194,23 +199,25 @@ async function loadPrepared(asset: PelicanCadAsset): Promise<THREE.Object3D> {
   return task;
 }
 
-const PARAMETRIC_SINK_FLAGS = [
+const PARAMETRIC_SINK_REPLACED_FLAGS = [
   "sinkRim",
-  "sinkBowl",
-  "sinkBowlFloor",
-  "sinkDrain",
-  "sinkDrainRing",
-  "sinkDrainStrainer",
   "sinkApronFront",
-  "sinkBowlDivider",
 ] as const;
 
-function hideParametricBasin(holder: THREE.Object3D, ownedNodes: readonly THREE.Object3D[]): void {
+/**
+ * The drawing supplies the rim and the apron, which sit on or above the stone.
+ * Its basin hangs below the countertop and inside the closed cabinet box, so
+ * normal depth testing hides it: replacing the measured bowl as well leaves the
+ * sink reading as an empty hole with the cabinet's wood top showing through it
+ * (owner report, Nov 26 2026). The measured bowl, floor and drain stay, clipped
+ * to the counter opening, so the sink keeps its interior.
+ */
+export function hideParametricBasin(holder: THREE.Object3D, ownedNodes: readonly THREE.Object3D[]): void {
   for (const node of ownedNodes) {
     if (node === holder) continue;
     node.traverse((child) => {
       const data = child.userData as Record<string, unknown>;
-      if (PARAMETRIC_SINK_FLAGS.some((flag) => data[flag] === true)) child.visible = false;
+      if (PARAMETRIC_SINK_REPLACED_FLAGS.some((flag) => data[flag] === true)) child.visible = false;
     });
   }
 }
@@ -248,20 +255,36 @@ function apronFrontDirection(apron: THREE.Box3): FrontDirection {
  * Wraps a prepared drawing so it faces the cabinet front. An apron-front
  * drawing is turned until its apron points the way the built-in apron does,
  * then slid along that axis until the two apron faces are on one plane. The
- * lateral centering stays on the sink center. Any other drawing stays as it
- * was oriented.
+ * lateral centering stays on the sink center. Any other drawing keeps its
+ * authored orientation, except that it must still lie along the run: on a left
+ * or right wall its long plan axis would otherwise point across the counter and
+ * the sink would hang out of the cabinet.
  */
 export function placeManufacturerSink(
   template: THREE.Object3D,
   holderPosition: THREE.Vector3,
   ownedNodes: readonly THREE.Object3D[],
+  wallSide?: string | null,
 ): THREE.Object3D {
   const pivot = new THREE.Group();
   pivot.name = "pelican-manufacturer-cad-pivot";
   pivot.add(template.clone(true));
   const apronSign = (template.userData as Record<string, unknown>).manufacturerApronSign;
   const apron = parametricApronBox(holderPosition, ownedNodes);
-  if (!apron || (apronSign !== 1 && apronSign !== -1)) return pivot;
+  if (!apron || (apronSign !== 1 && apronSign !== -1)) {
+    // Drawings are authored with their long plan axis on X, which is the run
+    // direction on a top or bottom wall. On a side wall the run is Z, so a
+    // drop-in or undermount drawing that never had an apron to align (and a
+    // farm drawing whose apron could not be read) stayed across the counter —
+    // the left-wall sink hanging out of the cabinet (owner report, Nov 28 2026).
+    // Turn it so its long axis and its front follow the wall, exactly like the
+    // parametric basin under it.
+    if (wallSide === "left" || wallSide === "right") {
+      pivot.rotation.y = Math.PI / 2;
+      pivot.userData = { manufacturerPlanTurn: true, wallSide };
+    }
+    return pivot;
+  }
   const front = apronFrontDirection(apron);
   // Turning by t about Y sends +Z to (sin t, 0, cos t).
   const facing = front.axis === "z"
@@ -283,6 +306,8 @@ export type ManufacturerSinkAnchor = {
   pelicanCode?: string | null;
   pelicanProfileId?: string | null;
   pelicanProductName?: string | null;
+  /** The wall the sink base sits on; a side wall turns a drawing that has no apron. */
+  wallSide?: string | null;
   /** World position of the basin center, in feet, with y at the countertop. */
   x: number;
   y: number;
@@ -315,7 +340,7 @@ export function attachPelicanManufacturerSink(
   addNode(holder);
   const show = (template: THREE.Object3D) => {
     if (!holder.parent) return;
-    holder.add(placeManufacturerSink(template, holder.position, ownedNodes));
+    holder.add(placeManufacturerSink(template, holder.position, ownedNodes, sink.wallSide));
     holder.userData.manufacturerCadLoaded = true;
     hideParametricBasin(holder, ownedNodes);
   };

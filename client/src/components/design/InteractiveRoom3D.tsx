@@ -72,7 +72,7 @@ import { ColorTracePanel } from "./ColorTracePanel";
 import { colorTraceToText } from "@/lib/colorTrace";
 import { cabinetDrawingType, fourDrawerBaseRowHeights, isEqualHeightTwoDrawerBase as isEqualHeightTwoDrawerBaseFamily, isMicrowaveBaseCabinet, isWallBlindCornerCabinet, resolveDoorDrawerCounts, resolvedMicrowaveBaseOpeningType, resolvedVanityComboFaceLayout, standardDoorCountForFaceWidth, threeDrawerBaseRowHeights, twoDrawerBaseStackedRows } from "@/lib/cabinetGraphics";
 import { correctTwentyFourSingleDoor } from "@shared/twentyFourDoorFace";
-import { standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
+import { sinkBaseFalseFrontColumns, standardBaseFaceReference } from "@/lib/genericCabinetDrawerReference";
 import { designerCabinetName } from "@/lib/designerCabinetNames";
 import { isShowerSystemTubCombo, verifiedPelicanBathroomFixtureProfile, type VerifiedPelicanBathroomFixtureProfile } from "@/lib/pelicanBathroomFixtureProfiles";
 import { makePelicanTubFillerGroup } from "@/lib/pelicanTubFillerMesh";
@@ -4037,7 +4037,16 @@ export function resolvedThreeDDrawerRows(
   // Standard door bases with no usable drawerLayout follow the generic catalog
   // reference: one top row, full width under 33 inches and two columns from 33
   // inches up. The 6-inch zone height is chosen by the caller. Saved JSON above
-  // already returned. Drawer-only, sink, corner, and specialty codes do not match.
+  // already returned. Drawer-only and specialty codes do not match.
+  const sinkBaseColumns = sinkBaseFalseFrontColumns(
+    sku.masterCode,
+    Math.max(0, Number(sku.numberOfDoors) || 0),
+    count,
+  );
+  if (sinkBaseColumns != null) {
+    // A sink base's false fronts are one row over its doors, never a stack.
+    return sinkBaseColumns > 0 ? [{ count: sinkBaseColumns, height: availableHeight }] : [];
+  }
   const standardBaseFace = standardBaseFaceReference(sku.masterCode);
   if (standardBaseFace) {
     if (!standardBaseFace.drawerRows.length || !(availableHeight > 0)) return [];
@@ -11449,6 +11458,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       pelicanCode: sink.pelicanCode,
       pelicanProfileId: sink.pelicanProfileId,
       pelicanProductName: sink.pelicanProductName,
+      wallSide: sink.wallSide,
       x: centerX,
       y: countertopTop,
       z: centerZ,
