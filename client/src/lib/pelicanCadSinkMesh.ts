@@ -120,7 +120,12 @@ export function apronSideOf(root: THREE.Object3D): -1 | 0 | 1 {
   const height = bounds.max.y - bounds.min.y;
   const depth = bounds.max.z - bounds.min.z;
   if (height < 1e-6 || depth < 1e-6) return 0;
-  const band = Math.min(INCH, depth * 0.1);
+  // A manufacturer sink's top flange overhangs its body, so the extreme 1 inch
+  // is only flange and every edge read there looks like it stops at the rim.
+  // PL-HA117 R0 16g was read as "no apron" exactly that way, which left its
+  // drawing unturned on a side wall. The band reaches past the overhang to the
+  // body it is meant to measure.
+  const band = Math.min(2.5 * INCH, depth * 0.2);
   let lowFront = Infinity;
   let lowBack = Infinity;
   for (const point of points) {
