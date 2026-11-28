@@ -97,6 +97,30 @@ describe("manufacturer sink seating", () => {
     expect(placed.position.toArray()).toEqual([0, 0, 0]);
   });
 
+  it("turns a drawing without an apron to lie along a side wall", () => {
+    // The drawing is authored long-on-X, which is the run direction on a top
+    // wall. A left or right wall runs on Z, so leaving it unturned put the sink
+    // across the counter and out of the cabinet (owner report, Nov 28 2026).
+    const template = dropInDrawing();
+    const top = placeManufacturerSink(template, new THREE.Vector3(), [], "top");
+    const left = placeManufacturerSink(template, new THREE.Vector3(), [], "left");
+    const right = placeManufacturerSink(template, new THREE.Vector3(), [], "right");
+    top.updateMatrixWorld(true);
+    left.updateMatrixWorld(true);
+    right.updateMatrixWorld(true);
+    const size = (object: THREE.Object3D) => new THREE.Box3().setFromObject(object).getSize(new THREE.Vector3());
+    const topSize = size(top);
+    const leftSize = size(left);
+    const rightSize = size(right);
+    expect(topSize.x).toBeGreaterThan(topSize.z);
+    expect(leftSize.z).toBeGreaterThan(leftSize.x);
+    expect(rightSize.z).toBeGreaterThan(rightSize.x);
+    expect(leftSize.z).toBeCloseTo(topSize.x, 5);
+    expect(leftSize.x).toBeCloseTo(topSize.z, 5);
+    expect(left.rotation.y).toBeCloseTo(Math.PI / 2, 6);
+    expect(right.rotation.y).toBeCloseTo(Math.PI / 2, 6);
+  });
+
   it("lifts the rim the same height as the built-in rim", () => {
     expect(MANUFACTURER_SINK_RIM_LIFT_FT).toBeCloseTo(0.018, 6);
   });

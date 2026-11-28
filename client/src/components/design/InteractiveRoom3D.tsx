@@ -11458,6 +11458,7 @@ export function addSinkFixture(root: THREE.Group, sink: SinkFixture, faucetPlace
       pelicanCode: sink.pelicanCode,
       pelicanProfileId: sink.pelicanProfileId,
       pelicanProductName: sink.pelicanProductName,
+      wallSide: sink.wallSide,
       x: centerX,
       y: countertopTop,
       z: centerZ,

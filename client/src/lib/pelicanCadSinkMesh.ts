@@ -250,20 +250,36 @@ function apronFrontDirection(apron: THREE.Box3): FrontDirection {
  * Wraps a prepared drawing so it faces the cabinet front. An apron-front
  * drawing is turned until its apron points the way the built-in apron does,
  * then slid along that axis until the two apron faces are on one plane. The
- * lateral centering stays on the sink center. Any other drawing stays as it
- * was oriented.
+ * lateral centering stays on the sink center. Any other drawing keeps its
+ * authored orientation, except that it must still lie along the run: on a left
+ * or right wall its long plan axis would otherwise point across the counter and
+ * the sink would hang out of the cabinet.
  */
 export function placeManufacturerSink(
   template: THREE.Object3D,
   holderPosition: THREE.Vector3,
   ownedNodes: readonly THREE.Object3D[],
+  wallSide?: string | null,
 ): THREE.Object3D {
   const pivot = new THREE.Group();
   pivot.name = "pelican-manufacturer-cad-pivot";
   pivot.add(template.clone(true));
   const apronSign = (template.userData as Record<string, unknown>).manufacturerApronSign;
   const apron = parametricApronBox(holderPosition, ownedNodes);
-  if (!apron || (apronSign !== 1 && apronSign !== -1)) return pivot;
+  if (!apron || (apronSign !== 1 && apronSign !== -1)) {
+    // Drawings are authored with their long plan axis on X, which is the run
+    // direction on a top or bottom wall. On a side wall the run is Z, so a
+    // drop-in or undermount drawing that never had an apron to align (and a
+    // farm drawing whose apron could not be read) stayed across the counter —
+    // the left-wall sink hanging out of the cabinet (owner report, Nov 28 2026).
+    // Turn it so its long axis and its front follow the wall, exactly like the
+    // parametric basin under it.
+    if (wallSide === "left" || wallSide === "right") {
+      pivot.rotation.y = Math.PI / 2;
+      pivot.userData = { manufacturerPlanTurn: true, wallSide };
+    }
+    return pivot;
+  }
   const front = apronFrontDirection(apron);
   // Turning by t about Y sends +Z to (sin t, 0, cos t).
   const facing = front.axis === "z"
@@ -285,6 +301,8 @@ export type ManufacturerSinkAnchor = {
   pelicanCode?: string | null;
   pelicanProfileId?: string | null;
   pelicanProductName?: string | null;
+  /** The wall the sink base sits on; a side wall turns a drawing that has no apron. */
+  wallSide?: string | null;
   /** World position of the basin center, in feet, with y at the countertop. */
   x: number;
   y: number;
@@ -317,7 +335,7 @@ export function attachPelicanManufacturerSink(
   addNode(holder);
   const show = (template: THREE.Object3D) => {
     if (!holder.parent) return;
-    holder.add(placeManufacturerSink(template, holder.position, ownedNodes));
+    holder.add(placeManufacturerSink(template, holder.position, ownedNodes, sink.wallSide));
     holder.userData.manufacturerCadLoaded = true;
     hideParametricBasin(holder, ownedNodes);
   };
